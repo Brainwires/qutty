@@ -91,7 +91,8 @@ jobs:
           codesign --verify --deep --strict "dist/Qutty.app"
           spctl -a -t exec -vv "dist/Qutty.app"
           xcrun stapler validate "dist/Qutty.app"
-          lipo -archs "dist/Qutty.app/Contents/MacOS/"* | tee /dev/stderr | grep -q "$ARCH"
+          EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' dist/Qutty.app/Contents/Info.plist)"
+          lipo -archs "dist/Qutty.app/Contents/MacOS/$EXE" | tee /dev/stderr | grep -qw "$ARCH"
           mkdir -p release
           cp "dist/Qutty.dmg" "release/Qutty-${VERSION}-${ARCH}.dmg"
           (cd release && shasum -a 256 "Qutty-${VERSION}-${ARCH}.dmg" > "Qutty-${VERSION}-${ARCH}.dmg.sha256")

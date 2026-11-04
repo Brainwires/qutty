@@ -321,7 +321,18 @@ async function notarize(app: string, profile: string): Promise<void> {
     await run(
       notarytoolSubmitArgs(zip, { kind: "keychain-profile", profile }),
     );
-    await run(["xcrun", "stapler", "staple", app]);
+    // Stapling fetches the ticket from Apple's CloudKit, which can drop the connection right
+    // after notarization succeeds: retry with backoff before failing the build.
+    for (let attempt = 1;; attempt++) {
+      try {
+        await run(["xcrun", "stapler", "staple", app]);
+        break;
+      } catch (err) {
+        if (attempt >= 5) throw err;
+        console.warn(`stapler failed (attempt ${attempt}/5), retrying…`);
+        await new Promise((r) => setTimeout(r, 15_000 * attempt));
+      }
+    }
   } finally {
     // Remove the submission zip even if notarytool/staple failed.
     await Deno.remove(zip).catch(() => {});
