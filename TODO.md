@@ -83,6 +83,34 @@
     per-host port-forward panel (`ssh -O forward` / `-O cancel` on the control
     socket, live).
 
+- [ ] **Clickable links: URLs and local paths.** ⌘-click (Ctrl-click elsewhere)
+      opens what's under the pointer. It's underlined on hover with the modifier
+      held, as other terminals do. A plain click still goes to the terminal
+      (mouse reporting, selection).
+  - **OSC 8 hyperlinks** first. Programs such as Claude Code, `ls --hyperlink`,
+    gcc and delta already emit them. xterm.js supports them through its
+    `linkHandler` option.
+  - **URLs** found in plain output (`http(s)://`, `file://`, and also
+    `mailto:`), e.g. with `@xterm/addon-web-links` or a custom
+    `registerLinkProvider`. Trim trailing punctuation and closing brackets.
+  - **Local paths** in plain output: absolute (`/…`, `~/…`) and relative
+    (`./src/x.ts`, `src/x.ts`), resolved against the tile's current directory
+    (`info().cwd`, or OSC 7). Only link a path that exists, checked lazily on
+    hover through the desktop extension.
+  - **What opening does.**
+    - A URL opens in the default browser.
+    - A folder is revealed in Finder (or the Linux file manager).
+    - A file opens in its default app, or in an editor when it carries a
+      `:line[:col]` suffix (`src/x.ts:42:7`, as compilers and test runners
+      print).
+    - A setting picks the editor command, e.g. `code -g {file}:{line}:{col}`,
+      `zed`, or `$EDITOR` in a new tile.
+  - **Needs:** an "open" desktop method (URL / reveal / open-with). Check
+    whether Denext already has one before adding it to `desktop/pty.ts`.
+  - **SSH tiles.** URLs work as usual. Remote paths can't be opened locally, so
+    ⌘-click offers Download (see SSH) instead.
+  - Maybe: a right-click menu on a link with Copy link / Open / Reveal.
+
 - [ ] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own
       terminals, as it does today.
