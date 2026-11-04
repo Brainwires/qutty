@@ -54,6 +54,7 @@ const SHORTCUTS: [string, string][] = [
   ["Mod+Enter", "Toggle monocle"],
   ["Mod+Shift+L", "Cycle pattern"],
   ["Mod+Shift+B", "Move the bar"],
+  ["Mod+Shift+O", "SSH connections"],
   ["Mod+=", "Bigger font"],
   ["Mod+-", "Smaller font"],
   ["Mod+0", "Default font size"],

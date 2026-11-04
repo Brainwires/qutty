@@ -40,6 +40,12 @@ Deno.test("macOS shortcuts use ⌘", () => {
   assertEquals(cmd("Enter"), { kind: "toggleMonocle" });
   assertEquals(cmd("KeyL", { shiftKey: true }), { kind: "cyclePattern" });
   assertEquals(cmd("KeyB", { shiftKey: true }), { kind: "cycleBarPosition" });
+  assertEquals(cmd("KeyO", { shiftKey: true }), { kind: "openConnections" });
+  assertEquals(cmd("KeyO"), null, "⌘O alone is not ours");
+  assertEquals(
+    commandForKey(key("KeyO", { ctrlKey: true, shiftKey: true }), "other"),
+    { kind: "openConnections" },
+  );
 });
 
 Deno.test("keys that are not shortcuts reach the PTY", () => {

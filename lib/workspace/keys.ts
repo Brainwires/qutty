@@ -20,7 +20,8 @@ export type KeyCommand =
   | { kind: "cycleBarPosition" }
   | { kind: "toggleMonocle" }
   | { kind: "fontSize"; dir: 1 | -1 }
-  | { kind: "fontSizeReset" };
+  | { kind: "fontSizeReset" }
+  | { kind: "openConnections" };
 
 /** The subset of `KeyboardEvent` the mapping reads. */
 export interface KeyLike {
@@ -59,6 +60,7 @@ const DIGIT = /^Digit([1-9])$/;
  * - Mod+1..9 focus by switcher-bar ordinal
  * - Mod+] / Mod+[ cycle MRU forward / back (alt-tab style); Mod+` jumps to the previous terminal
  * - Mod+Shift+L cycle pattern, Mod+Shift+B cycle bar position
+ * - Mod+Shift+O the SSH connection manager
  * - Mod+Enter toggle monocle
  * - Mod+= / Mod++ bigger font, Mod+- smaller, Mod+0 default size (numpad keys too)
  */
@@ -83,6 +85,7 @@ export function commandForKey(
   if (e.shiftKey) {
     if (code === "KeyL") return { kind: "cyclePattern" };
     if (code === "KeyB") return { kind: "cycleBarPosition" };
+    if (code === "KeyO") return { kind: "openConnections" };
     return null;
   }
   switch (code) {

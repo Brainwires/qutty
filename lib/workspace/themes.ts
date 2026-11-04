@@ -470,6 +470,64 @@ export function themeById(id: string): ColorTheme {
     THEMES.find((t) => t.id === DEFAULT_THEME_ID)!;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Host tints
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The tint ids an SSH host can carry (stored as `tint` in its `# qutty:` comment). Each maps onto
+ * the current theme's ANSI palette, which every theme already tunes for legibility on its own
+ * background, so a tint reads in all six themes and follows a theme switch.
+ */
+export const TINT_IDS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+] as const;
+
+/** One tint id. */
+export type TintId = typeof TINT_IDS[number];
+
+/** Whether `raw` is a known tint id (a host from another tool may carry anything). */
+export function isTintId(raw: unknown): raw is TintId {
+  return typeof raw === "string" &&
+    (TINT_IDS as readonly string[]).includes(raw);
+}
+
+/** The midpoint of two `#rrggbb` colours. */
+function mixHex(a: string, b: string): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  let out = 0;
+  for (const shift of [16, 8, 0]) {
+    const c = Math.round((((pa >> shift) & 255) + ((pb >> shift) & 255)) / 2);
+    out |= c << shift;
+  }
+  return `#${out.toString(16).padStart(6, "0")}`;
+}
+
+/** A tint's colour in `theme` (`#rrggbb`). Orange, which ANSI lacks, is red mixed with yellow. */
+export function tintColor(theme: ColorTheme, tint: TintId): string {
+  const t = theme.terminal;
+  switch (tint) {
+    case "red":
+      return t.red;
+    case "orange":
+      return mixHex(t.red, t.yellow);
+    case "yellow":
+      return t.yellow;
+    case "green":
+      return t.green;
+    case "blue":
+      return t.blue;
+    case "purple":
+      return t.magenta;
+  }
+}
+
 /** What `applyChromeTheme` needs from the document element (a stub in tests). */
 export interface ThemeTarget {
   style: {
@@ -486,13 +544,19 @@ export function rgbTriplet(hex: string): string {
 }
 
 /**
- * Put a theme's chrome tokens (and their `--*-rgb` triplets), `data-theme` and `color-scheme` on
- * the document element.
+ * Put a theme's chrome tokens (and their `--*-rgb` triplets), the host tints, `data-theme` and
+ * `color-scheme` on the document element.
  */
 export function applyChromeTheme(el: ThemeTarget, theme: ColorTheme): void {
   for (const t of CHROME_TOKENS) el.style.setProperty(t, theme.chrome[t]);
   for (const t of RGB_TOKENS) {
     el.style.setProperty(`${t}-rgb`, rgbTriplet(theme.chrome[t]));
+  }
+  // Host tints: `--tint-red` … and their triplets (styles.css maps `[data-tint]` onto them).
+  for (const id of TINT_IDS) {
+    const hex = tintColor(theme, id);
+    el.style.setProperty(`--tint-${id}`, hex);
+    el.style.setProperty(`--tint-${id}-rgb`, rgbTriplet(hex));
   }
   el.style.colorScheme = theme.scheme;
   el.setAttribute("data-theme", theme.id);

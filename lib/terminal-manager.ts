@@ -16,6 +16,12 @@
 // change) and new terminals start with the current one. The palettes live in
 // lib/workspace/themes.ts next to the matching chrome tokens.
 //
+// Profiles: a terminal runs the login shell or, for an SSH tile, the `ssh` argv the backend's
+// `sshCommand` builds. A shell that ends restarts on Enter; an SSH tile does not (the workspace
+// shows its Disconnected overlay and calls `restart` for Reconnect, keeping the old output).
+// OSC 7 reports are recorded as the remote working directory, for SSH tiles only (where a file
+// dropped on the tile is uploaded to).
+//
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
 
@@ -40,6 +46,13 @@ import {
   terminalFontOptions,
 } from "./workspace/fonts.ts";
 import { DEFAULT_THEME_ID, themeById } from "./workspace/themes.ts";
+import {
+  exitBanner,
+  restartsOnEnter,
+  SHELL_PROFILE,
+  type TerminalProfile,
+  trustedRemoteCwd,
+} from "./ssh-ui.ts";
 
 /** The font a manager starts with (the settings' defaults) until `setFont` is called. */
 const DEFAULT_TERMINAL_FONT: TerminalFontOptions = terminalFontOptions(
@@ -85,6 +98,10 @@ interface Managed {
   disposed: boolean;
   /** The font changed while the terminal was not displayed: re-measure before the next fit. */
   fontStale: boolean;
+  /** What it runs. */
+  profile: TerminalProfile;
+  /** SSH tiles: the remote working directory from the last OSC 7 report. */
+  remoteCwd: string | undefined;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -233,8 +250,11 @@ export class TerminalManager {
     return this.#terms.has(id);
   }
 
-  /** Create the xterm instance for `id` (idempotent). The PTY starts when a host is attached. */
-  create(id: string): void {
+  /**
+   * Create the xterm instance for `id` (idempotent) running `profile` (the login shell by
+   * default). The PTY starts when a host is attached.
+   */
+  create(id: string, profile: TerminalProfile = SHELL_PROFILE): void {
     if (this.#terms.has(id)) return;
     const term = new Terminal({
       allowProposedApi: true,
@@ -278,8 +298,16 @@ export class TerminalManager {
       lastActivity: 0,
       disposed: false,
       fontStale: false,
+      profile,
+      remoteCwd: undefined,
     };
     this.#terms.set(id, m);
+    // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. Kept for SSH tiles only.
+    term.parser.registerOscHandler(7, (data) => {
+      const cwd = trustedRemoteCwd(m.profile, data);
+      if (cwd !== undefined) m.remoteCwd = cwd;
+      return true;
+    });
 
     term.attachCustomKeyEventHandler((e) => {
       // Workspace shortcuts bubble to the window listener; xterm must not swallow them.
@@ -298,7 +326,8 @@ export class TerminalManager {
     });
     term.onData((data) => {
       if (m.exited) {
-        if (data === "\r" || data === "\n") void this.restart(id);
+        const enter = data === "\r" || data === "\n";
+        if (enter && restartsOnEnter(m.profile)) void this.restart(id);
         return;
       }
       if (m.ptyId) void this.#backend.write(m.ptyId, data).catch(() => {});
@@ -351,7 +380,11 @@ export class TerminalManager {
     m.spawning = true;
     try {
       const { cols, rows } = m.term;
-      const spawned = await this.#backend.spawn({ cols, rows });
+      const spawned = await this.#backend.spawn({
+        cols,
+        rows,
+        ...(await this.#command(m.profile)),
+      });
       if (m.disposed) {
         void this.#backend.kill(spawned.id).catch(() => {});
         return;
@@ -371,12 +404,7 @@ export class TerminalManager {
       m.unsubs.push(this.#backend.onExit(spawned.id, (exit) => {
         if (m.disposed || m.ptyId !== spawned.id) return;
         m.exited = true;
-        const why = exit.signal !== null && exit.signal !== 0
-          ? `signal ${exit.signal}`
-          : `code ${exit.exitCode}`;
-        m.term.write(
-          `\r\n${DIM}[process exited (${why}) — press Enter to restart or ⌘W to close]${RESET}\r\n`,
-        );
+        m.term.write(`\r\n${DIM}${exitBanner(m.profile, exit)}${RESET}\r\n`);
         this.#events.onExit(m.id, exit);
       }));
       // The size may have changed while spawning.
@@ -388,10 +416,11 @@ export class TerminalManager {
       this.#events.onSpawned?.(m.id);
     } catch (error) {
       m.exited = true;
+      const why = error instanceof Error ? error.message : String(error);
       m.term.write(
-        `\r\n${DIM}[could not start a shell: ${
-          error instanceof Error ? error.message : String(error)
-        } — press Enter to retry]${RESET}\r\n`,
+        m.profile.kind === "ssh"
+          ? `\r\n${DIM}[could not start ssh: ${why}]${RESET}\r\n`
+          : `\r\n${DIM}[could not start a shell: ${why} — press Enter to retry]${RESET}\r\n`,
       );
       this.#events.onSpawnError?.(m.id, error);
     } finally {
@@ -399,14 +428,29 @@ export class TerminalManager {
     }
   }
 
-  /** Start a fresh PTY in an exited terminal (the screen is cleared first). */
+  /** `spawn`'s program and arguments for a profile (none for the login shell). */
+  async #command(
+    profile: TerminalProfile,
+  ): Promise<{ program?: string; args?: string[] }> {
+    if (profile.kind !== "ssh") return {};
+    const { program, args } = await this.#backend.sshCommand(profile.target);
+    return { program, args };
+  }
+
+  /**
+   * Start a fresh PTY in an exited terminal. A shell's screen is cleared first; an SSH tile
+   * (Reconnect) keeps what the last session printed above a separator.
+   */
   async restart(id: string): Promise<void> {
     const m = this.#terms.get(id);
     if (!m || m.disposed || m.spawning || !m.exited) return;
     for (const u of m.unsubs.splice(0)) u();
     m.ptyId = null;
     m.exited = false;
-    m.term.reset();
+    m.remoteCwd = undefined;
+    if (m.profile.kind === "ssh") {
+      m.term.write(`${DIM}[reconnecting…]${RESET}\r\n`);
+    } else m.term.reset();
     this.#events.onRestart(id);
     await this.#spawn(m);
   }
@@ -482,6 +526,16 @@ export class TerminalManager {
     const m = this.#terms.get(id);
     const active = globalThis.document?.activeElement;
     return !!m && !!active && !!m.host && m.host.contains(active);
+  }
+
+  /** What terminal `id` runs (`undefined` when unknown). */
+  profile(id: string): TerminalProfile | undefined {
+    return this.#terms.get(id)?.profile;
+  }
+
+  /** An SSH tile's remote working directory, from its last OSC 7 report. */
+  remoteCwd(id: string): string | undefined {
+    return this.#terms.get(id)?.remoteCwd;
   }
 
   /** The foreground process info and the shell's home, for titles. */

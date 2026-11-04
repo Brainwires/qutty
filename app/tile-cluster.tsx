@@ -6,14 +6,26 @@
 // A tile not in the layout (overflow) stays mounted but goes through leaving → parked
 // (display:none); coming back it goes parked → entering (no transition, at its new rect) →
 // shown, which is also how a new terminal animates in.
+//
+// SSH tiles add a badge and their host tint (`data-tint`), plus whatever the workspace renders
+// into the header (`renderHeadActions`) and over the terminal (`renderOverlay`).
 
-import { useEffect, useRef, useState } from "denext";
+import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import { formatAge } from "../lib/workspace/format.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
+import { isTintId } from "../lib/workspace/themes.ts";
 
-export interface TileClusterProps {
+/** The workspace's additions to a tile (SSH tiles). */
+interface TileExtras {
+  /** The tile files are being dragged over. */
+  dropTargetId?: string | null;
+  renderHeadActions?(entry: TerminalEntry): ReactNode;
+  renderOverlay?(entry: TerminalEntry, focused: boolean): ReactNode;
+}
+
+export interface TileClusterProps extends TileExtras {
   manager: TerminalManager;
   terminals: TerminalEntry[];
   tiles: LayoutTile[];
@@ -41,6 +53,9 @@ export function TileCluster(props: TileClusterProps) {
           reducedMotion={props.reducedMotion}
           onFocus={props.onFocus}
           onClose={props.onClose}
+          dropTargetId={props.dropTargetId}
+          renderHeadActions={props.renderHeadActions}
+          renderOverlay={props.renderOverlay}
         />
       ))}
     </div>
@@ -52,7 +67,7 @@ type Phase = "parked" | "entering" | "shown" | "leaving";
 /** How long the leave animation takes (matches `--tile-ms` in styles.css). */
 const LEAVE_MS = 260;
 
-interface TerminalTileProps {
+interface TerminalTileProps extends TileExtras {
   entry: TerminalEntry;
   tile: LayoutTile | undefined;
   focused: boolean;
@@ -155,6 +170,10 @@ function TerminalTile(props: TerminalTileProps) {
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
   if (entry.activity) classes.push("has-activity");
+  const tint = isTintId(entry.ssh?.tint) ? entry.ssh.tint : undefined;
+  if (entry.ssh) classes.push("is-ssh");
+  if (tint) classes.push("has-tint");
+  if (props.dropTargetId === id) classes.push("is-drop-target");
 
   return (
     <div
@@ -167,6 +186,8 @@ function TerminalTile(props: TerminalTileProps) {
       data-phase={phase}
       data-focused={focused ? "true" : "false"}
       data-exited={entry.exited ? "true" : "false"}
+      data-ssh={entry.ssh ? "true" : undefined}
+      data-tint={tint}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
         const native = e as unknown as globalThis.TransitionEvent;
@@ -188,10 +209,14 @@ function TerminalTile(props: TerminalTileProps) {
           // keyboard focus to <body> right after pointerdown focused the terminal.
           onMouseDown={(e) => e.preventDefault()}
         >
+          {entry.ssh && (
+            <span class="tile-badge" data-testid="tile-ssh-badge">SSH</span>
+          )}
           <span class="tile-title" data-testid="tile-title" title={entry.title}>
             {entry.title}
           </span>
           <span class="tile-meta">
+            {props.renderHeadActions?.(entry)}
             {entry.exited && (
               <span class="tile-exited">
                 exited{entry.exitCode ? ` ${entry.exitCode}` : ""}
@@ -224,6 +249,7 @@ function TerminalTile(props: TerminalTileProps) {
           </span>
         </header>
         <div class="tile-body" data-testid="tile-body" ref={hostRef} />
+        {props.renderOverlay?.(entry, focused)}
       </div>
     </div>
   );

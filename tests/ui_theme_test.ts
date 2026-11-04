@@ -5,12 +5,15 @@ import {
   CHROME_TOKENS,
   type ColorTheme,
   DEFAULT_THEME_ID,
+  isTintId,
   RGB_TOKENS,
   rgbTriplet,
   sanitizeThemeId,
   THEME_IDS,
   themeById,
   THEMES,
+  TINT_IDS,
+  tintColor,
 } from "../lib/workspace/themes.ts";
 
 /** Every xterm ITheme key a theme must define (all but the scrollbar / ruler extras). */
@@ -213,7 +216,15 @@ Deno.test("themes: applyChromeTheme sets every token, color-scheme and data-them
     setAttribute: (k: string, v: string) => void attrs.set(k, v),
   };
   applyChromeTheme(el, themeById("paper"));
-  assertEquals(props.size, CHROME_TOKENS.length + RGB_TOKENS.length);
+  assertEquals(
+    props.size,
+    CHROME_TOKENS.length + RGB_TOKENS.length + 2 * TINT_IDS.length,
+  );
+  assertEquals(props.get("--tint-red"), themeById("paper").terminal.red);
+  assertEquals(
+    props.get("--tint-red-rgb"),
+    rgbTriplet(themeById("paper").terminal.red),
+  );
   assertEquals(props.get("--ink"), "#f4f1ea");
   assertEquals(props.get("--accent-rgb"), "26, 127, 107");
   assertEquals(el.style.colorScheme, "light");
@@ -222,4 +233,32 @@ Deno.test("themes: applyChromeTheme sets every token, color-scheme and data-them
   assertEquals(props.get("--accent"), "#ffb86b");
   assertEquals(el.style.colorScheme, "dark");
   assertEquals(attrs.get("data-theme"), "ember");
+});
+
+Deno.test("themes: every host tint is legible on every theme's tile and header", () => {
+  for (const theme of THEMES) {
+    const seen = new Set<string>();
+    for (const id of TINT_IDS) {
+      const hex = tintColor(theme, id);
+      assert(/^#[0-9a-f]{6}$/.test(hex), `${theme.id} ${id}: ${hex}`);
+      seen.add(hex);
+      for (const bg of [theme.chrome["--tile"], theme.chrome["--head"]]) {
+        const r = contrast(hex, bg);
+        assert(r >= 3, `${theme.id} ${id} on ${bg}: ${r.toFixed(2)}`);
+      }
+    }
+    assertEquals(seen.size, TINT_IDS.length, `${theme.id}: distinct tints`);
+  }
+});
+
+Deno.test("themes: tints map onto the palette, orange between red and yellow", () => {
+  const sea = themeById("sea-glass");
+  assertEquals(tintColor(sea, "red"), sea.terminal.red);
+  assertEquals(tintColor(sea, "purple"), sea.terminal.magenta);
+  assertEquals(tintColor(sea, "blue"), sea.terminal.blue);
+  // #e07a74 and #f3c37a → their midpoint.
+  assertEquals(tintColor(sea, "orange"), "#ea9f77");
+  assert(isTintId("green"));
+  assert(!isTintId("pink"));
+  assert(!isTintId(undefined));
 });

@@ -63,6 +63,8 @@ Deno.test("demo ssh: a program: ssh spawn is a remote-looking shell", async () =
   };
   await until(() => text().includes("deploy@web-1.example.com"));
   assert(text().includes("Welcome to"));
+  // The fake remote shell reports its directory with OSC 7 on every prompt.
+  assert(text().includes("\x1b]7;file://web-1.example.com/home/demo\x07"));
   assertEquals((await b.info(t.id)).process, "ssh");
   await b.write(t.id, "hostname\r");
   await until(() => text().includes("\r\nweb-1.example.com\r\n"));
