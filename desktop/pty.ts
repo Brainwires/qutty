@@ -365,11 +365,19 @@ function closeForkLeaks(
   if (darwinLibc().stat(cstr(forked.pty), ttyBuf) !== 0) return;
   const tty = parseStat(ttyBuf);
   if (!tty.chr) return;
-  // The slave was opened right after the master: it is within a few fds of it.
-  for (let fd = 0; fd <= forked.fd + 64; fd++) {
+  // The slave was opened right after the master, but not necessarily near it: when the fd table
+  // has holes (a long-lived process), the master fills a low hole and the slave can land far
+  // above it. Scan the whole table, ending after a long run of unused fds past the master.
+  const GAP = 256;
+  for (let fd = 0, unused = 0; fd <= forked.fd || unused < GAP; fd++) {
     if (fd === forked.fd) continue;
     const st = fdStat(fd);
-    if (st?.chr && st.rdev === tty.rdev) c.close(fd);
+    if (!st) {
+      unused++;
+      continue;
+    }
+    unused = 0;
+    if (st.chr && st.rdev === tty.rdev) c.close(fd);
   }
 }
 

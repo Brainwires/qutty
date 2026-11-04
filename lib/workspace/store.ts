@@ -261,19 +261,6 @@ export function barOrderIds(state: WorkspaceState): string[] {
     : state.terminals.map((t) => t.id);
 }
 
-/** Look a terminal up by id. */
-function terminalById(
-  state: WorkspaceState,
-  id: string,
-): TerminalEntry | undefined {
-  return state.terminals.find((t) => t.id === id);
-}
-
-/** The MRU rank of a terminal (0 = focused), or -1 when unknown. */
-function mruRank(state: WorkspaceState, id: string): number {
-  return state.mru.indexOf(id);
-}
-
 // ---------------------------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------------------------
