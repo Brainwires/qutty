@@ -2,63 +2,16 @@
 // events, and the handlers' behaviour before any terminal exists. No shell is started.
 // Run: deno test -A tests/
 
-import { assert, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import ext from "../desktop/pty.ts";
+import {
+  assertExtensionShape,
+  type Result,
+  schemaTesters,
+} from "./schema_helpers.ts";
 
-type Validate = (v: unknown) => unknown;
-const v = (name: keyof typeof ext.methods): Validate => (x) =>
-  (ext.methods[name].input["~standard"].validate as Validate)(x);
+const { v, ok, bad, rejectsNonObjects } = schemaTesters(ext);
 
-type Result = {
-  value?: unknown;
-  issues?: { message: string; path?: PropertyKey[] }[];
-};
-
-function ok(name: keyof typeof ext.methods, input: unknown): unknown {
-  const r = v(name)(input) as Result;
-  assert(
-    !r.issues,
-    `${name} ${JSON.stringify(input)} rejected: ${JSON.stringify(r.issues)}`,
-  );
-  return r.value;
-}
-
-function bad(
-  name: keyof typeof ext.methods,
-  input: unknown,
-  paths?: string[],
-): void {
-  const r = v(name)(input) as Result;
-  assert(
-    r.issues && r.issues.length > 0,
-    `${name} accepted ${String(JSON.stringify(input))}`,
-  );
-  assert(!("value" in r), "no value alongside issues");
-  for (const i of r.issues!) {
-    assert(typeof i.message === "string" && i.message.length > 0);
-  }
-  if (paths) {
-    assertEquals(
-      r.issues!.map((i) => String(i.path?.[0])).sort(),
-      [...paths].sort(),
-      `${name} ${JSON.stringify(input)} issue paths`,
-    );
-  }
-}
-
-const NON_OBJECTS = [
-  null,
-  undefined,
-  0,
-  1,
-  "x",
-  "",
-  true,
-  [],
-  [1, 2],
-  () => {},
-  Symbol("s"),
-];
 const BAD_DIMS = [
   0,
   -1,
@@ -77,28 +30,14 @@ const BAD_DIMS = [
 const BAD_IDS = ["", 1, null, true, {}, [], "x".repeat(65)];
 
 Deno.test("schema: declared events and methods", () => {
-  assertEquals(ext.name, "pty");
-  assertEquals([...ext.events].sort(), ["data", "exit"]);
-  assertEquals(Object.keys(ext.methods).sort(), [
-    "info",
-    "keyBindings",
-    "kill",
-    "resize",
-    "spawn",
-    "write",
-  ]);
-  assertEquals(ext.perWindow, true);
-  for (const m of Object.values(ext.methods)) {
-    assertEquals(m.input["~standard"].version, 1);
-    assertEquals(m.input["~standard"].vendor, "qutty");
-  }
+  assertExtensionShape(ext, {
+    name: "pty",
+    events: ["data", "exit"],
+    methods: ["info", "keyBindings", "kill", "resize", "spawn", "write"],
+  });
 });
 
-Deno.test("schema: every method rejects non-objects", () => {
-  for (const name of Object.keys(ext.methods) as (keyof typeof ext.methods)[]) {
-    for (const x of NON_OBJECTS) bad(name, x);
-  }
-});
+Deno.test("schema: every method rejects non-objects", rejectsNonObjects);
 
 Deno.test("schema: spawn", () => {
   assertEquals(ok("spawn", { cols: 80, rows: 24 }), {
@@ -106,6 +45,7 @@ Deno.test("schema: spawn", () => {
     rows: 24,
     cwd: undefined,
     shell: undefined,
+    program: undefined,
   });
   assertEquals(
     ok("spawn", { cols: 1, rows: 10_000, cwd: "/tmp", shell: "/bin/zsh" }),
@@ -114,6 +54,7 @@ Deno.test("schema: spawn", () => {
       rows: 10_000,
       cwd: "/tmp",
       shell: "/bin/zsh",
+      program: undefined,
     },
   );
   // Unknown keys are stripped, not passed to the handler.
@@ -126,6 +67,7 @@ Deno.test("schema: spawn", () => {
   assertEquals(Object.keys(stripped as object).sort(), [
     "cols",
     "cwd",
+    "program",
     "rows",
     "shell",
   ]);
@@ -146,6 +88,40 @@ Deno.test("schema: spawn", () => {
     "cwd",
     "shell",
   ]);
+});
+
+Deno.test("schema: spawn program and args", () => {
+  assertEquals(
+    ok("spawn", { cols: 80, rows: 24, program: "ssh", args: ["-V"] }),
+    {
+      cols: 80,
+      rows: 24,
+      cwd: undefined,
+      shell: undefined,
+      program: "ssh",
+      args: ["-V"],
+    },
+  );
+  // A program without args, and an empty args list, are both fine.
+  ok("spawn", { cols: 80, rows: 24, program: "/bin/sh" });
+  ok("spawn", { cols: 80, rows: 24, program: "/bin/sh", args: [] });
+  ok("spawn", {
+    cols: 80,
+    rows: 24,
+    program: "sh",
+    args: Array(256).fill("x"),
+  });
+  for (const p of ["", 1, null, {}, [], "x".repeat(4097)]) {
+    bad("spawn", { cols: 80, rows: 24, program: p }, ["program"]);
+  }
+  // A NUL would end the C string early: the exec'd path or argument would not be the one given.
+  bad("spawn", { cols: 80, rows: 24, program: "sh\0-c" }, ["program"]);
+  bad("spawn", { cols: 80, rows: 24, program: "sh", args: ["a\0b"] }, ["args"]);
+  for (const a of ["x", 1, null, {}, Array(257).fill("x"), [1], [""], [null]]) {
+    bad("spawn", { cols: 80, rows: 24, program: "sh", args: a }, ["args"]);
+  }
+  // args alone (no program) is accepted by the schema; spawn ignores it with a shell.
+  ok("spawn", { cols: 80, rows: 24, args: ["-x"] });
 });
 
 Deno.test("schema: write", () => {

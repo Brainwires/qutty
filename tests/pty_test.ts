@@ -11,8 +11,10 @@ import ext, {
   type PtyDataEvent,
   type PtyExitEvent,
   PtyHost,
+  resolveProgram,
 } from "../desktop/pty.ts";
 import type { DesktopCapCtx } from "denext/desktop";
+import { withEnv } from "./pty_helpers.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
 
@@ -101,6 +103,63 @@ Deno.test("PtyHost: spawn, echo, resize, info, exit", opts, async () => {
     await host.dispose();
   }
 });
+
+Deno.test(
+  "PtyHost: a program by name with its own args, found on PATH or the bin folders",
+  opts,
+  async () => {
+    const rec = new Recorder();
+    const host = new PtyHost(rec.emit);
+    try {
+      // A bare name is found even when PATH is useless (a Finder-launched app's is).
+      let t!: Awaited<ReturnType<PtyHost["spawn"]>>;
+      await withEnv({ PATH: "/nonexistent" }, async () => {
+        t = await host.spawn({
+          cols: 80,
+          rows: 24,
+          cwd: "/tmp",
+          program: "sh",
+          args: ["-c", "echo P=$0 A=$1 N=$#; exit 3", "zero", "one"],
+        });
+      });
+      assertMatch(t.shell, /\/bin\/sh$/);
+      await rec.until("exit", () => rec.exits.has(t.id));
+      assert(rec.text(t.id).includes("P=zero A=one N=1"), rec.text(t.id));
+      assertEquals(rec.exits.get(t.id)!.exitCode, 3);
+
+      const abs = await host.spawn({
+        cols: 80,
+        rows: 24,
+        program: "/bin/sh",
+        args: ["-c", "exit 0"],
+      });
+      assertEquals(abs.shell, "/bin/sh");
+      await rec.until("exit", () => rec.exits.has(abs.id));
+
+      await assertRejects(
+        () =>
+          host.spawn({ cols: 80, rows: 24, program: "qutty-no-such-program" }),
+        Error,
+        "program not found",
+      );
+      // A relative path is refused (nothing says what it is relative to).
+      await assertRejects(
+        () => host.spawn({ cols: 80, rows: 24, program: "bin/sh" }),
+        Error,
+        "program not found",
+      );
+      await assertRejects(
+        () => host.spawn({ cols: 80, rows: 24, program: "/etc/passwd" }),
+        Error,
+        "program not found",
+      );
+      assertEquals(await resolveProgram("sh"), "/bin/sh");
+      assertEquals(await resolveProgram("qutty-no-such-program"), undefined);
+    } finally {
+      await host.dispose();
+    }
+  },
+);
 
 Deno.test("PtyHost: output is coalesced", opts, async () => {
   const rec = new Recorder();

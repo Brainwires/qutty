@@ -18,6 +18,29 @@ import {
 } from "denext/desktop/client";
 import type ptyExtension from "../desktop/pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "../desktop/pty.ts";
+import type sshExtension from "../desktop/ssh.ts";
+import type {
+  SshCommand,
+  SshDownloadArgs,
+  SshHostsResult,
+  SshListArgs,
+  SshTransferEvent,
+  SshTransferStarted,
+  SshUploadArgs,
+} from "../desktop/ssh.ts";
+import type { SshHost, SshHostInput, SshTarget } from "./ssh-config.ts";
+import type { SshListing } from "./ssh-command.ts";
+import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
+
+export type {
+  SshCommand,
+  SshDownloadArgs,
+  SshHostsResult,
+  SshListArgs,
+  SshTransferEvent,
+  SshTransferStarted,
+  SshUploadArgs,
+};
 
 /** `spawn` options. */
 export interface PtySpawnOptions {
@@ -27,6 +50,13 @@ export interface PtySpawnOptions {
   cwd?: string;
   /** Shell program (default: `$SHELL`, else `/bin/zsh`; started as a login shell). */
   shell?: string;
+  /**
+   * A program to run instead of a shell (what `sshCommand` returns, or a picked shell): an
+   * absolute path or a name on `PATH`. Run as is, not as a login shell.
+   */
+  program?: string;
+  /** Its arguments. */
+  args?: string[];
 }
 
 /** What `spawn` returns. */
@@ -78,6 +108,46 @@ export interface PtyBackend {
   onData(id: string, cb: (data: string) => void): () => void;
   /** Called once when terminal `id` ends (immediately if it already has). */
   onExit(id: string, cb: (exit: PtyExit) => void): () => void;
+
+  // --- SSH (desktop/ssh.ts) ------------------------------------------------------------------
+
+  /** The saved hosts (`~/.ssh/config` + its includes, then `~/.ssh/qutty.conf`) and the recents. */
+  sshHosts(): Promise<SshHostsResult>;
+  /** Add or update a host in `~/.ssh/qutty.conf` (and make sure the user's config includes it). */
+  sshSaveHost(host: SshHostInput): Promise<SshHost>;
+  /** Remove a host from `~/.ssh/qutty.conf` (hosts from the user's own config cannot be). */
+  sshDeleteHost(alias: string): Promise<void>;
+  /**
+   * The `program` + `args` to `spawn` a tile with for `target` (the shared-connection options,
+   * tmux-on-connect and the remote command applied). Records the target as recent.
+   */
+  sshCommand(target: SshTarget): Promise<SshCommand>;
+  /** Copy local files or folders to a remote folder, over the tile's connection. */
+  sshUpload(args: SshUploadArgs): Promise<SshTransferStarted>;
+  /** Copy a remote file or folder to a local folder (default `~/Downloads`), never overwriting. */
+  sshDownload(args: SshDownloadArgs): Promise<SshTransferStarted>;
+  /** List a remote folder (the download picker). */
+  sshList(args: SshListArgs): Promise<SshListing>;
+  /** Stop a transfer; its final event has `error: "cancelled"`. */
+  sshCancel(transferId: string): Promise<void>;
+  /** Progress and completion of every transfer. Subscribe before starting one. */
+  onTransfer(cb: (event: SshTransferEvent) => void): () => void;
+}
+
+/** A set of callbacks: the transfer fan-out both backends share. */
+function fanout<T>() {
+  const subs = new Set<(value: T) => void>();
+  return {
+    emit(value: T) {
+      for (const cb of [...subs]) cb(value);
+    },
+    on(cb: (value: T) => void): () => void {
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -186,10 +256,25 @@ export function createDesktopBackend(
 ): PtyBackend {
   const { desktopExtension, onDesktopEvent } = deps;
   const pty = desktopExtension<typeof ptyExtension>("pty");
+  const ssh = desktopExtension<typeof sshExtension>("ssh");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
   let listening = false;
+  const transfers = fanout<SshTransferEvent>();
+  const lastTransferSeq = new Map<string, number>();
+  let listeningTransfers = false;
+
+  const listenTransfers = () => {
+    if (listeningTransfers) return;
+    listeningTransfers = true;
+    // Kept after `done` too: a replay re-sends the finished transfer's events as well.
+    onDesktopEvent<SshTransferEvent>("ssh", "transfer", (event) => {
+      if (event.seq <= (lastTransferSeq.get(event.transferId) ?? 0)) return;
+      lastTransferSeq.set(event.transferId, event.seq);
+      transfers.emit(event);
+    });
+  };
 
   const listen = () => {
     if (listening) return;
@@ -237,6 +322,36 @@ export function createDesktopBackend(
     onExit: (id, cb) => {
       listen();
       return events.onExit(id, cb);
+    },
+    async sshHosts() {
+      return await ssh.sshHosts({});
+    },
+    async sshSaveHost(host) {
+      return await ssh.sshSaveHost(host);
+    },
+    async sshDeleteHost(alias) {
+      await ssh.sshDeleteHost({ alias });
+    },
+    async sshCommand(target) {
+      return await ssh.sshCommand({ target });
+    },
+    async sshUpload(args) {
+      listenTransfers();
+      return await ssh.sshUpload(args);
+    },
+    async sshDownload(args) {
+      listenTransfers();
+      return await ssh.sshDownload(args);
+    },
+    async sshList(args) {
+      return await ssh.sshList(args);
+    },
+    async sshCancel(transferId) {
+      await ssh.sshCancel({ transferId });
+    },
+    onTransfer: (cb) => {
+      listenTransfers();
+      return transfers.on(cb);
     },
   };
 }
@@ -292,24 +407,33 @@ class DemoShell {
     public rows: number,
     readonly out: (data: string) => void,
     readonly exit: (e: PtyExit) => void,
+    /** Set for a fake ssh session: the prompt and banner look remote. */
+    readonly remote?: { user: string; host: string },
   ) {}
 
   start(): void {
     this.out(
-      `${
-        fg(141)
-      }${BOLD}Qutty${RESET} ${DIM}demo backend — the desktop app runs a real shell${RESET}\r\n` +
-        `Type ${fg(81)}help${RESET} for commands.\r\n\r\n`,
+      this.remote
+        ? `${DIM}demo backend — a fake ssh session, nothing is connected${RESET}\r\n` +
+          `Welcome to ${BOLD}${this.remote.host}${RESET}\r\n\r\n`
+        : `${
+          fg(141)
+        }${BOLD}Qutty${RESET} ${DIM}demo backend — the desktop app runs a real shell${RESET}\r\n` +
+          `Type ${fg(81)}help${RESET} for commands.\r\n\r\n`,
     );
     this.prompt();
   }
 
   prompt(): void {
-    this.out(`${fg(114)}demo${RESET}:${fg(75)}${this.cwd}${RESET}$ `);
+    const who = this.remote
+      ? `${this.remote.user}@${this.remote.host}`
+      : "demo";
+    this.out(`${fg(114)}${who}${RESET}:${fg(75)}${this.cwd}${RESET}$ `);
   }
 
+  /** What `info` reports: a real ssh tile's foreground process is `ssh`. */
   get process(): string {
-    return this.topTimer ? "top" : "demo-sh";
+    return this.topTimer ? "top" : this.remote ? "ssh" : "demo-sh";
   }
 
   input(data: string): void {
@@ -397,7 +521,10 @@ class DemoShell {
           : "~";
         return;
       case "whoami":
-        println("demo");
+        println(this.remote?.user ?? "demo");
+        return;
+      case "hostname":
+        println(this.remote?.host ?? "demo.local");
         return;
       case "size":
         println(`${this.rows} ${this.cols}`);
@@ -428,7 +555,11 @@ class DemoShell {
         return;
       case "exit":
         this.exited = true;
-        this.out("logout\r\n");
+        this.out(
+          this.remote
+            ? `logout\r\nConnection to ${this.remote.host} closed.\r\n`
+            : "logout\r\n",
+        );
         this.exit({ exitCode: Number(args[0]) || 0, signal: null });
         return;
       default:
@@ -519,10 +650,16 @@ export function createDemoBackend(): PtyBackend {
     shells.delete(id);
     events.emitExit(id, e);
   };
+  const transfers = fanout<SshTransferEvent>();
+  const ssh = createDemoSsh(transfers.emit);
 
   return {
     kind: "demo",
     spawn(options) {
+      // Only `ssh` is a program the demo knows; anything else is the demo shell under its name.
+      const remote = options.program === "ssh"
+        ? remoteOf(options.args ?? [])
+        : undefined;
       const id = `demo-${++next}`;
       const shell = new DemoShell(
         id,
@@ -530,6 +667,7 @@ export function createDemoBackend(): PtyBackend {
         options.rows,
         (data) => events.emitData(id, data),
         (e) => setTimeout(() => end(id, e), 0),
+        remote,
       );
       shells.set(id, shell);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
@@ -539,7 +677,7 @@ export function createDemoBackend(): PtyBackend {
       return Promise.resolve({
         id,
         pid: ++pid,
-        shell: options.shell ?? "demo-sh",
+        shell: options.program ?? options.shell ?? "demo-sh",
         cwd: options.cwd ?? "/Users/demo",
       });
     },
@@ -573,6 +711,15 @@ export function createDemoBackend(): PtyBackend {
     },
     onData: (id, cb) => events.onData(id, cb),
     onExit: (id, cb) => events.onExit(id, cb),
+    sshHosts: () => ssh.sshHosts(),
+    sshSaveHost: (host) => ssh.sshSaveHost(host),
+    sshDeleteHost: (alias) => ssh.sshDeleteHost(alias),
+    sshCommand: (target) => ssh.sshCommand(target),
+    sshUpload: (args) => ssh.sshUpload(args),
+    sshDownload: (args) => ssh.sshDownload(args),
+    sshList: (args) => ssh.sshList(args),
+    sshCancel: (transferId) => ssh.sshCancel(transferId),
+    onTransfer: (cb) => transfers.on(cb),
   };
 }
 

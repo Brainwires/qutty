@@ -23,6 +23,7 @@ import {
   isDesktop,
   PtyEvents,
   type PtyExit,
+  type SshTransferEvent,
 } from "../lib/pty-client.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -77,6 +78,18 @@ class FakeBridge {
   fire(event: "data" | "exit", data: unknown): void {
     for (const h of this.handlers.get(`pty:${event}`) ?? []) h(data);
   }
+  transfer(
+    data: Partial<SshTransferEvent> & { transferId: string; seq: number },
+  ): void {
+    const event = {
+      kind: "upload",
+      percent: 0,
+      filesDone: 0,
+      done: false,
+      ...data,
+    };
+    for (const h of this.handlers.get("ssh:transfer") ?? []) h(event);
+  }
   data(id: string, seq: number, data: string): void {
     this.fire("data", { id, seq, data });
   }
@@ -110,7 +123,7 @@ const microtask = () => new Promise<void>((r) => queueMicrotask(r));
 Deno.test("desktop: kind, extension name, and no bridge traffic at creation", () => {
   const { bridge, backend } = setup();
   assertEquals(backend.kind, "desktop");
-  assertEquals(bridge.extensionNames, ["pty"]);
+  assertEquals(bridge.extensionNames, ["pty", "ssh"]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");
 });
@@ -165,6 +178,67 @@ Deno.test("desktop: write/resize/kill/info forward exactly their arguments", asy
   // write/resize/kill resolve to undefined whatever the bridge answers.
   bridge.responders.write = () => "ignored";
   assertStrictEquals(await backend.write("pty-3", "x"), undefined);
+});
+
+Deno.test("desktop: ssh methods forward to the ssh extension with exactly their arguments", async () => {
+  const { bridge, backend } = setup();
+  bridge.responders.sshHosts = () => ({ hosts: [], recents: [] });
+  bridge.responders.sshCommand = () => ({
+    program: "ssh",
+    args: ["--", "a"],
+    label: "a",
+  });
+  bridge.responders.sshUpload = () => ({ transferId: "t1" });
+  bridge.responders.sshList = () => ({ path: "/", entries: [] });
+  assertEquals(await backend.sshHosts(), { hosts: [], recents: [] });
+  await backend.sshSaveHost({ alias: "a", user: "u" });
+  await backend.sshDeleteHost("a");
+  assertEquals((await backend.sshCommand({ alias: "a" })).label, "a");
+  const upload = { target: { alias: "a" }, localPaths: ["/x"], remoteDir: "~" };
+  assertEquals(await backend.sshUpload(upload), { transferId: "t1" });
+  const download = { target: { host: "h" }, remotePath: "/r" };
+  await backend.sshDownload(download);
+  const list = { target: { alias: "a" }, path: "/etc" };
+  assertEquals(await backend.sshList(list), { path: "/", entries: [] });
+  await backend.sshCancel("t1");
+  assertEquals(bridge.calls, [
+    { method: "sshHosts", args: {} },
+    { method: "sshSaveHost", args: { alias: "a", user: "u" } },
+    { method: "sshDeleteHost", args: { alias: "a" } },
+    { method: "sshCommand", args: { target: { alias: "a" } } },
+    { method: "sshUpload", args: upload },
+    { method: "sshDownload", args: download },
+    { method: "sshList", args: list },
+    { method: "sshCancel", args: { transferId: "t1" } },
+  ]);
+  // Starting a transfer subscribes to its events (once), before the extension is asked.
+  assertEquals([...bridge.handlers.keys()], ["ssh:transfer"]);
+  assertEquals(bridge.subscribeCount, 1);
+});
+
+Deno.test("desktop: transfer events are fanned out, deduped per transfer by seq, also after done", () => {
+  const { bridge, backend } = setup();
+  const got: string[] = [];
+  const off = backend.onTransfer((e) =>
+    got.push(`${e.transferId}:${e.seq}:${e.percent}`)
+  );
+  backend.onTransfer(() => {});
+  assertEquals(
+    bridge.subscribeCount,
+    1,
+    "one subscription however many listeners",
+  );
+  bridge.transfer({ transferId: "t1", seq: 1, percent: 10 });
+  bridge.transfer({ transferId: "t1", seq: 1, percent: 10 }); // replay
+  bridge.transfer({ transferId: "t1", seq: 2, percent: 50 });
+  bridge.transfer({ transferId: "t2", seq: 1, percent: 5 }); // another transfer's own numbering
+  bridge.transfer({ transferId: "t1", seq: 3, percent: 100, done: true });
+  bridge.transfer({ transferId: "t1", seq: 3, percent: 100, done: true }); // replay after done
+  bridge.transfer({ transferId: "t1", seq: 2, percent: 50 }); // stale
+  assertEquals(got, ["t1:1:10", "t1:2:50", "t2:1:5", "t1:3:100"]);
+  off();
+  bridge.transfer({ transferId: "t2", seq: 2, percent: 50 });
+  assertEquals(got.length, 4);
 });
 
 Deno.test("desktop: bridge errors reach the caller", async () => {

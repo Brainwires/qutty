@@ -4,6 +4,11 @@
 
 - Public repository, contributing guide, security policy and issue templates.
 - Releases publish automatically when a version tag is pushed.
+- SSH backend (no UI yet): hosts from `~/.ssh/config` (with `Include`) and
+  `~/.ssh/qutty.conf`, saved hosts written only to the latter, the system `ssh`
+  run in a tile with a shared connection (`ControlMaster`), and scp/sftp
+  upload, download and directory listing over that connection with progress
+  and cancel. A terminal can now run a program other than the login shell.
 
 ## 0.1.0 — first release
 
