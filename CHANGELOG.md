@@ -12,5 +12,13 @@
   cluster.
 - Adjustable font typeface and size, with detection of installed monospace
   fonts.
+- Six color themes, three dark (Sea Glass, Plum, Ember) and three light (Paper,
+  Cloud, Sakura), with preview tiles; they switch every terminal live.
+- Collapsible Layout, Theme and Fonts sections in the settings panel.
 - Keyboard shortcuts for creating, closing, focusing and cycling terminals.
+- Honors your macOS key bindings
+  (`~/Library/KeyBindings/DefaultKeyBinding.dict`) inside the terminal, e.g. a
+  ⌘⌫ bound to "delete to start of line".
+- Mouse reporting for full-screen programs (vim, tmux, htop), including the
+  legacy encoding past column 95.
 - Signed with a Developer ID and notarized.
