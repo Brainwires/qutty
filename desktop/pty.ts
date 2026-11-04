@@ -453,7 +453,10 @@ async function spawnHelper(
   dir: URL,
   appSupportDir: string | undefined,
 ): Promise<string> {
-  if (helperCache) return helperCache;
+  if (helperCache !== undefined) return helperCache;
+  // Only macOS starts the shell through spawn-helper (posix_spawn); Linux uses forkpty and
+  // ignores the path (node-pty doesn't even build the helper there).
+  if (!IS_DARWIN) return (helperCache = "");
   const arch = Deno.build.arch === "aarch64" ? "arm64" : "x64";
   const candidates = [
     "build/Release/spawn-helper",

@@ -59,6 +59,9 @@ jobs:
         with:
           deno-version: ${{ env.DENO_VERSION }}
           cache: true
+      # node-pty has no Linux prebuilds: compile pty.node (runner has node, python3, make, g++).
+      - if: runner.os == 'Linux'
+        run: sh scripts/build-node-pty-linux.sh
       - run: deno task test
 
   e2e:
