@@ -4,7 +4,6 @@
 
 - Homebrew: `brew install --cask brainwires/tap/qutty`. Each release updates the
   cask automatically.
-
 - Public repository, contributing guide, security policy and issue templates.
 - Releases publish automatically when a version tag is pushed.
 
