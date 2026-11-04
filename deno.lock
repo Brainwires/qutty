@@ -5,6 +5,7 @@
     "jsr:@astral/astral@~0.5.3": "0.5.6",
     "jsr:@denext/avif@0.2": "0.2.0",
     "jsr:@denext/denext@^4.12.0": "4.12.0",
+    "jsr:@denext/docs-corpus@4.12.0": "4.12.0",
     "jsr:@denext/lightningcss@^1.0.0-rc.72": "1.0.0-rc.72.1",
     "jsr:@denext/og@~0.1.2": "0.1.2",
     "jsr:@denext/photon@~0.3.6": "0.3.6",
@@ -89,6 +90,7 @@
       "dependencies": [
         "jsr:@astral/astral@~0.5.3",
         "jsr:@denext/avif",
+        "jsr:@denext/docs-corpus",
         "jsr:@denext/lightningcss",
         "jsr:@denext/og",
         "jsr:@denext/photon",
@@ -106,6 +108,9 @@
         "npm:sass",
         "npm:ws"
       ]
+    },
+    "@denext/docs-corpus@4.12.0": {
+      "integrity": "2ad4a5fee06f3fc10b4e4d5910d3c42e0d4bac13b698c275c227575af805d53b"
     },
     "@denext/lightningcss@1.0.0-rc.72.1": {
       "integrity": "3c719d7987f85f8c35e129cddbc715ad5ca159c209ea9f2e739dea9a33beafb8"

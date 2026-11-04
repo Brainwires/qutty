@@ -50,6 +50,8 @@ jobs:
             arch: arm64
           - runner: macos-15-intel
             arch: x86_64
+          - runner: ubuntu-24.04
+            arch: linux-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5

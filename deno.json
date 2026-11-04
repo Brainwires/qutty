@@ -96,7 +96,23 @@
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": [
-      "jsr:@denext/denext"
+      "jsr:@denext/auth",
+      "jsr:@denext/avif",
+      "jsr:@denext/backend",
+      "jsr:@denext/content-collections",
+      "jsr:@denext/denext",
+      "jsr:@denext/docs-corpus",
+      "jsr:@denext/effect",
+      "jsr:@denext/graphql",
+      "jsr:@denext/htmx",
+      "jsr:@denext/lightningcss",
+      "jsr:@denext/og",
+      "jsr:@denext/openapi",
+      "jsr:@denext/pages-router",
+      "jsr:@denext/photon",
+      "jsr:@denext/react-router",
+      "jsr:@denext/swc",
+      "jsr:@denext/tanstack-start"
     ]
   }
 }
