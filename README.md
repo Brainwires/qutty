@@ -1,5 +1,9 @@
 # Qutty
 
+[![CI](https://github.com/Brainwires/qutty/actions/workflows/ci.yml/badge.svg)](https://github.com/Brainwires/qutty/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Brainwires/qutty)](https://github.com/Brainwires/qutty/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A tiling terminal for macOS. Every terminal lives in one window, and the one you
 are using gets the most space: in the cascade layout, tiles shrink the longer
 they go unused, so your working set stays big and the rest step back. Terminals
@@ -15,14 +19,21 @@ Website: <https://qutty.org>
   rows, grid and monocle, with animated transitions.
 - **Switcher bar**, horizontal or vertical, holding the terminals that overflow
   the cluster.
+- **Six themes**, three dark and three light, switched live.
 - **Adjustable font** typeface and size.
+- **Your macOS key bindings** (`DefaultKeyBinding.dict`) work inside the
+  terminal.
 - Real shells through a PTY, rendered with xterm.js (WebGL when available).
 
 ## Install
 
-Download the `.dmg` for your Mac (Apple Silicon `arm64` or Intel `x86_64`) from
-[Releases](https://github.com/Brainwires/qutty/releases), open it and drag Qutty
-to Applications. Builds are signed with a Developer ID and notarized by Apple.
+Download the `.dmg` for your Mac from the
+[latest release](https://github.com/Brainwires/qutty/releases/latest): `arm64`
+for Apple Silicon, `x86_64` for Intel. Open it and drag Qutty to Applications.
+Builds are signed with a Developer ID and notarized by Apple.
+
+Qutty also runs on Linux from source (see Development); packaged Linux builds
+are planned.
 
 ## Development
 
@@ -51,16 +62,10 @@ Qutty is built with [Denext](https://jsr.io/@denext/denext) on Deno **2.9.8**
 - `desktop/pty.ts`: the desktop extension that runs shells through node-pty.
 - `tests/`: unit tests; `tests/e2e/`: browser tests.
 
-### Releasing
+### Contributing and releasing
 
-Bump `version` in `deno.json`, add a `CHANGELOG.md` entry, then push a tag:
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-The Release workflow builds arm64 and x86_64 apps, signs and notarizes them, and
-attaches the `.dmg` files to a draft GitHub release.
+See [CONTRIBUTING.md](CONTRIBUTING.md): changes go through pull requests to
+`main`, which must pass CI, and releases are cut by pushing a version tag.
 
 ## License
 

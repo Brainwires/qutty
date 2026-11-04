@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Qutty doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open three terminals
+        2. Switch the layout to Spiral
+        3. …
+  - type: input
+    id: version
+    attributes:
+      label: Qutty version
+      description: From the release you installed, e.g. 0.1.0.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: macOS 15.8, Ubuntu 24.04, …
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      placeholder: zsh, bash, fish, …
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs

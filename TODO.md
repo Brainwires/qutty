@@ -76,8 +76,7 @@
 - [x] Domain: **qutty.org** (registered 2026-11-04).
 - [x] On GitHub as `Brainwires/qutty` (private), with CI and a signed release
       workflow. Denext now comes from JSR (`jsr:@denext/denext`).
-- [ ] Publish the v0.1.0 draft release, then decide when to make the repo
-      public.
+- [x] v0.1.0 published (2026-11-04); repository public.
 - [ ] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
       overflow: +N appears…" in tests/e2e/bar_test.ts fails about half the time
       with a bare assertion. CI runs with animations on, where it passes. Find
