@@ -4,6 +4,7 @@
 // - `window.__e2e.terminal(id)`: a terminal's buffer text, grid size, PTY id and exit state, read
 //   straight from xterm (the DOM/WebGL renderers are not a reliable text source).
 // - `window.__e2e.kills`: every PTY id the backend was asked to kill, in order.
+// - `window.__e2e.resizes`: every PTY resize the backend was asked for, in order.
 
 import type { PtyBackend } from "./pty-client.ts";
 import type {
@@ -11,10 +12,22 @@ import type {
   TerminalManager,
 } from "./terminal-manager.ts";
 
-/** What the e2e suite reads from `window.__e2e`. */
-interface E2eHooks {
-  terminal(id: string): TerminalDebugState | null;
+/** One `resize` call the backend received. */
+interface PtyResize {
+  ptyId: string;
+  cols: number;
+  rows: number;
+}
+
+/** What the spy records of the backend calls. */
+export interface BackendSpy {
   kills: string[];
+  resizes: PtyResize[];
+}
+
+/** What the e2e suite reads from `window.__e2e`. */
+interface E2eHooks extends BackendSpy {
+  terminal(id: string): TerminalDebugState | null;
 }
 
 /** Whether the page was opened in test mode (`?test=1`). */
@@ -28,15 +41,21 @@ export function isTestMode(): boolean {
   }
 }
 
-/** Wrap a backend so every `kill` is recorded in `kills` (then forwarded). */
-export function withKillSpy(backend: PtyBackend, kills: string[]): PtyBackend {
+/** Wrap a backend so every `kill` and `resize` is recorded in `spy` (then forwarded). */
+export function withBackendSpy(
+  backend: PtyBackend,
+  spy: BackendSpy,
+): PtyBackend {
   return {
     kind: backend.kind,
     spawn: (o) => backend.spawn(o),
     write: (id, data, options) => backend.write(id, data, options),
-    resize: (id, cols, rows) => backend.resize(id, cols, rows),
+    resize: (id, cols, rows) => {
+      spy.resizes.push({ ptyId: id, cols, rows });
+      return backend.resize(id, cols, rows);
+    },
     kill: (id) => {
-      kills.push(id);
+      spy.kills.push(id);
       return backend.kill(id);
     },
     info: (id) => backend.info(id),
@@ -58,11 +77,12 @@ export function withKillSpy(backend: PtyBackend, kills: string[]): PtyBackend {
 /** Publish the hooks on `window.__e2e`. */
 export function installE2eHooks(
   manager: TerminalManager,
-  kills: string[],
+  spy: BackendSpy,
 ): void {
   const hooks: E2eHooks = {
     terminal: (id) => manager.debugState(id),
-    kills,
+    kills: spy.kills,
+    resizes: spy.resizes,
   };
   (globalThis as { __e2e?: E2eHooks }).__e2e = hooks;
 }

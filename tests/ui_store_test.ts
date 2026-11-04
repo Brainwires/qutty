@@ -2,6 +2,7 @@ import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 import {
   barOrderIds,
   DEFAULT_SETTINGS,
+  INACTIVE_TILE_MODES,
   initialState,
   loadSettings,
   PATTERNS,
@@ -327,4 +328,42 @@ Deno.test("SSH tiles: titled by their host, keep it, and carry the exit details"
   s = reduce(s, { type: "restarted", id: "s", now: 9 });
   t = s.terminals[0];
   assertEquals([t.exited, t.exitCode, t.exitMessage], [false, null, undefined]);
+});
+
+Deno.test("settings: inactive tiles default to resize, sanitise, reduce and persist", () => {
+  assertEquals(DEFAULT_SETTINGS.inactiveTiles, "resize");
+  assertEquals(INACTIVE_TILE_MODES, ["resize", "scale"]);
+  assertEquals(
+    sanitizeSettings({ inactiveTiles: "scale" }).inactiveTiles,
+    "scale",
+  );
+  for (const junk of ["zoom", "", 1, null, ["scale"]]) {
+    assertEquals(
+      sanitizeSettings({ inactiveTiles: junk }).inactiveTiles,
+      "resize",
+    );
+  }
+  // Absent keeps the base.
+  assertEquals(
+    sanitizeSettings({}, { ...DEFAULT_SETTINGS, inactiveTiles: "scale" })
+      .inactiveTiles,
+    "scale",
+  );
+
+  let s = initialState();
+  s = reduce(s, { type: "setInactiveTiles", mode: "scale" });
+  assertEquals(s.settings.inactiveTiles, "scale");
+  assertStrictEquals(reduce(s, { type: "setInactiveTiles", mode: "scale" }), s);
+  assertStrictEquals(
+    reduce(s, { type: "setInactiveTiles", mode: "bogus" as never }),
+    s,
+  );
+
+  const { storage } = memoryStorage();
+  assert(saveSettings(s.settings, storage));
+  const back = reduce(initialState(), {
+    type: "hydrateSettings",
+    settings: loadSettings(storage)!,
+  });
+  assertEquals(back.settings.inactiveTiles, "scale");
 });

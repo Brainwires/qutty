@@ -182,6 +182,13 @@ export interface TerminalState {
   fontWeight: string;
 }
 
+/** One PTY resize the backend received (`window.__e2e.resizes`). */
+export interface PtyResize {
+  ptyId: string;
+  cols: number;
+  rows: number;
+}
+
 /** A viewport rect. */
 export interface BoxRect {
   x: number;
@@ -532,6 +539,16 @@ export class App {
     );
   }
 
+  /** Every PTY resize the backend was asked for, in order. */
+  resizes(): Promise<PtyResize[]> {
+    return this.eval(
+      () => [
+        ...(globalThis as unknown as { __e2e: { resizes: PtyResize[] } })
+          .__e2e.resizes,
+      ],
+    );
+  }
+
   async waitForText(
     id: string,
     match: string | RegExp,
@@ -830,6 +847,18 @@ export class App {
       async () => (await this.settings()).barOrder === order,
       2000,
       `bar order ${order}`,
+    );
+  }
+
+  async setInactiveTiles(mode: "resize" | "scale"): Promise<void> {
+    await this.openSettings();
+    await this.click(
+      `[data-testid=setting-inactive-tiles][data-value="${mode}"]`,
+    );
+    await waitFor(
+      async () => (await this.settings()).inactiveTiles === mode,
+      2000,
+      `inactive tiles ${mode}`,
     );
   }
 

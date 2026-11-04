@@ -28,6 +28,17 @@ import type { SshProfile } from "../ssh-ui.ts";
 export type BarPosition = "top" | "bottom" | "left" | "right";
 /** How the bar orders its chips. */
 export type BarOrder = "mru" | "created";
+/**
+ * What happens to the terminals in non-focused tiles: `resize` fits each one to its own tile
+ * (its PTY is resized with it); `scale` keeps every terminal at the focused tile's size and shows
+ * the inactive ones scaled down, so a focus change never resizes a PTY.
+ */
+export type InactiveTiles = "resize" | "scale";
+/** Every inactive-tile mode, in the order the settings panel lists them. */
+export const INACTIVE_TILE_MODES: readonly InactiveTiles[] = [
+  "resize",
+  "scale",
+];
 
 /** Every bar position, in the order `cycleBarPosition` walks them. */
 export const BAR_POSITIONS: readonly BarPosition[] = [
@@ -73,6 +84,8 @@ export interface Settings extends FontSettings {
   layout: LayoutOptions;
   barPosition: BarPosition;
   barOrder: BarOrder;
+  /** Resize or scale the terminals in non-focused tiles. */
+  inactiveTiles: InactiveTiles;
   /** The colour theme (see themes.ts). */
   theme: ThemeId;
   /** The settings-panel sections the user folded away (all open by default). */
@@ -123,6 +136,7 @@ export type WorkspaceAction =
   | { type: "setBarPosition"; position: BarPosition }
   | { type: "cycleBarPosition" }
   | { type: "setBarOrder"; order: BarOrder }
+  | { type: "setInactiveTiles"; mode: InactiveTiles }
   | { type: "setTheme"; theme: ThemeId }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -135,6 +149,7 @@ export const DEFAULT_SETTINGS: Settings = {
   layout: { ...DEFAULT_LAYOUT_OPTIONS },
   barPosition: "top",
   barOrder: "mru",
+  inactiveTiles: "resize",
   theme: DEFAULT_THEME_ID,
   collapsedSections: [],
   ...DEFAULT_FONT_SETTINGS,
@@ -253,6 +268,9 @@ export function sanitizeSettings(
   }
   if (r.barOrder === "mru" || r.barOrder === "created") {
     out.barOrder = r.barOrder;
+  }
+  if (INACTIVE_TILE_MODES.includes(r.inactiveTiles as InactiveTiles)) {
+    out.inactiveTiles = r.inactiveTiles as InactiveTiles;
   }
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
@@ -491,6 +509,15 @@ export function reduce(
       return {
         ...state,
         settings: { ...state.settings, barOrder: action.order },
+      };
+    case "setInactiveTiles":
+      if (
+        state.settings.inactiveTiles === action.mode ||
+        !INACTIVE_TILE_MODES.includes(action.mode)
+      ) return state;
+      return {
+        ...state,
+        settings: { ...state.settings, inactiveTiles: action.mode },
       };
     case "setTheme": {
       const theme = sanitizeThemeId(action.theme);

@@ -10,6 +10,8 @@ import {
   BAR_POSITIONS,
   type BarOrder,
   type BarPosition,
+  INACTIVE_TILE_MODES,
+  type InactiveTiles,
   LAYOUT_RANGES,
   PATTERNS,
   type Settings,
@@ -38,6 +40,7 @@ export interface SettingsPanelProps {
   onLayout(patch: Partial<LayoutOptions>): void;
   onBarPosition(position: BarPosition): void;
   onBarOrder(order: BarOrder): void;
+  onInactiveTiles(mode: InactiveTiles): void;
   onFont(patch: Partial<FontSettings>): void;
   onTheme(theme: ThemeId): void;
   onToggleSection(section: SettingsSection): void;
@@ -250,6 +253,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 </button>
               ))}
             </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Inactive tiles</span>
+            <div
+              class="segmented"
+              role="radiogroup"
+              aria-label="Inactive tiles"
+            >
+              {INACTIVE_TILE_MODES.map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  role="radio"
+                  aria-checked={m === settings.inactiveTiles}
+                  class={m === settings.inactiveTiles ? "is-active" : ""}
+                  data-testid="setting-inactive-tiles"
+                  data-value={m}
+                  onClick={() => props.onInactiveTiles(m)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <span class="field-hint">
+              {settings.inactiveTiles === "scale"
+                ? "Every terminal keeps the focused tile's size; the others are shown scaled down, so focusing one never resizes it."
+                : "Every terminal is fitted to its own tile and resized when the layout changes."}
+            </span>
           </div>
         </>,
       )}

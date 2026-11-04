@@ -25,6 +25,11 @@
   to the remote shell's current folder (from OSC 7, else `~`, editable before
   you confirm); "Download…" in the tile header browses the remote side and saves
   to `~/Downloads`. Progress, Cancel and errors show on the tile.
+- New "Inactive tiles" setting (Layout section). `scale` keeps every terminal at
+  the focused tile's size and shows the others scaled down, so focusing a tile
+  never resizes its terminal and full-screen programs (vim, htop) are not
+  garbled. A click on a scaled tile focuses it. `resize`, the current behavior,
+  stays the default.
 
 ## 0.1.0 — first release
 

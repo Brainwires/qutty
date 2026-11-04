@@ -53,6 +53,20 @@ suite("visual", (test) => {
     }
   }, { width: W, height: H });
 
+  test("screenshot: inactive tiles scaled", async (app) => {
+    await app.setInactiveTiles("scale");
+    await app.closeSettings();
+    const ids = await app.ensureTerminals(5);
+    await app.run(ids[0], "ls");
+    await app.run(ids[1], "colors");
+    await app.run(ids[2], "stress 40");
+    await app.typeInTerminal(ids[3], "top\n");
+    await app.waitForText(ids[3], "demo top");
+    await app.focusChip(ids[4]);
+    await app.run(ids[4], "size");
+    await shot(app, "09-inactive-tiles-scaled");
+  }, { width: W, height: H });
+
   test("screenshot: settings panel open", async (app) => {
     await app.ensureTerminals(3);
     await app.openSettings();
