@@ -250,6 +250,7 @@ Deno.test({
           "X=${TMUX+set}${TMUX_PANE+set}${STY+set}${WINDOW+set}${WINDOWID+set}${TERMCAP+set}",
         ].join(" ");
         const m = marker("envdone");
+        await rec.waitReady(t.id);
         await host.write(t.id, `echo "E$((1+1)) ${probe} :"; ${m.cmd}\r`);
         await rec.waitFor(t.id, m.text);
         const line = rec.text(t.id).split("\r\n").find((l) =>
@@ -303,6 +304,7 @@ Deno.test({
         const t = await host.spawn({ cols: 80, rows: 24, shell: SH, cwd });
         assertEquals(t.cwd, HOME, `cwd ${JSON.stringify(cwd)}`);
         const m = marker(`pwd${t.id}`);
+        await rec.waitReady(t.id);
         await host.write(t.id, `pwd; ${m.cmd}\r`);
         await rec.waitFor(t.id, m.text);
         assert(

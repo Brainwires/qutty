@@ -759,7 +759,9 @@ export class PtyHost {
     }
     // No foreground process group yet (the shell is still starting): node-pty would look up pid
     // 0 and answer `kernel_task` on macOS. The shell is what runs.
-    if (!process) process = t.shell.slice(t.shell.lastIndexOf("/") + 1);
+    if (!process) process = t.shell;
+    // Linux reports argv[0] ("/bin/sh", or "-zsh" for a login shell); macOS the bare name.
+    process = process.slice(process.lastIndexOf("/") + 1).replace(/^-/, "");
     const cwd = (fg > 0 ? await processCwd(fg) : undefined) ??
       await processCwd(t.pid);
     return { id, pid: t.pid, process, ...(cwd ? { cwd } : {}) };

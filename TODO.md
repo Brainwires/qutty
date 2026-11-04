@@ -63,6 +63,11 @@
   - Each window's state needs a stable workspace id, so restoring after a crash
     or relaunch doesn't mix up which terminals go where.
 
+- [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
+      alongside multi-window support and Deno Node-compat fixes for node-pty).
+      Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
+      spawn-helper handling and Linux build script.
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

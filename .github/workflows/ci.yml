@@ -74,6 +74,8 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
           cache: true
       - run: deno task test:e2e
+        env:
+          E2E_TIMEOUT_SCALE: "3"
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4

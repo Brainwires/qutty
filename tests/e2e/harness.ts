@@ -30,6 +30,13 @@ import {
 
 export const ROOT = fromFileUrl(new URL("../../", import.meta.url));
 
+// Every waitFor timeout is multiplied by this (E2E_TIMEOUT_SCALE; CI sets it, its runners are
+// several times slower than a desktop Mac).
+const TIMEOUT_SCALE = Math.max(
+  1,
+  Number(Deno.env.get("E2E_TIMEOUT_SCALE")) || 1,
+);
+
 // The motion tests need animations, so Chromium must not inherit the OS "Reduce motion" setting
 // (GitHub's macOS runners have it on). E2E_REDUCED_MOTION=1 forces it on instead.
 const MOTION_FLAG = Deno.env.get("E2E_REDUCED_MOTION") === "1"
@@ -118,6 +125,7 @@ export async function waitFor<T>(
   timeout = 5000,
   what = "condition",
 ): Promise<NonNullable<T>> {
+  timeout *= TIMEOUT_SCALE;
   const deadline = Date.now() + timeout;
   let last: unknown;
   for (;;) {

@@ -72,6 +72,15 @@ export class Recorder {
     );
   }
 
+  /**
+   * Wait for the shell's first output (its prompt). Typing before that races the shell's start:
+   * the kernel echoes the input, and a shell without line editing (dash) then prints its prompt
+   * in front of the command's output.
+   */
+  async waitReady(id: string, ms = 15_000): Promise<void> {
+    await this.until(`${id} prompt`, () => this.text(id).length > 0, ms);
+  }
+
   async waitExit(id: string, ms = 15_000): Promise<PtyExitEvent> {
     await this.until(`exit of ${id}`, () => this.exits.has(id), ms);
     return this.exits.get(id)!;
