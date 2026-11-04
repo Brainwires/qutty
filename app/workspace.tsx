@@ -31,6 +31,7 @@ import {
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
+import { applyChromeTheme, themeById } from "../lib/workspace/themes.ts";
 import {
   initialState,
   loadSettings,
@@ -181,6 +182,16 @@ export function Workspace() {
       }),
     );
   }, [ready, fontFamily, fontFamilyCustom, fontSize, lineHeight, fontWeight]);
+
+  // The colour theme: the chrome's CSS variables on <html> and every terminal's colours (new ones
+  // too). A layout effect, so a hydrated theme is in place before the first paint after it and
+  // before the first terminal is created.
+  const themeId = state.settings.theme;
+  useLayoutEffect(() => {
+    const theme = themeById(themeId);
+    applyChromeTheme(document.documentElement, theme);
+    if (ready) managerRef.current?.setTheme(theme.terminal);
+  }, [ready, themeId]);
 
   // The first terminal, once the manager exists.
   useEffect(() => {
@@ -354,6 +365,8 @@ export function Workspace() {
             run({ type: "setBarPosition", position })}
           onBarOrder={(order) => run({ type: "setBarOrder", order })}
           onFont={(patch) => run({ type: "setFont", patch })}
+          onTheme={(theme) => run({ type: "setTheme", theme })}
+          onToggleSection={(section) => run({ type: "toggleSection", section })}
           onClose={() => setSettingsOpen(false)}
         />
       )}

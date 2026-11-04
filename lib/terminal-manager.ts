@@ -12,6 +12,10 @@
 // loading (`document.fonts` `loadingdone`) re-measures the cell and refits, since xterm only
 // measures when its font options change.
 //
+// Theme: `setTheme` swaps the colours of every live terminal (xterm repaints on an options
+// change) and new terminals start with the current one. The palettes live in
+// lib/workspace/themes.ts next to the matching chrome tokens.
+//
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
 
@@ -25,36 +29,17 @@ import {
 import type { PtyBackend, PtyExit, PtyProcessInfo } from "./pty-client.ts";
 import type { KeyLike } from "./workspace/keys.ts";
 import {
+  compileKeyBindings,
+  keyBindingData,
+  type KeyBindings,
+  NO_KEY_BINDINGS,
+} from "./key-bindings.ts";
+import {
   DEFAULT_FONT_SETTINGS,
   type TerminalFontOptions,
   terminalFontOptions,
 } from "./workspace/fonts.ts";
-
-/** A dark theme that sits on the app's ink canvas (see public/styles.css tokens). */
-const TERMINAL_THEME: ITheme = {
-  background: "#0d1117",
-  foreground: "#d9e0e8",
-  cursor: "#7fd8c2",
-  cursorAccent: "#0d1117",
-  selectionBackground: "rgba(127, 216, 194, 0.28)",
-  selectionInactiveBackground: "rgba(127, 216, 194, 0.16)",
-  black: "#1b222c",
-  red: "#e07a74",
-  green: "#8fd19e",
-  yellow: "#f3c37a",
-  blue: "#7fb4e6",
-  magenta: "#c7a3e8",
-  cyan: "#7fd8c2",
-  white: "#c9d1db",
-  brightBlack: "#5c6775",
-  brightRed: "#f29a94",
-  brightGreen: "#a8e6b5",
-  brightYellow: "#ffd79a",
-  brightBlue: "#9ccaf5",
-  brightMagenta: "#dbbdf5",
-  brightCyan: "#a2ead8",
-  brightWhite: "#eef2f6",
-};
+import { DEFAULT_THEME_ID, themeById } from "./workspace/themes.ts";
 
 /** The font a manager starts with (the settings' defaults) until `setFont` is called. */
 const DEFAULT_TERMINAL_FONT: TerminalFontOptions = terminalFontOptions(
@@ -115,11 +100,14 @@ export interface TerminalDebugState {
   fontSize: number;
   lineHeight: number;
   fontWeight: string;
+  /** xterm's current theme background. */
+  background: string;
 }
 
 /** Creates, hosts and ends terminals. One instance per workspace. */
 export class TerminalManager {
   #backend: PtyBackend;
+  #keyBindings: KeyBindings = NO_KEY_BINDINGS;
   #events: TerminalManagerEvents;
   #terms = new Map<string, Managed>();
   #webglOk = true;
@@ -127,10 +115,15 @@ export class TerminalManager {
   #pendingFocus: string | null = null;
   #font: TerminalFontOptions = { ...DEFAULT_TERMINAL_FONT };
   #unwatchFonts: (() => void) | null = null;
+  #theme: ITheme = { ...themeById(DEFAULT_THEME_ID).terminal };
 
   constructor(backend: PtyBackend, events: TerminalManagerEvents) {
     this.#backend = backend;
     this.#events = events;
+    void backend.keyBindings().then(
+      (text) => (this.#keyBindings = compileKeyBindings(text)),
+      () => {},
+    );
     this.#watchFontLoading();
   }
 
@@ -161,6 +154,23 @@ export class TerminalManager {
       // A parked (display:none) terminal cannot measure its cell; it re-measures when shown.
       if (m.hidden) m.fontStale = true;
       else this.scheduleFit(m.id);
+    }
+  }
+
+  /** Apply a colour theme to every live terminal (parked ones included) and to new ones. */
+  setTheme(theme: ITheme): void {
+    const prev = this.#theme;
+    const keys = new Set([...Object.keys(prev), ...Object.keys(theme)]);
+    if (
+      [...keys].every((k) =>
+        prev[k as keyof ITheme] === theme[k as keyof ITheme]
+      )
+    ) {
+      return;
+    }
+    this.#theme = { ...theme };
+    for (const m of this.#terms.values()) {
+      if (!m.disposed) m.term.options.theme = { ...theme };
     }
   }
 
@@ -237,7 +247,7 @@ export class TerminalManager {
       letterSpacing: 0,
       scrollback: 5000,
       macOptionIsMeta: true,
-      theme: TERMINAL_THEME,
+      theme: { ...this.#theme },
       allowTransparency: false,
     });
     const fit = new FitAddon();
@@ -274,6 +284,16 @@ export class TerminalManager {
     term.attachCustomKeyEventHandler((e) => {
       // Workspace shortcuts bubble to the window listener; xterm must not swallow them.
       if (this.#events.isWorkspaceShortcut(e)) return false;
+      // Keys the user bound in macOS (DefaultKeyBinding.dict), e.g. ⌘⌫, which xterm.js would
+      // otherwise drop: send what the binding means, like every native app does.
+      const bound = keyBindingData(this.#keyBindings, e);
+      if (bound !== null) {
+        if (e.type === "keydown" && m.ptyId && !m.exited) {
+          void this.#backend.write(m.ptyId, bound).catch(() => {});
+        }
+        e.preventDefault();
+        return false;
+      }
       return true;
     });
     term.onData((data) => {
@@ -284,8 +304,11 @@ export class TerminalManager {
       if (m.ptyId) void this.#backend.write(m.ptyId, data).catch(() => {});
     });
     term.onBinary((data) => {
+      // Legacy mouse reports: one byte per char, so they must not be UTF-8 encoded.
       if (m.ptyId && !m.exited) {
-        void this.#backend.write(m.ptyId, data).catch(() => {});
+        void this.#backend.write(m.ptyId, data, { binary: true }).catch(
+          () => {},
+        );
       }
     });
   }
@@ -493,6 +516,7 @@ export class TerminalManager {
       fontSize: Number(m.term.options.fontSize),
       lineHeight: Number(m.term.options.lineHeight),
       fontWeight: String(m.term.options.fontWeight ?? ""),
+      background: String(m.term.options.theme?.background ?? ""),
     };
   }
 

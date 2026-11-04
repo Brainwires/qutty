@@ -1,5 +1,8 @@
-/* Qutty — app chrome. The terminal's own colours live in lib/terminal-manager.ts
-   (TERMINAL_THEME) and match the tokens here. */
+/* Qutty — app chrome. The colour tokens below are the default Sea Glass theme; every theme
+   (and the matching xterm colours) lives in lib/workspace/themes.ts, which sets these same
+   properties on <html> when a theme is applied. A unit test keeps this block equal to Sea Glass,
+   so the first paint before any script runs is right. Translucent tints are rgba()s of the
+   tokens' --*-rgb triplets so they follow the theme. */
 
 :root {
   color-scheme: dark;
@@ -9,6 +12,7 @@
   --head: #141a22; /* tile header strip */
   --line: #222a35; /* hairlines */
   --line-2: #2d3744;
+  --panel: #151b23; /* menus and the settings popover */
   --text: #d9e0e8;
   --text-2: #8e99a8;
   --text-3: #5f6a78;
@@ -17,6 +21,16 @@
   --accent-glow: rgba(127, 216, 194, 0.22);
   --amber: #f3c37a; /* activity */
   --red: #e07a74; /* exited */
+  --hi: #ffffff; /* hover / raised overlays */
+  --shadow: #000000; /* drop shadows */
+  --shadow-a: 1; /* drop-shadow strength */
+  /* r, g, b triplets of the tokens above, for translucent tints (see RGB_TOKENS in themes.ts). */
+  --accent-rgb: 127, 216, 194;
+  --red-rgb: 224, 122, 116;
+  --hi-rgb: 255, 255, 255;
+  --text-2-rgb: 142, 153, 168;
+  --panel-rgb: 21, 27, 35;
+  --shadow-rgb: 0, 0, 0;
   --mono: "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Monaco, "Cascadia Code", Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
   --tile-ms: 260ms;
@@ -69,7 +83,7 @@ kbd {
   inset: 0;
   display: grid;
   background:
-    radial-gradient(1200px 600px at 20% -10%, rgba(127, 216, 194, 0.045),
+    radial-gradient(1200px 600px at 20% -10%, rgba(var(--accent-rgb), 0.045),
     transparent 60%),
     var(--ink);
 }
@@ -132,8 +146,8 @@ kbd {
   border-radius: var(--radius);
   background: var(--tile);
   border: 1px solid var(--line);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 28px rgba(0, 0, 0,
-    0.32);
+  box-shadow: 0 1px 0 rgba(var(--hi-rgb), 0.02) inset, 0 8px 28px
+    rgba(var(--shadow-rgb), calc(0.32 * var(--shadow-a)));
   overflow: hidden;
   transition:
     transform var(--tile-ms) var(--ease),
@@ -157,16 +171,16 @@ kbd {
 .tile.is-focused {
   border-color: var(--accent);
   box-shadow:
-    0 0 0 1px rgba(127, 216, 194, 0.35),
+    0 0 0 1px rgba(var(--accent-rgb), 0.35),
     0 0 0 5px var(--accent-glow),
-    0 12px 36px rgba(0, 0, 0, 0.4);
+    0 12px 36px rgba(var(--shadow-rgb), calc(0.4 * var(--shadow-a)));
 }
 .tile.is-exited {
-  border-color: rgba(224, 122, 116, 0.45);
+  border-color: rgba(var(--red-rgb), 0.45);
 }
 .tile.is-focused.is-exited {
   border-color: var(--red);
-  box-shadow: 0 0 0 5px rgba(224, 122, 116, 0.18);
+  box-shadow: 0 0 0 5px rgba(var(--red-rgb), 0.18);
 }
 
 .tile-inner {
@@ -249,7 +263,7 @@ kbd {
 }
 .tile-close:hover,
 .chip-close:hover {
-  background: rgba(224, 122, 116, 0.18);
+  background: rgba(var(--red-rgb), 0.18);
   color: var(--red);
 }
 
@@ -341,13 +355,13 @@ kbd {
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .bar-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--hi-rgb), 0.05);
   color: var(--text);
 }
 .bar-btn.is-open {
-  background: rgba(127, 216, 194, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent);
-  border-color: rgba(127, 216, 194, 0.3);
+  border-color: rgba(var(--accent-rgb), 0.3);
 }
 .bar-new {
   font-size: 18px;
@@ -411,12 +425,12 @@ kbd {
   width: 100%;
 }
 .chip:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--hi-rgb), 0.05);
   color: var(--text);
 }
 /* Tiled vs overflow: a tiled chip is solid; an overflow chip is hollow (the bar is where it lives). */
 .chip.is-tiled {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(var(--hi-rgb), 0.045);
   border-color: var(--line);
 }
 .chip.is-overflow {
@@ -428,8 +442,8 @@ kbd {
   color: var(--text-2);
 }
 .chip.is-focused {
-  background: rgba(127, 216, 194, 0.14);
-  border-color: rgba(127, 216, 194, 0.5);
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.5);
   color: var(--accent);
   border-style: solid;
 }
@@ -488,9 +502,9 @@ kbd {
   min-width: 180px;
   padding: 4px;
   border-radius: 8px;
-  background: #151b23;
+  background: var(--panel);
   border: 1px solid var(--line-2);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 40px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
   animation: pop 140ms var(--ease);
 }
 @keyframes pop {
@@ -531,7 +545,7 @@ kbd {
   text-align: left;
 }
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--hi-rgb), 0.06);
   color: var(--text);
 }
 .menu-item.is-active {
@@ -553,22 +567,22 @@ kbd {
   flex: none;
 }
 .pp-tile {
-  fill: rgba(142, 153, 168, 0.35);
+  fill: rgba(var(--text-2-rgb), 0.35);
 }
 .pp-rank-0 {
   fill: var(--accent);
 }
 .pp-rank-1 {
-  fill: rgba(127, 216, 194, 0.55);
+  fill: rgba(var(--accent-rgb), 0.55);
 }
 .pp-rank-2 {
-  fill: rgba(127, 216, 194, 0.38);
+  fill: rgba(var(--accent-rgb), 0.38);
 }
 .pp-rank-3 {
-  fill: rgba(142, 153, 168, 0.4);
+  fill: rgba(var(--text-2-rgb), 0.4);
 }
 .pp-rank-4 {
-  fill: rgba(142, 153, 168, 0.3);
+  fill: rgba(var(--text-2-rgb), 0.3);
 }
 .is-active .pp-rank-0,
 .is-focused .pp-rank-0 {
@@ -585,11 +599,11 @@ kbd {
   overflow: auto;
   padding: 14px 16px 12px;
   border-radius: 12px;
-  background: rgba(21, 27, 35, 0.96);
+  background: rgba(var(--panel-rgb), 0.96);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--line-2);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 60px rgba(var(--shadow-rgb), calc(0.55 * var(--shadow-a)));
   animation: pop 160ms var(--ease);
   user-select: none;
 }
@@ -613,7 +627,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 .settings h2 {
   margin: 0;
@@ -629,7 +643,7 @@ kbd {
 .pattern-option {
   appearance: none;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--hi-rgb), 0.02);
   border-radius: 8px;
   padding: 6px 4px 5px;
   display: flex;
@@ -641,18 +655,19 @@ kbd {
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
-.pattern-option .pattern-preview {
+.pattern-option .pattern-preview,
+.theme-option .theme-preview {
   width: 100%;
   height: auto;
 }
 .pattern-option:hover {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--hi-rgb), 0.04);
 }
 .pattern-option.is-active {
   border-color: var(--accent);
   color: var(--text);
-  background: rgba(127, 216, 194, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
 }
 .pattern-desc {
   margin: 8px 0 12px;
@@ -710,11 +725,11 @@ kbd {
   border-right: 0;
 }
 .segmented button:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--hi-rgb), 0.05);
   color: var(--text);
 }
 .segmented button.is-active {
-  background: rgba(127, 216, 194, 0.16);
+  background: rgba(var(--accent-rgb), 0.16);
   color: var(--accent);
 }
 
@@ -754,8 +769,8 @@ kbd {
 }
 .btn-primary {
   appearance: none;
-  border: 1px solid rgba(127, 216, 194, 0.5);
-  background: rgba(127, 216, 194, 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent);
   border-radius: 7px;
   padding: 7px 12px;
@@ -765,7 +780,7 @@ kbd {
   cursor: pointer;
 }
 .btn-primary:hover {
-  background: rgba(127, 216, 194, 0.2);
+  background: rgba(var(--accent-rgb), 0.2);
 }
 
 /* ---- Motion ---------------------------------------------------------------------------- */
@@ -789,18 +804,107 @@ kbd {
   animation: none;
 }
 
-/* ---- Settings: font -------------------------------------------------------------------- */
+/* ---- Settings: collapsible sections ----------------------------------------------------- */
 
-.font-section {
-  margin: 14px 0 0;
-  padding-top: 12px;
+.settings-section {
   border-top: 1px solid var(--line);
 }
-.font-section h3 {
-  margin: 0 0 10px;
+.section-heading {
+  margin: 0;
+}
+.section-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 2px;
+  border-radius: 6px;
+  color: var(--text);
   font: 600 13px/1 var(--sans);
   letter-spacing: 0.01em;
+  text-align: left;
+  cursor: pointer;
 }
+.section-chevron {
+  display: inline-block;
+  width: 10px;
+  color: var(--text-3);
+  font-size: 14px;
+  transition: transform 200ms var(--ease), color 120ms ease;
+}
+.section-toggle:hover .section-chevron {
+  color: var(--accent);
+}
+.settings-section.is-open .section-chevron {
+  transform: rotate(90deg);
+}
+/* Grid rows animate between 0fr and 1fr; once folded the body is hidden (out of the tab order),
+   which is delayed on the way closed so the slide is still visible. */
+.section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms var(--ease), visibility 0s;
+}
+.settings-section:not(.is-open) .section-body {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 200ms var(--ease), visibility 0s linear 200ms;
+}
+.section-inner {
+  min-height: 0;
+  overflow: clip;
+  /* Room for the controls' focus rings. */
+  overflow-clip-margin: 4px;
+}
+/* The space under a section's controls (a spacer, not padding, so a folded body reaches 0). */
+.section-inner::after {
+  content: "";
+  display: block;
+  height: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-body,
+  .settings-section:not(.is-open) .section-body,
+  .section-chevron {
+    transition: none;
+  }
+}
+.app.reduced-motion .section-body,
+.app.reduced-motion .settings-section:not(.is-open) .section-body,
+.app.reduced-motion .section-chevron {
+  transition: none;
+}
+
+/* ---- Settings: theme ------------------------------------------------------------------- */
+
+.theme-picker {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.theme-group-label {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--text-3);
+  font: 600 10px/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.theme-preview {
+  display: block;
+  border-radius: 3px;
+}
+
+/* ---- Settings: font -------------------------------------------------------------------- */
 .font-list {
   display: flex;
   flex-direction: column;
@@ -809,7 +913,7 @@ kbd {
   border: 1px solid var(--line-2);
   border-radius: 6px;
   padding: 3px;
-  background: rgba(255, 255, 255, 0.015);
+  background: rgba(var(--hi-rgb), 0.015);
 }
 .font-option {
   appearance: none;
@@ -833,11 +937,11 @@ kbd {
   text-overflow: ellipsis;
 }
 .font-option:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--hi-rgb), 0.05);
   color: var(--text);
 }
 .font-option.is-active {
-  background: rgba(127, 216, 194, 0.16);
+  background: rgba(var(--accent-rgb), 0.16);
   color: var(--accent);
 }
 .font-option.is-missing {
@@ -890,7 +994,7 @@ kbd {
   cursor: pointer;
 }
 .stepper-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--hi-rgb), 0.05);
   color: var(--text);
 }
 .stepper-btn:disabled {

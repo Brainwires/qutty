@@ -8,6 +8,7 @@ import {
   reduce,
   sanitizeSettings,
   saveSettings,
+  SETTINGS_SECTIONS,
   SETTINGS_STORAGE_KEY,
   type WorkspaceAction,
   type WorkspaceState,
@@ -18,6 +19,16 @@ function run(
   from = initialState(),
 ): WorkspaceState {
   return actions.reduce(reduce, from);
+}
+
+/** An in-memory settings storage and the map behind it. */
+function memoryStorage() {
+  const mem = new Map<string, string>();
+  const storage = {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+  };
+  return { mem, storage };
 }
 
 const three = (): WorkspaceState =>
@@ -199,11 +210,7 @@ Deno.test("settings sanitise untrusted input and round-trip through storage", ()
   assertEquals(junk.barOrder, "created");
   assertEquals(sanitizeSettings(null), DEFAULT_SETTINGS);
 
-  const mem = new Map<string, string>();
-  const storage = {
-    getItem: (k: string) => mem.get(k) ?? null,
-    setItem: (k: string, v: string) => void mem.set(k, v),
-  };
+  const { mem, storage } = memoryStorage();
   assertEquals(loadSettings(storage), null);
   assert(saveSettings({ ...DEFAULT_SETTINGS, barPosition: "left" }, storage));
   assert(mem.has(SETTINGS_STORAGE_KEY));
@@ -230,4 +237,64 @@ Deno.test("settings sanitise untrusted input and round-trip through storage", ()
   assertEquals(s.settings.barPosition, "right");
   assertEquals(s.settings.layout.gap, 12);
   assertEquals(s.settings.layout.pattern, "cascade");
+});
+
+Deno.test("settings: the theme and folded sections sanitise, reduce and persist", () => {
+  assertEquals(DEFAULT_SETTINGS.theme, "sea-glass");
+  assertEquals(DEFAULT_SETTINGS.collapsedSections, []);
+  assertEquals(sanitizeSettings({ theme: "plum" }).theme, "plum");
+  for (const junk of ["solarized", "", 7, null, { id: "plum" }]) {
+    assertEquals(sanitizeSettings({ theme: junk }).theme, "sea-glass");
+  }
+  // Absent keeps the base (a partial hydrate does not reset the theme).
+  assertEquals(
+    sanitizeSettings({}, { ...DEFAULT_SETTINGS, theme: "cloud" }).theme,
+    "cloud",
+  );
+  assertEquals(
+    sanitizeSettings({ collapsedSections: ["font", "bogus", 3, "layout"] })
+      .collapsedSections,
+    ["layout", "font"],
+  );
+  assertEquals(
+    sanitizeSettings({ collapsedSections: "layout" }).collapsedSections,
+    [],
+  );
+  assertEquals(SETTINGS_SECTIONS, ["layout", "theme", "font"]);
+
+  let s = initialState();
+  s = reduce(s, { type: "setTheme", theme: "sakura" });
+  assertEquals(s.settings.theme, "sakura");
+  assertStrictEquals(reduce(s, { type: "setTheme", theme: "sakura" }), s);
+  assertEquals(
+    reduce(s, { type: "setTheme", theme: "nope" as never }).settings.theme,
+    "sea-glass",
+  );
+  s = reduce(s, { type: "toggleSection", section: "font" });
+  s = reduce(s, { type: "toggleSection", section: "layout" });
+  assertEquals(s.settings.collapsedSections, ["layout", "font"]);
+  s = reduce(s, { type: "toggleSection", section: "font" });
+  assertEquals(s.settings.collapsedSections, ["layout"]);
+  assertStrictEquals(
+    reduce(s, { type: "toggleSection", section: "nope" as never }),
+    s,
+  );
+
+  const { mem, storage } = memoryStorage();
+  assert(saveSettings(s.settings, storage));
+  const back = reduce(initialState(), {
+    type: "hydrateSettings",
+    settings: loadSettings(storage)!,
+  });
+  assertEquals(back.settings.theme, "sakura");
+  assertEquals(back.settings.collapsedSections, ["layout"]);
+  // A stored theme that no longer exists.
+  mem.set(SETTINGS_STORAGE_KEY, JSON.stringify({ theme: "retired" }));
+  assertEquals(
+    reduce(initialState(), {
+      type: "hydrateSettings",
+      settings: loadSettings(storage)!,
+    }).settings.theme,
+    "sea-glass",
+  );
 });

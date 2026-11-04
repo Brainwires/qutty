@@ -21,6 +21,7 @@ import {
   sanitizeFont,
   stepFontSize,
 } from "./fonts.ts";
+import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -33,6 +34,14 @@ export const BAR_POSITIONS: readonly BarPosition[] = [
   "bottom",
   "left",
   "right",
+];
+/** A collapsible section of the settings panel. */
+export type SettingsSection = "layout" | "theme" | "font";
+/** Every settings-panel section, top to bottom. */
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  "layout",
+  "theme",
+  "font",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
 export const PATTERNS: readonly LayoutPattern[] = Object.keys(
@@ -57,6 +66,10 @@ export interface Settings extends FontSettings {
   layout: LayoutOptions;
   barPosition: BarPosition;
   barOrder: BarOrder;
+  /** The colour theme (see themes.ts). */
+  theme: ThemeId;
+  /** The settings-panel sections the user folded away (all open by default). */
+  collapsedSections: SettingsSection[];
 }
 
 /** The whole workspace. */
@@ -97,6 +110,8 @@ export type WorkspaceAction =
   | { type: "setBarPosition"; position: BarPosition }
   | { type: "cycleBarPosition" }
   | { type: "setBarOrder"; order: BarOrder }
+  | { type: "setTheme"; theme: ThemeId }
+  | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
   | { type: "stepFontSize"; dir: 1 | -1 }
   | { type: "resetFontSize" }
@@ -107,6 +122,8 @@ export const DEFAULT_SETTINGS: Settings = {
   layout: { ...DEFAULT_LAYOUT_OPTIONS },
   barPosition: "top",
   barOrder: "mru",
+  theme: DEFAULT_THEME_ID,
+  collapsedSections: [],
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -125,7 +142,11 @@ export function initialState(
 }
 
 function cloneSettings(s: Settings): Settings {
-  return { ...s, layout: { ...s.layout } };
+  return {
+    ...s,
+    layout: { ...s.layout },
+    collapsedSections: [...s.collapsedSections],
+  };
 }
 
 /** The range each numeric layout option is clamped to (mirrors the layout engine's). */
@@ -219,6 +240,13 @@ export function sanitizeSettings(
   }
   if (r.barOrder === "mru" || r.barOrder === "created") {
     out.barOrder = r.barOrder;
+  }
+  // Present but unknown (a removed theme, junk) falls back to the default theme.
+  if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
+  if (Array.isArray(r.collapsedSections)) {
+    out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
+      (r.collapsedSections as unknown[]).includes(s)
+    );
   }
   return { ...out, ...pickFont(sanitizeFont(pickFont(out), r)) };
 }
@@ -442,6 +470,21 @@ export function reduce(
         ...state,
         settings: { ...state.settings, barOrder: action.order },
       };
+    case "setTheme": {
+      const theme = sanitizeThemeId(action.theme);
+      if (state.settings.theme === theme) return state;
+      return { ...state, settings: { ...state.settings, theme } };
+    }
+    case "toggleSection": {
+      if (!SETTINGS_SECTIONS.includes(action.section)) return state;
+      const collapsed = state.settings.collapsedSections;
+      const collapsedSections = collapsed.includes(action.section)
+        ? collapsed.filter((s) => s !== action.section)
+        : SETTINGS_SECTIONS.filter((s) =>
+          s === action.section || collapsed.includes(s)
+        );
+      return { ...state, settings: { ...state.settings, collapsedSections } };
+    }
     case "setFont":
       return withFont(state, action.patch);
     case "stepFontSize":

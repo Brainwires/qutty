@@ -29,6 +29,20 @@
   - Maybe: remember the last choice, a setting for the default, and user-defined
     entries (command + args + label).
 
+- [ ] **Sandboxed shells (Docker).** Offer "Sandboxed shell" in the `+` picker:
+      a terminal whose shell runs inside a Docker sandbox, isolated from the
+      Mac, so untrusted scripts or AI agents (Claude Code, Codex) can run
+      freely.
+  - Check what recent Docker Desktop provides (`docker sandbox …`: which agents
+    and images, and whether a plain shell is supported) and what it needs
+    (Docker Desktop running, version).
+  - Only list it when Docker is installed and running; show a clear message
+    otherwise.
+  - Decide what the sandbox can see: the current directory mounted, network on
+    or off, and whether it is discarded when the tile closes.
+  - Mark sandboxed tiles visibly (a badge or tinted header) so you always know
+    where you are.
+
 - [ ] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own
       terminals, as it does today.
@@ -59,3 +73,7 @@
       workflow. Denext now comes from JSR (`jsr:@denext/denext`).
 - [ ] Publish the v0.1.0 draft release, then decide when to make the repo
       public.
+- [ ] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
+      overflow: +N appears…" in tests/e2e/bar_test.ts fails about half the time
+      with a bare assertion. CI runs with animations on, where it passes. Find
+      the timing assumption.

@@ -4,6 +4,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { PATTERNS } from "../../lib/workspace/store.ts";
+import { THEME_IDS } from "../../lib/workspace/themes.ts";
 import { type App, ROOT, suite, waitFor } from "./harness.ts";
 
 const DIR = join(ROOT, "tests/e2e/__screenshots__");
@@ -49,6 +50,26 @@ suite("visual", (test) => {
     await app.ensureTerminals(3);
     await app.openSettings();
     await shot(app, "03-settings");
+  }, { width: W, height: H });
+
+  test("screenshot: settings panel in every theme", async (app) => {
+    const ids = await app.ensureTerminals(3);
+    await app.run(ids[1], "colors");
+    await app.run(ids[2], "ls");
+    for (const id of THEME_IDS) {
+      await app.openSettings();
+      await app.click(`[data-testid=setting-theme][data-value="${id}"]`);
+      await waitFor(
+        () =>
+          app.eval(
+            (t: string) => document.documentElement.dataset.theme === t,
+            id,
+          ),
+        2000,
+        `theme ${id}`,
+      );
+      await shot(app, `08-theme-${id}`);
+    }
   }, { width: W, height: H });
 
   test("screenshot: bar on each edge", async (app) => {

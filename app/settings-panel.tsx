@@ -1,8 +1,9 @@
-// The layout controls popover: pattern grid with live previews, the sliders the engine
-// understands, the bar's edge and order, the terminal font, and the shortcut list. Every change goes straight to
-// the store, so the cluster animates while the slider moves.
+// The settings popover, in collapsible sections: Layout (pattern grid with live previews, the
+// sliders the engine understands, the bar's edge and order), Theme (preview tiles, dark and
+// light), Fonts (the terminal font); the shortcut list stays visible below them. Every change
+// goes straight to the store, so the cluster animates while the slider moves.
 
-import { useEffect, useMemo, useRef, useState } from "denext";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "denext";
 import { type LayoutOptions, PATTERN_INFO } from "../lib/layout/mod.ts";
 import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
 import {
@@ -12,7 +13,9 @@ import {
   LAYOUT_RANGES,
   PATTERNS,
   type Settings,
+  type SettingsSection,
 } from "../lib/workspace/store.ts";
+import { type ThemeId, THEMES } from "../lib/workspace/themes.ts";
 import {
   browserFontProbe,
   CUSTOM_FONT_ID,
@@ -27,6 +30,7 @@ import {
   stepFontSize,
 } from "../lib/workspace/fonts.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
+import { ThemePreview } from "./theme-preview.tsx";
 
 export interface SettingsPanelProps {
   settings: Settings;
@@ -35,6 +39,8 @@ export interface SettingsPanelProps {
   onBarPosition(position: BarPosition): void;
   onBarOrder(order: BarOrder): void;
   onFont(patch: Partial<FontSettings>): void;
+  onTheme(theme: ThemeId): void;
+  onToggleSection(section: SettingsSection): void;
   onClose(): void;
 }
 
@@ -116,16 +122,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
     );
   };
 
+  const collapsed = settings.collapsedSections;
+  const section = (
+    id: SettingsSection,
+    title: string,
+    children: ReactNode,
+    testid?: string,
+  ) => (
+    <Section
+      id={id}
+      title={title}
+      open={!collapsed.includes(id)}
+      onToggle={() => props.onToggleSection(id)}
+      testid={testid}
+    >
+      {children}
+    </Section>
+  );
+
   return (
     <div
       class="settings"
       ref={panelRef}
       role="dialog"
-      aria-label="Layout settings"
+      aria-label="Settings"
       data-testid="settings-panel"
     >
       <div class="settings-head">
-        <h2>Layout</h2>
+        <h2>Settings</h2>
         <button
           type="button"
           class="bar-btn"
@@ -137,100 +161,120 @@ export function SettingsPanel(props: SettingsPanelProps) {
         </button>
       </div>
 
-      <div class="pattern-grid" role="radiogroup" aria-label="Pattern">
-        {PATTERNS.map((p) => (
-          <button
-            type="button"
-            key={p}
-            role="radio"
-            aria-checked={p === layout.pattern}
-            class={`pattern-option${p === layout.pattern ? " is-active" : ""}`}
-            data-testid="setting-pattern"
-            data-pattern={p}
-            title={PATTERN_INFO[p].description}
-            onClick={() => props.onLayout({ pattern: p })}
-          >
-            <PatternPreview pattern={p} options={layout} />
-            <span>{PATTERN_INFO[p].label}</span>
-          </button>
-        ))}
-      </div>
-      <p class="pattern-desc">{PATTERN_INFO[layout.pattern].description}</p>
+      {section(
+        "layout",
+        "Layout",
+        <>
+          <div class="pattern-grid" role="radiogroup" aria-label="Pattern">
+            {PATTERNS.map((p) => (
+              <button
+                type="button"
+                key={p}
+                role="radio"
+                aria-checked={p === layout.pattern}
+                class={`pattern-option${
+                  p === layout.pattern ? " is-active" : ""
+                }`}
+                data-testid="setting-pattern"
+                data-pattern={p}
+                title={PATTERN_INFO[p].description}
+                onClick={() => props.onLayout({ pattern: p })}
+              >
+                <PatternPreview pattern={p} options={layout} />
+                <span>{PATTERN_INFO[p].label}</span>
+              </button>
+            ))}
+          </div>
+          <p class="pattern-desc">{PATTERN_INFO[layout.pattern].description}</p>
 
-      {slider(
-        "decay",
-        "Size falloff",
-        layout.decay >= 0.999 ? "equal" : `×${layout.decay.toFixed(2)}`,
-        "How much smaller each older terminal is than the one before it.",
-      )}
-      {slider(
-        "masterRatio",
-        "Focused share",
-        `${Math.round(layout.masterRatio * 100)}%`,
-        "The focused terminal's share in master + stack (a cap for cascade and spiral).",
-      )}
-      {slider(
-        "maxVisible",
-        "Tiles shown",
-        String(layout.maxVisible),
-        "Older terminals beyond this stay in the bar.",
-      )}
-      {slider(
-        "gap",
-        "Gap",
-        `${layout.gap}px`,
-        "Space between tiles and around the edges.",
+          {slider(
+            "decay",
+            "Size falloff",
+            layout.decay >= 0.999 ? "equal" : `×${layout.decay.toFixed(2)}`,
+            "How much smaller each older terminal is than the one before it.",
+          )}
+          {slider(
+            "masterRatio",
+            "Focused share",
+            `${Math.round(layout.masterRatio * 100)}%`,
+            "The focused terminal's share in master + stack (a cap for cascade and spiral).",
+          )}
+          {slider(
+            "maxVisible",
+            "Tiles shown",
+            String(layout.maxVisible),
+            "Older terminals beyond this stay in the bar.",
+          )}
+          {slider(
+            "gap",
+            "Gap",
+            `${layout.gap}px`,
+            "Space between tiles and around the edges.",
+          )}
+
+          <div class="field">
+            <span class="field-label">Bar edge</span>
+            <div class="segmented" role="radiogroup" aria-label="Bar edge">
+              {BAR_POSITIONS.map((p) => (
+                <button
+                  type="button"
+                  key={p}
+                  role="radio"
+                  aria-checked={p === settings.barPosition}
+                  class={p === settings.barPosition ? "is-active" : ""}
+                  data-testid="setting-bar-position"
+                  data-value={p}
+                  onClick={() => props.onBarPosition(p)}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Bar order</span>
+            <div class="segmented" role="radiogroup" aria-label="Bar order">
+              {(["mru", "created"] as BarOrder[]).map((o) => (
+                <button
+                  type="button"
+                  key={o}
+                  role="radio"
+                  aria-checked={o === settings.barOrder}
+                  class={o === settings.barOrder ? "is-active" : ""}
+                  data-testid="setting-bar-order"
+                  data-value={o}
+                  onClick={() => props.onBarOrder(o)}
+                >
+                  {o === "mru" ? "recently used" : "opened"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>,
       )}
 
-      <div class="field">
-        <span class="field-label">Bar edge</span>
-        <div class="segmented" role="radiogroup" aria-label="Bar edge">
-          {BAR_POSITIONS.map((p) => (
-            <button
-              type="button"
-              key={p}
-              role="radio"
-              aria-checked={p === settings.barPosition}
-              class={p === settings.barPosition ? "is-active" : ""}
-              data-testid="setting-bar-position"
-              data-value={p}
-              onClick={() => props.onBarPosition(p)}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div class="field">
-        <span class="field-label">Bar order</span>
-        <div class="segmented" role="radiogroup" aria-label="Bar order">
-          {(["mru", "created"] as BarOrder[]).map((o) => (
-            <button
-              type="button"
-              key={o}
-              role="radio"
-              aria-checked={o === settings.barOrder}
-              class={o === settings.barOrder ? "is-active" : ""}
-              data-testid="setting-bar-order"
-              data-value={o}
-              onClick={() => props.onBarOrder(o)}
-            >
-              {o === "mru" ? "recently used" : "opened"}
-            </button>
-          ))}
-        </div>
-      </div>
+      {section(
+        "theme",
+        "Theme",
+        <ThemePicker current={settings.theme} onTheme={props.onTheme} />,
+        "theme-section",
+      )}
 
-      <FontSection
-        settings={settings}
-        installed={installed}
-        customDraft={customDraft}
-        onCustomDraft={(v) => {
-          setCustomDraft(v);
-          props.onFont({ fontFamilyCustom: v });
-        }}
-        onFont={props.onFont}
-      />
+      {section(
+        "font",
+        "Fonts",
+        <FontSection
+          settings={settings}
+          installed={installed}
+          customDraft={customDraft}
+          onCustomDraft={(v) => {
+            setCustomDraft(v);
+            props.onFont({ fontFamilyCustom: v });
+          }}
+          onFont={props.onFont}
+        />,
+        "font-section",
+      )}
 
       <dl class="shortcuts">
         {SHORTCUTS.map(([keys, what]) => (
@@ -242,6 +286,102 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+interface SectionProps {
+  id: SettingsSection;
+  title: string;
+  open: boolean;
+  onToggle(): void;
+  testid?: string;
+  children: ReactNode;
+}
+
+/**
+ * A collapsible panel section: a heading button (`aria-expanded`) controlling a region. The body
+ * stays mounted when folded (grid rows animate 1fr ↔ 0fr) and is `visibility: hidden` once
+ * folded, so its controls drop out of the tab order and the accessibility tree.
+ */
+function Section(props: SectionProps) {
+  const head = `settings-${props.id}-head`;
+  const body = `settings-${props.id}-body`;
+  return (
+    <section
+      class={`settings-section${props.open ? " is-open" : ""}`}
+      data-testid={props.testid ?? `${props.id}-section`}
+      data-section={props.id}
+      data-open={props.open ? "true" : "false"}
+    >
+      <h3 class="section-heading">
+        <button
+          type="button"
+          id={head}
+          class="section-toggle"
+          aria-expanded={props.open}
+          aria-controls={body}
+          data-testid="section-toggle"
+          data-section={props.id}
+          onClick={props.onToggle}
+        >
+          <span class="section-chevron" aria-hidden="true">›</span>
+          {props.title}
+        </button>
+      </h3>
+      <div
+        id={body}
+        class="section-body"
+        role="region"
+        aria-labelledby={head}
+        data-testid="section-body"
+        data-section={props.id}
+      >
+        <div class="section-inner">{props.children}</div>
+      </div>
+    </section>
+  );
+}
+
+/** The theme tiles, dark and light groups of three. */
+function ThemePicker(
+  { current, onTheme }: { current: ThemeId; onTheme(theme: ThemeId): void },
+) {
+  return (
+    <div class="theme-picker" role="radiogroup" aria-label="Theme">
+      {(["dark", "light"] as const).map((scheme) => (
+        <div class="theme-group" key={scheme} data-scheme={scheme}>
+          <span class="theme-group-label" id={`theme-group-${scheme}`}>
+            {scheme === "dark" ? "Dark" : "Light"}
+          </span>
+          <div
+            class="theme-grid"
+            role="group"
+            aria-labelledby={`theme-group-${scheme}`}
+          >
+            {THEMES.filter((t) =>
+              t.scheme === scheme
+            ).map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                role="radio"
+                aria-checked={t.id === current}
+                class={`pattern-option theme-option${
+                  t.id === current ? " is-active" : ""
+                }`}
+                data-testid="setting-theme"
+                data-value={t.id}
+                title={`${t.label} (${scheme})`}
+                onClick={() => onTheme(t.id)}
+              >
+                <ThemePreview theme={t} />
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -268,8 +408,7 @@ function FontSection(props: FontSectionProps) {
   );
   const stack = fontStack(settings);
   return (
-    <section class="font-section" data-testid="font-section">
-      <h3>Font</h3>
+    <>
       <div class="field">
         <span class="field-label">Typeface</span>
         <div
@@ -437,6 +576,6 @@ function FontSection(props: FontSectionProps) {
       >
         {SAMPLE}
       </div>
-    </section>
+    </>
   );
 }
