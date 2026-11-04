@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Denext's desktop runtime is built for this exact Deno version.
+  DENO_VERSION: 2.9.8
+  FALLOW_VERSION: 3.20.0
+
+jobs:
+  checks:
+    name: Lint, types, fallow
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      - run: deno fmt --check
+      - run: deno lint
+      # desktop.ts imports .deno-desktop/config.json, which the export generates.
+      - run: deno task export
+      - run: deno task check
+      - name: fallow (dead code, duplication, health)
+        run: |
+          npm install -g "fallow@${FALLOW_VERSION}"
+          fallow dead-code -q --format github-annotations
+          fallow dupes -q
+          fallow health -q --min-score 85 --format github-summary >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Unit tests (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      - run: deno task test
+
+  e2e:
+    name: End-to-end (Chromium)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      - run: deno task test:e2e
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: tests/e2e/__screenshots__/
+          if-no-files-found: ignore

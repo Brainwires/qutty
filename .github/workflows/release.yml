@@ -1,0 +1,135 @@
+name: Release
+
+# Push a tag like v0.1.0 (matching deno.json's version) to build, sign and notarize the arm64 and
+# x86_64 apps and attach their .dmg files to a draft GitHub release. Publishing the draft is a
+# manual step.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  DENO_VERSION: 2.9.8
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+
+      - name: Check the tag matches deno.json's version
+        id: version
+        run: |
+          VERSION="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match deno.json version ${VERSION}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - run: deno task test
+
+      - name: Import the signing certificate and notary key
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          set -eu
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASS="$(openssl rand -base64 24)"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          # Default + first in the search list, so codesign and notarytool's keychain profile find it.
+          security default-keychain -s "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PASS" "$KEYCHAIN" > /dev/null
+
+          printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          xcrun notarytool store-credentials qutty-ci --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | sed -n 's/.*"\(Developer ID Application[^"]*\)".*/\1/p' | head -1)"
+          [ -n "$IDENTITY" ] || { echo "::error::No Developer ID Application identity imported"; exit 1; }
+          echo "DENEXT_CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "DENEXT_NOTARY_PROFILE=qutty-ci" >> "$GITHUB_ENV"
+
+      - name: Package (sign, notarize, staple)
+        run: deno task desktop:package
+
+      - name: Verify and name the artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          codesign --verify --deep --strict "dist/Qutty.app"
+          spctl -a -t exec -vv "dist/Qutty.app"
+          xcrun stapler validate "dist/Qutty.app"
+          lipo -archs "dist/Qutty.app/Contents/MacOS/"* | tee /dev/stderr | grep -q "$ARCH"
+          mkdir -p release
+          cp "dist/Qutty.dmg" "release/Qutty-${VERSION}-${ARCH}.dmg"
+          (cd release && shasum -a 256 "Qutty-${VERSION}-${ARCH}.dmg" > "Qutty-${VERSION}-${ARCH}.dmg.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qutty-${{ matrix.arch }}
+          path: release/
+          if-no-files-found: error
+
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  release:
+    name: Draft GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          # This version's CHANGELOG.md section, up to the next "## " heading.
+          awk -v v="$VERSION" '
+            $0 ~ "^## " v "( |$)" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Qutty ${VERSION}" > notes.md
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --draft --title "Qutty ${VERSION}" --notes-file notes.md

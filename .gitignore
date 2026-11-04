@@ -1,0 +1,10 @@
+.denext/
+out/
+.deno/
+/tsconfig.json
+.env*.local
+*.local
+patches/.work/
+dist/
+.deno-desktop/
+.claude/settings.local.json

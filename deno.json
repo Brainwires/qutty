@@ -1,0 +1,102 @@
+{
+  "//": "Denext comes from JSR. To dogfood a local checkout instead, add \"links\": [\"../denext\"].",
+  "version": "0.1.0",
+  "tasks": {
+    "dev": "deno run -A jsr:@denext/denext@^4.12.0/cli dev .",
+    "build": "deno run -A jsr:@denext/denext@^4.12.0/cli build .",
+    "start": "deno run --allow-net --allow-read --allow-env --allow-write=.denext jsr:@denext/denext@^4.12.0/cli start .",
+    "test": "deno test -A --ignore=tests/e2e tests/ lib/",
+    "test:e2e": "deno test -A tests/e2e/",
+    "check": "deno check desktop.ts desktop/ lib/ app/ tests/",
+    "export": "deno run -A jsr:@denext/denext@^4.12.0/cli export .",
+    "desktop": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop run .",
+    "desktop:dev": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop dev .",
+    "desktop:scripts": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop package --regenerate-scripts .",
+    "desktop:package": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop package .",
+    "desktop:package:linux": "deno run -A scripts/package-linux.ts",
+    "desktop:package:windows": "deno run -A scripts/package-windows.ts",
+    "install": "sh scripts/install-macos.sh",
+    "fallow": "fallow dead-code -q && fallow dupes -q && fallow health -q --min-score 85"
+  },
+  "allowScripts": {
+    "deny": [
+      "npm:@parcel/watcher"
+    ]
+  },
+  "unstable": [
+    "no-legacy-abort"
+  ],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "denext",
+    "lib": [
+      "deno.window",
+      "deno.unstable",
+      "dom",
+      "dom.iterable",
+      "dom.asynciterable"
+    ]
+  },
+  "imports": {
+    "denext": "jsr:@denext/denext@^4.12.0",
+    "denext/jsx-runtime": "jsr:@denext/denext@^4.12.0/jsx-runtime",
+    "denext/jsx-dev-runtime": "jsr:@denext/denext@^4.12.0/jsx-dev-runtime",
+    "denext/server": "jsr:@denext/denext@^4.12.0/server",
+    "denext/client": "jsr:@denext/denext@^4.12.0/client",
+    "denext/auth": "jsr:@denext/denext@^4.12.0/auth",
+    "denext/testing": "jsr:@denext/denext@^4.12.0/testing",
+    "denext/deploy": "jsr:@denext/denext@^4.12.0/deploy",
+    "denext/desktop": "jsr:@denext/denext@^4.12.0/desktop",
+    "denext/desktop/client": "jsr:@denext/denext@^4.12.0/desktop/client",
+    "denext/desktop/window": "jsr:@denext/denext@^4.12.0/desktop/window",
+    "denext/desktop/app": "jsr:@denext/denext@^4.12.0/desktop/app",
+    "@astral/astral": "jsr:@astral/astral@~0.5.3",
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@std/http": "jsr:@std/http@^1.0.0",
+    "@std/path": "jsr:@std/path@^1.0.0",
+    "@std/fs": "jsr:@std/fs@^1.0.0",
+    "@std/media-types": "jsr:@std/media-types@^1.0.0",
+    "@std/async": "jsr:@std/async@^1.0.0",
+    "@std/encoding": "jsr:@std/encoding@^1.0.0",
+    "@std/jsonc": "jsr:@std/jsonc@^1.0.0",
+    "@std/yaml": "jsr:@std/yaml@^1.0.0",
+    "@std/path/posix": "jsr:@std/path@^1.0.0/posix",
+    "node-pty": "npm:node-pty@1.1.0",
+    "@xterm/xterm": "./vendor/xterm/xterm.mjs",
+    "@xterm/addon-fit": "./vendor/xterm/addon-fit.mjs",
+    "@xterm/addon-webgl": "./vendor/xterm/addon-webgl.mjs",
+    "@xterm/addon-web-links": "./vendor/xterm/addon-web-links.mjs",
+    "@xterm/xterm/types": "npm:@xterm/xterm@6.0.0/typings/xterm.d.ts",
+    "@xterm/addon-fit/types": "npm:@xterm/addon-fit@0.11.0/typings/addon-fit.d.ts",
+    "@xterm/addon-webgl/types": "npm:@xterm/addon-webgl@0.19.0/typings/addon-webgl.d.ts",
+    "@xterm/addon-web-links/types": "npm:@xterm/addon-web-links@0.12.0/typings/addon-web-links.d.ts"
+  },
+  "lint": {
+    "plugins": [
+      "jsr:@denext/denext@^4.12.0/lint-plugin"
+    ],
+    "exclude": [
+      "vendor/"
+    ]
+  },
+  "exclude": [
+    ".deno/"
+  ],
+  "desktop": {
+    "app": {
+      "name": "Qutty",
+      "identifier": "org.qutty.Qutty"
+    }
+  },
+  "fmt": {
+    "exclude": [
+      "vendor/"
+    ]
+  },
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": [
+      "jsr:@denext/denext"
+    ]
+  }
+}

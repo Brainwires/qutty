@@ -1,0 +1,389 @@
+// The switcher bar: every terminal as a chip, on any edge of the window. It is the overflow
+// surface — terminals the cluster cannot show live here — so chips say whether their terminal
+// is tiled or not. The chip strip scrolls on wheel and reports the chips scrolled out of view
+// in a "+N" menu. Chip moves animate with FLIP; new chips fade in.
+
+import { useEffect, useLayoutEffect, useRef, useState } from "denext";
+import { makeWindowDraggable } from "denext/desktop/window";
+import { type LayoutPattern, PATTERN_INFO } from "../lib/layout/mod.ts";
+import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
+import { barChips } from "../lib/workspace/bar.ts";
+import {
+  type BarPosition,
+  PATTERNS,
+  type TerminalEntry,
+  type WorkspaceState,
+} from "../lib/workspace/store.ts";
+import { PatternPreview } from "./pattern-preview.tsx";
+
+export interface SwitcherBarProps {
+  state: WorkspaceState;
+  visibleIds: Set<string>;
+  position: BarPosition;
+  pattern: LayoutPattern;
+  platform: KeyPlatform;
+  desktop: boolean;
+  settingsOpen: boolean;
+  onFocus(id: string): void;
+  onClose(id: string): void;
+  onNew(): void;
+  onPattern(pattern: LayoutPattern): void;
+  onToggleSettings(): void;
+}
+
+export function SwitcherBar(props: SwitcherBarProps) {
+  const barRef = useRef<HTMLElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const chipEls = useRef(new Map<string, HTMLElement>());
+  const prevRects = useRef(new Map<string, DOMRect>());
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  const [menu, setMenu] = useState<"none" | "more" | "pattern">("none");
+  const vertical = props.position === "left" || props.position === "right";
+  const chips = barChips(props.state, props.visibleIds);
+  const ids = chips.map((c) => c.id);
+  const byId = new Map<string, TerminalEntry>(
+    props.state.terminals.map((t) => [t.id, t]),
+  );
+  const focusedId = props.state.focusedId;
+
+  // The bar background is the window's drag region on desktop (chips and buttons opt out).
+  useEffect(() => {
+    const el = barRef.current;
+    if (!props.desktop || !el) return;
+    return makeWindowDraggable(el);
+  }, [props.desktop, props.position]);
+
+  // FLIP: chips that moved start at their old position and glide to the new one.
+  const orderKey = ids.join("\u0000") + (vertical ? "|v" : "|h");
+  useLayoutEffect(() => {
+    const next = new Map<string, DOMRect>();
+    for (const [id, el] of chipEls.current) {
+      next.set(id, el.getBoundingClientRect());
+    }
+    const prev = prevRects.current;
+    prevRects.current = next;
+    if (prev.size === 0) return;
+    const moved: HTMLElement[] = [];
+    for (const [id, el] of chipEls.current) {
+      const a = prev.get(id);
+      const b = next.get(id);
+      if (!a || !b) continue;
+      const dx = a.left - b.left;
+      const dy = a.top - b.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      el.style.transition = "none";
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      moved.push(el);
+    }
+    if (moved.length === 0) return;
+    // Commit the inverted transforms, then let the CSS transition play them back.
+    void listRef.current?.offsetWidth;
+    const raf = requestAnimationFrame(() => {
+      for (const el of moved) {
+        el.style.transition = "";
+        el.style.transform = "";
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [orderKey]);
+
+  // Which chips are scrolled out of view → the "+N" menu.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const box = list.getBoundingClientRect();
+      const hidden: string[] = [];
+      for (const id of ids) {
+        const el = chipEls.current.get(id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const out = vertical
+          ? r.top < box.top - 1 || r.bottom > box.bottom + 1
+          : r.left < box.left - 1 || r.right > box.right + 1;
+        if (out) hidden.push(id);
+      }
+      setHiddenIds((
+        h,
+      ) => (h.length === hidden.length && h.every((x, i) => x === hidden[i])
+        ? h
+        : hidden)
+      );
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(list);
+    // A chip changing width (its title arrives) moves the ones after it without resizing the list.
+    for (const el of chipEls.current.values()) ro.observe(el);
+    list.addEventListener("scroll", schedule, { passive: true });
+    // The first measure runs while moved chips are still gliding (FLIP) and new ones are still
+    // scaling in, so their rects are not final: measure again when those motions end.
+    list.addEventListener("transitionend", schedule);
+    list.addEventListener("animationend", schedule);
+    return () => {
+      ro.disconnect();
+      list.removeEventListener("scroll", schedule);
+      list.removeEventListener("transitionend", schedule);
+      list.removeEventListener("animationend", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [orderKey, vertical]);
+
+  // Keep the focused chip in view.
+  useEffect(() => {
+    if (!focusedId) return;
+    const el = chipEls.current.get(focusedId);
+    el?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [focusedId]);
+
+  // Close menus on Escape or an outside click.
+  useEffect(() => {
+    if (menu === "none") return;
+    const onDown = (e: PointerEvent) => {
+      const bar = barRef.current;
+      if (bar && e.target instanceof Node && !bar.contains(e.target)) {
+        setMenu("none");
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Capture phase + stop: the Escape that closes a menu must not also reach the shell.
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu("none");
+    };
+    globalThis.addEventListener("pointerdown", onDown, true);
+    globalThis.addEventListener("keydown", onKey, true);
+    return () => {
+      globalThis.removeEventListener("pointerdown", onDown, true);
+      globalThis.removeEventListener("keydown", onKey, true);
+    };
+  }, [menu]);
+
+  const pick = (id: string) => {
+    setMenu("none");
+    props.onFocus(id);
+  };
+
+  const mod = (keys: string) => shortcutLabel(keys, props.platform);
+
+  return (
+    <nav
+      ref={barRef}
+      class={`bar bar-${props.position}${vertical ? " is-vertical" : ""}`}
+      aria-label="Terminals"
+      data-testid="bar"
+      data-position={props.position}
+    >
+      <div class="bar-lead" data-no-window-drag>
+        <button
+          type="button"
+          class="bar-btn bar-new"
+          data-testid="bar-new"
+          onClick={props.onNew}
+          title={`New terminal ${mod("Mod+T")}`}
+          aria-label="New terminal"
+        >
+          +
+        </button>
+      </div>
+      <div
+        class="chips"
+        data-testid="chips"
+        ref={listRef}
+        onWheel={(e) => {
+          const list = listRef.current;
+          if (!list || vertical) return;
+          // A mouse wheel scrolls the horizontal strip; a trackpad's horizontal delta already does.
+          // (denext's WheelEvent type lacks deltaX/deltaY; the native event has them.)
+          const w = e as unknown as globalThis.WheelEvent;
+          if (Math.abs(w.deltaY) > Math.abs(w.deltaX)) {
+            list.scrollLeft += w.deltaY;
+            w.preventDefault();
+          }
+        }}
+      >
+        {chips.map(({ id, entry: t, ordinal, rank, tiled, focused }) => {
+          const cls = ["chip", tiled ? "is-tiled" : "is-overflow"];
+          if (focused) cls.push("is-focused");
+          if (t.exited) cls.push("is-exited");
+          if (t.activity) cls.push("has-activity");
+          return (
+            <div
+              key={id}
+              ref={(el: HTMLDivElement | null) => {
+                if (el) chipEls.current.set(id, el);
+                else chipEls.current.delete(id);
+              }}
+              class={cls.join(" ")}
+              data-testid="chip"
+              data-id={id}
+              data-ordinal={ordinal}
+              data-rank={rank}
+              data-tiled={tiled ? "true" : "false"}
+              data-focused={focused ? "true" : "false"}
+              data-exited={t.exited ? "true" : "false"}
+              data-activity={t.activity ? "true" : "false"}
+              role="button"
+              tabIndex={0}
+              data-no-window-drag
+              title={`${t.title}${tiled ? "" : " (not tiled)"} — rank ${rank}`}
+              onClick={() => props.onFocus(id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  props.onFocus(id);
+                }
+              }}
+            >
+              {ordinal <= 9 && <span class="chip-ordinal">{ordinal}</span>}
+              <span class="chip-dot" aria-hidden="true" />
+              <span class="chip-title">{t.title}</span>
+              {t.exited && <span class="chip-exit">exited</span>}
+              <button
+                type="button"
+                class="chip-close"
+                data-testid="chip-close"
+                aria-label={`Close ${t.title}`}
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onClose(id);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div class="bar-tail" data-no-window-drag>
+        {hiddenIds.length > 0 && (
+          <div class="menu-anchor">
+            <button
+              type="button"
+              class={`bar-btn bar-more${menu === "more" ? " is-open" : ""}`}
+              data-testid="bar-more"
+              onClick={() => setMenu(menu === "more" ? "none" : "more")}
+              aria-expanded={menu === "more"}
+              title="Terminals scrolled out of view"
+            >
+              +{hiddenIds.length}
+            </button>
+            {menu === "more" && (
+              <div class="menu" role="menu" data-testid="overflow-menu">
+                {hiddenIds.map((id) => {
+                  const t = byId.get(id);
+                  if (!t) {
+                    return null;
+                  }
+                  return (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="menu-item"
+                      data-testid="overflow-item"
+                      data-id={id}
+                      key={id}
+                      onClick={() => pick(id)}
+                    >
+                      <span class={`chip-dot${t.activity ? " on" : ""}`} />
+                      <span class="menu-label">{t.title}</span>
+                      {t.exited && <span class="chip-exit">exited</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        <div class="menu-anchor">
+          <button
+            type="button"
+            class={`bar-btn bar-pattern${menu === "pattern" ? " is-open" : ""}`}
+            data-testid="bar-pattern"
+            data-pattern={props.pattern}
+            onClick={() => setMenu(menu === "pattern" ? "none" : "pattern")}
+            aria-expanded={menu === "pattern"}
+            title={`Layout: ${PATTERN_INFO[props.pattern].label} (${
+              mod("Mod+Shift+L")
+            } cycles)`}
+          >
+            <PatternPreview pattern={props.pattern} small />
+            {!vertical && (
+              <span class="bar-pattern-label">
+                {PATTERN_INFO[props.pattern].label}
+              </span>
+            )}
+          </button>
+          {menu === "pattern" && (
+            <div
+              class="menu menu-patterns"
+              role="menu"
+              data-testid="pattern-menu"
+            >
+              {PATTERNS.map((p) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={p === props.pattern}
+                  class={`menu-item${p === props.pattern ? " is-active" : ""}`}
+                  data-testid="pattern-item"
+                  data-pattern={p}
+                  key={p}
+                  onClick={() => {
+                    setMenu("none");
+                    props.onPattern(p);
+                  }}
+                >
+                  <PatternPreview pattern={p} />
+                  <span class="menu-label">{PATTERN_INFO[p].label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          class={`bar-btn bar-settings${props.settingsOpen ? " is-open" : ""}`}
+          data-testid="bar-settings"
+          onClick={props.onToggleSettings}
+          aria-expanded={props.settingsOpen}
+          aria-label="Layout settings"
+          title="Layout settings"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path
+              d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              fill="none"
+            />
+            <circle
+              cx="10.5"
+              cy="4.5"
+              r="1.8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <circle
+              cx="5.5"
+              cy="11.5"
+              r="1.8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </button>
+      </div>
+    </nav>
+  );
+}
