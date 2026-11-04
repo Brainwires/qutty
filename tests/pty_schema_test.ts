@@ -81,6 +81,7 @@ Deno.test("schema: declared events and methods", () => {
   assertEquals([...ext.events].sort(), ["data", "exit"]);
   assertEquals(Object.keys(ext.methods).sort(), [
     "info",
+    "keyBindings",
     "kill",
     "resize",
     "spawn",
@@ -166,6 +167,24 @@ Deno.test("schema: write", () => {
     Object.keys(ok("write", { id: "a", data: "b", extra: 1 }) as object).sort(),
     ["data", "id"],
   );
+  // binary: xterm onBinary data, one byte per char.
+  assertEquals(
+    ok("write", { id: "a", data: "\x1b[M \xff\xa0", binary: true }),
+    {
+      id: "a",
+      data: "\x1b[M \xff\xa0",
+      binary: true,
+    },
+  );
+  assertEquals(ok("write", { id: "a", data: "x", binary: false }), {
+    id: "a",
+    data: "x",
+  });
+  bad("write", { id: "a", data: "\u0100", binary: true }, ["data"]);
+  bad("write", { id: "a", data: "😀", binary: true }, ["data"]);
+  for (const b of [1, "yes", null, {}]) {
+    bad("write", { id: "a", data: "x", binary: b }, ["binary"]);
+  }
 });
 
 Deno.test("schema: resize", () => {

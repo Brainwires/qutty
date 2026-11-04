@@ -163,23 +163,40 @@ const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => ({
   shell: optStr(v, "shell", issues),
 }));
 
+const emptyInput = objectSchema<Record<string, never>>(() => ({}));
+
 const idInput = objectSchema<{ id: string }>((v, issues) => ({
   id: str(v, "id", issues, 64),
 }));
 
-const writeInput = objectSchema<{ id: string; data: string }>((v, issues) => {
-  const data = v.data;
-  if (typeof data !== "string" || data.length > 1 << 20) {
-    issues.push({
-      message: "data must be a string (at most 1 MiB)",
-      path: ["data"],
-    });
-  }
-  return {
-    id: str(v, "id", issues, 64),
-    data: typeof data === "string" ? data : "",
-  };
-});
+const writeInput = objectSchema<{ id: string; data: string; binary?: boolean }>(
+  (v, issues) => {
+    const data = v.data;
+    if (typeof data !== "string" || data.length > 1 << 20) {
+      issues.push({
+        message: "data must be a string (at most 1 MiB)",
+        path: ["data"],
+      });
+    }
+    const binary = v.binary;
+    if (binary !== undefined && typeof binary !== "boolean") {
+      issues.push({ message: "binary must be a boolean", path: ["binary"] });
+    } else if (
+      binary === true && typeof data === "string" &&
+      [...data].some((ch) => ch.charCodeAt(0) > 0xff)
+    ) {
+      issues.push({
+        message: "binary data must hold only byte values (U+0000..U+00FF)",
+        path: ["data"],
+      });
+    }
+    return {
+      id: str(v, "id", issues, 64),
+      data: typeof data === "string" ? data : "",
+      ...(binary === true ? { binary: true } : {}),
+    };
+  },
+);
 
 const resizeInput = objectSchema<{ id: string; cols: number; rows: number }>((
   v,
@@ -686,9 +703,15 @@ export class PtyHost {
     return { id, pid: forked.pid, shell, cwd };
   }
 
-  async write(id: string, data: string): Promise<void> {
+  /**
+   * Write input to the shell. Text is UTF-8 encoded; `binary` data (xterm's `onBinary`: legacy
+   * X10/normal mouse reports, whose coordinates are raw bytes) is written one byte per char.
+   */
+  async write(id: string, data: string, binary = false): Promise<void> {
     const t = this.#get(id);
-    const bytes = encoder.encode(data);
+    const bytes = binary
+      ? Uint8Array.from(data, (ch) => ch.charCodeAt(0) & 0xff)
+      : encoder.encode(data);
     if (bytes.length === 0) return;
     // Ordered: each write waits for the previous one (a paste can hit EAGAIN).
     t.writeChain = t.writeChain.then(() => this.#writeAll(t, bytes)).catch(
@@ -979,8 +1002,12 @@ export default defineDesktopExtension({
     write: {
       input: writeInput,
       handler: async (args: unknown): Promise<void> => {
-        const { id, data } = args as { id: string; data: string };
-        await requireHost().write(id, data);
+        const { id, data, binary } = args as {
+          id: string;
+          data: string;
+          binary?: boolean;
+        };
+        await requireHost().write(id, data, binary === true);
       },
     },
     resize: {
@@ -1004,6 +1031,22 @@ export default defineDesktopExtension({
       input: idInput,
       handler: async (args: unknown): Promise<PtyInfo> => {
         return await requireHost().info((args as { id: string }).id);
+      },
+    },
+    // The user's macOS key bindings (~/Library/KeyBindings/DefaultKeyBinding.dict), which the
+    // terminal honors the way native text fields do (lib/key-bindings.ts). null when absent.
+    keyBindings: {
+      input: emptyInput,
+      handler: async (): Promise<string | null> => {
+        const home = Deno.env.get("HOME");
+        if (!IS_DARWIN || !home) return null;
+        try {
+          return await Deno.readTextFile(
+            `${home}/Library/KeyBindings/DefaultKeyBinding.dict`,
+          );
+        } catch {
+          return null;
+        }
       },
     },
   },

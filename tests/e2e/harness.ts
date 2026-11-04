@@ -30,6 +30,12 @@ import {
 
 export const ROOT = fromFileUrl(new URL("../../", import.meta.url));
 
+// The motion tests need animations, so Chromium must not inherit the OS "Reduce motion" setting
+// (GitHub's macOS runners have it on). E2E_REDUCED_MOTION=1 forces it on instead.
+const MOTION_FLAG = Deno.env.get("E2E_REDUCED_MOTION") === "1"
+  ? "--force-prefers-reduced-motion"
+  : "--force-prefers-no-reduced-motion";
+
 // ---------------------------------------------------------------------------------------------
 // Build + serve
 // ---------------------------------------------------------------------------------------------
@@ -900,7 +906,7 @@ export function suite(
       const server = await serve(dir);
       let browser: Browser | undefined;
       try {
-        browser = await launch({ headless: true });
+        browser = await launch({ headless: true, args: [MOTION_FLAG] });
         for (const c of cases) {
           await t.step({
             name: c.name,

@@ -33,13 +33,14 @@ export function withKillSpy(backend: PtyBackend, kills: string[]): PtyBackend {
   return {
     kind: backend.kind,
     spawn: (o) => backend.spawn(o),
-    write: (id, data) => backend.write(id, data),
+    write: (id, data, options) => backend.write(id, data, options),
     resize: (id, cols, rows) => backend.resize(id, cols, rows),
     kill: (id) => {
       kills.push(id);
       return backend.kill(id);
     },
     info: (id) => backend.info(id),
+    keyBindings: () => backend.keyBindings(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
   };

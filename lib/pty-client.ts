@@ -57,8 +57,18 @@ export interface PtyExit {
 export interface PtyBackend {
   readonly kind: "desktop" | "demo";
   spawn(options: PtySpawnOptions): Promise<PtySpawned>;
-  write(id: string, data: string): Promise<void>;
+  /**
+   * Send input. `binary` marks xterm `onBinary` data (one byte per char, e.g. legacy mouse
+   * reports), which must not be UTF-8 encoded.
+   */
+  write(
+    id: string,
+    data: string,
+    options?: { binary?: boolean },
+  ): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
+  /** The user's macOS DefaultKeyBinding.dict text (null when absent or not macOS). */
+  keyBindings(): Promise<string | null>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -203,8 +213,10 @@ export function createDesktopBackend(
       listen();
       return await pty.spawn(options);
     },
-    async write(id, data) {
-      await pty.write({ id, data });
+    async write(id, data, options) {
+      await pty.write(
+        options?.binary ? { id, data, binary: true } : { id, data },
+      );
     },
     async resize(id, cols, rows) {
       await pty.resize({ id, cols, rows });
@@ -214,6 +226,9 @@ export function createDesktopBackend(
     },
     async info(id) {
       return await pty.info({ id });
+    },
+    async keyBindings() {
+      return await pty.keyBindings({});
     },
     onData: (id, cb) => {
       listen();
@@ -541,6 +556,9 @@ export function createDemoBackend(): PtyBackend {
     kill(id) {
       if (shells.has(id)) end(id, { exitCode: 0, signal: 1 });
       return Promise.resolve();
+    },
+    keyBindings() {
+      return Promise.resolve(null);
     },
     info(id) {
       return attempt(() => {

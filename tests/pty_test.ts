@@ -136,6 +136,52 @@ Deno.test("PtyHost: output is coalesced", opts, async () => {
   }
 });
 
+Deno.test(
+  "PtyHost: binary writes are raw bytes, text is UTF-8",
+  opts,
+  async () => {
+    const rec = new Recorder();
+    const host = new PtyHost(rec.emit);
+    // The markers are split by quotes in the command, so only od's run prints them whole.
+    const odRun = (n: number, tag: string) =>
+      `stty raw -echo; echo ${tag}-''READY; od -An -tx1 -N${n}; echo ${tag}-''END; stty sane\r`;
+    try {
+      const t = await host.spawn({
+        cols: 80,
+        rows: 24,
+        cwd: "/tmp",
+        shell: "/bin/sh",
+      });
+      // Legacy (X10) mouse reports put coordinates past column 95 in bytes >= 0x80: they must
+      // arrive as single bytes, not UTF-8 pairs.
+      await host.write(t.id, odRun(3, "BIN"));
+      await rec.until(
+        "od (binary)",
+        () => rec.text(t.id).includes("BIN-READY"),
+      );
+      await host.write(t.id, "\xa0\xff\xc3", true);
+      await rec.until(
+        "od output (binary)",
+        () => rec.text(t.id).includes("BIN-END"),
+      );
+      assertMatch(rec.text(t.id), /a0 +ff +c3/);
+      // The same character as text is UTF-8: U+00A0 is c2 a0.
+      await host.write(t.id, odRun(2, "TXT"));
+      await rec.until("od (text)", () => rec.text(t.id).includes("TXT-READY"));
+      await host.write(t.id, "\xa0");
+      await rec.until(
+        "od output (text)",
+        () => rec.text(t.id).includes("TXT-END"),
+      );
+      assertMatch(rec.text(t.id).split("TXT-READY")[1], /c2 +a0/);
+      await host.write(t.id, "exit\r");
+      await rec.until("exit", () => rec.exits.has(t.id));
+    } finally {
+      await host.dispose();
+    }
+  },
+);
+
 Deno.test("PtyHost: kill hangs up the shell", opts, async () => {
   const rec = new Recorder();
   const host = new PtyHost(rec.emit);

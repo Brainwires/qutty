@@ -1,0 +1,29 @@
+{
+  "desktop": {
+    "app": {
+      "identifier": "org.qutty.Qutty",
+      "name": "Qutty",
+      "icons": {
+        "macos": "./icons/app.icns",
+        "windows": "./icons/app.ico",
+        "linux": "./icons/app.png"
+      }
+    },
+    "window": {
+      "width": 1600,
+      "height": 1000,
+      "title": "Qutty"
+    },
+    "titleBar": "hiddenInset",
+    "capabilities": {
+      "extensions": [
+        "./desktop/pty.ts"
+      ]
+    },
+    "extraPermissions": {
+      "ffi": [
+        "*"
+      ]
+    }
+  }
+}
