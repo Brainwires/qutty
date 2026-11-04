@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Public repository, contributing guide, security policy and issue templates.
+- Releases publish automatically when a version tag is pushed.
+
 ## 0.1.0 — first release
 
 - Tiling terminal for macOS (Apple Silicon and Intel): every terminal in one

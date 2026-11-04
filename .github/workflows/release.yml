@@ -1,8 +1,8 @@
 name: Release
 
-# Push a tag like v0.1.0 (matching deno.json's version) to build, sign and notarize the arm64 and
-# x86_64 apps and attach their .dmg files to a draft GitHub release. Publishing the draft is a
-# manual step.
+# Push a tag like v0.2.0 (matching deno.json's version) to build, sign and notarize the arm64 and
+# x86_64 apps and publish a GitHub release with their .dmg files and the CHANGELOG.md section.
+# A tag with a pre-release suffix (v0.2.0-beta.1) is published as a pre-release.
 on:
   push:
     tags: ["v*"]
@@ -108,7 +108,7 @@ jobs:
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
   release:
-    name: Draft GitHub release
+    name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -119,7 +119,7 @@ jobs:
         with:
           path: release
           merge-multiple: true
-      - name: Create the draft release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -132,5 +132,7 @@ jobs:
             on { print }
           ' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Qutty ${VERSION}" > notes.md
-          gh release create "$GITHUB_REF_NAME" release/* \
-            --draft --title "Qutty ${VERSION}" --notes-file notes.md
+          PRE=""
+          case "$VERSION" in *-*) PRE="--prerelease" ;; *) PRE="--latest" ;; esac
+          gh release create "$GITHUB_REF_NAME" release/* $PRE \
+            --title "Qutty ${VERSION}" --notes-file notes.md

@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea for Qutty.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The workflow or problem, more than a specific solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could Qutty help?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you use today instead?
