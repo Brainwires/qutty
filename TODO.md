@@ -43,6 +43,46 @@
   - Mark sandboxed tiles visibly (a badge or tinted header) so you always know
     where you are.
 
+- [ ] **SSH sessions and a connection manager.** Run the system `ssh` in a PTY,
+      the same way shells run today. Never implement the protocol, and never
+      store passwords. Keys, ssh-agent, the keychain, jump hosts, known_hosts
+      and hardware keys all come for free from OpenSSH.
+  - **Profiles are SSH config.** The manager lists the `Host` entries in
+    `~/.ssh/config`, so it's populated on first launch. Hosts saved in Qutty go
+    to `~/.ssh/qutty.conf`, pulled into the main config with an `Include` line,
+    so they also work from a plain terminal. Never rewrite the user's own config
+    file. Keep directives the form doesn't model.
+  - **Connection manager dialog.** Keyboard first: open it, type to filter,
+    press Enter to connect. Hosts are grouped as Favorites, `~/.ssh/config` and
+    Recent. A detail pane shows user, port, key, jump host, remote command, tint
+    and forwards, with Connect / Connect in split / Edit. Typing
+    `user@host:port` that matches nothing offers quick connect, then save.
+  - **In the `+` picker.** SSH hosts appear below the shells and tools (see the
+    shell picker), alongside Docker sandboxes, as kinds of connection profile.
+  - **Shared connections.** Run Qutty's ssh with `ControlMaster auto` /
+    `ControlPersist`. A second tile to the same host opens instantly, with no
+    new handshake or 2FA. File transfers reuse the same connection.
+  - **File transfer (scp/sftp over the shared connection).**
+    - Upload: drop files on an SSH tile to copy them to the remote shell's
+      current directory. Get that directory from OSC 7 when the remote shell
+      emits it; otherwise ask, defaulting to `~`.
+    - Download: a "Download…" action on the tile with a remote path picker
+      (`sftp` listing), saving to `~/Downloads` or a chosen folder.
+    - Show progress, and allow cancel, in a small overlay on the tile. Works
+      without re-authenticating because it rides the control socket.
+  - **Dropped connections.** Show a "Disconnected" overlay with Reconnect
+    instead of closing the tile. Optional per-host "tmux on connect"
+    (`tmux new -A -s qutty`) so a reconnect lands where you left off: detach on
+    the remote side.
+  - **Host tint.** A per-host color from the theme palette (e.g. red border for
+    anything tagged `prod`), so dangerous tiles are obvious.
+  - **Auto-label.** When `info()` shows `ssh` as the foreground process in an
+    ordinary shell tile, label the tile with the host and offer "Save this
+    host".
+  - Maybe: broadcast typing to several selected SSH tiles (cluster ssh), and a
+    per-host port-forward panel (`ssh -O forward` / `-O cancel` on the control
+    socket, live).
+
 - [ ] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own
       terminals, as it does today.
