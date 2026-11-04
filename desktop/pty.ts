@@ -344,11 +344,22 @@ function fdStat(fd: number): FdStat | undefined {
   return darwinLibc().fstat(fd, buf) === 0 ? parseStat(buf) : undefined;
 }
 
-/** The lowest fd that is not open (what the next `open` returns), macOS. */
-function lowestFreeFd(): number {
-  let fd = 0;
-  while (fdStat(fd) !== undefined) fd++;
-  return fd;
+/**
+ * The open fds of this process, macOS: a scan of the table that ends after a long run of unused
+ * fds (the table can have large holes in a long-lived process).
+ */
+function openFdSet(): Set<number> {
+  const GAP = 256;
+  const open = new Set<number>();
+  for (let fd = 0, unused = 0; unused < GAP; fd++) {
+    if (fdStat(fd)) {
+      open.add(fd);
+      unused = 0;
+    } else {
+      unused++;
+    }
+  }
+  return open;
 }
 
 /**
@@ -359,42 +370,32 @@ function lowestFreeFd(): number {
  * - it opens the slave tty to configure it and never closes it in the parent (which also keeps
  *   the master from seeing EOF when the shell exits).
  *
- * Close both: the spare is the ptmx clone that took `lowFree` (the lowest free fd just before
- * `fork`) and is not a live master; the slave is the one fd whose device is `ttyPath`'s. (A third
- * leak, the kqueue its exit thread never closes, cannot be told apart from Deno's own and stays
- * until node-pty fixes it.)
+ * Where they land is not predictable (other threads of this process open and close fds at the
+ * same time), so they are found by identity among the fds that are new since `before` (taken
+ * just before `fork`): the spare is a `/dev/ptmx` clone (the master's inode) that is no live
+ * terminal's master; the slave is the new terminal's own device. Nothing else is touched. (A
+ * third leak, the kqueue its exit thread never closes, cannot be told apart from Deno's own and
+ * stays until node-pty fixes it.)
  */
 function closeForkLeaks(
   forked: { fd: number; pty: string },
-  lowFree: number,
+  before: Set<number>,
   liveMasters: Set<number>,
 ): void {
   const c = libc();
   const master = fdStat(forked.fd);
   if (!master) return;
-  const spare = lowFree === forked.fd ? undefined : fdStat(lowFree);
-  if (
-    spare?.chr && spare.ino === master.ino && !liveMasters.has(lowFree)
-  ) {
-    c.close(lowFree);
-  }
   const ttyBuf = new Uint8Array(STAT_SIZE);
-  if (darwinLibc().stat(cstr(forked.pty), ttyBuf) !== 0) return;
-  const tty = parseStat(ttyBuf);
-  if (!tty.chr) return;
-  // The slave was opened right after the master, but not necessarily near it: when the fd table
-  // has holes (a long-lived process), the master fills a low hole and the slave can land far
-  // above it. Scan the whole table, ending after a long run of unused fds past the master.
-  const GAP = 256;
-  for (let fd = 0, unused = 0; fd <= forked.fd || unused < GAP; fd++) {
-    if (fd === forked.fd) continue;
+  const tty = darwinLibc().stat(cstr(forked.pty), ttyBuf) === 0
+    ? parseStat(ttyBuf)
+    : undefined;
+  for (const fd of openFdSet()) {
+    if (fd === forked.fd || before.has(fd) || liveMasters.has(fd)) continue;
     const st = fdStat(fd);
-    if (!st) {
-      unused++;
-      continue;
-    }
-    unused = 0;
-    if (st.chr && st.rdev === tty.rdev) c.close(fd);
+    if (!st?.chr) continue;
+    const spare = st.ino === master.ino;
+    const slave = tty?.chr === true && st.rdev === tty.rdev;
+    if (spare || slave) c.close(fd);
   }
 }
 
@@ -646,7 +647,7 @@ export class PtyHost {
     let term: Term | undefined;
     let earlyExit: { exitCode: number; signal: number | null } | undefined;
     let forked: { fd: number; pid: number; pty: string };
-    const lowFree = IS_DARWIN ? lowestFreeFd() : -1;
+    const fdsBefore = IS_DARWIN ? openFdSet() : new Set<number>();
     try {
       forked = native.fork(
         shell,
@@ -676,7 +677,7 @@ export class PtyHost {
     if (IS_DARWIN) {
       closeForkLeaks(
         forked,
-        lowFree,
+        fdsBefore,
         new Set([...this.#terms.values()].map((t) => t.fd)),
       );
     }
