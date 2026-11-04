@@ -153,7 +153,8 @@ Deno.test(
         Error,
         "program not found",
       );
-      assertEquals(await resolveProgram("sh"), "/bin/sh");
+      // Merged-/usr Linux puts /usr/bin first on PATH; either is the same sh.
+      assertMatch((await resolveProgram("sh"))!, /^(\/usr)?\/bin\/sh$/);
       assertEquals(await resolveProgram("qutty-no-such-program"), undefined);
     } finally {
       await host.dispose();
