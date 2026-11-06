@@ -23,6 +23,12 @@
  */
 
 import { parse as parseToml } from "@std/toml";
+import {
+  addHermes,
+  hermesConfigPath,
+  hermesStatus,
+  removeHermes,
+} from "./integration-hermes.ts";
 import type { IntegrationStatus, IntegrationTarget } from "./protocol.ts";
 import { CODEX_HOOK_EVENTS } from "./hooks.ts";
 import {
@@ -72,6 +78,8 @@ export interface IntegrationFiles {
   claudeJson: string;
   claudeSettings: string;
   codexConfig: string;
+  /** `~/.hermes/config.yaml` (lib/hub/integration-hermes.ts) */
+  hermesConfig: string;
   state: string;
 }
 
@@ -85,6 +93,7 @@ export function integrationFiles(
     claudeJson: `${h}/.claude.json`,
     claudeSettings: `${h}/.claude/settings.json`,
     codexConfig: `${h}/.codex/config.toml`,
+    hermesConfig: hermesConfigPath(h),
     state: `${paths.dir}/integration.json`,
   };
 }
@@ -518,7 +527,7 @@ function codexBlockState(
 const tilde = (files: IntegrationFiles, p: string) =>
   p.startsWith(`${files.home}/`) ? `~${p.slice(files.home.length)}` : p;
 
-const TARGET_LABELS: Record<IntegrationTarget, string> = {
+const TARGET_LABELS: Record<"claude" | "codex", string> = {
   claude: "Claude Code",
   codex: "Codex",
 };
@@ -599,6 +608,12 @@ export async function integrationStatus(
         adds: codexBlock(paths, codexKeys, codexGroupsNow).slice(1),
       }],
     },
+    await hermesStatus(
+      fs,
+      files.hermesConfig,
+      tilde(files, files.hermesConfig),
+      paths,
+    ),
   ];
 }
 
@@ -644,6 +659,14 @@ export async function installIntegration(
   paths: HubPaths,
   target: IntegrationTarget,
 ): Promise<void> {
+  if (target === "hermes") {
+    // Its marker line records what Uninstall must undo: no state file entry.
+    return await editFile(
+      fs,
+      files.hermesConfig,
+      (t) => addHermes(t, paths),
+    );
+  }
   const state = await readState(fs, files);
   if (target === "claude") {
     await editFile(fs, files.claudeJson, (t) => addClaudeMcp(t, paths, state));
@@ -670,6 +693,13 @@ export async function uninstallIntegration(
   paths: HubPaths,
   target: IntegrationTarget,
 ): Promise<void> {
+  if (target === "hermes") {
+    return await editFile(
+      fs,
+      files.hermesConfig,
+      (t) => t === undefined ? t : removeHermes(t),
+    );
+  }
   const state = await readState(fs, files);
   if (target === "claude") {
     await editFile(

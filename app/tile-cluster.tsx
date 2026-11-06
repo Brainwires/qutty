@@ -343,7 +343,9 @@ function AgentBadge(props: { tile: TileInfo | undefined }) {
       data-testid="tile-agent-badge"
       data-status={tile.status}
       data-unread={String(tile.unread)}
-      title={`${tile.name} (${tile.harness}): ${tile.status}${unread}`}
+      title={`${tile.name} (${tile.harness}${
+        tile.model ? ` · ${tile.model}` : ""
+      }): ${tile.status}${unread}`}
     >
       <span class="tile-agent-dot" aria-hidden="true" />
       <span class="tile-agent-name">{tile.name}</span>

@@ -170,6 +170,7 @@ suite("agent hub", (test) => {
     assertEquals(rows.map((r) => [r.target, r.installed, r.paths]), [
       ["claude", "false", ["~/.claude.json", "~/.claude/settings.json"]],
       ["codex", "false", ["~/.codex/config.toml"]],
+      ["hermes", "false", ["~/.hermes/config.yaml"]],
     ]);
     assert(rows[0].adds[0].includes('"qutty"'), rows[0].adds[0]);
     assert(rows[1].adds[0].includes("[mcp_servers.qutty]"), rows[1].adds[0]);

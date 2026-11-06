@@ -11,6 +11,13 @@
  */
 
 import { baseName } from "./ssh-ui.ts";
+import {
+  type OllamaPair,
+  pairEntryId,
+  pairOfEntryId,
+  pairTitle,
+} from "./ollama/settings.ts";
+import { harnessLabel } from "./ollama/harnesses.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Agent tools
@@ -34,6 +41,8 @@ export const AGENT_TOOLS: readonly AgentToolSpec[] = [
   { name: "gemini", label: "Gemini CLI" },
   { name: "aider", label: "Aider" },
   { name: "opencode", label: "opencode" },
+  { name: "hermes", label: "Hermes Agent" },
+  { name: "openclaw", label: "OpenClaw" },
 ];
 
 /**
@@ -187,11 +196,18 @@ export type LaunchEntry =
     label: string;
     detail: string;
     host: LaunchHost;
+  }
+  | {
+    kind: "ollama";
+    id: string;
+    label: string;
+    detail: string;
+    pair: OllamaPair;
   };
 
 /** A titled group of the menu. */
 export interface LaunchSection {
-  id: "shells" | "agents" | "ssh";
+  id: "shells" | "agents" | "ollama" | "ssh";
   title: string;
   entries: LaunchEntry[];
 }
@@ -200,10 +216,45 @@ const shellEntryId = (path: string) => `shell:${path}`;
 const agentEntryId = (name: string) => `agent:${name}`;
 const sshEntryId = (alias: string) => `ssh:${alias}`;
 
-/** The menu's sections, empty ones left out: shells, agent tools, then SSH hosts. */
+/** What the Ollama helper can launch now: its pairs, the installed harnesses, the pulled models. */
+export interface OllamaLaunchables {
+  /** Candidate pairs, in menu order (recent first; repeats are dropped). */
+  pairs: readonly OllamaPair[];
+  harnesses: ReadonlySet<string>;
+  models: ReadonlySet<string>;
+}
+
+/** The Ollama pairs that can start now (harness installed, model pulled), without repeats. */
+export function ollamaEntries(o: OllamaLaunchables): LaunchEntry[] {
+  const out: LaunchEntry[] = [];
+  for (const pair of o.pairs) {
+    const id = pairEntryId(pair);
+    if (
+      !o.harnesses.has(pair.harness) || !o.models.has(pair.model) ||
+      out.some((e) => e.id === id)
+    ) continue;
+    out.push({
+      kind: "ollama",
+      id,
+      label: pairTitle(pair),
+      detail: `ollama launch ${pair.harness} --model ${pair.model} (${
+        harnessLabel(pair.harness)
+      })`,
+      pair: { harness: pair.harness, model: pair.model },
+    });
+  }
+  return out;
+}
+
+/**
+ * The menu's sections, empty ones left out: shells, agent tools, Ollama pairs, then SSH hosts.
+ * The Ollama section is kept, even empty, whenever `ollama` is given (Ollama is installed): the
+ * menu adds its "Ollama models…" item to it, which is not an entry.
+ */
 export function launchSections(
   found: Launchables,
   hosts: readonly LaunchHost[],
+  ollama?: OllamaLaunchables,
 ): LaunchSection[] {
   const sections: LaunchSection[] = [
     {
@@ -229,6 +280,11 @@ export function launchSections(
       })),
     },
     {
+      id: "ollama",
+      title: "Ollama",
+      entries: ollama ? ollamaEntries(ollama) : [],
+    },
+    {
       id: "ssh",
       title: "SSH",
       entries: hosts.map((host) => ({
@@ -240,7 +296,10 @@ export function launchSections(
       })),
     },
   ];
-  return sections.filter((s) => s.entries.length > 0);
+  // The Ollama section stays while Ollama is there, for the menu's "Ollama models…" item.
+  return sections.filter((s) =>
+    s.entries.length > 0 || (s.id === "ollama" && ollama !== undefined)
+  );
 }
 
 /** Every entry of the sections, top to bottom. */
@@ -265,10 +324,14 @@ export type PlusOpens = "default" | "last" | string;
 /** Longest entry id a setting keeps (a path or an alias, with its prefix). */
 const MAX_ENTRY_ID = 1024;
 
-/** Whether `v` looks like an entry id (`shell:`, `agent:` or `ssh:` plus something). */
+/** Whether `v` looks like an entry id (`shell:`, `agent:`, `ssh:` plus something, or an Ollama pair). */
 export function isEntryId(v: unknown): v is string {
-  return typeof v === "string" && v.length <= MAX_ENTRY_ID &&
-    /^(shell|agent|ssh):./.test(v) && !v.includes("\0");
+  if (typeof v !== "string" || v.length > MAX_ENTRY_ID || v.includes("\0")) {
+    return false;
+  }
+  return v.startsWith("ollama:")
+    ? pairOfEntryId(v) !== undefined
+    : /^(shell|agent|ssh):./.test(v);
 }
 
 /** A stored `plusOpens` value, checked (anything unknown is `"default"`). */
@@ -302,5 +365,7 @@ export function plusLabel(entry: LaunchEntry | undefined): string {
   if (!entry) return "New terminal";
   return entry.kind === "ssh"
     ? `New: ssh ${entry.label}`
+    : entry.kind === "ollama"
+    ? `New: ${entry.label} (Ollama)`
     : `New: ${entry.label}`;
 }

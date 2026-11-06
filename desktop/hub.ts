@@ -70,10 +70,17 @@ import { buildToolRegistry, createHubHandler } from "../lib/hub/tools.ts";
 import {
   claudeHooksSettings,
   claudeMcpConfig,
-  hubArgsFor,
   type HubPaths,
   hubPaths,
 } from "../lib/hub/launch.ts";
+import {
+  dshPatch,
+  hubWiring,
+  openclawConfig,
+  openclawUserConfig,
+  opencodeConfig,
+  wiringPaths,
+} from "../lib/hub/wiring.ts";
 import {
   type ConfigFs,
   installIntegration,
@@ -131,6 +138,32 @@ export async function installHubFiles(paths: HubPaths): Promise<void> {
   await writeIfChanged(paths.hook, QUTTY_HOOK_SCRIPT, 0o755);
   await writeIfChanged(paths.claudeMcpConfig, claudeMcpConfig(paths), 0o644);
   await writeIfChanged(paths.claudeHooks, claudeHooksSettings(paths), 0o644);
+  // The other harnesses' per-session files (lib/hub/wiring.ts).
+  const w = wiringPaths(paths);
+  await writeIfChanged(w.opencodeConfig, opencodeConfig(paths), 0o644);
+  await writeIfChanged(w.dshPatch, dshPatch(paths), 0o644);
+  await writeIfChanged(
+    w.openclawConfig,
+    openclawConfig(
+      paths,
+      openclawUserConfig(homeOf(paths), paths, Deno.env.toObject()),
+    ),
+    0o644,
+  );
+}
+
+/** The home folder `paths` were made for (`~/.qutty` is in it). */
+function homeOf(paths: HubPaths): string {
+  return paths.dir.replace(/\/\.qutty$/, "");
+}
+
+/** Whether a file exists (read permission is the app's baseline). */
+function fileExists(path: string): boolean {
+  try {
+    return Deno.statSync(path).isFile;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -314,6 +347,8 @@ export class HubService {
     info: {
       program?: string;
       agent?: string;
+      /** Started through `ollama launch` on this model (recorded for list_peers). */
+      ollamaModel?: string;
       cwd: string;
       cols: number;
       rows: number;
@@ -333,13 +368,24 @@ export class HubService {
       id,
       cwd: info.cwd,
       ...(info.agent ? { harness: info.agent } : {}),
+      ...(info.ollamaModel ? { model: info.ollamaModel } : {}),
     });
+    const env = { QUTTY_SOCK: path, QUTTY_TILE_ID: id };
+    const userEnv = Deno.env.toObject();
+    const openclaw = info.agent === "openclaw"
+      ? openclawUserConfig(homeOf(this.paths), this.paths, userEnv)
+      : undefined;
+    const wiring = info.program !== undefined
+      ? hubWiring(info.agent, this.paths, env, this.#installed, userEnv, {
+        ...(openclaw && fileExists(openclaw)
+          ? { openclawUserConfig: openclaw }
+          : {}),
+      })
+      : { args: [], env: {} };
     return {
-      env: { QUTTY_SOCK: path, QUTTY_TILE_ID: id },
+      env: { ...wiring.env, ...env },
       pathPrepend: this.paths.bin,
-      args: info.program !== undefined
-        ? hubArgsFor(info.agent, this.paths, this.#installed)
-        : [],
+      args: wiring.args,
     };
   }
 
@@ -364,14 +410,13 @@ export class HubService {
       sandbox: true,
       ...(info.agent ? { harness: info.agent } : {}),
     });
-    return {
-      env: {
-        QUTTY_HUB: `host.docker.internal:${port}`,
-        QUTTY_TILE_TOKEN: token,
-        QUTTY_TILE_ID: id,
-      },
-      args: hubArgsFor(info.agent, this.paths),
+    const env = {
+      QUTTY_HUB: `host.docker.internal:${port}`,
+      QUTTY_TILE_TOKEN: token,
+      QUTTY_TILE_ID: id,
     };
+    const wiring = hubWiring(info.agent, this.paths, env);
+    return { env: { ...wiring.env, ...env }, args: wiring.args };
   }
 
   data(id: string, text: string): void {
@@ -681,13 +726,15 @@ const answerInput = objectSchema<{ id: string; action: string | null }>(
 );
 
 const targetInput = objectSchema<{ target: IntegrationTarget }>((v, issues) => {
-  if (v.target !== "claude" && v.target !== "codex") {
+  if (v.target !== "claude" && v.target !== "codex" && v.target !== "hermes") {
     issues.push({
-      message: "target must be claude or codex",
+      message: "target must be claude, codex or hermes",
       path: ["target"],
     });
   }
-  return { target: v.target === "codex" ? "codex" : "claude" };
+  return {
+    target: v.target === "codex" || v.target === "hermes" ? v.target : "claude",
+  };
 });
 
 const labelInput = objectSchema<{ id: string; label: string }>((v, issues) => ({

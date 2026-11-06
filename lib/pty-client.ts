@@ -25,6 +25,14 @@ import type { PtyDataEvent, PtyExitEvent } from "../desktop/pty.ts";
 import type sshExtension from "../desktop/ssh.ts";
 import type hubExtension from "../desktop/hub.ts";
 import type sandboxExtension from "../desktop/sandbox.ts";
+import type ollamaExtension from "../desktop/ollama.ts";
+import type { OllamaStatus } from "./ollama/cli.ts";
+import type {
+  LibraryOrder,
+  LibraryPageResult,
+  LibraryResult,
+} from "./ollama/library.ts";
+import { createDemoOllama } from "./ollama/demo.ts";
 import type { SandboxStatus } from "./sandbox/lifecycle.ts";
 import type { SandboxSettings } from "./sandbox/settings.ts";
 import { createDemoSandbox, type SandboxAction } from "./sandbox/demo.ts";
@@ -85,6 +93,11 @@ export interface PtySpawnOptions {
   args?: string[];
   /** The agent tool `program` is (`claude`): the agent hub adds the flags that connect it. */
   agent?: string;
+  /**
+   * The agent runs through `ollama launch` on this model: the hub's flags go after a final `--`
+   * (desktop/pty.ts), and the hub records the model.
+   */
+  ollamaModel?: string;
   /** Run it in the window's shared Docker sandbox (`docker exec` into its container). */
   sandbox?: boolean;
 }
@@ -141,6 +154,20 @@ export interface PtyBackend {
   sandboxEnsure(settings: SandboxSettings): Promise<SandboxStatus>;
   /** The status line's Restart, Stop and Reset volume. */
   sandboxAction(action: SandboxAction): Promise<SandboxStatus>;
+
+  // --- Ollama (desktop/ollama.ts) ------------------------------------------------------------
+
+  /** Ollama installed? its server, the pulled and loaded models, the `ollama launch` harnesses. */
+  ollamaStatus(): Promise<OllamaStatus>;
+  /** Search the ollama.com library (cached for a few hours by the backend). */
+  ollamaLibrary(
+    query: string,
+    opts?: { order?: LibraryOrder; toolsOnly?: boolean },
+  ): Promise<LibraryResult>;
+  /** A library model's page: the harnesses it is listed for, its variants. */
+  ollamaLibraryModel(name: string): Promise<LibraryPageResult>;
+  /** Open the Ollama app (macOS), which starts its server; false when it is not installed. */
+  ollamaOpenApp(): Promise<boolean>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -357,6 +384,7 @@ export function createDesktopBackend(
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
+  const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -487,6 +515,15 @@ export function createDesktopBackend(
         : action === "stop"
         ? sandbox.stop({})
         : sandbox.resetVolume({}),
+    ollamaStatus: () => ollama.status({}),
+    ollamaLibrary: (query, opts = {}) =>
+      ollama.library({
+        ...(query.trim() ? { query: query.trim() } : {}),
+        order: opts.order ?? "popular",
+        toolsOnly: opts.toolsOnly === true,
+      }),
+    ollamaLibraryModel: (name) => ollama.libraryModel({ name }),
+    ollamaOpenApp: () => ollama.openApp({}),
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);
@@ -685,6 +722,8 @@ interface DemoMode {
   remote?: { user: string; host: string };
   /** A fake agent tool. */
   agent?: { name: string; label: string };
+  /** A fake `ollama pull` first (`done` adds the model to the demo's list). */
+  pull?: { done(): void };
   /** A fake shell in the shared sandbox (root in `qutty-sandbox`). */
   sandbox?: boolean;
 }
@@ -713,6 +752,19 @@ class DemoShell {
 
   start(): void {
     const agent = this.mode.agent;
+    const pull = this.mode.pull;
+    if (pull) {
+      // A fake `ollama pull`: the progress lines, then the model is "here".
+      this.out(
+        `pulling manifest\r\npulling 5642e97495e1: 100% ▕████████████████▏ 1.0 GB\r\n` +
+          `verifying sha256 digest\r\nwriting manifest\r\nsuccess\r\n`,
+      );
+      pull.done();
+      if (!agent) {
+        this.exit({ exitCode: 0, signal: null });
+        return;
+      }
+    }
     if (agent) {
       this.out(
         `${
@@ -1076,6 +1128,7 @@ export function createDemoBackend(): PtyBackend {
     control: hubControls.emit,
   });
   const sandbox = createDemoSandbox();
+  const ollama = createDemoOllama();
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
@@ -1091,7 +1144,17 @@ export function createDemoBackend(): PtyBackend {
       const remote = options.program === "ssh"
         ? remoteOf(options.args ?? [])
         : undefined;
-      const agent = demoAgentOf(options.program);
+      // `ollama pull` / `ollama launch <harness>` (lib/ollama/demo.ts) run as a fake pull and a
+      // demo agent named after the harness.
+      const viaOllama = ollama.command(options.program, options.args);
+      const launched = viaOllama?.launch;
+      const agent = launched
+        ? {
+          name: launched.harness,
+          label: `${launched.harness} · ${launched.model}`,
+        }
+        : demoAgentOf(options.program);
+      const pulling = viaOllama?.pull;
       const id = `demo-${++next}`;
       const shell = new DemoShell(
         id,
@@ -1105,10 +1168,11 @@ export function createDemoBackend(): PtyBackend {
           ...(remote ? { remote } : {}),
           ...(options.sandbox ? { sandbox: true } : {}),
           ...(agent ? { agent: { name: agent.name, label: agent.label } } : {}),
+          ...(pulling ? { pull: { done: () => ollama.pulled(pulling) } } : {}),
         },
       );
       shells.set(id, shell);
-      hub.add(id, agent?.name, options.sandbox === true);
+      hub.add(id, agent?.name, options.sandbox === true, launched?.model);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
       setTimeout(() => {
         if (shells.get(id) === shell) shell.start(); // not if killed already
@@ -1145,6 +1209,10 @@ export function createDemoBackend(): PtyBackend {
     sandboxCheck: () => sandbox.check(),
     sandboxEnsure: (settings) => sandbox.ensure(settings),
     sandboxAction: (action) => sandbox.action(action),
+    ollamaStatus: () => ollama.status(),
+    ollamaLibrary: (query, opts) => ollama.library(query, opts),
+    ollamaLibraryModel: (name) => ollama.libraryModel(name),
+    ollamaOpenApp: () => ollama.openApp(),
     info(id) {
       return attempt(() => {
         const s = get(id);

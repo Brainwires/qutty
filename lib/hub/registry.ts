@@ -36,6 +36,8 @@ export function nameProblem(name: string): string | null {
 export interface TileSeed {
   id: string;
   harness?: string;
+  /** The Ollama model it was launched on. */
+  model?: string;
   label?: string;
   cwd?: string;
   /** It runs in the window's shared Docker sandbox. */
@@ -63,6 +65,7 @@ export class Registry {
       status: "idle",
       unread: 0,
       ...(seed.harness ? { harness: seed.harness } : {}),
+      ...(seed.model ? { model: seed.model } : {}),
       ...(seed.label ? { label: seed.label } : {}),
       ...(seed.cwd ? { cwd: seed.cwd } : {}),
       ...(seed.sandbox ? { sandbox: true } : {}),

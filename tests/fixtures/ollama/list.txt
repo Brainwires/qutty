@@ -1,0 +1,2 @@
+NAME               ID              SIZE     MODIFIED   
+qwen3.8:27b-mlx    5642e97495e1    18 GB    7 days ago    

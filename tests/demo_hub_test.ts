@@ -140,6 +140,7 @@ Deno.test("demo hub: integration Install / Uninstall toggle and restore the file
   assertEquals(before.map((s) => [s.target, s.installed]), [
     ["claude", false],
     ["codex", false],
+    ["hermes", false],
   ]);
   assertEquals(before[0].changes.map((c) => c.path), [
     "~/.claude.json",
@@ -149,13 +150,13 @@ Deno.test("demo hub: integration Install / Uninstall toggle and restore the file
   assertStringIncludes(before[0].changes[0].adds, "/Users/demo/.qutty/bin");
   assertStringIncludes(before[1].changes[0].adds, "[mcp_servers.qutty]");
   const installed = await hub.integrationInstall("claude");
-  assertEquals(installed.map((s) => s.installed), [true, false]);
+  assertEquals(installed.map((s) => s.installed), [true, false, false]);
   assertEquals(
     (await hub.integrationInstall("codex")).map((s) => s.installed),
-    [true, true],
+    [true, true, false],
   );
   const after = await hub.integrationUninstall("claude");
-  assertEquals(after.map((s) => s.installed), [false, true]);
+  assertEquals(after.map((s) => s.installed), [false, true, false]);
   assertEquals(after[0].note, undefined, "nothing left behind");
 });
 

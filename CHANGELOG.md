@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- An Ollama helper. When Ollama is installed, the `+` menu gets an Ollama
+  section: the harness × model pairs you launched recently, and "Ollama
+  models…", a dialog to pick a terminal harness (Claude Code, Codex, OpenCode,
+  Hermes Agent, OpenClaw, Qwen Code, Copilot CLI and the other `ollama launch`
+  integrations) and a pulled model. It shows each model's size, capabilities
+  (tool calling, vision, thinking) and whether it is loaded right now. A model
+  without tool calling is marked, and Qutty asks before starting an agent on it.
+  The tile runs `ollama launch <harness> --model <model>`, is titled "claude ·
+  qwen3.8:27b-mlx — ~/project", and closes when the harness exits. "Pull a
+  model…" opens a tile running `ollama pull`, and the list picks the new model
+  up when the pull ends. The Library tab searches ollama.com, with popular or
+  newest first and an option to show only models with tool calling. It shows the
+  harnesses each model is listed for, and has Pull and Pull & launch. A "new"
+  badge counts models updated since you last looked.
+- Settings → Ollama shows the version, whether the server runs (with Open Ollama
+  when it does not), the model table, and Refresh. You can also choose a default
+  harness and model there. A pair is a `+` menu entry, so "+ opens" can open it.
+- Every harness started from the `+` menu or through Ollama joins the agent hub,
+  where its wiring allows. Claude Code and Codex get their hub flags after
+  `ollama launch`'s `--`. OpenCode gets an extra config layer
+  (`OPENCODE_CONFIG`) and a private server. OpenClaw runs its local terminal UI
+  on a config that includes yours. Qwen Code, Copilot CLI and Kimi get an inline
+  MCP config, and DeepSeek Harness gets a launcher patch. Hermes Agent has no
+  per-session route, so Settings → Agent integration can now add the hub to
+  `~/.hermes/config.yaml`, in a marked block that Uninstall removes byte for
+  byte. The hub records the model too, so `list_peers` shows it. Hermes Agent
+  and OpenClaw are also offered on their own in the `+` menu.
+- The status checks run `ollama` and `curl` in hidden terminals, so the app
+  still needs no network or process permission. The library pages are cached for
+  three hours. Background checks skip `ollama list` while the server is down, so
+  Qutty never starts Ollama behind your back.
+
 - The Homebrew cask now follows releases on its own: brainwires/homebrew-tap
   checks hourly for a new Qutty release and updates itself, so the release
   workflow no longer needs a token for it.

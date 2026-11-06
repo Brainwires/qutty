@@ -78,6 +78,12 @@ export interface PtySpawnArgs {
    */
   agent?: string;
   /**
+   * The agent is started through `ollama launch` (lib/ollama/harnesses.ts), on this model: the
+   * hub's arguments then go after a `--` at the end, which ollama hands to the harness, and the
+   * hub records the model. Never sandboxed.
+   */
+  ollamaModel?: string;
+  /**
    * Run it in the window's shared Docker sandbox (desktop/sandbox.ts): `docker exec -it` into
    * the window's container. `shell` / `program` then name what runs inside (by command name).
    */
@@ -134,7 +140,12 @@ const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => {
     program: optStr(v, "program", issues),
     ...(args === undefined ? {} : { args }),
     ...(v.agent === undefined ? {} : { agent: str(v, "agent", issues, 64) }),
-    ...(v.sandbox === true ? { sandbox: true } : {}),
+    ...(v.ollamaModel === undefined
+      ? {}
+      : { ollamaModel: str(v, "ollamaModel", issues, 200) }),
+    ...(v.sandbox === true && v.ollamaModel === undefined
+      ? { sandbox: true }
+      : {}),
   };
 });
 
@@ -684,12 +695,17 @@ export type PtyEmit = (
  * logged and ignored: the hub must never break a terminal.
  */
 export interface PtyTaps {
-  /** Before the fork: extra environment, and arguments put before a program's own. */
+  /**
+   * Before the fork: extra environment, and arguments put before a program's own (after a final
+   * `--` instead for an agent started through `ollama launch`).
+   */
   spawning?(
     id: string,
     info: {
       program?: string;
       agent?: string;
+      /** Started through `ollama launch` on this model. */
+      ollamaModel?: string;
       cwd: string;
       cols: number;
       rows: number;
@@ -863,6 +879,9 @@ export class PtyHost {
         taps.spawning!(id, {
           ...(args.program !== undefined ? { program: file } : {}),
           ...(args.agent !== undefined ? { agent: args.agent } : {}),
+          ...(args.ollamaModel !== undefined
+            ? { ollamaModel: args.ollamaModel }
+            : {}),
           cwd: sandboxed?.cwd ?? cwd,
           cols: args.cols,
           rows: args.rows,
@@ -880,7 +899,10 @@ export class PtyHost {
         .filter((d, i, all) => d !== "" && all.indexOf(d) === i).join(":");
     }
     if (!sandboxed && args.program !== undefined && extra?.args?.length) {
-      argv = [...extra.args, ...argv];
+      // `ollama launch <harness> … -- <args>` hands what follows `--` to the harness.
+      argv = args.ollamaModel !== undefined
+        ? [...argv, "--", ...extra.args]
+        : [...extra.args, ...argv];
     }
     const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
 

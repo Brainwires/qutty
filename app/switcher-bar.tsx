@@ -32,7 +32,7 @@ export interface SwitcherBarProps {
   /** The `+` picker's entries and actions (app/launch-menu.tsx). */
   launch: Pick<
     LaunchMenuProps,
-    "sections" | "plusTitle" | "plusEntryId" | "onLaunch" | "sandbox"
+    "sections" | "plusTitle" | "plusEntryId" | "onLaunch" | "sandbox" | "ollama"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -215,6 +215,17 @@ export function SwitcherBar(props: SwitcherBarProps) {
             setMenu("none");
             props.onConnections();
           }}
+          {...(props.launch.ollama
+            ? {
+              ollama: {
+                newCount: props.launch.ollama.newCount,
+                onOpen: () => {
+                  setMenu("none");
+                  props.launch.ollama?.onOpen();
+                },
+              },
+            }
+            : {})}
         />
         <button
           type="button"
