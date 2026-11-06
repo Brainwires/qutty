@@ -31,6 +31,8 @@ export interface ShellProfile {
   kind: "shell";
   /** The shell's path; absent for the default shell. */
   shell?: string;
+  /** Runs in the window's shared Docker sandbox. */
+  sandbox?: boolean;
 }
 
 /**
@@ -45,6 +47,8 @@ export interface AgentProfile {
   name: string;
   /** What the menu calls it (`Claude Code`). */
   label: string;
+  /** Runs in the window's shared Docker sandbox. */
+  sandbox?: boolean;
 }
 
 /** What a terminal runs: a login shell, an agent tool, or ssh to a host. */

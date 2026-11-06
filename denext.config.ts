@@ -25,8 +25,14 @@ export default {
       // backend (`desktop/ssh.ts`: host list, qutty.conf, scp/sftp transfers) runs beside it and
       // starts ssh/scp/sftp through the same PTY path. The agent hub (`desktop/hub.ts`: a unix
       // socket + MCP server per terminal, the screen mirror, ask_user, Settings → Agent
-      // integration) taps the PTY host.
-      extensions: ["./desktop/pty.ts", "./desktop/ssh.ts", "./desktop/hub.ts"],
+      // integration) taps the PTY host. The shared Docker sandbox (`desktop/sandbox.ts`) runs
+      // docker in hidden PTYs and gives the PTY host the `docker exec` argv of sandboxed tiles.
+      extensions: [
+        "./desktop/pty.ts",
+        "./desktop/ssh.ts",
+        "./desktop/hub.ts",
+        "./desktop/sandbox.ts",
+      ],
     },
     // What the extensions need beyond the baseline (which already has broad read + env):
     // - ffi "*": node-pty's prebuilt Node-API addon (pty.node) is loaded from the compiled app's
@@ -36,6 +42,9 @@ export default {
     //   why). The hub's unix sockets too: `Deno.listen({ transport: "unix" })` needs
     //   `--allow-write` for the socket path, which cannot be scoped to a per-user folder here
     //   (desktop/hub-socket.ts). Its uid comes from libc `getuid` (`Deno.uid()` needs `sys`).
+    //   The hub's TCP loopback endpoint for the shared Docker sandbox is bound the same way
+    //   (`FdTcpListener`), so it needs no `net` permission either; docker itself runs through
+    //   the PTY path.
     //   No `run`, `write`, `net` or `sys` is needed.
     extraPermissions: { ffi: ["*"] },
   },

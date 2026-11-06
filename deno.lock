@@ -14,8 +14,8 @@
     "jsr:@deno/cache-dir@0.22.2": "0.22.2",
     "jsr:@deno/graph@0.86": "0.86.9",
     "jsr:@luca/esbuild-deno-loader@0.11": "0.11.1",
-    "jsr:@rullama/mcp-client@~0.12.2": "0.12.2",
-    "jsr:@rullama/mcp-server@~0.12.2": "0.12.2",
+    "jsr:@rullama/mcp-client@~0.12.3": "0.12.3",
+    "jsr:@rullama/mcp-server@~0.12.3": "0.12.3",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/async@1": "1.5.1",
     "jsr:@std/async@^1.5.1": "1.5.1",
@@ -27,7 +27,7 @@
     "jsr:@std/encoding@^1.0.5": "1.0.11",
     "jsr:@std/fmt@1.0.3": "1.0.3",
     "jsr:@std/fmt@^1.0.10": "1.0.10",
-    "jsr:@std/fmt@^1.0.3": "1.0.3",
+    "jsr:@std/fmt@^1.0.3": "1.0.10",
     "jsr:@std/fs@1": "1.0.24",
     "jsr:@std/fs@^1.0.24": "1.0.24",
     "jsr:@std/fs@^1.0.6": "1.0.24",
@@ -155,11 +155,11 @@
         "jsr:@std/path@^1.0.6"
       ]
     },
-    "@rullama/mcp-client@0.12.2": {
-      "integrity": "9587fb5604f6e0c0b2f8985a9fc65738aa87f36b1cd1e26aaa3a1887d0cfdea7"
+    "@rullama/mcp-client@0.12.3": {
+      "integrity": "d61524abd59b54f98361a8cca8bb037ebcff8e30d046342f1b90a6a670547c2f"
     },
-    "@rullama/mcp-server@0.12.2": {
-      "integrity": "bd8b90b9de24cc2d8fddc75878f9dd643f4723af684f69454eacec71723ee7ca",
+    "@rullama/mcp-server@0.12.3": {
+      "integrity": "a59d3061f2e9c3c3e959c165ad7d91b08e92bae2e1cfeeb4c6fe9752a8c9d3b9",
       "dependencies": [
         "jsr:@rullama/mcp-client"
       ]
@@ -171,7 +171,10 @@
       ]
     },
     "@std/async@1.5.1": {
-      "integrity": "c82455dc70cab29a0adf3ac8075db934785bffdd3902af5afcf25d21a74cfd86"
+      "integrity": "c82455dc70cab29a0adf3ac8075db934785bffdd3902af5afcf25d21a74cfd86",
+      "dependencies": [
+        "jsr:@std/data-structures"
+      ]
     },
     "@std/bytes@1.0.6": {
       "integrity": "f6ac6adbd8ccd99314045f5703e23af0a68d7f7e58364b47d2c7f408aeb5820a"
@@ -1614,8 +1617,8 @@
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
       "jsr:@denext/denext@^4.12.0",
-      "jsr:@rullama/mcp-client@~0.12.2",
-      "jsr:@rullama/mcp-server@~0.12.2",
+      "jsr:@rullama/mcp-client@~0.12.3",
+      "jsr:@rullama/mcp-server@~0.12.3",
       "jsr:@std/assert@1",
       "jsr:@std/async@1",
       "jsr:@std/encoding@1",

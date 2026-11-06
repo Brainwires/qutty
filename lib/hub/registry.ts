@@ -38,6 +38,8 @@ export interface TileSeed {
   harness?: string;
   label?: string;
   cwd?: string;
+  /** It runs in the window's shared Docker sandbox. */
+  sandbox?: boolean;
 }
 
 /** The tiles, keyed by id. */
@@ -63,6 +65,7 @@ export class Registry {
       ...(seed.harness ? { harness: seed.harness } : {}),
       ...(seed.label ? { label: seed.label } : {}),
       ...(seed.cwd ? { cwd: seed.cwd } : {}),
+      ...(seed.sandbox ? { sandbox: true } : {}),
     };
     this.#tiles.set(tile.id, tile);
     this.#defaultNamed.add(tile.id);

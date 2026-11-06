@@ -24,6 +24,10 @@ import type ptyExtension from "../desktop/pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "../desktop/pty.ts";
 import type sshExtension from "../desktop/ssh.ts";
 import type hubExtension from "../desktop/hub.ts";
+import type sandboxExtension from "../desktop/sandbox.ts";
+import type { SandboxStatus } from "./sandbox/lifecycle.ts";
+import type { SandboxSettings } from "./sandbox/settings.ts";
+import { createDemoSandbox, type SandboxAction } from "./sandbox/demo.ts";
 import type {
   AskAnswer,
   AskRequest,
@@ -81,6 +85,8 @@ export interface PtySpawnOptions {
   args?: string[];
   /** The agent tool `program` is (`claude`): the agent hub adds the flags that connect it. */
   agent?: string;
+  /** Run it in the window's shared Docker sandbox (`docker exec` into its container). */
+  sandbox?: boolean;
 }
 
 /** What `spawn` returns. */
@@ -125,6 +131,16 @@ export interface PtyBackend {
   keyBindings(): Promise<string | null>;
   /** What the `+` picker can start: installed shells and agent tools (lib/launcher.ts). */
   launchables(): Promise<Launchables>;
+  /** Settings → Sandbox: this window's shared Docker sandbox (desktop/sandbox.ts). */
+  sandboxStatus(): Promise<SandboxStatus>;
+  /** Send the window's sandbox settings (on load and on every change). */
+  sandboxConfigure(settings: SandboxSettings): Promise<SandboxStatus>;
+  /** Whether Docker is installed and running (the status says why not). */
+  sandboxCheck(): Promise<SandboxStatus>;
+  /** Start the container with these settings (before the first sandboxed tile; no timeout). */
+  sandboxEnsure(settings: SandboxSettings): Promise<SandboxStatus>;
+  /** The status line's Restart, Stop and Reset volume. */
+  sandboxAction(action: SandboxAction): Promise<SandboxStatus>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -334,6 +350,7 @@ export function createDesktopBackend(
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");
+  const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -451,6 +468,19 @@ export function createDesktopBackend(
     async launchables() {
       return await pty.launchables({});
     },
+    sandboxStatus: () => sandbox.status({}),
+    sandboxConfigure: (settings) => sandbox.configure({ settings }),
+    sandboxCheck: () => sandbox.check({}),
+    async sandboxEnsure(settings) {
+      await sandbox.configure({ settings });
+      return await sandbox.ensure({});
+    },
+    sandboxAction: (action) =>
+      action === "restart"
+        ? sandbox.restart({})
+        : action === "stop"
+        ? sandbox.stop({})
+        : sandbox.resetVolume({}),
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);
@@ -646,6 +676,8 @@ interface DemoMode {
   remote?: { user: string; host: string };
   /** A fake agent tool. */
   agent?: { name: string; label: string };
+  /** A fake shell in the shared sandbox (root in `qutty-sandbox`). */
+  sandbox?: boolean;
 }
 
 class DemoShell {
@@ -682,7 +714,9 @@ class DemoShell {
       return;
     }
     this.out(
-      this.remote
+      this.mode.sandbox
+        ? `${DIM}demo backend — a fake shell in the shared sandbox, no Docker involved${RESET}\r\n\r\n`
+        : this.remote
         ? `${DIM}demo backend — a fake ssh session, nothing is connected${RESET}\r\n` +
           `Welcome to ${BOLD}${this.remote.host}${RESET}\r\n\r\n`
         : `${
@@ -708,6 +742,8 @@ class DemoShell {
     }
     const who = this.remote
       ? `${this.remote.user}@${this.remote.host}`
+      : this.mode.sandbox
+      ? "root@qutty-sandbox"
       : "demo";
     this.out(`${fg(114)}${who}${RESET}:${fg(75)}${this.cwd}${RESET}$ `);
   }
@@ -1025,6 +1061,7 @@ export function createDemoBackend(): PtyBackend {
     say: hubSays.emit,
     control: hubControls.emit,
   });
+  const sandbox = createDemoSandbox();
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
@@ -1052,11 +1089,12 @@ export function createDemoBackend(): PtyBackend {
         {
           name: options.shell ? baseName(options.shell) : "demo-sh",
           ...(remote ? { remote } : {}),
+          ...(options.sandbox ? { sandbox: true } : {}),
           ...(agent ? { agent: { name: agent.name, label: agent.label } } : {}),
         },
       );
       shells.set(id, shell);
-      hub.add(id, agent?.name);
+      hub.add(id, agent?.name, options.sandbox === true);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
       setTimeout(() => {
         if (shells.get(id) === shell) shell.start(); // not if killed already
@@ -1088,6 +1126,11 @@ export function createDemoBackend(): PtyBackend {
     launchables() {
       return Promise.resolve(structuredClone(DEMO_LAUNCHABLES));
     },
+    sandboxStatus: () => sandbox.status(),
+    sandboxConfigure: (settings) => sandbox.configure(settings),
+    sandboxCheck: () => sandbox.check(),
+    sandboxEnsure: (settings) => sandbox.ensure(settings),
+    sandboxAction: (action) => sandbox.action(action),
     info(id) {
       return attempt(() => {
         const s = get(id);

@@ -67,6 +67,8 @@ import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { effectiveMode } from "../lib/companion/settings.ts";
+import { opensInSandbox } from "../lib/sandbox/settings.ts";
+import { useSandboxSettings } from "./sandbox-settings.tsx";
 
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
@@ -94,11 +96,15 @@ export function Workspace() {
     const r = await managerRef.current?.info(id);
     if (!r || !managerRef.current) return;
     // An agent tool's tile names the tool ("claude — ~/proj"), whatever its process is called.
-    const agent = stateRef.current.terminals.find((t) => t.id === id)?.agent;
+    const entry = stateRef.current.terminals.find((t) => t.id === id);
     dispatch({
       type: "title",
       id,
-      title: makeTitle(r.info, r.home, agent?.name),
+      title: makeTitle(
+        r.info,
+        r.home,
+        entry?.agent?.name ?? (entry?.sandbox ? "sandbox" : undefined),
+      ),
     });
   }, []);
 
@@ -113,10 +119,17 @@ export function Workspace() {
   }, []);
 
   /** A new tile running `profile` (the login shell by default); returns its id. */
-  const openTile = useCallback((profile: TerminalProfile = SHELL_PROFILE) => {
+  const openTile = useCallback((asked: TerminalProfile = SHELL_PROFILE) => {
     const manager = managerRef.current;
     if (!manager) return null;
     const id = `t${++seqRef.current}`;
+    // A shell or agent opens in the sandbox per the picker's choice, else the default.
+    const sandboxSettings = stateRef.current.settings.sandbox;
+    const profile: TerminalProfile = asked.kind === "ssh" ? asked : {
+      ...asked,
+      sandbox: opensInSandbox(sandboxSettings, asked.sandbox),
+    };
+    manager.setSandbox(sandboxSettings);
     manager.create(id, profile);
     run({
       type: "add",
@@ -129,6 +142,7 @@ export function Workspace() {
       ...(profile.kind === "shell" && profile.shell
         ? { title: baseName(profile.shell) }
         : {}),
+      ...(profile.kind !== "ssh" && profile.sandbox ? { sandbox: true } : {}),
     });
     return id;
   }, [run]);
@@ -150,6 +164,9 @@ export function Workspace() {
     manager: managerRef.current,
     plusOpens: state.settings.plusOpens,
     lastLaunch: state.settings.lastLaunch,
+    sandboxDefault: state.settings.sandbox.mode === "off"
+      ? null
+      : state.settings.sandbox.newTilesInSandbox,
     openTile,
     connect: (req) => sshRef.current.connect(req),
     remember: (entryId) => dispatch({ type: "launched", entryId }),
@@ -314,11 +331,16 @@ export function Workspace() {
 
   // The first terminal, once the manager exists.
   useEffect(() => {
-    // Always the default shell, whatever plain `+` is set to open.
+    // Always the default shell on the host, whatever plain `+` is set to open.
     if (
       ready && stateRef.current.terminals.length === 0 && seqRef.current === 0
-    ) openTile();
+    ) openTile({ kind: "shell", sandbox: false });
   }, [ready, openTile]);
+
+  useSandboxSettings(
+    ready ? managerRef.current?.backend ?? null : null,
+    state.settings.sandbox,
+  );
 
   // Measure the cluster area (also fires when the bar moves to another edge).
   useLayoutEffect(() => {
@@ -451,7 +473,10 @@ export function Workspace() {
           sections: launcher.sections,
           plusTitle: plusLabel(launcher.plus),
           plusEntryId: launcher.plus?.id,
-          onLaunch: launcher.launch,
+          onLaunch: launcher.launchFromMenu,
+          ...(launcher.sandboxChoice
+            ? { sandbox: launcher.sandboxChoice }
+            : {}),
         }}
         onLaunchOpen={launcher.refresh}
         onRefocus={() => {
@@ -535,6 +560,7 @@ export function Workspace() {
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
+          onSandbox={(patch) => run({ type: "setSandbox", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
         />

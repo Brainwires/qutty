@@ -6,6 +6,9 @@
 // focused); in the menu ↑/↓ move (wrapping), Home/End jump, Enter launches, Escape closes and
 // puts the keyboard back in the terminal (the bar's Escape handler). The menu only has keys while
 // it has focus, so nothing is taken from the terminal. The entries come from lib/launcher.ts.
+// While the window has a shared sandbox, "Run in sandbox" (a checkbox item, Enter / Space or a
+// click toggles it without closing the menu) says whether the shell or agent picked next runs
+// in the sandbox or on the host; it starts from Settings' "new tiles open in the sandbox".
 
 import { useEffect, useRef } from "denext";
 import {
@@ -27,9 +30,11 @@ export interface LaunchMenuProps {
   onToggle(open: boolean): void;
   onLaunch(entry: LaunchEntry): void;
   onConnections(): void;
+  /** The "Run in sandbox" toggle (absent while the sandbox is off). */
+  sandbox?: { on: boolean; onToggle(): void };
 }
 
-const ITEM = "[role=menuitem]";
+const ITEM = "[role=menuitem],[role=menuitemcheckbox]";
 
 export function LaunchMenu(props: LaunchMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -161,6 +166,27 @@ export function LaunchMenu(props: LaunchMenuProps) {
             </div>
           ))}
           <div class="launch-sep" role="separator" />
+          {props.sandbox && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={props.sandbox.on}
+              class={`menu-item launch-item launch-sandbox${
+                props.sandbox.on ? " is-on" : ""
+              }`}
+              data-testid="launch-sandbox"
+              title="Whether the shell or agent picked next runs in the window's sandbox or on the host"
+              onClick={props.sandbox.onToggle}
+            >
+              <LaunchIcon kind="sandbox" />
+              <span class="menu-label">
+                {props.sandbox.on ? "Run in sandbox" : "Run on host"}
+              </span>
+              <span class="launch-check" aria-hidden="true">
+                {props.sandbox.on ? "✓" : ""}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -178,7 +204,9 @@ export function LaunchMenu(props: LaunchMenuProps) {
 }
 
 /** A small glyph per entry kind. */
-function LaunchIcon(props: { kind: LaunchEntry["kind"] | "connections" }) {
+function LaunchIcon(
+  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" },
+) {
   const common = {
     viewBox: "0 0 16 16",
     width: "13",
@@ -214,6 +242,15 @@ function LaunchIcon(props: { kind: LaunchEntry["kind"] | "connections" }) {
         <svg {...common}>
           <rect x="2" y="3" width="12" height="4" rx="1" {...stroke} />
           <rect x="2" y="9" width="12" height="4" rx="1" {...stroke} />
+        </svg>
+      );
+    case "sandbox":
+      return (
+        <svg {...common}>
+          <path
+            d="M8 1.8 13.5 5v6L8 14.2 2.5 11V5z M2.5 5 8 8.2 13.5 5M8 8.2v6"
+            {...stroke}
+          />
         </svg>
       );
     case "connections":

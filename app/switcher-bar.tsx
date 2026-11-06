@@ -32,7 +32,7 @@ export interface SwitcherBarProps {
   /** The `+` picker's entries and actions (app/launch-menu.tsx). */
   launch: Pick<
     LaunchMenuProps,
-    "sections" | "plusTitle" | "plusEntryId" | "onLaunch"
+    "sections" | "plusTitle" | "plusEntryId" | "onLaunch" | "sandbox"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;

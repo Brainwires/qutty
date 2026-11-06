@@ -3,13 +3,35 @@
 # to this tile's hub socket ($QUTTY_SOCK, set by Qutty in every tile); the socket tells the hub
 # which tile is talking. Outside Qutty it exits at once, so a user-scope registration is harmless
 # in other terminals. Installed to ~/.qutty/bin by Qutty (updated on every start).
-[ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ] || exit 0
-# BSD/OpenBSD netcat has -U (unix sockets); busybox nc does not, so fall back to socat.
-if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
-  exec nc -U "$QUTTY_SOCK"
+#
+# In the shared Docker sandbox a host socket is out of reach: the tile has $QUTTY_HUB
+# (host.docker.internal:<port>) and $QUTTY_TILE_TOKEN instead, and the token, sent as the first
+# line, tells the hub which tile is talking.
+if [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ]; then
+  # BSD/OpenBSD netcat has -U (unix sockets); busybox nc does not, so fall back to socat.
+  if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+    exec nc -U "$QUTTY_SOCK"
+  fi
+  if command -v socat >/dev/null 2>&1; then
+    exec socat - "UNIX-CONNECT:$QUTTY_SOCK"
+  fi
+  echo "qutty-mcp: needs nc with -U (BSD netcat) or socat" >&2
+  exit 1
 fi
-if command -v socat >/dev/null 2>&1; then
-  exec socat - "UNIX-CONNECT:$QUTTY_SOCK"
+[ -n "${QUTTY_HUB:-}" ] && [ -n "${QUTTY_TILE_TOKEN:-}" ] || exit 0
+host="${QUTTY_HUB%:*}"
+port="${QUTTY_HUB##*:}"
+# bash's own /dev/tcp first (no nc in most images), else nc.
+if exec 3<>"/dev/tcp/$host/$port"; then
+  printf '%s\n' "$QUTTY_TILE_TOKEN" >&3
+  cat <&3 &
+  reader=$!
+  trap 'kill "$reader" 2>/dev/null' EXIT HUP INT TERM
+  cat >&3
+  exit 0
+fi 2>/dev/null
+if command -v nc >/dev/null 2>&1; then
+  { printf '%s\n' "$QUTTY_TILE_TOKEN"; exec cat; } | nc "$host" "$port" && exit 0
 fi
-echo "qutty-mcp: needs nc with -U (BSD netcat) or socat" >&2
+echo "qutty-mcp: cannot reach the Qutty hub at $QUTTY_HUB" >&2
 exit 1

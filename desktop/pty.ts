@@ -77,6 +77,11 @@ export interface PtySpawnArgs {
    * arguments that connect it (desktop/hub.ts).
    */
   agent?: string;
+  /**
+   * Run it in the window's shared Docker sandbox (desktop/sandbox.ts): `docker exec -it` into
+   * the window's container. `shell` / `program` then name what runs inside (by command name).
+   */
+  sandbox?: boolean;
 }
 
 /** `spawn` result. */
@@ -129,6 +134,7 @@ const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => {
     program: optStr(v, "program", issues),
     ...(args === undefined ? {} : { args }),
     ...(v.agent === undefined ? {} : { agent: str(v, "agent", issues, 64) }),
+    ...(v.sandbox === true ? { sandbox: true } : {}),
   };
 });
 
@@ -680,6 +686,8 @@ export interface PtyTaps {
       cwd: string;
       cols: number;
       rows: number;
+      /** A sandboxed terminal: its environment goes into the container by name. */
+      sandbox?: { alsoOn: readonly string[] };
     },
   ): {
     env?: Record<string, string>;
@@ -695,6 +703,44 @@ export interface PtyTaps {
 }
 
 let ptyTaps: PtyTaps | undefined;
+
+/** A sandboxed terminal to start (what {@linkcode SandboxProvider.prepare} is asked). */
+export interface SandboxRequest {
+  /** The window the terminal belongs to (one container per window). */
+  owner: string;
+  cwd?: string;
+  /** A picked shell (host path; its name runs inside). */
+  shell?: string;
+  /** An agent tool: its command name and arguments. */
+  agent?: { name: string; args: string[] };
+}
+
+/** How a sandboxed terminal is started: the docker CLI and its `exec` argv. */
+export interface SandboxCommand {
+  /** The `docker` executable. */
+  file: string;
+  /** Where the tile starts inside the container (shown to the hub). */
+  cwd: string;
+  /** Extra addresses for the hub's TCP endpoint (native Linux: the bridge gateway). */
+  alsoOn: string[];
+  /**
+   * The argv after `docker`: `envNames` are passed into the container by name (their values are
+   * in docker's own environment); `hubArgs` go before an agent's own arguments.
+   */
+  argv(envNames: string[], hubArgs: string[]): string[];
+}
+
+/** The shared sandbox (desktop/sandbox.ts): starts the window's container on demand. */
+export interface SandboxProvider {
+  prepare(req: SandboxRequest): Promise<SandboxCommand>;
+}
+
+let sandboxProvider: SandboxProvider | undefined;
+
+/** Install (or with `undefined` remove) the {@linkcode SandboxProvider}. */
+export function setSandboxProvider(p: SandboxProvider | undefined): void {
+  sandboxProvider = p;
+}
 
 /** Install (or with `undefined` remove) the {@linkcode PtyTaps} of the extension's host. */
 export function setPtyTaps(taps: PtyTaps | undefined): void {
@@ -764,7 +810,11 @@ export class PtyHost {
     const shell = args.shell ?? defaultShellPath();
     let file = shell;
     let argv = ["-l"];
-    if (args.program !== undefined) {
+    let sandboxed: SandboxCommand | undefined;
+    if (args.sandbox) {
+      sandboxed = await prepareSandbox(args, opts.owner ?? "main");
+      file = sandboxed.file;
+    } else if (args.program !== undefined) {
       const resolved = await resolveProgram(args.program);
       if (!resolved) {
         throw new DesktopCapError(
@@ -795,7 +845,7 @@ export class PtyHost {
     env.TERM_PROGRAM = "qutty";
     env.PWD = cwd;
     env.SHELL ??= shell;
-    if (args.program !== undefined) env.PATH = programPath(file);
+    if (args.program !== undefined || sandboxed) env.PATH = programPath(file);
     // A Finder-launched app has no locale; a UTF-8 one keeps the shell's line editing sane.
     if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = "en_US.UTF-8";
 
@@ -806,17 +856,23 @@ export class PtyHost {
         taps.spawning!(id, {
           ...(args.program !== undefined ? { program: file } : {}),
           ...(args.agent !== undefined ? { agent: args.agent } : {}),
-          cwd,
+          cwd: sandboxed?.cwd ?? cwd,
           cols: args.cols,
           rows: args.rows,
+          ...(sandboxed ? { sandbox: { alsoOn: sandboxed.alsoOn } } : {}),
         }))
       : undefined;
     Object.assign(env, extra?.env ?? {});
-    if (extra?.pathPrepend) {
+    if (sandboxed) {
+      argv = sandboxed.argv(
+        Object.keys(extra?.env ?? {}),
+        args.program !== undefined ? extra?.args ?? [] : [],
+      );
+    } else if (extra?.pathPrepend) {
       env.PATH = [extra.pathPrepend, ...(env.PATH ?? "").split(":")]
         .filter((d, i, all) => d !== "" && all.indexOf(d) === i).join(":");
     }
-    if (args.program !== undefined && extra?.args?.length) {
+    if (!sandboxed && args.program !== undefined && extra?.args?.length) {
       argv = [...extra.args, ...argv];
     }
     const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
@@ -1170,6 +1226,38 @@ function requireHost(): PtyHost {
     throw new DesktopCapError("not_found", "no such terminal", { status: 404 });
   }
   return host;
+}
+
+/** Ask the {@linkcode SandboxProvider} for a sandboxed terminal's command (a clear error otherwise). */
+async function prepareSandbox(
+  args: PtySpawnArgs,
+  owner: string,
+): Promise<SandboxCommand> {
+  if (!sandboxProvider) {
+    throw new DesktopCapError("spawn_failed", "the sandbox is not available");
+  }
+  try {
+    return await sandboxProvider.prepare({
+      owner,
+      ...(args.cwd !== undefined ? { cwd: args.cwd } : {}),
+      ...(args.shell !== undefined ? { shell: args.shell } : {}),
+      ...(args.program !== undefined
+        ? {
+          agent: {
+            name: args.agent ?? args.program.replace(/^.*\//, ""),
+            args: args.args ?? [],
+          },
+        }
+        : {}),
+    });
+  } catch (e) {
+    throw new DesktopCapError(
+      "spawn_failed",
+      `the sandbox did not start: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
 }
 
 /** Type into one of the app's terminals (the agent hub's `write_tile`). */

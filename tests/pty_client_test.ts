@@ -126,7 +126,7 @@ const microtask = () => new Promise<void>((r) => queueMicrotask(r));
 Deno.test("desktop: kind, extension name, and no bridge traffic at creation", () => {
   const { bridge, backend } = setup();
   assertEquals(backend.kind, "desktop");
-  assertEquals(bridge.extensionNames, ["pty", "ssh", "hub"]);
+  assertEquals(bridge.extensionNames, ["pty", "ssh", "hub", "sandbox"]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");
 });
