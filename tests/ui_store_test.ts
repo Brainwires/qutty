@@ -263,7 +263,13 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     sanitizeSettings({ collapsedSections: "layout" }).collapsedSections,
     ["integration"],
   );
-  assertEquals(SETTINGS_SECTIONS, ["layout", "theme", "font", "integration"]);
+  assertEquals(SETTINGS_SECTIONS, [
+    "layout",
+    "theme",
+    "font",
+    "companion",
+    "integration",
+  ]);
 
   let s = initialState();
   s = reduce(s, { type: "setTheme", theme: "sakura" });

@@ -2140,3 +2140,661 @@ kbd {
 .app.reduced-motion .tile-agent-dot {
   animation: none !important;
 }
+
+/* ---- The companion: Loopy -------------------------------------------------------------------
+   Copied from Denext's examples/companion (public/styles.css; same author, MIT) with the same
+   shapes, sizes, keyframes and moves: only scoped under .companion-overlay (selectors), prefixed
+   (keyframe names and custom properties, which are global) and coloured from the theme (the
+   palette below, and the colour overrides after the copy). Loopy is the example's size in its
+   desktop window (90 x 150). tests/companion_look_test.ts and tests/e2e/companion_test.ts keep
+   its shape and moves from drifting. Qutty's own parts (the overlay's placement, the chat box,
+   the brain's status dot) follow. */
+
+.companion-overlay {
+  /* Loopy's palette, from the theme (the example's teal-on-paper values are commented). */
+  --loopy-wire: var(--accent); /* #17a08a */
+  --loopy-wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow)); /* #0b6b5c */
+  --loopy-wire-shine: rgba(var(--hi-rgb), 0.6); /* #a6efe0 */
+  --loopy-ink: var(--text); /* #1d2b33: the face is drawn over the terminal */
+  --loopy-bubble: rgb(var(--panel-rgb)); /* #ffffff */
+  --loopy-bubble-edge: var(--line-2); /* #d9d2c3 */
+  --loopy-accent: var(--accent); /* #17a08a */
+  color: var(--text);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+}
+
+/* ---------------------------------------------------------------- speech bubble */
+
+.companion-overlay .bubble-slot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0 0 4px 4px;
+  min-height: 0;
+}
+
+.companion-overlay .bubble {
+  position: relative;
+  max-width: 240px;
+  padding: 10px 26px 10px 12px;
+  background: var(--loopy-bubble);
+  border: 1.5px solid var(--loopy-bubble-edge);
+  border-radius: 14px;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.08);
+  font-size: 13.5px;
+  line-height: 1.35;
+  animation: loopy-bubble-in 220ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The tail points down-left, at Loopy's top loop. */
+
+.companion-overlay .bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 48px;
+  width: 14px;
+  height: 14px;
+  background: var(--loopy-bubble);
+  border-right: 1.5px solid var(--loopy-bubble-edge);
+  border-bottom: 1.5px solid var(--loopy-bubble-edge);
+  transform: rotate(45deg);
+}
+
+.companion-overlay .bubble[data-mood="attention"] {
+  border-color: #e0a63a;
+}
+
+.companion-overlay .bubble[data-mood="success"] {
+  border-color: var(--loopy-accent);
+}
+
+.companion-overlay .bubble-text {
+  margin: 0;
+  max-height: 110px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.companion-overlay .bubble-close {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #8a8478;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.companion-overlay .bubble-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.companion-overlay button {
+  font: inherit;
+  /* Buttons stay clickable inside the window drag region on CEF. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.companion-overlay .bubble-actions button {
+  padding: 3px 10px;
+  border: 1.5px solid var(--loopy-wire-edge);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--loopy-wire-edge);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.companion-overlay .bubble-actions button:first-child {
+  background: var(--loopy-wire);
+  border-color: var(--loopy-wire);
+  color: #fff;
+}
+
+@keyframes loopy-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+}
+
+/* ---------------------------------------------------------------- stage */
+
+.companion-overlay .stage {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 24px;
+  cursor: grab;
+}
+
+.companion-overlay .squash {
+  position: relative;
+  transform-origin: 50% 96%;
+}
+
+/* The poke target: Loopy's top loop (the face), in the SVG's proportions. */
+
+.companion-overlay .poke {
+  position: absolute;
+  left: 28%;
+  top: 10%;
+  width: 36%;
+  height: 26%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- Loopy */
+
+.companion-overlay .loopy {
+  display: block;
+  width: 120px;
+  height: 200px;
+  overflow: visible;
+}
+
+/* In the small desktop window Loopy is a little smaller, leaving room for the bubble. */
+
+.companion-overlay .loopy {
+  width: 90px;
+  height: 150px;
+}
+
+.companion-overlay .loopy path,
+.companion-overlay .loopy-wire-edge,
+.companion-overlay .loopy-wire,
+.companion-overlay .loopy-wire-shine {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.companion-overlay .loopy-wire-edge {
+  stroke: var(--loopy-wire-edge);
+  stroke-width: 10;
+}
+
+.companion-overlay .loopy-wire {
+  stroke: var(--loopy-wire);
+  stroke-width: 7.5;
+}
+
+.companion-overlay .loopy-wire-shine {
+  stroke: var(--loopy-wire-shine);
+  stroke-width: 2;
+  opacity: 0.8;
+  transform: translate(-1.6px, -1.2px);
+}
+
+.companion-overlay .loopy-eyes circle {
+  fill: var(--loopy-ink);
+}
+
+.companion-overlay .loopy-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.companion-overlay .loopy .loopy-mouth {
+  stroke: var(--loopy-ink);
+  stroke-width: 2.2;
+}
+
+.companion-overlay .loopy-shadow {
+  fill: rgb(0 0 0 / 0.12);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.companion-overlay .loopy-body {
+  transform-box: view-box;
+  transform-origin: 60px 186px;
+}
+
+.companion-overlay .loopy-arm {
+  transform-box: view-box;
+  transform-origin: 84px 160px;
+  transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.companion-overlay .loopy-thought,
+.companion-overlay .loopy-sparkles {
+  opacity: 0;
+}
+
+.companion-overlay .loopy-thought circle {
+  fill: var(--loopy-wire-edge);
+}
+
+.companion-overlay .loopy-sparkles path {
+  fill: #f2b544;
+  stroke: none;
+}
+
+/* hidden: folded away */
+
+.companion-overlay .loopy[data-state="hidden"] .loopy-body {
+  transform: scale(1, 0.04);
+  opacity: 0;
+}
+
+.companion-overlay .loopy[data-state="hidden"] .loopy-shadow {
+  opacity: 0;
+}
+
+/* idle: a gentle sway about the bottom bend */
+
+.companion-overlay .loopy[data-state="idle"] .loopy-body,
+.companion-overlay .loopy[data-state="blink"] .loopy-body {
+  animation: loopy-sway 3.4s ease-in-out infinite;
+}
+
+@keyframes loopy-sway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+
+/* blink */
+
+.companion-overlay .loopy[data-state="blink"] .loopy-eyes {
+  animation: loopy-blink 160ms ease-in-out;
+}
+
+@keyframes loopy-blink {
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* appear: spring up from the desk */
+
+.companion-overlay .loopy[data-state="appear"] .loopy-body {
+  animation: loopy-spring 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes loopy-spring {
+  0% {
+    transform: translateY(30px) scale(0.7, 0.1);
+    opacity: 0;
+  }
+  35% {
+    transform: translateY(-14px) scale(0.9, 1.15);
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(0) scale(1.12, 0.88);
+  }
+  80% {
+    transform: scale(0.96, 1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* think: a tilt, eyes up, a trail of dots */
+
+.companion-overlay .loopy[data-state="think"] .loopy-body {
+  transform: rotate(-5deg);
+  transition: transform 300ms ease-out;
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-eyes {
+  transform: translate(2px, -2.5px);
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-thought {
+  opacity: 1;
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-thought circle {
+  animation: loopy-dot 1.2s ease-in-out infinite;
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-thought circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-thought circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes loopy-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* point: the outer leg unbends up toward the bubble, and Loopy leans after it */
+
+.companion-overlay .loopy[data-state="point"] .loopy-arm {
+  transform: rotate(34deg);
+}
+
+.companion-overlay .loopy[data-state="point"] .loopy-body {
+  transform: rotate(4deg);
+  transition: transform 300ms ease-out;
+}
+
+.companion-overlay .loopy[data-state="point"] .loopy-eyes {
+  transform: translate(2px, -1.5px);
+}
+
+/* celebrate: two hops and a shimmer */
+
+.companion-overlay .loopy[data-state="celebrate"] .loopy-body {
+  animation: loopy-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.companion-overlay .loopy[data-state="celebrate"] .loopy-sparkles {
+  animation: loopy-sparkle 1.2s ease-out;
+}
+
+@keyframes loopy-hop {
+  0%,
+  45%,
+  100% {
+    transform: none;
+  }
+  10%,
+  55% {
+    transform: scale(1.1, 0.88);
+  }
+  25%,
+  70% {
+    transform: translateY(-26px) rotate(-6deg) scale(0.95, 1.06);
+  }
+  85% {
+    transform: translateY(-14px) rotate(6deg);
+  }
+}
+
+@keyframes loopy-sparkle {
+  20%,
+  70% {
+    opacity: 1;
+  }
+}
+
+/* dismiss: fold down into the desk */
+
+.companion-overlay .loopy[data-state="dismiss"] .loopy-body {
+  animation: loopy-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
+}
+
+.companion-overlay .loopy[data-state="dismiss"] .loopy-shadow {
+  animation: loopy-fold-shadow 450ms ease-in both;
+}
+
+@keyframes loopy-fold {
+  30% {
+    transform: scale(1.06, 0.92) rotate(3deg);
+  }
+  100% {
+    transform: scale(1, 0.04);
+    opacity: 0;
+  }
+}
+
+@keyframes loopy-fold-shadow {
+  to {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-overlay .loopy *,
+  .companion-overlay .bubble {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------- Qutty's additions */
+
+/* The example's fixed colours, from the theme (shapes untouched). */
+.companion-overlay .bubble[data-mood="attention"] {
+  border-color: var(--amber);
+}
+.companion-overlay .bubble-close {
+  color: var(--text-3);
+}
+.companion-overlay .bubble-actions button {
+  background: transparent;
+}
+.companion-overlay .bubble-actions button:first-child {
+  background: var(--loopy-wire);
+  color: var(--accent-ink);
+}
+.companion-overlay .loopy-shadow {
+  fill: rgba(var(--shadow-rgb), 0.3);
+}
+.companion-overlay .loopy-sparkles path {
+  fill: var(--amber);
+}
+
+/* Where the overlay sits: a corner of the tile area, laid out like the example's window (the
+   bubble on top, Loopy below it on the left). Clicks pass through it except on Loopy, the bubble
+   and the chat box. */
+.companion-overlay {
+  position: absolute;
+  z-index: 400; /* over the tiles, under the menus and the settings popover */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 260px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.companion-overlay[data-corner="bottom-right"] {
+  right: 14px;
+  bottom: 6px;
+}
+.companion-overlay[data-corner="bottom-left"] {
+  left: 14px;
+  bottom: 6px;
+}
+.companion-overlay[data-corner="top-right"] {
+  right: 14px;
+  top: 6px;
+  flex-direction: column-reverse;
+}
+.companion-overlay[data-corner="top-left"] {
+  left: 14px;
+  top: 6px;
+  flex-direction: column-reverse;
+}
+.companion-overlay .bubble,
+.companion-overlay .squash,
+.companion-overlay .companion-chat {
+  pointer-events: auto;
+}
+/* Under Loopy (top corners) the tail points up at it instead of down. */
+.companion-overlay[data-corner^="top"] .bubble-slot {
+  padding: 4px 0 0 4px;
+}
+.companion-overlay[data-corner^="top"] .bubble::after {
+  bottom: auto;
+  top: -8px;
+  transform: rotate(225deg);
+}
+
+/* Who a question or message is from, how many wait, the tool the companion is using. */
+.companion-overlay .bubble-from {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  margin: 0 0 3px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.companion-overlay .bubble-from > span:first-child {
+  font-weight: 600;
+  color: var(--loopy-wire-edge);
+}
+.companion-overlay .bubble-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* The chat box under the bubble, in the bubble's own paper and ink. */
+.companion-overlay .companion-chat {
+  display: flex;
+  gap: 4px;
+  width: 240px;
+  max-width: 100%;
+  margin: 0 0 6px 4px;
+  padding: 3px;
+  background: var(--loopy-bubble);
+  border: 1.5px solid var(--loopy-bubble-edge);
+  border-radius: 14px;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.08);
+}
+.companion-overlay[data-corner^="top"] .companion-chat {
+  margin: 6px 0 0 4px;
+}
+.companion-overlay .companion-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--loopy-ink);
+  font: inherit;
+  font-size: 13.5px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.companion-overlay .companion-chat-input::placeholder {
+  color: var(--text-3);
+}
+.companion-overlay .companion-chat-send {
+  width: 26px;
+  padding: 0;
+  border: 1.5px solid var(--loopy-wire);
+  border-radius: 999px;
+  background: var(--loopy-wire);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.companion-overlay .companion-chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The brain's status, a dot beside Loopy. */
+.companion-overlay .companion-status {
+  align-self: flex-end;
+  width: 8px;
+  height: 8px;
+  margin: 0 0 14px 2px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 2px var(--loopy-bubble);
+}
+.companion-overlay .companion-status[data-state="ready"] {
+  background: var(--loopy-wire);
+}
+.companion-overlay .companion-status[data-state="starting"],
+.companion-overlay .companion-status[data-state="thinking"] {
+  background: var(--amber);
+  animation: loopy-dot 1.2s ease-in-out infinite;
+}
+.companion-overlay .companion-status[data-state="error"] {
+  background: var(--red);
+}
+.companion-overlay .companion-status[data-state="off"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-3);
+}
+
+/* The app's own reduced-motion switch, as the example's media query. */
+.app.reduced-motion .companion-overlay .loopy *,
+.app.reduced-motion .companion-overlay .bubble,
+.app.reduced-motion .companion-overlay .companion-status {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-overlay .companion-status {
+    animation: none;
+  }
+}
+
+/* Settings → Companion */
+.companion-settings {
+  display: flex;
+  flex-direction: column;
+}
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-check .field-label {
+  margin: 0;
+}
+.companion-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow: auto;
+  font: 10.5px/1.35 var(--mono);
+  color: var(--text-2);
+}
+.companion-activity li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.companion-activity time {
+  color: var(--text-3);
+}
+.companion-activity b {
+  color: var(--text);
+  font-weight: 600;
+}
+.companion-activity li[data-ok="false"] b,
+.companion-activity em {
+  color: var(--red);
+  font-style: normal;
+}

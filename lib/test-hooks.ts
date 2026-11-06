@@ -81,6 +81,16 @@ export function withBackendSpy(
     integrationStatus: () => backend.integrationStatus(),
     integrationInstall: (target) => backend.integrationInstall(target),
     integrationUninstall: (target) => backend.integrationUninstall(target),
+    companionStatus: () => backend.companionStatus(),
+    companionSend: (text) => backend.companionSend(text),
+    companionConfigure: (enabled, model) =>
+      backend.companionConfigure(enabled, model),
+    companionSayDone: (id, action) => backend.companionSayDone(id, action),
+    hubControlDone: (requestId, result) =>
+      backend.hubControlDone(requestId, result),
+    onCompanion: (cb) => backend.onCompanion(cb),
+    onHubSay: (cb) => backend.onHubSay(cb),
+    onHubControl: (cb) => backend.onHubControl(cb),
   };
 }
 

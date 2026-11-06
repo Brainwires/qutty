@@ -4,19 +4,57 @@
 # prints the hub's one-line JSON reply (pending messages as context, or a Stop block) as the
 # hook's output. Outside Qutty, or when the hub cannot be reached, it prints nothing and exits 0,
 # so the agent carries on as if there were no hook. Installed to ~/.qutty/bin by Qutty.
+#
+# qutty-hook say <text...> [--mood neutral|thinking|attention|success] [--action id:label]...
+#                [--timeout ms] [--wait]
+# makes Loopy, the window's companion, say something (the `loopy-say` shape). --wait prints the
+# id of the button pressed (nothing when the bubble was closed). A refused message is reported
+# on stderr with exit code 1.
 [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ] || exit 0
+
+# Send one line to the socket, print the first line back. $1: idle timeout in seconds.
+ask_hub() {
+  if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+    printf '%s\n' "$2" | nc -w "$1" -U "$QUTTY_SOCK" 2>/dev/null | head -n 1
+  elif command -v socat >/dev/null 2>&1; then
+    printf '%s\n' "$2" | socat -t "$1" - "UNIX-CONNECT:$QUTTY_SOCK" 2>/dev/null | head -n 1
+  fi
+}
+
+# A JSON string for $1 (control characters other than tab and newline are dropped).
+json_str() {
+  local s
+  s="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+if [ "${1:-}" = "say" ]; then
+  shift
+  wait_for=10
+  args=""
+  for a in "$@"; do
+    [ "$a" = "--wait" ] && wait_for=130
+    args="${args:+$args,}$(json_str "$a")"
+  done
+  reply="$(ask_hub "$wait_for" "{\"qutty\":\"say\",\"args\":[$args]}")"
+  case "$reply" in
+    *'"error":'*)
+      printf 'qutty-hook say: %s\n' "$(printf '%s' "$reply" | sed -n 's/.*"error":"\(.*\)"}$/\1/p')" >&2
+      exit 1 ;;
+    *'"action":"'*) printf '%s\n' "$(printf '%s' "$reply" | sed -n 's/.*"action":"\([^"]*\)".*/\1/p')" ;;
+  esac
+  exit 0
+fi
+
 harness="${1:-}"
 case "$harness" in *[!A-Za-z0-9._-]*) harness="" ;; esac
 # One JSON object; a raw newline cannot occur inside a JSON string, so dropping them is safe.
 input="$(tr -d '\r\n')"
 [ -n "$input" ] || input="null"
-line="{\"qutty\":\"hook\",\"harness\":\"$harness\",\"input\":$input}"
-if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
-  reply="$(printf '%s\n' "$line" | nc -w 10 -U "$QUTTY_SOCK" 2>/dev/null | head -n 1)"
-elif command -v socat >/dev/null 2>&1; then
-  reply="$(printf '%s\n' "$line" | socat -t 10 - "UNIX-CONNECT:$QUTTY_SOCK" 2>/dev/null | head -n 1)"
-else
-  exit 0
-fi
+reply="$(ask_hub 10 "{\"qutty\":\"hook\",\"harness\":\"$harness\",\"input\":$input}")"
 case "$reply" in "{"*) printf '%s\n' "$reply" ;; esac
 exit 0

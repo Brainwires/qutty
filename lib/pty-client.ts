@@ -44,6 +44,13 @@ import type { SshHost, SshHostInput, SshTarget } from "./ssh-config.ts";
 import type { SshListing } from "./ssh-command.ts";
 import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
 import { createDemoHub, type DemoHub } from "./hub-demo.ts";
+import type { ControlCommand, ControlResult } from "./hub/core.ts";
+import type {
+  AuditEntry,
+  CompanionStatus,
+  CompanionUpdate,
+  SayEvent,
+} from "./companion/protocol.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 
@@ -172,6 +179,35 @@ export interface PtyBackend {
   integrationInstall(target: IntegrationTarget): Promise<IntegrationStatus[]>;
   /** Remove exactly Qutty's entries for `target`; the new status. */
   integrationUninstall(target: IntegrationTarget): Promise<IntegrationStatus[]>;
+
+  // --- The companion (desktop/companion.ts) ----------------------------------------------------
+
+  /** The brain's status and the recent privileged actions (newest first). */
+  companionStatus(): Promise<
+    { status: CompanionStatus; activity: AuditEntry[] }
+  >;
+  /** The user typed to the companion; its reply streams as `onCompanion` turn updates. */
+  companionSend(text: string): Promise<{ turn: number }>;
+  /** Settings → Companion: whether the brain may run, and its model (`""`: the default). */
+  companionConfigure(enabled: boolean, model: string): Promise<CompanionStatus>;
+  /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */
+  companionSayDone(id: string, action: string | null): Promise<boolean>;
+  /** The page carried out (or could not carry out) a companion command. */
+  hubControlDone(requestId: string, result: ControlResult): Promise<boolean>;
+  /** The brain's status, its turns as they stream, its tool calls, new audit entries. */
+  onCompanion(cb: (update: CompanionUpdate) => void): () => void;
+  /** A `qutty-hook say` message for Loopy's bubble. */
+  onHubSay(cb: (say: SayEvent) => void): () => void;
+  /** A companion command for the page (spawn / close / focus a tile); answer with `hubControlDone`. */
+  onHubControl(
+    cb: (request: { requestId: string; command: ControlCommand }) => void,
+  ): () => void;
+}
+
+/** A companion command as the page receives it. */
+export interface ControlRequest {
+  requestId: string;
+  command: ControlCommand;
 }
 
 /** A set of callbacks: the transfer fan-out both backends share. */
@@ -311,6 +347,40 @@ export function createDesktopBackend(
   /** Questions already delivered or closed: a replayed `ask` must not open one again. */
   const seenAsks = new Set<string>();
   let listeningHub = false;
+  const companion = fanout<CompanionUpdate>();
+  const says = fanout<SayEvent>();
+  const controls = fanout<ControlRequest>();
+  /**
+   * The event stream replays its buffer to a new page: a companion update, `say` or command from
+   * before this page loaded is history, not something to show (or do) again.
+   */
+  const loadedAt = Date.now();
+  const fresh = (data: { at?: number }) =>
+    typeof data.at !== "number" || data.at >= loadedAt - 1000;
+  const seenSays = new Set<string>();
+  const seenControls = new Set<string>();
+  let listeningCompanion = false;
+  const listenCompanion = () => {
+    if (listeningCompanion) return;
+    listeningCompanion = true;
+    onDesktopEvent<CompanionUpdate & { at?: number }>(
+      "hub",
+      "companion",
+      (u) => {
+        if (fresh(u)) companion.emit(u);
+      },
+    );
+    onDesktopEvent<SayEvent & { at?: number }>("hub", "say", (e) => {
+      if (!fresh(e) || seenSays.has(e.message.id)) return;
+      seenSays.add(e.message.id);
+      says.emit(e);
+    });
+    onDesktopEvent<ControlRequest & { at?: number }>("hub", "control", (e) => {
+      if (!fresh(e) || seenControls.has(e.requestId)) return;
+      seenControls.add(e.requestId);
+      controls.emit({ requestId: e.requestId, command: e.command });
+    });
+  };
 
   const listenHub = () => {
     if (listeningHub) return;
@@ -449,6 +519,33 @@ export function createDesktopBackend(
     async integrationUninstall(target) {
       return await hub.integrationUninstall({ target });
     },
+    async companionStatus() {
+      return await hub.companionStatus({});
+    },
+    async companionSend(text) {
+      return await hub.companionSend({ text });
+    },
+    async companionConfigure(enabled, model) {
+      return await hub.companionConfigure({ enabled, model });
+    },
+    async companionSayDone(id, action) {
+      return await hub.companionSayDone({ id, action });
+    },
+    async hubControlDone(requestId, result) {
+      return await hub.controlDone({ requestId, ...result });
+    },
+    onCompanion: (cb) => {
+      listenCompanion();
+      return companion.on(cb);
+    },
+    onHubSay: (cb) => {
+      listenCompanion();
+      return says.on(cb);
+    },
+    onHubControl: (cb) => {
+      listenCompanion();
+      return controls.on(cb);
+    },
   };
 }
 
@@ -485,6 +582,9 @@ const DEMO_HELP = [
   `  ${fg(81)}colors${RESET}     256-colour palette`,
   `  ${fg(81)}stress${RESET} [n] print n lines fast (default 2000)`,
   `  ${fg(81)}size${RESET}       print rows and columns`,
+  `  ${
+    fg(81)
+  }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
   `  ${fg(81)}pwd${RESET}, ${fg(81)}cd${RESET}, ${fg(81)}whoami${RESET}, ${
     fg(81)
   }exit${RESET}`,
@@ -502,6 +602,9 @@ const DEMO_AGENT_HELP = [
   `  ${
     fg(209)
   }/msg${RESET} <name> <text>  queue a message for another tile (its badge counts it)`,
+  `  ${
+    fg(209)
+  }/msg companion${RESET} <text>  ask the companion (Loopy answers in its bubble)`,
   `  ${fg(209)}/exit${RESET}              quit`,
   `  anything else      busy for a moment, then idle; queued messages are read first`,
   "",
@@ -709,6 +812,17 @@ class DemoShell {
     }
   }
 
+  /** `qutty-hook say …` through the demo hub; a `--wait`'s answer is printed above a fresh prompt. */
+  say(args: string[]): void {
+    const error = this.hub.say(this.id, args, (action) => {
+      if (this.exited) return;
+      this.out(`\r${ESC}[2K${action ?? ""}${action ? "\r\n" : ""}`);
+      this.prompt();
+      this.out(this.line);
+    });
+    if (error) this.out(`qutty-hook say: ${error}\r\n`);
+  }
+
   /** `ask_user` through the demo hub; the answer is printed above a fresh prompt. */
   askUser(question: string): void {
     this.hub.ask(this.id, question, ["Yes", "No"], (action) => {
@@ -794,6 +908,14 @@ class DemoShell {
       case "top":
         this.startTop();
         return;
+      case "qutty-hook":
+        if (args[0] !== "say") {
+          println(
+            "usage: qutty-hook say <text> [--mood m] [--action id:label] [--wait]",
+          );
+          return;
+        }
+        return this.say(args.slice(1));
       case "exit":
         this.exited = true;
         this.out(
@@ -892,10 +1014,16 @@ export function createDemoBackend(): PtyBackend {
   const hubTiles = fanout<HubSnapshot>();
   const hubAsks = fanout<AskRequest>();
   const hubAskClosed = fanout<string>();
+  const hubCompanion = fanout<CompanionUpdate>();
+  const hubSays = fanout<SayEvent>();
+  const hubControls = fanout<ControlRequest>();
   const hub = createDemoHub({
     tiles: hubTiles.emit,
     ask: hubAsks.emit,
     askClosed: hubAskClosed.emit,
+    companion: hubCompanion.emit,
+    say: hubSays.emit,
+    control: hubControls.emit,
   });
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
@@ -991,6 +1119,16 @@ export function createDemoBackend(): PtyBackend {
     integrationStatus: () => hub.integrationStatus(),
     integrationInstall: (target) => hub.integrationInstall(target),
     integrationUninstall: (target) => hub.integrationUninstall(target),
+    companionStatus: () => hub.companion.status(),
+    companionSend: (text) => hub.companion.send(text),
+    companionConfigure: (enabled, model) =>
+      hub.companion.configure(enabled, model),
+    companionSayDone: (id, action) => hub.companion.sayDone(id, action),
+    hubControlDone: (requestId, result) =>
+      hub.companion.controlDone(requestId, result),
+    onCompanion: (cb) => hubCompanion.on(cb),
+    onHubSay: (cb) => hubSays.on(cb),
+    onHubControl: (cb) => hubControls.on(cb),
   };
 }
 

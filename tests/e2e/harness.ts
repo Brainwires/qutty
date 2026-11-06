@@ -422,7 +422,21 @@ export class App {
                     r.height.toFixed(1)
                   }`;
                 }).join("|");
+            // A re-layout not applied yet (the cluster just changed size) is not settled either:
+            // every shown tile must fit the cluster.
+            const cluster = document.querySelector("[data-testid=cluster]")
+              ?.getBoundingClientRect();
+            const outside = () =>
+              !!cluster &&
+              [...document.querySelectorAll<HTMLElement>(
+                "[data-testid=tile][data-phase=shown]",
+              )].some((el) => {
+                const r = el.getBoundingClientRect();
+                return r.right > cluster.right + 0.5 ||
+                  r.bottom > cluster.bottom + 0.5;
+              });
             const busy = () =>
+              outside() ||
               !!document.querySelector(
                 "[data-testid=tile][data-phase=entering],[data-testid=tile][data-phase=leaving]",
               );

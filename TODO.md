@@ -39,11 +39,18 @@
     `QUTTY_SOCK` / `QUTTY_TILE_ID` / `~/.qutty/bin` in every tile, the
     `qutty-mcp` / `qutty-hook` shims, launch flags for Claude Code and Codex,
     Settings → Agent integration, agent badges in tile headers.
-  - Next: the companion (Loopy overlay, privileged identity on its own socket,
-    `write_tile` / `spawn_tile` / `close_tile` / `focus_tile` / `deliver` wired
-    to the page — the hub already enforces that only the companion may call
-    them), re-attaching when the companion restarts, voice, the shared Docker
-    sandbox (TCP + token endpoint), the shell-as-harness.
+  - Done (phase 2): the companion — Loopy in a corner (`app/companion/`,
+    `lib/companion/`), `ask_user` and `qutty-hook say` in its bubble, its chat
+    box, a privileged identity on its own socket (`desktop/companion.ts`) with
+    the companion-only tools carried out by the page, the brain as headless
+    Claude Code in a hidden PTY behind an adapter (`lib/companion/brain.ts`,
+    `desktop/companion-brain.ts`), re-attach after it exits, the audit log and
+    Settings → Companion.
+  - Next: voice (phase 2b: `CompanionRuntime.userSays(text, "voice")` is the
+    transcript's way in, `subscribe` the answers' way out), the
+    `@rullama/inference` brain adapter (`InferenceBrainOptions` is the typed
+    TODO), dragging Loopy, a floating window (Denext multi-window), the shared
+    Docker sandbox (TCP + token endpoint), the shell-as-harness.
   - Open: Codex hooks (Codex has Claude-style lifecycle hooks behind
     `features.hooks`); for now Codex gets messages through `read_messages`.
     `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could cut it.

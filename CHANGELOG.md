@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- The companion: Loopy, an animated paper clip, sits in a corner of the window.
+  Agents' questions (`ask_user`) appear in its speech bubble with their buttons;
+  scripts and hooks can make it talk with
+  `qutty-hook say "Tests passed" --mood
+  success` (`--action id:label`,
+  `--wait` prints the button pressed). Click Loopy to chat with its brain, a
+  headless Claude Code session on your own login that sees every tile and can
+  act on them: type into a tile, open, close or focus one, and nudge an idle
+  agent to read its messages. Agents can message it too (`send_message` to
+  `companion`). It starts on first use, thinks visibly while it works, restarts
+  on the next use if it stops (messages it had not finished are handed to it
+  again), and keeps answers short. Every privileged action is logged
+  (`companion-audit.jsonl` in the app-support folder) and shown under Settings →
+  Companion, which also sets the corner, the brain and its model, and Off
+  (questions then use the card, as before). Follows the theme and reduced
+  motion.
+
 ## 0.2.0 — SSH, shell picker, scaled tiles
 
 - Homebrew: `brew install --cask brainwires/tap/qutty`. Each release updates the
