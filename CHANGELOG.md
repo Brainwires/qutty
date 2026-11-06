@@ -6,6 +6,25 @@
   cask automatically.
 - Public repository, contributing guide, security policy and issue templates.
 - Releases publish automatically when a version tag is pushed.
+- SSH backend (no UI yet): hosts from `~/.ssh/config` (with `Include`) and
+  `~/.ssh/qutty.conf`, saved hosts written only to the latter, the system `ssh`
+  run in a tile with a shared connection (`ControlMaster`), and scp/sftp upload,
+  download and directory listing over that connection with progress and cancel.
+  A terminal can now run a program other than the login shell.
+- SSH connection manager (⌘⇧O, or the button next to `+`): filter your hosts
+  from `~/.ssh/config` and Qutty's own, grouped as Favorites, Qutty hosts,
+  `~/.ssh/config` and Recent; ↑/↓ and Enter to connect in a new tile, or type
+  `user@host:port` to quick-connect and save it afterwards. Add, edit, rename
+  and delete Qutty hosts (tint, tags, favorite, tmux on connect, remote
+  command); hosts from your own config are read-only and can be duplicated.
+- SSH tiles: the host's name and an SSH badge in the header and the bar, an
+  optional tint from the theme's palette (red, orange, yellow, green, blue,
+  purple) on the border, and a Disconnected card with Reconnect instead of a
+  restart on Enter.
+- File transfer on SSH tiles: drop files or folders from Finder to upload them
+  to the remote shell's current folder (from OSC 7, else `~`, editable before
+  you confirm); "Download…" in the tile header browses the remote side and saves
+  to `~/Downloads`. Progress, Cancel and errors show on the tile.
 
 ## 0.1.0 — first release
 

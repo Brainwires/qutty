@@ -14,6 +14,7 @@ import {
   type TerminalEntry,
   type WorkspaceState,
 } from "../lib/workspace/store.ts";
+import { isTintId } from "../lib/workspace/themes.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
 
 export interface SwitcherBarProps {
@@ -27,6 +28,9 @@ export interface SwitcherBarProps {
   onFocus(id: string): void;
   onClose(id: string): void;
   onNew(): void;
+  /** The SSH connection manager (the button next to `+`). */
+  connectionsOpen: boolean;
+  onConnections(): void;
   onPattern(pattern: LayoutPattern): void;
   onToggleSettings(): void;
 }
@@ -191,6 +195,42 @@ export function SwitcherBar(props: SwitcherBarProps) {
         >
           +
         </button>
+        <button
+          type="button"
+          class={`bar-btn bar-connections${
+            props.connectionsOpen ? " is-open" : ""
+          }`}
+          data-testid="bar-connections"
+          onClick={props.onConnections}
+          aria-expanded={props.connectionsOpen}
+          title={`SSH connections ${mod("Mod+Shift+O")}`}
+          aria-label="SSH connections"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <rect
+              x="2"
+              y="2.5"
+              width="12"
+              height="4.5"
+              rx="1.2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+            />
+            <rect
+              x="2"
+              y="9"
+              width="12"
+              height="4.5"
+              rx="1.2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+            />
+            <circle cx="4.8" cy="4.75" r="0.9" fill="currentColor" />
+            <circle cx="4.8" cy="11.25" r="0.9" fill="currentColor" />
+          </svg>
+        </button>
       </div>
       <div
         class="chips"
@@ -229,6 +269,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
               data-focused={focused ? "true" : "false"}
               data-exited={t.exited ? "true" : "false"}
               data-activity={t.activity ? "true" : "false"}
+              data-tint={isTintId(t.ssh?.tint) ? t.ssh.tint : undefined}
               role="button"
               tabIndex={0}
               data-no-window-drag

@@ -6,6 +6,13 @@ import { join } from "@std/path";
 import { PATTERNS } from "../../lib/workspace/store.ts";
 import { THEME_IDS } from "../../lib/workspace/themes.ts";
 import { type App, ROOT, suite, waitFor } from "./harness.ts";
+import {
+  connectVia,
+  dropFiles,
+  filter,
+  openConnections,
+  tileSel,
+} from "./ssh_helpers.ts";
 
 const DIR = join(ROOT, "tests/e2e/__screenshots__");
 const W = 1280;
@@ -112,6 +119,57 @@ suite("visual", (test) => {
     await app.waitForText(a, "process exited");
     await shot(app, "06-exited-and-activity");
   }, { width: W, height: H });
+
+  test("screenshot: SSH connection manager", async (app) => {
+    await app.ensureTerminals(2);
+    await connectVia(app, "web-1");
+    await openConnections(app);
+    await filter(app, "");
+    await shot(app, "09-ssh-dialog");
+    await app.click("[data-testid=host-edit]");
+    await waitFor(() => app.exists("[data-testid=host-form]"), 2000, "form");
+    await shot(app, "09-ssh-dialog-form");
+  }, { width: W, height: H });
+
+  test(
+    "screenshot: SSH tiles, a transfer in progress and a disconnect",
+    async (app) => {
+      await app.ensureTerminals(2);
+      const down = await connectVia(app, "db");
+      await app.typeInTerminal(down, "exit 255\n");
+      await waitFor(
+        () => app.exists(`${tileSel(down)} [data-testid=disconnected]`),
+        3000,
+        "disconnected",
+      );
+      const id = await connectVia(app, "prod");
+      await app.typeInTerminal(id, "cd /srv/app\n");
+      await app.waitForText(id, /:\/srv\/app\$/);
+      const files = Array.from(
+        { length: 12 },
+        (_, i) => `build-${i + 1}.tar.gz`,
+      );
+      await dropFiles(app, id, files);
+      await app.click(`${tileSel(id)} [data-testid=upload-yes]`);
+      await waitFor(
+        async () =>
+          (await app.attr(
+              `${tileSel(id)} [data-testid=transfer]`,
+              "data-state",
+            )) === "running" &&
+          Number(
+              await app.attr(
+                `${tileSel(id)} [role=progressbar]`,
+                "aria-valuenow",
+              ),
+            ) >= 40,
+        3000,
+        "a running upload, partway",
+      );
+      await shot(app, "10-ssh-tile");
+    },
+    { width: W, height: H },
+  );
 
   test("screenshot: empty state", async (app) => {
     await app.shortcut("KeyW");

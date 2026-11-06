@@ -21,13 +21,16 @@ export default {
     // runtime). The page must give itself a drag region (`makeWindowDraggable`).
     titleBar: "hiddenInset",
     capabilities: {
-      // The PTY backend (node-pty) runs in the app's Deno process: `desktop/pty.ts`.
-      extensions: ["./desktop/pty.ts"],
+      // The PTY backend (node-pty) runs in the app's Deno process: `desktop/pty.ts`. The SSH
+      // backend (`desktop/ssh.ts`: host list, qutty.conf, scp/sftp transfers) runs beside it and
+      // starts ssh/scp/sftp through the same PTY path.
+      extensions: ["./desktop/pty.ts", "./desktop/ssh.ts"],
     },
-    // What desktop/pty.ts needs beyond the baseline (which already has broad read + env):
+    // What the extensions need beyond the baseline (which already has broad read + env):
     // - ffi "*": node-pty's prebuilt Node-API addon (pty.node) is loaded from the compiled app's
-    //   embedded file system, whose path cannot be named at package time; the extension also does
-    //   its PTY I/O, signals and the spawn-helper copy through libc FFI (see desktop/pty.ts for why).
+    //   embedded file system, whose path cannot be named at package time; the extensions also do
+    //   their PTY I/O, signals and file writes (spawn-helper copy, ~/.ssh/qutty.conf, recents)
+    //   through libc FFI (see desktop/pty.ts and desktop/ssh.ts for why).
     //   No `run`, `write` or `sys` is needed.
     extraPermissions: { ffi: ["*"] },
   },

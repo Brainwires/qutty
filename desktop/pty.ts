@@ -32,6 +32,14 @@
 // fd, which makes the kernel hang up the shells.
 
 import { defineDesktopExtension, DesktopCapError } from "denext/desktop";
+import {
+  dim,
+  emptyInput,
+  objectSchema,
+  optStr,
+  optStrList,
+  str,
+} from "./schema.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Public shapes (the page sees these through the typed client)
@@ -45,12 +53,21 @@ export interface PtySpawnArgs {
   cwd?: string;
   /** The shell program (default `$SHELL`, else `/bin/zsh`). It is started as a login shell (`-l`). */
   shell?: string;
+  /**
+   * A program to run instead of a shell (`ssh`, or a shell picked by the user): an absolute
+   * path, or a bare name looked up on `PATH` and the usual bin folders (a Finder-launched app
+   * has a minimal `PATH`). Run as is, not as a login shell; `shell` is ignored with it.
+   */
+  program?: string;
+  /** The program's arguments (after its name). */
+  args?: string[];
 }
 
 /** `spawn` result. */
 export interface PtySpawnResult {
   id: string;
   pid: number;
+  /** The executable that was started: the shell, or the resolved `program` path. */
   shell: string;
   cwd: string;
 }
@@ -80,90 +97,23 @@ export interface PtyExitEvent {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Tiny Standard Schema validators (no schema library dependency)
+// Input schemas (the helpers live in desktop/schema.ts)
 // ---------------------------------------------------------------------------------------------
 
-type Issue = { message: string; path?: PropertyKey[] };
+/** How many arguments a program may be given (an argv, not a payload). */
+const MAX_ARGS = 256;
 
-/** A Standard Schema v1 (structurally what `DesktopCapabilityMethod.input` takes), typed for the page. */
-interface Schema<T> {
-  readonly "~standard": {
-    readonly version: 1;
-    readonly vendor: string;
-    readonly validate: (
-      value: unknown,
-    ) => { readonly value: T; readonly issues?: undefined } | {
-      readonly issues: readonly Issue[];
-    };
-    readonly types?: { readonly input: T; readonly output: T };
-  };
-}
-
-function objectSchema<T>(
-  parse: (v: Record<string, unknown>, issues: Issue[]) => T,
-): Schema<T> {
+const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => {
+  const args = optStrList(v, "args", issues, MAX_ARGS);
   return {
-    "~standard": {
-      version: 1,
-      vendor: "qutty",
-      validate(value: unknown) {
-        if (
-          typeof value !== "object" || value === null || Array.isArray(value)
-        ) {
-          return { issues: [{ message: "expected an object" }] };
-        }
-        const issues: Issue[] = [];
-        const out = parse(value as Record<string, unknown>, issues);
-        return issues.length > 0 ? { issues } : { value: out };
-      },
-    },
+    cols: dim(v, "cols", issues),
+    rows: dim(v, "rows", issues),
+    cwd: optStr(v, "cwd", issues),
+    shell: optStr(v, "shell", issues),
+    program: optStr(v, "program", issues),
+    ...(args === undefined ? {} : { args }),
   };
-}
-
-const MAX_DIM = 10_000;
-
-function dim(v: Record<string, unknown>, key: string, issues: Issue[]): number {
-  const n = v[key];
-  if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > MAX_DIM) {
-    issues.push({
-      message: `${key} must be an integer in 1..${MAX_DIM}`,
-      path: [key],
-    });
-    return 1;
-  }
-  return n;
-}
-
-function str(
-  v: Record<string, unknown>,
-  key: string,
-  issues: Issue[],
-  max = 4096,
-): string {
-  const s = v[key];
-  if (typeof s !== "string" || s === "" || s.length > max) {
-    issues.push({ message: `${key} must be a non-empty string`, path: [key] });
-    return "";
-  }
-  return s;
-}
-
-function optStr(
-  v: Record<string, unknown>,
-  key: string,
-  issues: Issue[],
-): string | undefined {
-  return v[key] === undefined ? undefined : str(v, key, issues);
-}
-
-const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => ({
-  cols: dim(v, "cols", issues),
-  rows: dim(v, "rows", issues),
-  cwd: optStr(v, "cwd", issues),
-  shell: optStr(v, "shell", issues),
-}));
-
-const emptyInput = objectSchema<Record<string, never>>(() => ({}));
+});
 
 const idInput = objectSchema<{ id: string }>((v, issues) => ({
   id: str(v, "id", issues, 64),
@@ -495,14 +445,36 @@ async function spawnHelper(
       c.access(cstr(dest), X_OK) === 0
     ) return (helperCache = dest);
   } catch { /* not there yet */ }
-  // Written through libc so the app needs no --allow-write (FFI is already full trust).
-  c.mkdir(cstr(appSupportDir), 0o755);
-  c.mkdir(cstr(destDir), 0o755);
-  const tmp = `${dest}.${Deno.pid}.tmp`;
-  const fd = c.creat(cstr(tmp), 0o755);
-  if (fd < 0) {
-    throw new Error(`cannot create spawn-helper copy (errno ${errno()})`);
-  }
+  ensureDir(appSupportDir, 0o755);
+  ensureDir(destDir, 0o755);
+  writeFileAtomic(dest, bytes, 0o755);
+  return (helperCache = dest);
+}
+
+// ---------------------------------------------------------------------------------------------
+// File writes through libc (the app needs no --allow-write; FFI is already full trust). Also
+// used by desktop/ssh.ts for ~/.ssh/qutty.conf and the recents file.
+// ---------------------------------------------------------------------------------------------
+
+/** `mkdir(path, mode)`; an existing directory is fine (its mode is left alone). */
+export function ensureDir(path: string, mode: number): void {
+  libc().mkdir(cstr(path), mode);
+}
+
+/**
+ * Write `bytes` to `path` with `mode`, atomically: a temp file beside it, written, chmod'ed,
+ * then renamed over the target (a reader never sees a partial file, and a crash leaves the old
+ * one). The target's directory must exist.
+ */
+export function writeFileAtomic(
+  path: string,
+  bytes: Uint8Array,
+  mode: number,
+): void {
+  const c = libc();
+  const tmp = `${path}.${Deno.pid}.tmp`;
+  const fd = c.creat(cstr(tmp), mode);
+  if (fd < 0) throw new Error(`cannot create ${tmp} (errno ${errno()})`);
   try {
     let off = 0;
     while (off < bytes.length) {
@@ -511,18 +483,58 @@ async function spawnHelper(
       );
       if (n < 0) {
         if (errno() === EINTR) continue;
-        throw new Error(`cannot write spawn-helper copy (errno ${errno()})`);
+        throw new Error(`cannot write ${tmp} (errno ${errno()})`);
       }
       off += n;
     }
   } finally {
     c.close(fd);
   }
-  c.chmod(cstr(tmp), 0o755);
-  if (c.rename(cstr(tmp), cstr(dest)) !== 0) {
-    throw new Error(`cannot install spawn-helper copy (errno ${errno()})`);
+  // creat applies the umask; the caller's mode is meant exactly (0600 for ssh files).
+  c.chmod(cstr(tmp), mode);
+  if (c.rename(cstr(tmp), cstr(path)) !== 0) {
+    throw new Error(`cannot install ${path} (errno ${errno()})`);
   }
-  return (helperCache = dest);
+}
+
+/** The bin folders a Finder-launched app's `PATH` lacks, searched after `PATH` itself. */
+const FALLBACK_BIN = [
+  "/usr/local/bin",
+  "/opt/homebrew/bin",
+  "/usr/bin",
+  "/bin",
+];
+
+/**
+ * The executable for `program`: an absolute path as given, a bare name found on `PATH` or in
+ * {@linkcode FALLBACK_BIN}. A relative path is refused (what it is relative to is unclear).
+ */
+export async function resolveProgram(
+  program: string,
+): Promise<string | undefined> {
+  if (program.includes("/")) {
+    return program.startsWith("/") && await isExecutable(program)
+      ? program
+      : undefined;
+  }
+  const dirs = [
+    ...(Deno.env.get("PATH") ?? "").split(":").filter((d) => d !== ""),
+    ...FALLBACK_BIN,
+  ];
+  for (const dir of new Set(dirs)) {
+    const candidate = `${dir}/${program}`;
+    if (await isExecutable(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+  try {
+    if (!(await Deno.stat(path)).isFile) return false;
+  } catch {
+    return false;
+  }
+  return libc().access(cstr(path), X_OK) === 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -621,10 +633,24 @@ export class PtyHost {
 
     const home = Deno.env.get("HOME") ?? "/";
     const shell = args.shell ?? Deno.env.get("SHELL") ?? "/bin/zsh";
-    try {
-      if (!(await Deno.stat(shell)).isFile) throw new Error();
-    } catch {
-      throw new DesktopCapError("spawn_failed", "the shell does not exist");
+    let file = shell;
+    let argv = ["-l"];
+    if (args.program !== undefined) {
+      const resolved = await resolveProgram(args.program);
+      if (!resolved) {
+        throw new DesktopCapError(
+          "spawn_failed",
+          `program not found: ${args.program}`,
+        );
+      }
+      file = resolved;
+      argv = args.args ?? [];
+    } else {
+      try {
+        if (!(await Deno.stat(shell)).isFile) throw new Error();
+      } catch {
+        throw new DesktopCapError("spawn_failed", "the shell does not exist");
+      }
     }
     let cwd = args.cwd ?? home;
     try {
@@ -653,8 +679,8 @@ export class PtyHost {
     const fdsBefore = IS_DARWIN ? openFdSet() : new Set<number>();
     try {
       forked = native.fork(
-        shell,
-        ["-l"],
+        file,
+        argv,
         envList,
         cwd,
         args.cols,
@@ -672,7 +698,7 @@ export class PtyHost {
     } catch (err) {
       throw new DesktopCapError(
         "spawn_failed",
-        `could not start the shell: ${
+        `could not start ${args.program ? "the program" : "the shell"}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -689,7 +715,7 @@ export class PtyHost {
       pid: forked.pid,
       fd: forked.fd,
       tty: forked.pty,
-      shell,
+      shell: file,
       cwd,
       owner: opts.owner ?? "main",
       decoder: new TextDecoder("utf-8"),
@@ -704,7 +730,7 @@ export class PtyHost {
     this.#terms.set(id, term);
     void this.#readLoop(term);
     if (earlyExit) this.#onExit(term, earlyExit);
-    return { id, pid: forked.pid, shell, cwd };
+    return { id, pid: forked.pid, shell: file, cwd };
   }
 
   /**

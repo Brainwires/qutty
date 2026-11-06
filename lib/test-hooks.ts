@@ -43,6 +43,15 @@ export function withKillSpy(backend: PtyBackend, kills: string[]): PtyBackend {
     keyBindings: () => backend.keyBindings(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
+    sshHosts: () => backend.sshHosts(),
+    sshSaveHost: (host) => backend.sshSaveHost(host),
+    sshDeleteHost: (alias) => backend.sshDeleteHost(alias),
+    sshCommand: (target) => backend.sshCommand(target),
+    sshUpload: (args) => backend.sshUpload(args),
+    sshDownload: (args) => backend.sshDownload(args),
+    sshList: (args) => backend.sshList(args),
+    sshCancel: (transferId) => backend.sshCancel(transferId),
+    onTransfer: (cb) => backend.onTransfer(cb),
   };
 }
 

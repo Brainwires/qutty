@@ -1,7 +1,8 @@
 "use client";
 
 // The workspace island: owns the store, the terminal manager, the keyboard and the layout
-// measurement, and renders the switcher bar, the tile cluster and the settings popover.
+// measurement, and renders the switcher bar, the tile cluster and the settings popover. The
+// SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`.
 //
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
@@ -42,6 +43,11 @@ import {
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
 import { SettingsPanel } from "./settings-panel.tsx";
+import { SHELL_PROFILE, type TerminalProfile } from "../lib/ssh-ui.ts";
+import { ConnectionsDialog } from "./connections-dialog.tsx";
+import { RemoteBrowser } from "./remote-browser.tsx";
+import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
+import { useSsh } from "./use-ssh.ts";
 
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
@@ -81,16 +87,39 @@ export function Workspace() {
     }
   }, []);
 
-  const newTerminal = useCallback(() => {
+  /** A new tile running `profile` (the login shell by default); returns its id. */
+  const openTile = useCallback((profile: TerminalProfile = SHELL_PROFILE) => {
     const manager = managerRef.current;
-    if (!manager) return;
+    if (!manager) return null;
     const id = `t${++seqRef.current}`;
-    manager.create(id);
-    run({ type: "add", id, now: Date.now() });
+    manager.create(id, profile);
+    run({
+      type: "add",
+      id,
+      now: Date.now(),
+      ...(profile.kind === "ssh" ? { ssh: profile } : {}),
+    });
+    return id;
   }, [run]);
+  const newTerminal = useCallback(() => void openTile(), [openTile]);
+
+  const ssh = useSsh({
+    manager: managerRef.current,
+    terminals: () => stateRef.current.terminals,
+    openTile,
+    refocus: () => {
+      const id = stateRef.current.focusedId;
+      if (id) managerRef.current?.focus(id);
+    },
+    cluster: clusterRef,
+  });
+  const sshRef = useRef(ssh);
+  sshRef.current = ssh;
+  const modalOpen = ssh.dialog !== null || ssh.browseFor !== null;
 
   const closeTerminal = useCallback((id: string) => {
     managerRef.current?.dispose(id);
+    sshRef.current.forget(id);
     run({ type: "remove", id });
   }, [run]);
 
@@ -125,6 +154,9 @@ export function Workspace() {
         return run({ type: "stepFontSize", dir: cmd.dir });
       case "fontSizeReset":
         return run({ type: "resetFontSize" });
+      case "openConnections":
+        setSettingsOpen(false);
+        return sshRef.current.toggleDialog();
     }
   }, [newTerminal, closeTerminal, run]);
 
@@ -149,7 +181,18 @@ export function Workspace() {
       : getPtyBackend();
     const manager = new TerminalManager(backend, {
       onExit: (id, exit) =>
-        dispatch({ type: "exited", id, exitCode: exit.exitCode }),
+        dispatch({
+          type: "exited",
+          id,
+          exitCode: exit.exitCode,
+          signal: exit.signal,
+        }),
+      // A shell retries on Enter; an SSH tile shows why on its Disconnected card.
+      onSpawnError: (id, error) => {
+        if (managerRef.current?.profile(id)?.kind !== "ssh") return;
+        const message = error instanceof Error ? error.message : String(error);
+        dispatch({ type: "exited", id, exitCode: null, message });
+      },
       onRestart: (id) => dispatch({ type: "restarted", id, now: Date.now() }),
       onActivity: (id) => dispatch({ type: "activity", id }),
       // The shell needs a moment to start its foreground process before `info` is meaningful.
@@ -231,6 +274,8 @@ export function Workspace() {
       if (!cmd) return;
       e.preventDefault();
       e.stopPropagation();
+      // A modal dialog has the keyboard: only its own shortcut (which closes it) still works.
+      if (modalOpen && cmd.kind !== "openConnections") return;
       runCommand(cmd);
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -249,7 +294,7 @@ export function Workspace() {
       globalThis.removeEventListener("keyup", onKeyUp, true);
       globalThis.removeEventListener("blur", onBlur);
     };
-  }, [ready, platform, runCommand, settingsOpen]);
+  }, [ready, platform, runCommand, settingsOpen, modalOpen]);
 
   // Title polling: the focused terminal, right away on focus and every couple of seconds.
   const focusedId = state.focusedId;
@@ -325,6 +370,8 @@ export function Workspace() {
         onFocus={focusTerminal}
         onClose={closeTerminal}
         onNew={newTerminal}
+        connectionsOpen={ssh.dialog !== null}
+        onConnections={ssh.toggleDialog}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
       />
@@ -340,6 +387,24 @@ export function Workspace() {
             reducedMotion={reducedMotion}
             onFocus={focusTerminal}
             onClose={closeTerminal}
+            dropTargetId={ssh.dropTarget}
+            renderHeadActions={(entry) =>
+              entry.ssh && (
+                <SshHeadActions
+                  entry={entry}
+                  onDownload={() => ssh.browse(entry.id)}
+                />
+              )}
+            renderOverlay={(entry, focused) =>
+              entry.ssh && (
+                <SshTileOverlay
+                  entry={entry}
+                  focused={focused}
+                  onReconnect={() => void manager.restart(entry.id)}
+                  onClose={() => closeTerminal(entry.id)}
+                  {...ssh.tile(entry.id)}
+                />
+              )}
           />
         )}
         {ready && state.terminals.length === 0 && (
@@ -370,6 +435,43 @@ export function Workspace() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {manager && ssh.dialog && (
+        <ConnectionsDialog
+          backend={manager.backend}
+          platform={platform}
+          initialForm={ssh.dialog.form}
+          onConnect={ssh.connect}
+          onClose={ssh.closeDialog}
+        />
+      )}
+      {manager && ssh.browseFor && (
+        <BrowserFor
+          id={ssh.browseFor}
+          manager={manager}
+          onPick={(path) => void ssh.download(ssh.browseFor!, path)}
+          onClose={ssh.closeBrowser}
+        />
+      )}
     </div>
+  );
+}
+
+/** The download picker for SSH tile `id` (nothing when `id` is not an SSH tile). */
+function BrowserFor(props: {
+  id: string;
+  manager: TerminalManager;
+  onPick(path: string): void;
+  onClose(): void;
+}) {
+  const profile = props.manager.profile(props.id);
+  if (profile?.kind !== "ssh") return null;
+  return (
+    <RemoteBrowser
+      backend={props.manager.backend}
+      target={profile.target}
+      label={profile.label}
+      onPick={props.onPick}
+      onClose={props.onClose}
+    />
   );
 }
