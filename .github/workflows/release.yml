@@ -62,6 +62,17 @@ jobs:
           security default-keychain -s "$KEYCHAIN"
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 
+          # The Developer ID G2 intermediate that issued our certificate. GitHub's images ship it;
+          # a plain macOS install (a self-hosted runner) may only have G1, and then the identity
+          # is not valid for codesigning. Pinned by fingerprint.
+          curl -fsSL --retry 3 https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          G2_SHA256="$(openssl x509 -inform DER -in "$RUNNER_TEMP/DeveloperIDG2CA.cer" -noout \
+            -fingerprint -sha256 | sed 's/.*=//; s/://g')"
+          [ "$G2_SHA256" = "F16CD3C54C7F83CEA4BF1A3E6A0819C8AAA8E4A1528FD144715F350643D2DF3A" ] \
+            || { echo "::error::Unexpected Developer ID G2 CA fingerprint: $G2_SHA256"; exit 1; }
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN"
+
           printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" \
             -T /usr/bin/codesign -T /usr/bin/security
