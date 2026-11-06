@@ -298,3 +298,33 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     "sea-glass",
   );
 });
+
+Deno.test("SSH tiles: titled by their host, keep it, and carry the exit details", () => {
+  const ssh = {
+    kind: "ssh" as const,
+    target: { alias: "prod-api" },
+    label: "prod-api",
+    tint: "red",
+  };
+  let s = run([{ type: "add", id: "s", now: 1, ssh }]);
+  let t = s.terminals[0];
+  assertEquals([t.title, t.ssh], ["prod-api", ssh]);
+  assertStrictEquals(
+    reduce(s, { type: "title", id: "s", title: "ssh — ~" }),
+    s,
+    "polled titles do not replace the host label",
+  );
+  s = reduce(s, { type: "exited", id: "s", exitCode: 255, signal: null });
+  t = s.terminals[0];
+  assertEquals([t.exited, t.exitCode, t.exitSignal], [true, 255, null]);
+  s = reduce(s, {
+    type: "exited",
+    id: "s",
+    exitCode: null,
+    message: "bad alias",
+  });
+  assertEquals(s.terminals[0].exitMessage, "bad alias");
+  s = reduce(s, { type: "restarted", id: "s", now: 9 });
+  t = s.terminals[0];
+  assertEquals([t.exited, t.exitCode, t.exitMessage], [false, null, undefined]);
+});

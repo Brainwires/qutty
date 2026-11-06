@@ -22,6 +22,7 @@ import {
   stepFontSize,
 } from "./fonts.ts";
 import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
+import type { SshProfile } from "../ssh-ui.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -57,6 +58,12 @@ export interface TerminalEntry {
   lastUsedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** The terminating signal, when there was one. */
+  exitSignal?: number | null;
+  /** Why it never started (an SSH target the backend refused). */
+  exitMessage?: string;
+  /** Set for an SSH tile: its host label, tint and target. */
+  ssh?: SshProfile;
   /** Output arrived while the terminal was not focused (cleared on focus). */
   activity: boolean;
 }
@@ -93,14 +100,20 @@ export interface WorkspaceState {
 
 /** Everything the UI can do to the workspace. */
 export type WorkspaceAction =
-  | { type: "add"; id: string; now: number; title?: string }
+  | { type: "add"; id: string; now: number; title?: string; ssh?: SshProfile }
   | { type: "remove"; id: string }
   | { type: "focus"; id: string; now: number }
   | { type: "focusPrevious"; now: number }
   | { type: "focusOrdinal"; ordinal: number; now: number }
   | { type: "cycle"; dir: 1 | -1; now: number }
   | { type: "endCycle" }
-  | { type: "exited"; id: string; exitCode: number }
+  | {
+    type: "exited";
+    id: string;
+    exitCode: number | null;
+    signal?: number | null;
+    message?: string;
+  }
   | { type: "restarted"; id: string; now: number }
   | { type: "title"; id: string; title: string }
   | { type: "activity"; id: string }
@@ -342,12 +355,13 @@ export function reduce(
       if (state.terminals.some((t) => t.id === action.id)) return state;
       const entry: TerminalEntry = {
         id: action.id,
-        title: action.title ?? "shell",
+        title: action.title ?? action.ssh?.label ?? "shell",
         createdAt: action.now,
         lastUsedAt: action.now,
         exited: false,
         exitCode: null,
         activity: false,
+        ...(action.ssh ? { ssh: action.ssh } : {}),
       };
       return {
         ...state,
@@ -393,14 +407,22 @@ export function reduce(
       return updateTerminal(state, action.id, {
         exited: true,
         exitCode: action.exitCode,
+        exitSignal: action.signal ?? null,
+        exitMessage: action.message,
       });
     case "restarted":
       return updateTerminal(state, action.id, {
         exited: false,
         exitCode: null,
+        exitSignal: null,
+        exitMessage: undefined,
         lastUsedAt: action.now,
       });
     case "title":
+      // An SSH tile keeps its host label (the foreground process there is always `ssh`).
+      if (state.terminals.some((t) => t.id === action.id && t.ssh)) {
+        return state;
+      }
       return updateTerminal(state, action.id, { title: action.title });
     case "activity":
       if (action.id === state.focusedId) return state;

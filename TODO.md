@@ -82,6 +82,12 @@
   - Maybe: broadcast typing to several selected SSH tiles (cluster ssh), and a
     per-host port-forward panel (`ssh -O forward` / `-O cancel` on the control
     socket, live).
+  - Status: the backend and the UI are in (manager dialog, SSH tiles with tint /
+    Disconnected / Reconnect, drop-to-upload, Download… picker, progress). Still
+    open: SSH hosts in the `+` picker (no picker yet), "Connect in split" (the
+    layout has no splits), choosing a download folder, auto-label + "Save this
+    host" for `ssh` typed in a plain shell (needs the foreground process's argv,
+    which `info()` does not report), the port-forward panel and cluster ssh.
 
 - [ ] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own

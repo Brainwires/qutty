@@ -425,6 +425,14 @@ class DemoShell {
   }
 
   prompt(): void {
+    // A fake remote shell reports its directory with OSC 7, like zsh/fish do on every prompt
+    // (`~` is /home/demo there); the SSH tile uploads dropped files into it.
+    if (this.remote) {
+      const dir = this.cwd === "~"
+        ? "/home/demo"
+        : this.cwd.replace(/^~\//, "/home/demo/");
+      this.out(`${ESC}]7;file://${this.remote.host}${encodeURI(dir)}\x07`);
+    }
     const who = this.remote
       ? `${this.remote.user}@${this.remote.host}`
       : "demo";
