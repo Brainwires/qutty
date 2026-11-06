@@ -15,7 +15,7 @@
   - Decide what quitting means (Cmd+Q) versus closing the window, and how to
     kill a session for real.
 
-- [ ] **Shell picker on the `+` button.** A dropdown arrow attached to the side
+- [x] **Shell picker on the `+` button.** A dropdown arrow attached to the side
       of `+` (a split button) chooses what the new terminal runs. Clicking `+`
       itself still opens the default shell.
   - List every installed shell, read from `/etc/shells` and checked to exist
@@ -28,6 +28,9 @@
     dropdown UI. It should work from both the horizontal and vertical bar.
   - Maybe: remember the last choice, a setting for the default, and user-defined
     entries (command + args + label).
+  - Done: shells, agent tools (data-driven list), SSH hosts and "Connections…";
+    the last pick is remembered and Settings has "+ opens". User-defined entries
+    are still open.
 
 - [ ] **Sandboxed shells (Docker).** Offer "Sandboxed shell" in the `+` picker:
       a terminal whose shell runs inside a Docker sandbox, isolated from the

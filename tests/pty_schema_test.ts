@@ -33,7 +33,15 @@ Deno.test("schema: declared events and methods", () => {
   assertExtensionShape(ext, {
     name: "pty",
     events: ["data", "exit"],
-    methods: ["info", "keyBindings", "kill", "resize", "spawn", "write"],
+    methods: [
+      "info",
+      "keyBindings",
+      "kill",
+      "launchables",
+      "resize",
+      "spawn",
+      "write",
+    ],
   });
 });
 
@@ -202,4 +210,12 @@ Deno.test("schema: issue messages name the limits", () => {
     message: "id must be a non-empty string",
     path: ["id"],
   }]);
+});
+
+Deno.test("schema: launchables and keyBindings take nothing", () => {
+  for (const name of ["launchables", "keyBindings"] as const) {
+    assertEquals(ok(name, {}), {});
+    // Extra keys are dropped (nothing reaches the handler).
+    assertEquals(ok(name, { path: "/etc/shells" }), {});
+  }
 });

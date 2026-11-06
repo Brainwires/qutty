@@ -60,6 +60,7 @@ export function withBackendSpy(
     },
     info: (id) => backend.info(id),
     keyBindings: () => backend.keyBindings(),
+    launchables: () => backend.launchables(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
     sshHosts: () => backend.sshHosts(),

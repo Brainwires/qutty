@@ -51,6 +51,17 @@ Deno.test("ssh-ui: exit reasons, banners and the Disconnected message", () => {
     exitBanner(SSH, { exitCode: 255, signal: null }),
     "[disconnected (code 255)]",
   );
+  const agent = {
+    kind: "agent" as const,
+    program: "/u/.local/bin/claude",
+    name: "claude",
+    label: "Claude Code",
+  };
+  assertEquals(
+    exitBanner(agent, { exitCode: 1, signal: null }),
+    "[claude exited (code 1) — ⌘W to close]",
+  );
+  assertEquals(restartsOnEnter(agent), false);
   assertEquals(disconnectMessage({ exitCode: 0 }), "The session ended.");
   assertEquals(
     disconnectMessage({ exitCode: 255 }),

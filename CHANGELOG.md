@@ -30,6 +30,14 @@
   never resizes its terminal and full-screen programs (vim, htop) are not
   garbled. A click on a scaled tile focuses it. `resize`, the current behavior,
   stays the default.
+- Shell picker on the `+` button: the arrow beside `+` lists the installed
+  shells (from `/etc/shells`, deduplicated, the default marked), agent tools
+  found on `PATH` or in your user bin folders (Claude Code, Codex, Gemini CLI,
+  Aider, opencode), your SSH hosts and "Connections…". Mouse or ↑/↓, Enter and
+  Escape; works with the bar on any edge. Agent tools run directly (the tile is
+  titled "claude — ~/proj") and their tile closes when they exit. The last pick
+  is remembered, and Settings → Layout → "+ opens" chooses what plain `+` and ⌘T
+  open (default shell, last used, or one entry).
 
 ## 0.1.0 — first release
 

@@ -31,6 +31,8 @@ import type {
 import type { SshHost, SshHostInput, SshTarget } from "./ssh-config.ts";
 import type { SshListing } from "./ssh-command.ts";
 import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
+import type { Launchables } from "./launcher.ts";
+import { baseName } from "./ssh-ui.ts";
 
 export type {
   SshCommand,
@@ -99,6 +101,8 @@ export interface PtyBackend {
   resize(id: string, cols: number, rows: number): Promise<void>;
   /** The user's macOS DefaultKeyBinding.dict text (null when absent or not macOS). */
   keyBindings(): Promise<string | null>;
+  /** What the `+` picker can start: installed shells and agent tools (lib/launcher.ts). */
+  launchables(): Promise<Launchables>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -315,6 +319,9 @@ export function createDesktopBackend(
     async keyBindings() {
       return await pty.keyBindings({});
     },
+    async launchables() {
+      return await pty.launchables({});
+    },
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);
@@ -395,6 +402,41 @@ const DEMO_HELP = [
   "",
 ];
 
+/** What the demo backend says is installed (the e2e suite launches these). */
+const DEMO_LAUNCHABLES: Launchables = {
+  shells: [
+    { path: "/bin/zsh", label: "zsh", isDefault: true },
+    { path: "/bin/bash", label: "bash", isDefault: false },
+    { path: "/opt/homebrew/bin/fish", label: "fish", isDefault: false },
+  ],
+  agents: [
+    {
+      name: "claude",
+      label: "Claude Code",
+      path: "/Users/demo/.local/bin/claude",
+    },
+    { name: "codex", label: "Codex", path: "/opt/homebrew/bin/codex" },
+  ],
+};
+
+/** A demo agent tool: started by its path or name, it greets, echoes, and ends on `/exit`. */
+const demoAgentOf = (program: string | undefined) =>
+  program === undefined
+    ? undefined
+    : DEMO_LAUNCHABLES.agents.find((a) =>
+      a.path === program || a.name === program
+    );
+
+/** What a demo terminal pretends to run: the demo shell (under a name), ssh, or an agent tool. */
+interface DemoMode {
+  /** The shell's name (`info` reports it): `demo-sh`, or the picked shell's. */
+  name: string;
+  /** A fake ssh session: the prompt and banner look remote. */
+  remote?: { user: string; host: string };
+  /** A fake agent tool. */
+  agent?: { name: string; label: string };
+}
+
 class DemoShell {
   line = "";
   cwd = "~";
@@ -407,11 +449,24 @@ class DemoShell {
     public rows: number,
     readonly out: (data: string) => void,
     readonly exit: (e: PtyExit) => void,
-    /** Set for a fake ssh session: the prompt and banner look remote. */
-    readonly remote?: { user: string; host: string },
+    readonly mode: DemoMode = { name: "demo-sh" },
   ) {}
 
+  get remote(): { user: string; host: string } | undefined {
+    return this.mode.remote;
+  }
+
   start(): void {
+    const agent = this.mode.agent;
+    if (agent) {
+      this.out(
+        `${
+          fg(209)
+        }${BOLD}✻ ${agent.label}${RESET} ${DIM}demo backend — a fake ${agent.name}, type /exit to quit${RESET}\r\n\r\n`,
+      );
+      this.prompt();
+      return;
+    }
     this.out(
       this.remote
         ? `${DIM}demo backend — a fake ssh session, nothing is connected${RESET}\r\n` +
@@ -425,6 +480,10 @@ class DemoShell {
   }
 
   prompt(): void {
+    if (this.mode.agent) {
+      this.out(`${fg(209)}>${RESET} `);
+      return;
+    }
     // A fake remote shell reports its directory with OSC 7, like zsh/fish do on every prompt
     // (`~` is /home/demo there); the SSH tile uploads dropped files into it.
     if (this.remote) {
@@ -439,9 +498,14 @@ class DemoShell {
     this.out(`${fg(114)}${who}${RESET}:${fg(75)}${this.cwd}${RESET}$ `);
   }
 
-  /** What `info` reports: a real ssh tile's foreground process is `ssh`. */
+  /**
+   * What `info` reports: a real ssh tile's foreground process is `ssh`; an agent tool is often a
+   * node script (the tile's title names the tool, not this).
+   */
   get process(): string {
-    return this.topTimer ? "top" : this.remote ? "ssh" : "demo-sh";
+    if (this.topTimer) return "top";
+    if (this.mode.agent) return "node";
+    return this.remote ? "ssh" : this.mode.name;
   }
 
   input(data: string): void {
@@ -491,7 +555,21 @@ class DemoShell {
     }
   }
 
+  /** A demo agent's turn: `/exit` (or `exit`) ends it, anything else gets a canned answer. */
+  runAgent(raw: string): void {
+    const text = raw.trim();
+    if (text === "/exit" || text === "exit") {
+      this.exited = true;
+      this.exit({ exitCode: 0, signal: null });
+    } else if (text !== "") {
+      this.out(
+        `${DIM}(demo) ${this.mode.agent!.name} heard: ${text}${RESET}\r\n`,
+      );
+    }
+  }
+
   run(raw: string): void {
+    if (this.mode.agent) return this.runAgent(raw);
     const [cmd = "", ...args] = raw.trim().split(/\s+/);
     const println = (s = "") => this.out(`${s}\r\n`);
     switch (cmd) {
@@ -664,10 +742,12 @@ export function createDemoBackend(): PtyBackend {
   return {
     kind: "demo",
     spawn(options) {
-      // Only `ssh` is a program the demo knows; anything else is the demo shell under its name.
+      // `ssh` and the demo agent tools are programs the demo knows; anything else is the demo
+      // shell under its name.
       const remote = options.program === "ssh"
         ? remoteOf(options.args ?? [])
         : undefined;
+      const agent = demoAgentOf(options.program);
       const id = `demo-${++next}`;
       const shell = new DemoShell(
         id,
@@ -675,7 +755,11 @@ export function createDemoBackend(): PtyBackend {
         options.rows,
         (data) => events.emitData(id, data),
         (e) => setTimeout(() => end(id, e), 0),
-        remote,
+        {
+          name: options.shell ? baseName(options.shell) : "demo-sh",
+          ...(remote ? { remote } : {}),
+          ...(agent ? { agent: { name: agent.name, label: agent.label } } : {}),
+        },
       );
       shells.set(id, shell);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
@@ -705,6 +789,9 @@ export function createDemoBackend(): PtyBackend {
     },
     keyBindings() {
       return Promise.resolve(null);
+    },
+    launchables() {
+      return Promise.resolve(structuredClone(DEMO_LAUNCHABLES));
     },
     info(id) {
       return attempt(() => {

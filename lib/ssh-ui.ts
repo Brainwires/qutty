@@ -26,8 +26,29 @@ export interface SshProfile {
   tint?: string;
 }
 
-/** What a terminal runs: the login shell, or ssh to a host. */
-export type TerminalProfile = { kind: "shell" } | SshProfile;
+/** A login shell: the default one (`$SHELL`), or one picked in the `+` menu. */
+export interface ShellProfile {
+  kind: "shell";
+  /** The shell's path; absent for the default shell. */
+  shell?: string;
+}
+
+/**
+ * An agent or CLI tool picked in the `+` menu (lib/launcher.ts), run directly as the terminal's
+ * program: no shell around it, and its tile closes when it exits.
+ */
+export interface AgentProfile {
+  kind: "agent";
+  /** The resolved executable. */
+  program: string;
+  /** Its command name (`claude`): the tile's title. */
+  name: string;
+  /** What the menu calls it (`Claude Code`). */
+  label: string;
+}
+
+/** What a terminal runs: a login shell, an agent tool, or ssh to a host. */
+export type TerminalProfile = ShellProfile | AgentProfile | SshProfile;
 
 /** The profile every terminal had before SSH. */
 export const SHELL_PROFILE: TerminalProfile = { kind: "shell" };
@@ -63,9 +84,11 @@ export function exitReason(exit: ExitLike): string {
 /** The dim line written into the terminal when its process ends. */
 export function exitBanner(profile: TerminalProfile, exit: ExitLike): string {
   const why = exitReason(exit);
-  return profile.kind === "ssh"
-    ? `[disconnected (${why})]`
-    : `[process exited (${why}) — press Enter to restart or ⌘W to close]`;
+  if (profile.kind === "ssh") return `[disconnected (${why})]`;
+  if (profile.kind === "agent") {
+    return `[${profile.name} exited (${why}) — ⌘W to close]`;
+  }
+  return `[process exited (${why}) — press Enter to restart or ⌘W to close]`;
 }
 
 /** The Disconnected overlay's explanation of why the session ended. */
