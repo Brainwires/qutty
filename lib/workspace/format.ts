@@ -34,11 +34,16 @@ export function shortenPath(cwd: string, home?: string): string {
     : "…/" + parts.slice(-2).join("/");
 }
 
-/** "zsh — ~/Source" (or just the process name when the cwd is unknown). */
+/**
+ * "zsh — ~/Source" (or just the process name when the cwd is unknown). `name` replaces the
+ * process name: an agent tool's tile says "claude", whatever its process is called (a node
+ * script, a versioned binary).
+ */
 export function makeTitle(
   info: { process: string; cwd?: string },
   home?: string,
+  name?: string,
 ): string {
-  const proc = info.process.trim() || "shell";
+  const proc = name?.trim() || info.process.trim() || "shell";
   return info.cwd ? `${proc} — ${shortenPath(info.cwd, home)}` : proc;
 }

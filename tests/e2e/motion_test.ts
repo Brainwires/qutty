@@ -9,6 +9,13 @@ interface Sampled {
   start: number;
   samples: number[];
   durations: string;
+  /**
+   * The width with the tile's running width/transform transitions paused at their halfway point
+   * (null when none was running). Unlike `samples`, this doesn't depend on the machine being
+   * fast enough to paint frames mid-transition: a slow CI runner may only paint the start and
+   * the end.
+   */
+  mid: number | null;
 }
 
 /**
@@ -38,11 +45,26 @@ function sampleFocusChange(
             }),
           );
         const samples: number[] = [];
+        let mid: number | null = null;
         const t0 = performance.now();
+        const measureMid = () => {
+          const running = tile.getAnimations().filter((a) =>
+            a instanceof CSSTransition &&
+            ["width", "transform"].includes(a.transitionProperty)
+          );
+          if (running.length === 0) return;
+          for (const a of running) {
+            a.pause();
+            a.currentTime = Number(a.effect?.getTiming().duration ?? 0) / 2;
+          }
+          mid = tile.getBoundingClientRect().width;
+          for (const a of running) a.play();
+        };
         const tick = () => {
+          if (samples.length === 0) measureMid();
           samples.push(tile.getBoundingClientRect().width);
           if (performance.now() - t0 < 600) requestAnimationFrame(tick);
-          else resolve({ start, samples, durations });
+          else resolve({ start, samples, durations, mid });
         };
         requestAnimationFrame(tick);
       }),
@@ -80,12 +102,11 @@ suite("motion", (test) => {
     );
     const lo = Math.min(r.start, end) + 2;
     const hi = Math.max(r.start, end) - 2;
-    const between = r.samples.filter((w) => w > lo && w < hi);
     assert(
-      between.length >= 2,
-      `frames between ${r.start} and ${end}: ${
+      r.mid !== null && r.mid > lo && r.mid < hi,
+      `halfway width ${r.mid} between ${r.start} and ${end} (frames: ${
         r.samples.map((x) => x.toFixed(0))
-      }`,
+      })`,
     );
     assertEquals(await app.focusedId(), a);
     void b;

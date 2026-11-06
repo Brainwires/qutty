@@ -54,6 +54,18 @@ import {
   trustedRemoteCwd,
 } from "./ssh-ui.ts";
 
+/** The line written into a terminal whose program could not be started. */
+function spawnFailure(profile: TerminalProfile, why: string): string {
+  switch (profile.kind) {
+    case "ssh":
+      return `[could not start ssh: ${why}]`;
+    case "agent":
+      return `[could not start ${profile.name}: ${why}]`;
+    case "shell":
+      return `[could not start a shell: ${why} — press Enter to retry]`;
+  }
+}
+
 /** The font a manager starts with (the settings' defaults) until `setFont` is called. */
 const DEFAULT_TERMINAL_FONT: TerminalFontOptions = terminalFontOptions(
   DEFAULT_FONT_SETTINGS,
@@ -417,24 +429,32 @@ export class TerminalManager {
     } catch (error) {
       m.exited = true;
       const why = error instanceof Error ? error.message : String(error);
-      m.term.write(
-        m.profile.kind === "ssh"
-          ? `\r\n${DIM}[could not start ssh: ${why}]${RESET}\r\n`
-          : `\r\n${DIM}[could not start a shell: ${why} — press Enter to retry]${RESET}\r\n`,
-      );
+      m.term.write(`\r\n${DIM}${spawnFailure(m.profile, why)}${RESET}\r\n`);
       this.#events.onSpawnError?.(m.id, error);
     } finally {
       m.spawning = false;
     }
   }
 
-  /** `spawn`'s program and arguments for a profile (none for the login shell). */
+  /**
+   * `spawn`'s command for a profile: nothing for the default login shell, the picked shell's
+   * path, an agent tool's program, or the `ssh` argv the backend builds.
+   */
   async #command(
     profile: TerminalProfile,
-  ): Promise<{ program?: string; args?: string[] }> {
-    if (profile.kind !== "ssh") return {};
-    const { program, args } = await this.#backend.sshCommand(profile.target);
-    return { program, args };
+  ): Promise<{ shell?: string; program?: string; args?: string[] }> {
+    switch (profile.kind) {
+      case "shell":
+        return profile.shell ? { shell: profile.shell } : {};
+      case "agent":
+        return { program: profile.program, args: [] };
+      case "ssh": {
+        const { program, args } = await this.#backend.sshCommand(
+          profile.target,
+        );
+        return { program, args };
+      }
+    }
   }
 
   /**

@@ -131,13 +131,19 @@ Deno.test(
     assertEquals([a.shell, a.cwd], ["/bin/zsh", "/tmp"]);
     assertEquals(b.pid, a.pid + 1);
     assert(a.id !== b.id);
+    // A shell picked by path reports its name (the tile title); the default is `demo-sh`.
     assertEquals(await be.info(a.id), {
       id: a.id,
       pid: a.pid,
+      process: "zsh",
+      cwd: "/Users/demo",
+    });
+    assertEquals(await be.info(b.id), {
+      id: b.id,
+      pid: b.pid,
       process: "demo-sh",
       cwd: "/Users/demo",
     });
-    assertEquals((await be.info(b.id)).pid, b.pid);
     const sa = await session(time, { be });
     const sb = await session(time, { be });
     sa.take();
@@ -542,5 +548,42 @@ Deno.test(
     await s.type("echo 1\recho 2\r");
     assertEquals(s.take(), `echo 1\r\n1\r\n${PROMPT}echo 2\r\n2\r\n${PROMPT}`);
     await s.be.kill(s.id);
+  }),
+);
+
+Deno.test(
+  "demo: launchables, and an agent tool that greets, answers and exits on /exit",
+  withTime(async (time) => {
+    const be = createDemoBackend();
+    const found = await be.launchables();
+    assertEquals(found.shells.map((s) => [s.label, s.isDefault]), [
+      ["zsh", true],
+      ["bash", false],
+      ["fish", false],
+    ]);
+    assertEquals(found.agents.map((a) => a.name), ["claude", "codex"]);
+    const claude = found.agents[0];
+    const sp = await be.spawn({
+      cols: 80,
+      rows: 24,
+      program: claude.path,
+      args: [],
+    });
+    assertEquals(sp.shell, claude.path);
+    let out = "";
+    be.onData(sp.id, (d) => out += d);
+    const exits: PtyExit[] = [];
+    be.onExit(sp.id, (e) => exits.push(e));
+    await time.tickAsync(0);
+    assert(plain(out).startsWith("✻ Claude Code demo backend"), plain(out));
+    assert(plain(out).endsWith("> "));
+    assertEquals((await be.info(sp.id)).process, "node");
+    out = "";
+    await be.write(sp.id, "hello\r");
+    await time.tickAsync(0);
+    assertEquals(plain(out), "hello\r\n(demo) claude heard: hello\r\n> ");
+    await be.write(sp.id, "/exit\r");
+    await time.tickAsync(0);
+    assertEquals(exits, [{ exitCode: 0, signal: null }]);
   }),
 );

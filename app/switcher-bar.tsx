@@ -16,6 +16,7 @@ import {
 } from "../lib/workspace/store.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
+import { LaunchMenu, type LaunchMenuProps } from "./launch-menu.tsx";
 
 export interface SwitcherBarProps {
   state: WorkspaceState;
@@ -28,6 +29,15 @@ export interface SwitcherBarProps {
   onFocus(id: string): void;
   onClose(id: string): void;
   onNew(): void;
+  /** The `+` picker's entries and actions (app/launch-menu.tsx). */
+  launch: Pick<
+    LaunchMenuProps,
+    "sections" | "plusTitle" | "plusEntryId" | "onLaunch"
+  >;
+  /** The picker opened (the workspace refreshes its entries). */
+  onLaunchOpen(): void;
+  /** Put the keyboard back in the focused terminal (Escape in the picker). */
+  onRefocus(): void;
   /** The SSH connection manager (the button next to `+`). */
   connectionsOpen: boolean;
   onConnections(): void;
@@ -41,7 +51,9 @@ export function SwitcherBar(props: SwitcherBarProps) {
   const chipEls = useRef(new Map<string, HTMLElement>());
   const prevRects = useRef(new Map<string, DOMRect>());
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
-  const [menu, setMenu] = useState<"none" | "more" | "pattern">("none");
+  const [menu, setMenu] = useState<"none" | "more" | "pattern" | "launch">(
+    "none",
+  );
   const vertical = props.position === "left" || props.position === "right";
   const chips = barChips(props.state, props.visibleIds);
   const ids = chips.map((c) => c.id);
@@ -160,6 +172,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
       e.preventDefault();
       e.stopPropagation();
       setMenu("none");
+      if (menu === "launch") props.onRefocus();
     };
     globalThis.addEventListener("pointerdown", onDown, true);
     globalThis.addEventListener("keydown", onKey, true);
@@ -185,16 +198,24 @@ export function SwitcherBar(props: SwitcherBarProps) {
       data-position={props.position}
     >
       <div class="bar-lead" data-no-window-drag>
-        <button
-          type="button"
-          class="bar-btn bar-new"
-          data-testid="bar-new"
-          onClick={props.onNew}
-          title={`New terminal ${mod("Mod+T")}`}
-          aria-label="New terminal"
-        >
-          +
-        </button>
+        <LaunchMenu
+          {...props.launch}
+          plusTitle={`${props.launch.plusTitle} ${mod("Mod+T")}`}
+          open={menu === "launch"}
+          onNew={props.onNew}
+          onToggle={(open) => {
+            setMenu(open ? "launch" : "none");
+            if (open) props.onLaunchOpen();
+          }}
+          onLaunch={(entry) => {
+            setMenu("none");
+            props.launch.onLaunch(entry);
+          }}
+          onConnections={() => {
+            setMenu("none");
+            props.onConnections();
+          }}
+        />
         <button
           type="button"
           class={`bar-btn bar-connections${

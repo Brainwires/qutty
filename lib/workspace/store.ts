@@ -23,6 +23,7 @@ import {
 } from "./fonts.ts";
 import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
 import type { SshProfile } from "../ssh-ui.ts";
+import { isEntryId, type PlusOpens, sanitizePlusOpens } from "../launcher.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -75,8 +76,18 @@ export interface TerminalEntry {
   exitMessage?: string;
   /** Set for an SSH tile: its host label, tint and target. */
   ssh?: SshProfile;
+  /** Set for an agent tool's tile (`claude`): its title names the tool, not the process. */
+  agent?: TerminalAgent;
   /** Output arrived while the terminal was not focused (cleared on focus). */
   activity: boolean;
+}
+
+/** An agent tool a tile runs (lib/launcher.ts). */
+export interface TerminalAgent {
+  /** The command name (`claude`). */
+  name: string;
+  /** The menu's name for it (`Claude Code`). */
+  label: string;
 }
 
 /** What is persisted between runs (the terminal font fields come from `FontSettings`). */
@@ -90,6 +101,10 @@ export interface Settings extends FontSettings {
   theme: ThemeId;
   /** The settings-panel sections the user folded away (all open by default). */
   collapsedSections: SettingsSection[];
+  /** What plain `+` (and ⌘T) opens: the default shell, the last pick, or one picker entry. */
+  plusOpens: PlusOpens;
+  /** The picker entry chosen last (`agent:claude`), for `plusOpens: "last"`. */
+  lastLaunch: string | null;
 }
 
 /** The whole workspace. */
@@ -113,7 +128,14 @@ export interface WorkspaceState {
 
 /** Everything the UI can do to the workspace. */
 export type WorkspaceAction =
-  | { type: "add"; id: string; now: number; title?: string; ssh?: SshProfile }
+  | {
+    type: "add";
+    id: string;
+    now: number;
+    title?: string;
+    ssh?: SshProfile;
+    agent?: TerminalAgent;
+  }
   | { type: "remove"; id: string }
   | { type: "focus"; id: string; now: number }
   | { type: "focusPrevious"; now: number }
@@ -138,6 +160,8 @@ export type WorkspaceAction =
   | { type: "setBarOrder"; order: BarOrder }
   | { type: "setInactiveTiles"; mode: InactiveTiles }
   | { type: "setTheme"; theme: ThemeId }
+  | { type: "setPlusOpens"; plusOpens: PlusOpens }
+  | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
   | { type: "stepFontSize"; dir: 1 | -1 }
@@ -152,6 +176,8 @@ export const DEFAULT_SETTINGS: Settings = {
   inactiveTiles: "resize",
   theme: DEFAULT_THEME_ID,
   collapsedSections: [],
+  plusOpens: "default",
+  lastLaunch: null,
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -274,6 +300,10 @@ export function sanitizeSettings(
   }
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
+  if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
+  if (r.lastLaunch === null || isEntryId(r.lastLaunch)) {
+    out.lastLaunch = r.lastLaunch;
+  }
   if (Array.isArray(r.collapsedSections)) {
     out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
       (r.collapsedSections as unknown[]).includes(s)
@@ -373,13 +403,15 @@ export function reduce(
       if (state.terminals.some((t) => t.id === action.id)) return state;
       const entry: TerminalEntry = {
         id: action.id,
-        title: action.title ?? action.ssh?.label ?? "shell",
+        title: action.title ?? action.ssh?.label ?? action.agent?.name ??
+          "shell",
         createdAt: action.now,
         lastUsedAt: action.now,
         exited: false,
         exitCode: null,
         activity: false,
         ...(action.ssh ? { ssh: action.ssh } : {}),
+        ...(action.agent ? { agent: action.agent } : {}),
       };
       return {
         ...state,
@@ -524,6 +556,20 @@ export function reduce(
       if (state.settings.theme === theme) return state;
       return { ...state, settings: { ...state.settings, theme } };
     }
+    case "setPlusOpens": {
+      const plusOpens = sanitizePlusOpens(action.plusOpens);
+      if (state.settings.plusOpens === plusOpens) return state;
+      return { ...state, settings: { ...state.settings, plusOpens } };
+    }
+    case "launched":
+      if (
+        !isEntryId(action.entryId) ||
+        state.settings.lastLaunch === action.entryId
+      ) return state;
+      return {
+        ...state,
+        settings: { ...state.settings, lastLaunch: action.entryId },
+      };
     case "toggleSection": {
       if (!SETTINGS_SECTIONS.includes(action.section)) return state;
       const collapsed = state.settings.collapsedSections;

@@ -40,6 +40,17 @@ import {
   optStrList,
   str,
 } from "./schema.ts";
+import {
+  AGENT_TOOLS,
+  buildAgents,
+  buildShells,
+  type Launchables,
+  parseEtcShells,
+  type ShellProbe,
+  userBinDirs,
+} from "../lib/launcher.ts";
+
+export type { Launchables };
 
 // ---------------------------------------------------------------------------------------------
 // Public shapes (the page sees these through the typed client)
@@ -506,8 +517,23 @@ const FALLBACK_BIN = [
 ];
 
 /**
- * The executable for `program`: an absolute path as given, a bare name found on `PATH` or in
- * {@linkcode FALLBACK_BIN}. A relative path is refused (what it is relative to is unclear).
+ * Where a bare program name is looked up, in order and without repeats: `PATH`, then
+ * {@linkcode FALLBACK_BIN}, then the user's own bin folders (`~/.local/bin`, where the Claude
+ * Code installer puts `claude`, npm and bun globals...: see `USER_BIN_DIRS` in lib/launcher.ts).
+ */
+function searchDirs(): string[] {
+  return [
+    ...new Set([
+      ...(Deno.env.get("PATH") ?? "").split(":").filter((d) => d !== ""),
+      ...FALLBACK_BIN,
+      ...userBinDirs(Deno.env.get("HOME")),
+    ]),
+  ];
+}
+
+/**
+ * The executable for `program`: an absolute path as given, a bare name found in
+ * {@linkcode searchDirs}. A relative path is refused (what it is relative to is unclear).
  */
 export async function resolveProgram(
   program: string,
@@ -517,15 +543,58 @@ export async function resolveProgram(
       ? program
       : undefined;
   }
-  const dirs = [
-    ...(Deno.env.get("PATH") ?? "").split(":").filter((d) => d !== ""),
-    ...FALLBACK_BIN,
-  ];
-  for (const dir of new Set(dirs)) {
+  for (const dir of searchDirs()) {
     const candidate = `${dir}/${program}`;
     if (await isExecutable(candidate)) return candidate;
   }
   return undefined;
+}
+
+/**
+ * The `PATH` a directly started program gets: the app's own, then the program's folder and the
+ * search folders. A Finder-launched app's `PATH` is minimal, and an npm-installed tool
+ * (`#!/usr/bin/env node`) needs to find `node` next to it or in Homebrew's folder.
+ */
+function programPath(file: string): string {
+  const dir = file.slice(0, file.lastIndexOf("/")) || "/";
+  const own = (Deno.env.get("PATH") ?? "").split(":").filter((d) => d !== "");
+  return [...new Set([...own, dir, ...searchDirs()])].join(":");
+}
+
+/** The default shell: `$SHELL`, else `/bin/zsh` (what `spawn` starts without `shell`). */
+function defaultShellPath(): string {
+  return Deno.env.get("SHELL") || "/bin/zsh";
+}
+
+/** A shell path probed: its real path when it is an executable file. */
+async function probeShell(path: string): Promise<ShellProbe> {
+  if (!path.startsWith("/") || !(await isExecutable(path))) return { path };
+  try {
+    return { path, real: await Deno.realPath(path) };
+  } catch {
+    return { path };
+  }
+}
+
+/**
+ * What the `+` picker can start here: the shells in `/etc/shells` that exist (one per real
+ * file, the default marked) and the agent tools found on `PATH` and the user bin folders.
+ */
+export async function findLaunchables(
+  etcShells = "/etc/shells",
+): Promise<Launchables> {
+  let text = "";
+  try {
+    text = await Deno.readTextFile(etcShells);
+  } catch { /* no /etc/shells: only the default shell */ }
+  const probes = await Promise.all(parseEtcShells(text).map(probeShell));
+  const shells = buildShells(probes, await probeShell(defaultShellPath()));
+  const found = new Map<string, string>();
+  for (const tool of AGENT_TOOLS) {
+    const path = await resolveProgram(tool.name);
+    if (path) found.set(tool.name, path);
+  }
+  return { shells, agents: buildAgents(found) };
 }
 
 async function isExecutable(path: string): Promise<boolean> {
@@ -632,7 +701,7 @@ export class PtyHost {
     const helper = await spawnHelper(dir, opts.appSupportDir);
 
     const home = Deno.env.get("HOME") ?? "/";
-    const shell = args.shell ?? Deno.env.get("SHELL") ?? "/bin/zsh";
+    const shell = args.shell ?? defaultShellPath();
     let file = shell;
     let argv = ["-l"];
     if (args.program !== undefined) {
@@ -666,6 +735,7 @@ export class PtyHost {
     env.TERM_PROGRAM = "qutty";
     env.PWD = cwd;
     env.SHELL ??= shell;
+    if (args.program !== undefined) env.PATH = programPath(file);
     // A Finder-launched app has no locale; a UTF-8 one keeps the shell's line editing sane.
     if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = "en_US.UTF-8";
     const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
@@ -1064,6 +1134,11 @@ export default defineDesktopExtension({
       handler: async (args: unknown): Promise<PtyInfo> => {
         return await requireHost().info((args as { id: string }).id);
       },
+    },
+    // What the `+` picker offers: installed shells and agent tools (lib/launcher.ts).
+    launchables: {
+      input: emptyInput,
+      handler: (): Promise<Launchables> => findLaunchables(),
     },
     // The user's macOS key bindings (~/Library/KeyBindings/DefaultKeyBinding.dict), which the
     // terminal honors the way native text fields do (lib/key-bindings.ts). null when absent.

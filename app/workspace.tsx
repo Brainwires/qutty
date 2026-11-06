@@ -48,11 +48,17 @@ import {
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
 import { SettingsPanel } from "./settings-panel.tsx";
-import { SHELL_PROFILE, type TerminalProfile } from "../lib/ssh-ui.ts";
+import {
+  baseName,
+  SHELL_PROFILE,
+  type TerminalProfile,
+} from "../lib/ssh-ui.ts";
 import { ConnectionsDialog } from "./connections-dialog.tsx";
 import { RemoteBrowser } from "./remote-browser.tsx";
 import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
 import { useSsh } from "./use-ssh.ts";
+import { useLauncher } from "./use-launcher.ts";
+import { plusLabel } from "../lib/launcher.ts";
 
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
@@ -79,7 +85,13 @@ export function Workspace() {
   const pollTitle = useCallback(async (id: string) => {
     const r = await managerRef.current?.info(id);
     if (!r || !managerRef.current) return;
-    dispatch({ type: "title", id, title: makeTitle(r.info, r.home) });
+    // An agent tool's tile names the tool ("claude — ~/proj"), whatever its process is called.
+    const agent = stateRef.current.terminals.find((t) => t.id === id)?.agent;
+    dispatch({
+      type: "title",
+      id,
+      title: makeTitle(r.info, r.home, agent?.name),
+    });
   }, []);
 
   /** Dispatch, and move keyboard focus to the terminal that becomes focused (if it changes). */
@@ -103,10 +115,15 @@ export function Workspace() {
       id,
       now: Date.now(),
       ...(profile.kind === "ssh" ? { ssh: profile } : {}),
+      ...(profile.kind === "agent"
+        ? { agent: { name: profile.name, label: profile.label } }
+        : {}),
+      ...(profile.kind === "shell" && profile.shell
+        ? { title: baseName(profile.shell) }
+        : {}),
     });
     return id;
   }, [run]);
-  const newTerminal = useCallback(() => void openTile(), [openTile]);
 
   const ssh = useSsh({
     manager: managerRef.current,
@@ -120,6 +137,17 @@ export function Workspace() {
   });
   const sshRef = useRef(ssh);
   sshRef.current = ssh;
+
+  const launcher = useLauncher({
+    manager: managerRef.current,
+    plusOpens: state.settings.plusOpens,
+    lastLaunch: state.settings.lastLaunch,
+    openTile,
+    connect: (req) => sshRef.current.connect(req),
+    remember: (entryId) => dispatch({ type: "launched", entryId }),
+  });
+  /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
+  const newTerminal = launcher.openPlus;
   const modalOpen = ssh.dialog !== null || ssh.browseFor !== null;
 
   const closeTerminal = useCallback((id: string) => {
@@ -127,6 +155,8 @@ export function Workspace() {
     sshRef.current.forget(id);
     run({ type: "remove", id });
   }, [run]);
+  const closeRef = useRef(closeTerminal);
+  closeRef.current = closeTerminal;
 
   const focusTerminal = useCallback((id: string) => {
     run({ type: "focus", id, now: Date.now() });
@@ -186,16 +216,25 @@ export function Workspace() {
       ? withBackendSpy(getPtyBackend(), spy)
       : getPtyBackend();
     const manager = new TerminalManager(backend, {
-      onExit: (id, exit) =>
+      onExit: (id, exit) => {
+        // An agent tool that ends cleanly takes its tile with it (no shell is left behind); one
+        // that fails keeps it, so its error and the exit banner can be read.
+        const agent = managerRef.current?.profile(id)?.kind === "agent";
+        if (agent && (exit.exitCode === 0 || exit.signal)) {
+          setTimeout(() => closeRef.current(id), 0);
+          return;
+        }
         dispatch({
           type: "exited",
           id,
           exitCode: exit.exitCode,
           signal: exit.signal,
-        }),
-      // A shell retries on Enter; an SSH tile shows why on its Disconnected card.
+        });
+      },
+      // A shell retries on Enter; an SSH tile shows why on its Disconnected card, and an agent
+      // tool's tile is marked exited (it never restarts).
       onSpawnError: (id, error) => {
-        if (managerRef.current?.profile(id)?.kind !== "ssh") return;
+        if (managerRef.current?.profile(id)?.kind === "shell") return;
         const message = error instanceof Error ? error.message : String(error);
         dispatch({ type: "exited", id, exitCode: null, message });
       },
@@ -244,10 +283,11 @@ export function Workspace() {
 
   // The first terminal, once the manager exists.
   useEffect(() => {
+    // Always the default shell, whatever plain `+` is set to open.
     if (
       ready && stateRef.current.terminals.length === 0 && seqRef.current === 0
-    ) newTerminal();
-  }, [ready, newTerminal]);
+    ) openTile();
+  }, [ready, openTile]);
 
   // Measure the cluster area (also fires when the bar moves to another edge).
   useLayoutEffect(() => {
@@ -376,6 +416,17 @@ export function Workspace() {
         onFocus={focusTerminal}
         onClose={closeTerminal}
         onNew={newTerminal}
+        launch={{
+          sections: launcher.sections,
+          plusTitle: plusLabel(launcher.plus),
+          plusEntryId: launcher.plus?.id,
+          onLaunch: launcher.launch,
+        }}
+        onLaunchOpen={launcher.refresh}
+        onRefocus={() => {
+          const id = stateRef.current.focusedId;
+          if (id) managerRef.current?.focus(id);
+        }}
         connectionsOpen={ssh.dialog !== null}
         onConnections={ssh.toggleDialog}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
@@ -440,6 +491,8 @@ export function Workspace() {
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           onToggleSection={(section) => run({ type: "toggleSection", section })}
+          launchSections={launcher.sections}
+          onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onClose={() => setSettingsOpen(false)}
         />
       )}

@@ -185,6 +185,28 @@ suite("visual", (test) => {
     { width: W, height: H },
   );
 
+  test("screenshot: the + picker, top and left bar", async (app) => {
+    const ids = await app.ensureTerminals(2);
+    await app.run(ids[1], "ls");
+    const open = async () => {
+      await app.click("[data-testid=bar-new-menu]");
+      await waitFor(
+        () => app.exists("[data-testid=launch-item][data-kind=ssh]"),
+        3000,
+        "the picker with its hosts",
+      );
+    };
+    await open();
+    // The keyboard highlight on an agent entry.
+    for (let i = 0; i < 3; i++) await app.press("ArrowDown");
+    await shot(app, "11-launch-menu");
+    await app.press("Escape");
+    await app.setBarPosition("left");
+    await app.closeSettings();
+    await open();
+    await shot(app, "11-launch-menu-left");
+  }, { width: W, height: H });
+
   test("screenshot: empty state", async (app) => {
     await app.shortcut("KeyW");
     await waitFor(() => app.exists("[data-testid=empty]"), 3000, "empty");

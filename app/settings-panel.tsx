@@ -32,6 +32,7 @@ import {
   stepFontSize,
 } from "../lib/workspace/fonts.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
+import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
 
 export interface SettingsPanelProps {
@@ -44,6 +45,9 @@ export interface SettingsPanelProps {
   onFont(patch: Partial<FontSettings>): void;
   onTheme(theme: ThemeId): void;
   onToggleSection(section: SettingsSection): void;
+  /** The `+` picker's entries, for "+ opens". */
+  launchSections: LaunchSection[];
+  onPlusOpens(plusOpens: PlusOpens): void;
   onClose(): void;
 }
 
@@ -282,6 +286,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 : "Every terminal is fitted to its own tile and resized when the layout changes."}
             </span>
           </div>
+          <PlusOpensField
+            value={settings.plusOpens}
+            sections={props.launchSections}
+            onChange={props.onPlusOpens}
+          />
         </>,
       )}
 
@@ -319,6 +328,49 @@ export function SettingsPanel(props: SettingsPanelProps) {
         ))}
       </dl>
     </div>
+  );
+}
+
+/**
+ * What plain `+` (and the new-terminal shortcut) opens: the default shell, the last thing picked
+ * from the `+` menu, or one entry of it. An entry that is not available (yet) stays selectable
+ * so a saved choice is not lost while the list loads.
+ */
+function PlusOpensField(props: {
+  value: PlusOpens;
+  sections: LaunchSection[];
+  onChange(value: PlusOpens): void;
+}) {
+  const known = props.sections.some((s) =>
+    s.entries.some((e) => e.id === props.value)
+  );
+  const fixed = props.value === "default" || props.value === "last";
+  return (
+    <label class="field">
+      <span class="field-label">+ opens</span>
+      <select
+        class="field-select"
+        data-testid="setting-plus-opens"
+        value={props.value}
+        onChange={(e) => props.onChange((e.target as HTMLSelectElement).value)}
+      >
+        <option value="default">Default shell</option>
+        <option value="last">Last used</option>
+        {props.sections.map((s) => (
+          <optgroup label={s.title} key={s.id}>
+            {s.entries.map((e) => (
+              <option value={e.id} key={e.id}>
+                {e.kind === "ssh" ? `ssh ${e.label}` : e.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+        {!fixed && !known && <option value={props.value}>{props.value}</option>}
+      </select>
+      <span class="field-hint">
+        The menu beside + picks anything else.
+      </span>
+    </label>
   );
 }
 

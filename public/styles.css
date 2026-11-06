@@ -578,6 +578,136 @@ kbd {
   min-width: 190px;
 }
 
+/* ---- The + split button and its picker ------------------------------------------------- */
+
+.split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 6px;
+}
+.split .bar-new {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split .bar-new-menu {
+  min-width: 16px;
+  width: 16px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  color: var(--text-3);
+}
+.split:hover .bar-btn {
+  background: rgba(var(--hi-rgb), 0.04);
+}
+.split:hover .bar-btn:hover {
+  background: rgba(var(--hi-rgb), 0.08);
+  color: var(--text);
+}
+.split .bar-new-menu.is-open {
+  color: var(--accent);
+}
+/* The picker opens from the + end of the bar, whatever the edge. */
+.bar .menu.launch-menu {
+  min-width: 220px;
+  max-width: 320px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.bar-top .menu.launch-menu {
+  top: calc(100% + 6px);
+  right: auto;
+  left: 0;
+}
+.bar-bottom .menu.launch-menu {
+  bottom: calc(100% + 6px);
+  right: auto;
+  left: 0;
+}
+/* On a vertical edge the menu is placed against the lead row, which spans the bar's width. */
+.bar.is-vertical .bar-lead {
+  position: relative;
+}
+.bar.is-vertical .menu-anchor.launch {
+  position: static;
+}
+.bar-left .menu.launch-menu {
+  left: calc(100% + 18px);
+  top: 0;
+  bottom: auto;
+}
+.bar-right .menu.launch-menu {
+  right: calc(100% + 18px);
+  left: auto;
+  top: 0;
+  bottom: auto;
+}
+.launch-section + .launch-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.launch-heading {
+  padding: 5px 8px 3px;
+  font: 600 9.5px/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.launch-item:focus-visible,
+.launch-item:focus {
+  outline: none;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text);
+}
+.launch-icon {
+  flex: none;
+  color: var(--text-3);
+}
+.launch-item[data-kind="agent"] .launch-icon {
+  color: var(--accent);
+}
+.launch-item[data-tint] .launch-icon {
+  color: var(--tint);
+}
+.launch-badge {
+  flex: none;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font: 9.5px/1 var(--mono);
+  color: var(--text-3);
+  background: rgba(var(--hi-rgb), 0.06);
+}
+.launch-item.is-plus .launch-badge:last-child {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.launch-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+.launch-empty {
+  padding: 8px;
+  font: 11px/1.3 var(--mono);
+  color: var(--text-3);
+}
+.field-select {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--tile);
+  color: var(--text);
+  font: 12px/1.3 var(--mono);
+}
+.field-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .pattern-preview {
   display: block;
   flex: none;
