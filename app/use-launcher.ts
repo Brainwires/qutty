@@ -27,6 +27,11 @@ export interface UseLauncherOptions {
   connect(request: ConnectRequest): void;
   /** Remember `entryId` as the last pick. */
   remember(entryId: string): void;
+  /**
+   * The picker's "Run in sandbox" starting value (the "new tiles open in the sandbox" setting);
+   * `null` while the sandbox is off (no toggle).
+   */
+  sandboxDefault?: boolean | null;
 }
 
 const NONE: Launchables = { shells: [], agents: [] };
@@ -37,9 +42,17 @@ export function useLauncher(opts: UseLauncherOptions) {
   optsRef.current = opts;
   const [found, setFound] = useState<Launchables>(NONE);
   const [hosts, setHosts] = useState<LaunchHost[]>([]);
+  const sandboxDefault = opts.sandboxDefault ?? null;
+  const [inSandbox, setInSandbox] = useState(sandboxDefault === true);
+  const inSandboxRef = useRef(inSandbox);
+  inSandboxRef.current = inSandbox;
+  // Each opening of the menu starts from the default.
+  const sandboxDefaultRef = useRef(sandboxDefault);
+  sandboxDefaultRef.current = sandboxDefault;
 
   /** Read what is installed and the saved hosts again (each failure leaves the old list). */
   const refresh = useCallback(() => {
+    setInSandbox(sandboxDefaultRef.current === true);
     const backend = optsRef.current.manager?.backend;
     if (!backend) return;
     void backend.launchables().then(setFound, () => {});
@@ -65,14 +78,19 @@ export function useLauncher(opts: UseLauncherOptions) {
   );
 
   /** Start `entry` in a new tile; a pick from the menu is remembered as the last one. */
-  const launch = useCallback((entry: LaunchEntry, remember = true) => {
+  const launch = useCallback((
+    entry: LaunchEntry,
+    remember = true,
+    sandbox?: boolean,
+  ) => {
     const o = optsRef.current;
+    const where = sandbox === undefined ? {} : { sandbox };
     switch (entry.kind) {
       case "shell":
         o.openTile(
           entry.shell.isDefault
-            ? { kind: "shell" }
-            : { kind: "shell", shell: entry.shell.path },
+            ? { kind: "shell", ...where }
+            : { kind: "shell", shell: entry.shell.path, ...where },
         );
         break;
       case "agent":
@@ -81,6 +99,7 @@ export function useLauncher(opts: UseLauncherOptions) {
           program: entry.agent.path,
           name: entry.agent.name,
           label: entry.agent.label,
+          ...where,
         });
         break;
       case "ssh":
@@ -103,5 +122,27 @@ export function useLauncher(opts: UseLauncherOptions) {
     else optsRef.current.openTile();
   }, [launch]);
 
-  return { sections, plus, refresh, launch, openPlus };
+  /** A pick from the menu: remembered, and run where its "Run in sandbox" toggle says. */
+  const launchFromMenu = useCallback((entry: LaunchEntry) => {
+    launch(
+      entry,
+      true,
+      sandboxDefaultRef.current === null ? undefined : inSandboxRef.current,
+    );
+  }, [launch]);
+
+  const sandboxChoice = sandboxDefault === null ? undefined : {
+    on: inSandbox,
+    onToggle: () => setInSandbox((v) => !v),
+  };
+
+  return {
+    sections,
+    plus,
+    refresh,
+    launch,
+    launchFromMenu,
+    sandboxChoice,
+    openPlus,
+  };
 }

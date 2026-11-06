@@ -38,6 +38,8 @@ import { ThemePreview } from "./theme-preview.tsx";
 import { AgentIntegration } from "./agent-integration.tsx";
 import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
+import type { SandboxSettings } from "../lib/sandbox/settings.ts";
+import { SandboxSettingsSection } from "./sandbox-settings.tsx";
 import type { PtyBackend } from "../lib/pty-client.ts";
 
 export interface SettingsPanelProps {
@@ -55,6 +57,8 @@ export interface SettingsPanelProps {
   onPlusOpens(plusOpens: PlusOpens): void;
   /** Settings → Companion. */
   onCompanion(patch: Partial<CompanionSettings>): void;
+  /** Settings → Sandbox. */
+  onSandbox(patch: Partial<SandboxSettings>): void;
   /** For Agent integration (the section is left out without one) and the companion's status. */
   backend: PtyBackend | null;
   onClose(): void;
@@ -335,6 +339,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onChange={props.onCompanion}
         />,
         "companion-section",
+      )}
+
+      {section(
+        "sandbox",
+        "Sandbox",
+        <SandboxSettingsSection
+          settings={settings.sandbox}
+          backend={props.backend}
+          onChange={props.onSandbox}
+        />,
+        "sandbox-section",
       )}
 
       {props.backend && section(

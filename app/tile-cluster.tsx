@@ -209,8 +209,14 @@ function TerminalTile(props: TerminalTileProps) {
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
   if (entry.activity) classes.push("has-activity");
-  const tint = isTintId(entry.ssh?.tint) ? entry.ssh.tint : undefined;
+  // A sandboxed tile wears the green tint plus a hatched header (SANDBOX_TINT).
+  const tint = isTintId(entry.ssh?.tint)
+    ? entry.ssh.tint
+    : entry.sandbox
+    ? SANDBOX_TINT
+    : undefined;
   if (entry.ssh) classes.push("is-ssh");
+  if (entry.sandbox) classes.push("is-sandbox");
   if (tint) classes.push("has-tint");
   if (props.dropTargetId === id) classes.push("is-drop-target");
 
@@ -226,6 +232,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-focused={focused ? "true" : "false"}
       data-exited={entry.exited ? "true" : "false"}
       data-ssh={entry.ssh ? "true" : undefined}
+      data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
@@ -250,6 +257,15 @@ function TerminalTile(props: TerminalTileProps) {
         >
           {entry.ssh && (
             <span class="tile-badge" data-testid="tile-ssh-badge">SSH</span>
+          )}
+          {entry.sandbox && (
+            <span
+              class="tile-badge"
+              data-testid="tile-sandbox-badge"
+              title="Runs in the window's shared Docker sandbox"
+            >
+              SANDBOX
+            </span>
           )}
           <AgentBadge tile={props.agentOf?.(id)} />
           <span class="tile-title" data-testid="tile-title" title={entry.title}>
@@ -310,6 +326,9 @@ function TerminalTile(props: TerminalTileProps) {
     </div>
   );
 }
+
+/** The tint every sandboxed tile wears. */
+const SANDBOX_TINT = "green";
 
 /** An agent tile's hub name, status and unread count (nothing for a tile without a harness). */
 function AgentBadge(props: { tile: TileInfo | undefined }) {

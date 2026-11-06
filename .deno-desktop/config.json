@@ -19,7 +19,8 @@
       "extensions": [
         "./desktop/pty.ts",
         "./desktop/ssh.ts",
-        "./desktop/hub.ts"
+        "./desktop/hub.ts",
+        "./desktop/sandbox.ts"
       ]
     },
     "extraPermissions": {

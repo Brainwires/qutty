@@ -234,8 +234,12 @@ export function createDemoHub(emit: DemoHubEmit) {
     // --- The demo terminals' half ----------------------------------------------------------
 
     /** Register terminal `id` (an agent tool with its `harness`); returns its hub name. */
-    add(id: string, harness?: string): string {
-      return registry.add({ id, ...(harness ? { harness } : {}) }).name;
+    add(id: string, harness?: string, sandbox = false): string {
+      return registry.add({
+        id,
+        ...(harness ? { harness } : {}),
+        ...(sandbox ? { sandbox } : {}),
+      }).name;
     },
     /** Terminal `id` ended: its tile, mailbox and open questions go. */
     remove(id: string): void {

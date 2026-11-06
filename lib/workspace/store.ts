@@ -29,6 +29,11 @@ import {
   DEFAULT_COMPANION,
   sanitizeCompanion,
 } from "../companion/settings.ts";
+import {
+  DEFAULT_SANDBOX,
+  type SandboxSettings,
+  sanitizeSandbox,
+} from "../sandbox/settings.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -59,6 +64,7 @@ export type SettingsSection =
   | "theme"
   | "font"
   | "companion"
+  | "sandbox"
   | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -66,6 +72,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "theme",
   "font",
   "companion",
+  "sandbox",
   "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
@@ -90,6 +97,8 @@ export interface TerminalEntry {
   ssh?: SshProfile;
   /** Set for an agent tool's tile (`claude`): its title names the tool, not the process. */
   agent?: TerminalAgent;
+  /** It runs in the window's shared Docker sandbox (badge and tint). */
+  sandbox?: boolean;
   /** Output arrived while the terminal was not focused (cleared on focus). */
   activity: boolean;
 }
@@ -119,6 +128,8 @@ export interface Settings extends FontSettings {
   lastLaunch: string | null;
   /** Settings → Companion (Loopy and its brain; lib/companion/settings.ts). */
   companion: CompanionSettings;
+  /** Settings → Sandbox (the window's shared Docker sandbox; lib/sandbox/settings.ts). */
+  sandbox: SandboxSettings;
 }
 
 /** The whole workspace. */
@@ -149,6 +160,7 @@ export type WorkspaceAction =
     title?: string;
     ssh?: SshProfile;
     agent?: TerminalAgent;
+    sandbox?: boolean;
   }
   | { type: "remove"; id: string }
   | { type: "focus"; id: string; now: number }
@@ -176,6 +188,7 @@ export type WorkspaceAction =
   | { type: "setTheme"; theme: ThemeId }
   | { type: "setPlusOpens"; plusOpens: PlusOpens }
   | { type: "setCompanion"; patch: Partial<CompanionSettings> }
+  | { type: "setSandbox"; patch: Partial<SandboxSettings> }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -195,6 +208,7 @@ export const DEFAULT_SETTINGS: Settings = {
   plusOpens: "default",
   lastLaunch: null,
   companion: { ...DEFAULT_COMPANION },
+  sandbox: { ...DEFAULT_SANDBOX },
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -218,6 +232,7 @@ function cloneSettings(s: Settings): Settings {
     layout: { ...s.layout },
     collapsedSections: [...s.collapsedSections],
     companion: { ...s.companion },
+    sandbox: { ...s.sandbox },
   };
 }
 
@@ -321,6 +336,9 @@ export function sanitizeSettings(
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
   if (r.lastLaunch === null || isEntryId(r.lastLaunch)) {
     out.lastLaunch = r.lastLaunch;
+  }
+  if (r.sandbox !== undefined) {
+    out.sandbox = sanitizeSandbox(r.sandbox, out.sandbox);
   }
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
@@ -433,6 +451,7 @@ export function reduce(
         activity: false,
         ...(action.ssh ? { ssh: action.ssh } : {}),
         ...(action.agent ? { agent: action.agent } : {}),
+        ...(action.sandbox ? { sandbox: true } : {}),
       };
       return {
         ...state,
@@ -594,6 +613,13 @@ export function reduce(
         )
       ) return state;
       return { ...state, settings: { ...state.settings, companion } };
+    }
+    case "setSandbox": {
+      const sandbox = sanitizeSandbox(action.patch, state.settings.sandbox);
+      if (JSON.stringify(sandbox) === JSON.stringify(state.settings.sandbox)) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, sandbox } };
     }
     case "launched":
       if (

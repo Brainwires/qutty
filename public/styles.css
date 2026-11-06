@@ -1216,6 +1216,19 @@ kbd {
     0 0 0 5px rgba(var(--tint-rgb), 0.2),
     0 12px 36px rgba(var(--shadow-rgb), calc(0.4 * var(--shadow-a)));
 }
+/* A sandboxed tile: the green tint (data-tint) plus a hatched header, so it never reads as an
+   SSH host tinted green. */
+.tile.is-sandbox .tile-head {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(var(--tint-rgb), 0.1) 0 6px,
+    transparent 6px 12px
+  );
+}
+.launch-sandbox .launch-check {
+  margin-left: auto;
+  color: var(--accent);
+}
 .tile.is-drop-target {
   border-color: var(--accent);
 }
@@ -3182,4 +3195,41 @@ kbd {
 .companion-activity em {
   color: var(--red);
   font-style: normal;
+}
+
+/* ---- Settings → Sandbox ------------------------------------------------------------------ */
+
+.sandbox-status {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+.sandbox-status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 12px/1.3 var(--sans);
+  color: var(--text);
+}
+.sandbox-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.sandbox-status[data-phase="running"] .sandbox-dot {
+  background: var(--tint-green);
+}
+.sandbox-status[data-phase="starting"] .sandbox-dot {
+  background: var(--tint-yellow);
+}
+.sandbox-status[data-phase="error"] .sandbox-dot,
+.sandbox-status[data-phase="unavailable"] .sandbox-dot {
+  background: var(--tint-red);
+}
+.sandbox-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }

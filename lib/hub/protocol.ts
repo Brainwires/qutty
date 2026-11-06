@@ -26,6 +26,8 @@ export interface TileInfo {
   /** Its working directory, when known. */
   cwd?: string;
   status: TileStatus;
+  /** It runs in the window's shared Docker sandbox (its cwd is a path inside the container). */
+  sandbox?: boolean;
   /** Messages waiting for this tile (not yet handed to it). */
   unread: number;
 }

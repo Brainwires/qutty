@@ -13,7 +13,14 @@
 //   every start). An agent started from the `+` picker also gets the flags that load the hub's
 //   MCP server and hooks (lib/hub/launch.ts).
 // - Each connection's first line decides what it is: `{"qutty":"hook",…}` is one hook call
-//   (answered with one line, then closed); anything else is MCP, served by @rullama/mcp-server.
+//   (answered with one line, then closed); anything else is MCP, served by @rullama/mcp-server
+//   (`StreamServerTransport` over the libc socket, the line routed by `serveConnection`'s
+//   `firstLine` hook).
+// - Sandboxed tiles (the shared Docker sandbox, desktop/sandbox.ts) cannot reach a host unix
+//   socket, so they get `QUTTY_HUB=host.docker.internal:<port>` and a per-tile
+//   `QUTTY_TILE_TOKEN`: one TCP listener on 127.0.0.1 (plus the bridge gateway on native Linux),
+//   a connection admitted only when its first line is a live token (`StreamServerListener`'s
+//   pre-auth), which then names the tile; the next line is routed as above.
 // - The screen mirror: a headless xterm per terminal, fed the PTY's output (lib/hub/mirror.ts).
 // - The page: `snapshot` + the `tiles` event (badges), `ask` / `askClosed` (ask_user), `answer`,
 //   `control` (companion commands, answered with `controlDone`), and the Agent integration
@@ -29,7 +36,12 @@ import {
   defineDesktopExtension,
   type DesktopExtensionHost,
 } from "denext/desktop";
-import { McpServer } from "@rullama/mcp-server";
+import {
+  type FirstLineDecision,
+  McpServer,
+  StreamServerListener,
+  StreamServerTransport,
+} from "@rullama/mcp-server";
 import { emptyInput, objectSchema, str } from "./schema.ts";
 import {
   ensureDir,
@@ -38,8 +50,10 @@ import {
   writeTerminal,
 } from "./pty.ts";
 import {
+  ConnectionQueue,
   FdConnection,
   FdReactor,
+  FdTcpListener,
   FdUnixListener,
   getuid,
   makeDir,
@@ -222,6 +236,11 @@ export class HubService {
   #installed: { claude?: boolean; codex?: boolean } = {};
   #companionListener: FdUnixListener | undefined;
   #tilesQueued = false;
+  /** The TCP endpoint's listeners (127.0.0.1 first) and their accepted connections. */
+  #tcp: FdTcpListener[] = [];
+  #tcpQueue: ConnectionQueue | undefined;
+  /** Sandboxed tiles' tokens → tile ids. */
+  #tokens = new Map<string, string>();
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -298,8 +317,11 @@ export class HubService {
       cwd: string;
       cols: number;
       rows: number;
+      /** Runs in the shared Docker sandbox: reached over TCP + token, not a unix socket. */
+      sandbox?: { alsoOn: readonly string[] };
     },
-  ): { env: Record<string, string>; pathPrepend: string; args: string[] } {
+  ): { env: Record<string, string>; pathPrepend?: string; args: string[] } {
+    if (info.sandbox) return this.#spawningSandboxed(id, info, info.sandbox);
     const path = this.socketPath(id);
     const identity: HubIdentity = { role: "tile", tileId: id };
     const listener = FdUnixListener.listen(path, this.#reactor, (conn) => {
@@ -321,6 +343,37 @@ export class HubService {
     };
   }
 
+  /**
+   * A sandboxed terminal: a token instead of a socket. Its environment goes into the container
+   * (`docker exec -e …`): `QUTTY_HUB` (`host.docker.internal:<port>`), `QUTTY_TILE_TOKEN`,
+   * `QUTTY_TILE_ID`. An agent gets the hub's flags whether or not the user-scope integration is
+   * installed on the host: the sandbox has its own home, without that registration.
+   */
+  #spawningSandboxed(
+    id: string,
+    info: { agent?: string; cwd: string; cols: number; rows: number },
+    sandbox: { alsoOn: readonly string[] },
+  ): { env: Record<string, string>; args: string[] } {
+    const { port } = this.tcpEndpoint(sandbox.alsoOn);
+    const token = newToken();
+    this.#tokens.set(token, id);
+    this.#mirrors.set(id, new ScreenMirror(info.cols, info.rows));
+    this.core.addTile({
+      id,
+      cwd: info.cwd,
+      sandbox: true,
+      ...(info.agent ? { harness: info.agent } : {}),
+    });
+    return {
+      env: {
+        QUTTY_HUB: `host.docker.internal:${port}`,
+        QUTTY_TILE_TOKEN: token,
+        QUTTY_TILE_ID: id,
+      },
+      args: hubArgsFor(info.agent, this.paths),
+    };
+  }
+
   data(id: string, text: string): void {
     this.#mirrors.get(id)?.write(text);
   }
@@ -330,6 +383,9 @@ export class HubService {
   }
 
   ended(id: string): void {
+    for (const [token, tile] of this.#tokens) {
+      if (tile === id) this.#tokens.delete(token);
+    }
     this.#listeners.get(id)?.close();
     this.#listeners.delete(id);
     for (const c of this.#conns.get(id) ?? []) void c.close();
@@ -345,54 +401,145 @@ export class HubService {
     this.#companionListener?.close();
     for (const c of this.#conns.get("companion") ?? []) void c.close();
     await this.companion.stop();
+    for (const l of this.#tcp) l.close();
+    this.#tcp = [];
+    this.#tcpQueue?.end();
     removeDir(this.socketDir);
   }
 
   // --- connections ---------------------------------------------------------------------------
 
-  async #serve(conn: FdConnection, identity: HubIdentity): Promise<void> {
+  /** Serve one unix-socket connection as `identity`. */
+  #serve(conn: FdConnection, identity: HubIdentity): Promise<void> {
+    return this.#serveTransport(
+      conn,
+      StreamServerTransport.from(conn),
+      identity,
+      "unix",
+    );
+  }
+
+  /** A hook or `say` line (one-shot, answered and closed), else an MCP session. */
+  async #serveTransport(
+    conn: FdConnection,
+    transport: StreamServerTransport,
+    identity: HubIdentity,
+    kind: "unix" | "tcp",
+  ): Promise<void> {
     const tileId = identity.role === "tile" ? identity.tileId : "companion";
     let set = this.#conns.get(tileId);
     if (!set) this.#conns.set(tileId, set = new Set());
     set.add(conn);
     try {
-      const first = await firstLine(conn, HOOK_LINE_MS);
-      if (first === null) return void await conn.close();
-      const say = parseSayLine(first);
-      if (say && identity.role === "tile") {
-        const from = this.core.registry.get(identity.tileId)?.name ??
-          identity.tileId;
-        const reply = await this.companion.say(say, from).catch((e) => ({
-          error: e instanceof Error ? e.message : String(e),
-        }));
-        await conn.writeResponse(JSON.stringify(reply)).catch(() => {});
-        await conn.close();
-        return;
-      }
-      const hook = parseHookLine(first);
-      if (hook && identity.role === "tile") {
-        const reply = this.core.hook(
-          identity.tileId,
-          String(hook.input.hook_event_name ?? ""),
-          hook.input,
-          hook.harness,
-        );
-        await conn.writeResponse(JSON.stringify(reply)).catch(() => {});
-        await conn.close();
-        return;
-      }
-      conn.unread(first);
-      const session = this.#server.serveConnection(conn, {
-        connection: { id: `${tileId}-${conn.fd}`, transport: "unix", identity },
+      const session = this.#server.serveConnection(transport, {
+        connection: {
+          id: `${tileId}-${kind}-${conn.fd}`,
+          transport: kind,
+          identity,
+        },
         abortOnEof: true,
+        firstLineTimeoutMs: HOOK_LINE_MS,
+        firstLine: (line) => this.#firstLine(line, identity),
       });
       await session.done;
     } catch (e) {
       console.error("hub: connection failed", e);
-      await conn.close();
     } finally {
+      await transport.close().catch(() => {});
       set.delete(conn);
     }
+  }
+
+  /** A connection's first line: `{"qutty":"hook",…}` and `{"qutty":"say",…}` are answered here. */
+  async #firstLine(
+    line: string,
+    identity: HubIdentity,
+  ): Promise<FirstLineDecision> {
+    if (identity.role !== "tile") return { action: "mcp" };
+    const say = parseSayLine(line);
+    if (say) {
+      const from = this.core.registry.get(identity.tileId)?.name ??
+        identity.tileId;
+      const reply = await this.companion.say(say, from).catch((e) => ({
+        error: e instanceof Error ? e.message : String(e),
+      }));
+      return { action: "close", reply: JSON.stringify(reply) };
+    }
+    const hook = parseHookLine(line);
+    if (hook) {
+      const reply = this.core.hook(
+        identity.tileId,
+        String(hook.input.hook_event_name ?? ""),
+        hook.input,
+        hook.harness,
+      );
+      return { action: "close", reply: JSON.stringify(reply) };
+    }
+    return { action: "mcp" };
+  }
+
+  // --- the TCP endpoint (sandboxed tiles) ----------------------------------------------------
+
+  /**
+   * The hub's TCP endpoint, started on first use: a free port on 127.0.0.1 (Docker Desktop
+   * forwards `host.docker.internal` there) and, for native Linux Docker, the same port on each
+   * of `alsoOn` (the bridge gateway `host.docker.internal:host-gateway` resolves to). A
+   * connection is admitted only when its first line is a live tile's token.
+   */
+  tcpEndpoint(alsoOn: readonly string[] = []): { port: number } {
+    if (!this.#tcpQueue) {
+      const queue = new ConnectionQueue();
+      this.#tcp.push(
+        FdTcpListener.listen("127.0.0.1", 0, this.#reactor, queue.push),
+      );
+      this.#tcpQueue = queue;
+      void this.#serveTcp(queue);
+    }
+    const port = this.#tcp[0].port;
+    for (const host of alsoOn) {
+      if (this.#tcp.some((l) => l.host === host)) continue;
+      try {
+        this.#tcp.push(
+          FdTcpListener.listen(host, port, this.#reactor, this.#tcpQueue.push),
+        );
+      } catch (e) {
+        console.error(`hub: cannot listen on ${host}:${port}`, e);
+      }
+    }
+    return { port };
+  }
+
+  /** Admit TCP connections by token (`StreamServerListener`'s pre-auth), then serve them. */
+  async #serveTcp(queue: ConnectionQueue): Promise<void> {
+    const listener = new StreamServerListener(queue, {
+      transport: "tcp",
+      preAuthTimeoutMs: HOOK_LINE_MS,
+      preAuth: (line) => {
+        const tileId = line === null ? undefined : this.#tokens.get(line);
+        return tileId
+          ? { ok: true, identity: { role: "tile", tileId } }
+          : { ok: false, reason: "unknown tile token" };
+      },
+    });
+    for await (const { transport, info } of listener) {
+      const conn = queue.take(info.id);
+      if (!conn) {
+        await transport.close();
+        continue;
+      }
+      void this.#serveTransport(
+        conn,
+        transport,
+        info.identity as HubIdentity,
+        "tcp",
+      );
+    }
+  }
+
+  /** The token a sandboxed tile authenticates with (tests). */
+  tokenOf(tileId: string): string | undefined {
+    for (const [token, id] of this.#tokens) if (id === tileId) return token;
+    return undefined;
   }
 
   // --- integration -----------------------------------------------------------------------------
@@ -421,20 +568,10 @@ export class HubService {
   }
 }
 
-/** The first line of a connection, or `null` (closed, or nothing within `ms`). */
-async function firstLine(
-  conn: FdConnection,
-  ms: number,
-): Promise<string | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([conn.readRequest(), timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
+/** A fresh tile token: 32 random bytes, hex. */
+function newToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** A `qutty-hook say` line: `{"qutty":"say","args":["text",…]}` → its arguments, else `undefined`. */

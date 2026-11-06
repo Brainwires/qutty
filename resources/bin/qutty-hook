@@ -10,11 +10,33 @@
 # makes Loopy, the window's companion, say something (the `loopy-say` shape). --wait prints the
 # id of the button pressed (nothing when the bubble was closed). A refused message is reported
 # on stderr with exit code 1.
-[ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ] || exit 0
+#
+# In the shared Docker sandbox the hub is reached over TCP instead ($QUTTY_HUB, host:port), the
+# tile's token ($QUTTY_TILE_TOKEN) sent as the first line.
+if [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ]; then
+  unset QUTTY_HUB
+elif [ -z "${QUTTY_HUB:-}" ] || [ -z "${QUTTY_TILE_TOKEN:-}" ]; then
+  exit 0
+fi
 
-# Send one line to the socket, print the first line back. $1: idle timeout in seconds.
+# The TCP half of ask_hub: bash's /dev/tcp, else nc. A refused token's reply is dropped.
+ask_tcp() {
+  local host="${QUTTY_HUB%:*}" port="${QUTTY_HUB##*:}" reply=""
+  if exec 3<>"/dev/tcp/$host/$port"; then
+    printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$2" >&3
+    IFS= read -r -t "$1" reply <&3
+    exec 3>&-
+  elif command -v nc >/dev/null 2>&1; then
+    reply="$(printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$2" | nc -w "$1" "$host" "$port" | head -n 1)"
+  fi
+  case "$reply" in '' | *'"jsonrpc"'*) ;; *) printf '%s\n' "$reply" ;; esac
+} 2>/dev/null
+
+# Send one line to the hub, print the first line back. $1: idle timeout in seconds.
 ask_hub() {
-  if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+  if [ -n "${QUTTY_HUB:-}" ]; then
+    ask_tcp "$@"
+  elif command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
     printf '%s\n' "$2" | nc -w "$1" -U "$QUTTY_SOCK" 2>/dev/null | head -n 1
   elif command -v socat >/dev/null 2>&1; then
     printf '%s\n' "$2" | socat -t "$1" - "UNIX-CONNECT:$QUTTY_SOCK" 2>/dev/null | head -n 1

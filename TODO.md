@@ -49,25 +49,28 @@
   - Next: voice (phase 2b: `CompanionRuntime.userSays(text, "voice")` is the
     transcript's way in, `subscribe` the answers' way out), the
     `@rullama/inference` brain adapter (`InferenceBrainOptions` is the typed
-    TODO), dragging Loopy, a floating window (Denext multi-window), the shared
-    Docker sandbox (TCP + token endpoint), the shell-as-harness.
+    TODO), dragging Loopy, a floating window (Denext multi-window), the
+    shell-as-harness.
+  - Done (phase 2c): the shared Docker sandbox (see below).
   - Open: Codex hooks (Codex has Claude-style lifecycle hooks behind
     `features.hooks`); for now Codex gets messages through `read_messages`.
     `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could cut it.
 
-- [ ] **Sandboxed shells (Docker).** Offer "Sandboxed shell" in the `+` picker:
-      a terminal whose shell runs inside a Docker sandbox, isolated from the
-      Mac, so untrusted scripts or AI agents (Claude Code, Codex) can run
-      freely.
-  - Check what recent Docker Desktop provides (`docker sandbox …`: which agents
-    and images, and whether a plain shell is supported) and what it needs
-    (Docker Desktop running, version).
-  - Only list it when Docker is installed and running; show a clear message
-    otherwise.
-  - Decide what the sandbox can see: the current directory mounted, network on
-    or off, and whether it is discarded when the tile closes.
-  - Mark sandboxed tiles visibly (a badge or tinted header) so you always know
-    where you are.
+- [x] **Sandboxed shells (Docker)**, as one shared container per window
+      (Settings → Sandbox; `desktop/sandbox.ts`, `lib/sandbox/`).
+  - Decided: a plain long-lived container. Docker Desktop's `docker sandbox` is
+    removed in current releases (4.98 points at the separate Docker Sandboxes
+    product: one agent per microVM, not several shells in one sandbox).
+  - The hub over TCP + token (`QUTTY_HUB`, `QUTTY_TILE_TOKEN`), bound through
+    libc like the unix sockets (no `net` permission); native Linux Docker gets
+    `--add-host=host.docker.internal:host-gateway` and the hub also listens on
+    the bridge gateway.
+  - Open: Denext 4.12 has no window-closed hook, so a second window's container
+    stops when the app quits (4.13's `onWindowClosed` can stop it earlier).
+    Native Linux: files the root user creates in a read/write project mount are
+    owned by root on the host (Docker Desktop maps them to you). Changing the
+    image or mounts recreates the container on Restart (packages installed with
+    apt go; `$HOME` stays). Network off also cuts the sandbox off from the hub.
 
 - [ ] **SSH sessions and a connection manager.** Run the system `ssh` in a PTY,
       the same way shells run today. Never implement the protocol, and never

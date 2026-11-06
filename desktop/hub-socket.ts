@@ -6,14 +6,19 @@
 // with NotCapable. A `write` grant cannot be scoped to a per-user folder at package time (any
 // entry bakes a broad --allow-write on the current runtime), while FFI is already full trust.
 // So, like desktop/pty.ts does its PTY I/O, the hub binds, accepts and does its socket I/O through
-// libc, and hands each connection to @rullama/mcp-server as a `ServerTransport`.
+// libc, and hands each connection to @rullama/mcp-server as a byte endpoint
+// (`StreamServerTransport.from(conn)`), which does the line framing and write ordering.
+//
+// The same goes for the TCP loopback listener the shared Docker sandbox reaches the hub through
+// (`FdTcpListener`): `Deno.listen` would need a `net` permission the packaged app does not have,
+// and libc needs none beyond FFI.
 //
 // One poll loop serves every socket (`FdReactor`): `poll` runs on Deno's blocking thread pool,
 // then the ready fds are accepted / read without blocking. Writes go through `send` on the
 // thread pool as well (a client that reads slowly blocks a pool thread, never the event loop),
 // with SIGPIPE suppressed (SO_NOSIGPIPE on macOS, MSG_NOSIGNAL on Linux).
 
-import { LineReader, type ServerTransport } from "@rullama/mcp-server";
+import type { ByteStreamEndpoint, StreamConnection } from "@rullama/mcp-server";
 import { errno } from "./pty.ts";
 
 const IS_DARWIN = Deno.build.os === "darwin";
@@ -21,6 +26,8 @@ const LIBC_PATH = IS_DARWIN ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
 const MODE_T = IS_DARWIN ? "u16" : "u32";
 
 const AF_UNIX = 1;
+const AF_INET = 2;
+const SO_REUSEADDR = IS_DARWIN ? 0x4 : 0x2;
 const SOCK_STREAM = 1;
 const SOL_SOCKET = IS_DARWIN ? 0xffff : 1;
 const SO_NOSIGPIPE = 0x1022;
@@ -62,6 +69,7 @@ const SYMBOLS = {
     result: "i32",
     nonblocking: true,
   },
+  getsockname: { parameters: ["i32", "buffer", "buffer"], result: "i32" },
   getuid: { parameters: [], result: "u32" },
   pipe: { parameters: ["buffer"], result: "i32" },
   write: { parameters: ["i32", "buffer", "usize"], result: "isize" },
@@ -223,21 +231,25 @@ export class FdReactor {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Listener and connections
+// Listeners and connections
 // ---------------------------------------------------------------------------------------------
 
 const READ_CHUNK = 64 * 1024;
 
-/** One accepted connection: a newline-delimited JSON-RPC `ServerTransport`. */
-export class FdConnection implements ServerTransport {
+/**
+ * One accepted connection as a byte endpoint (`readable`, `write`, `close`): hand it to
+ * `StreamServerTransport.from` for newline-delimited JSON-RPC.
+ */
+export class FdConnection implements ByteStreamEndpoint {
   readonly fd: number;
+  readonly readable: ReadableStream<Uint8Array>;
   #reactor: FdReactor;
-  #lines: LineReader;
   #controller!: ReadableStreamDefaultController<Uint8Array>;
-  #writing: Promise<void> = Promise.resolve();
-  #closed = false;
-  /** Lines pushed back by a peek (read again before the socket). */
-  #pushback: string[] = [];
+  /** The send in flight (the fd is closed only after it). */
+  #inflight: Promise<unknown> = Promise.resolve();
+  /** No more input (EOF, error or closed). */
+  #ended = false;
+  #shutdown = false;
 
   constructor(fd: number, reactor: FdReactor) {
     this.fd = fd;
@@ -247,22 +259,17 @@ export class FdConnection implements ServerTransport {
       new DataView(one.buffer).setInt32(0, 1, true);
       libc().setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, one, 4);
     }
-    const stream = new ReadableStream<Uint8Array>({
+    this.readable = new ReadableStream<Uint8Array>({
       start: (controller) => {
         this.#controller = controller;
       },
-      cancel: () => void this.close(),
+      cancel: () => this.close(),
     });
-    this.#lines = new LineReader(stream);
     reactor.watch(fd, (revents) => this.#onReady(revents));
   }
 
-  get closed(): boolean {
-    return this.#closed;
-  }
-
   #onReady(revents: number): void {
-    if (this.#closed) return;
+    if (this.#ended) return;
     const buf = new Uint8Array(READ_CHUNK);
     if (revents & POLLIN) {
       const n = Number(libc().read(this.fd, buf, BigInt(buf.length)));
@@ -280,62 +287,93 @@ export class FdConnection implements ServerTransport {
     // EOF or error: no more input. The fd stays open until close() (pending writes still go
     // out, and a closed fd number could be reused by another file under a late write).
     this.#reactor.unwatch(this.fd);
-    this.#closed = true;
+    this.#endInput();
+  }
+
+  #endInput(): void {
+    if (this.#ended) return;
+    this.#ended = true;
     try {
       this.#controller.close();
-    } catch { /* already closed */ }
+    } catch { /* already closed or cancelled */ }
   }
 
-  /** Put a line back so the next {@linkcode readRequest} returns it. */
-  unread(line: string): void {
-    this.#pushback.unshift(line);
-  }
-
-  readRequest(): Promise<string | null> {
-    const back = this.#pushback.shift();
-    if (back !== undefined) return Promise.resolve(back);
-    return this.#lines.read();
-  }
-
-  writeResponse(response: string): Promise<void> {
-    const data = encoder.encode(`${response}\n`);
-    const next = this.#writing.then(() => this.#sendAll(data));
-    this.#writing = next.catch(() => {});
-    return next;
-  }
-
-  async #sendAll(data: Uint8Array): Promise<void> {
-    for (let off = 0; off < data.length;) {
-      if (this.#shutdown) throw new Error("connection closed");
-      const n = Number(
-        await libc().send(
-          this.fd,
-          data.subarray(off),
-          BigInt(data.length - off),
-          MSG_NOSIGNAL,
-        ),
-      );
+  /** One `send` on the thread pool: the bytes written (the transport writes the rest). */
+  write(bytes: Uint8Array): Promise<number> {
+    if (this.#shutdown) return Promise.reject(new Error("connection closed"));
+    const sent = libc().send(
+      this.fd,
+      bytes,
+      BigInt(bytes.length),
+      MSG_NOSIGNAL,
+    ).then((r) => {
+      const n = Number(r);
       if (n <= 0) throw new Error("connection lost");
-      off += n;
-    }
+      return n;
+    });
+    this.#inflight = sent.catch(() => {});
+    return sent;
   }
 
-  #shutdown = false;
-
-  /** Close the connection (idempotent): pending reads end, the fd is closed after the writes. */
+  /** Close the connection (idempotent): input ends, the fd is closed after the send in flight. */
   async close(): Promise<void> {
     if (this.#shutdown) return;
     this.#shutdown = true;
-    await this.#writing;
+    this.#endInput();
+    await this.#inflight;
     libc().shutdown(this.fd, SHUT_RDWR);
     this.#reactor.close(this.fd);
-    if (!this.#closed) {
-      this.#closed = true;
-      try {
-        this.#controller.close();
-      } catch { /* already closed */ }
-    }
   }
+}
+
+/** Accept on listening socket `fd` whenever it is readable, until `closed()`. */
+function acceptOn(
+  fd: number,
+  reactor: FdReactor,
+  closed: () => boolean,
+  onConnection: (conn: FdConnection) => void,
+): void {
+  const c = libc();
+  reactor.watch(fd, () => {
+    if (closed()) return;
+    const conn = c.accept(fd, null, null);
+    if (conn < 0) return; // EAGAIN / ECONNABORTED: the client gave up
+    try {
+      onConnection(new FdConnection(conn, reactor));
+    } catch (e) {
+      c.close(conn);
+      console.error("hub: connection setup failed", e);
+    }
+  });
+}
+
+/** `bind` + `listen` on a fresh socket, or throw (the socket closed) with what failed. */
+function bindAndListen(
+  family: number,
+  addr: Uint8Array,
+  what: string,
+  beforeListen?: (fd: number) => void,
+): number {
+  const c = libc();
+  const fd = c.socket(family, SOCK_STREAM, 0);
+  if (fd < 0) throw new Error(`socket() failed (errno ${errno()})`);
+  if (family === AF_INET) {
+    const one = new Uint8Array(4);
+    new DataView(one.buffer).setInt32(0, 1, true);
+    c.setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, one, 4);
+  }
+  if (c.bind(fd, addr, addr.length) !== 0) {
+    const e = errno();
+    c.close(fd);
+    throw new Error(`cannot bind ${what} (errno ${e})`);
+  }
+  beforeListen?.(fd);
+  if (c.listen(fd, 16) !== 0) {
+    const e = errno();
+    c.close(fd);
+    throw new Error(`cannot listen on ${what} (errno ${e})`);
+  }
+  return fd;
 }
 
 /**
@@ -361,34 +399,22 @@ export class FdUnixListener {
   ): FdUnixListener {
     const c = libc();
     const addr = sockaddrUn(path);
-    const fd = c.socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) throw new Error(`socket() failed (errno ${errno()})`);
     // A leftover from a crashed run (each run has its own folder, so it is never a live one).
     c.unlink(cstr(path));
-    if (c.bind(fd, addr, addr.length) !== 0) {
-      const e = errno();
-      c.close(fd);
-      throw new Error(`cannot bind ${path} (errno ${e})`);
-    }
-    c.chmod(cstr(path), 0o600);
-    if (c.listen(fd, 16) !== 0) {
-      const e = errno();
-      c.close(fd);
+    let fd: number;
+    try {
+      fd = bindAndListen(
+        AF_UNIX,
+        addr,
+        path,
+        () => void c.chmod(cstr(path), 0o600),
+      );
+    } catch (e) {
       c.unlink(cstr(path));
-      throw new Error(`cannot listen on ${path} (errno ${e})`);
+      throw e;
     }
     const listener = new FdUnixListener(path, fd, reactor);
-    reactor.watch(fd, () => {
-      if (listener.#closed) return;
-      const conn = c.accept(fd, null, null);
-      if (conn < 0) return; // EAGAIN / ECONNABORTED: the client gave up
-      try {
-        onConnection(new FdConnection(conn, reactor));
-      } catch (e) {
-        c.close(conn);
-        console.error("hub: connection setup failed", e);
-      }
-    });
+    acceptOn(fd, reactor, () => listener.#closed, onConnection);
     return listener;
   }
 
@@ -400,3 +426,147 @@ export class FdUnixListener {
     libc().unlink(cstr(this.path));
   }
 }
+
+/** A `struct sockaddr_in` for an IPv4 address and port (network byte order). */
+function sockaddrIn(host: string, port: number): Uint8Array {
+  const parts = host.split(".").map(Number);
+  if (
+    parts.length !== 4 ||
+    parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)
+  ) {
+    throw new Error(`not an IPv4 address: ${host}`);
+  }
+  const buf = new Uint8Array(16);
+  const view = new DataView(buf.buffer);
+  if (IS_DARWIN) {
+    buf[0] = 16; // sin_len
+    buf[1] = AF_INET;
+  } else {
+    view.setUint16(0, AF_INET, true);
+  }
+  view.setUint16(2, port, false);
+  buf.set(parts, 4);
+  return buf;
+}
+
+/**
+ * A listening TCP socket on an IPv4 address (`127.0.0.1`; on Linux also Docker's bridge
+ * gateway). Port 0 picks a free one ({@linkcode port} says which). Anyone who can reach the
+ * address can connect: the hub admits a connection only with a tile's token as its first line.
+ */
+export class FdTcpListener {
+  readonly host: string;
+  readonly port: number;
+  readonly fd: number;
+  #reactor: FdReactor;
+  #closed = false;
+
+  private constructor(
+    host: string,
+    port: number,
+    fd: number,
+    reactor: FdReactor,
+  ) {
+    this.host = host;
+    this.port = port;
+    this.fd = fd;
+    this.#reactor = reactor;
+  }
+
+  static listen(
+    host: string,
+    port: number,
+    reactor: FdReactor,
+    onConnection: (conn: FdConnection) => void,
+  ): FdTcpListener {
+    const fd = bindAndListen(
+      AF_INET,
+      sockaddrIn(host, port),
+      `${host}:${port}`,
+    );
+    const addr = new Uint8Array(16);
+    const len = new Uint32Array([addr.length]);
+    if (libc().getsockname(fd, addr, new Uint8Array(len.buffer)) !== 0) {
+      const e = errno();
+      libc().close(fd);
+      throw new Error(`getsockname failed (errno ${e})`);
+    }
+    const bound = new DataView(addr.buffer).getUint16(2, false);
+    const listener = new FdTcpListener(host, bound, fd, reactor);
+    acceptOn(fd, reactor, () => listener.#closed, onConnection);
+    return listener;
+  }
+
+  /** Stop listening. Connections already accepted stay open. */
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#reactor.close(this.fd);
+  }
+}
+
+/**
+ * Accepted connections as the `AsyncIterable<StreamConnection>` a `StreamServerListener` reads
+ * (each tagged with an id, so the connection can be found again by the `info.id` it yields).
+ */
+export class ConnectionQueue implements AsyncIterable<StreamConnection> {
+  #waiting: ((r: IteratorResult<StreamConnection>) => void)[] = [];
+  #buffered: StreamConnection[] = [];
+  #byId = new Map<string, FdConnection>();
+  #ended = false;
+
+  /** Queue an accepted connection (bound: pass it to a listener as its callback). */
+  push = (conn: FdConnection): void => {
+    if (this.#ended) return void conn.close();
+    const id = `tcp-${conn.fd}-${++connectionSeq}`;
+    this.#byId.set(id, conn);
+    const item: StreamConnection = {
+      readable: conn.readable,
+      write: (bytes) => conn.write(bytes),
+      close: () => {
+        this.#byId.delete(id);
+        return conn.close();
+      },
+      info: { id },
+    };
+    const waiter = this.#waiting.shift();
+    if (waiter) waiter({ value: item, done: false });
+    else this.#buffered.push(item);
+  };
+
+  /** The connection behind a yielded `info.id` (forgotten once taken). */
+  take(id: string): FdConnection | undefined {
+    const conn = this.#byId.get(id);
+    this.#byId.delete(id);
+    return conn;
+  }
+
+  /** No more connections: iteration ends, queued ones are closed. */
+  end(): void {
+    if (this.#ended) return;
+    this.#ended = true;
+    for (const item of this.#buffered.splice(0)) void item.close?.();
+    for (const w of this.#waiting.splice(0)) {
+      w({ value: undefined, done: true });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<StreamConnection> {
+    return {
+      next: () => {
+        const item = this.#buffered.shift();
+        if (item) return Promise.resolve({ value: item, done: false });
+        if (this.#ended) {
+          return Promise.resolve({ value: undefined, done: true });
+        }
+        return new Promise((resolve) => this.#waiting.push(resolve));
+      },
+      return: () => {
+        this.end();
+        return Promise.resolve({ value: undefined, done: true });
+      },
+    };
+  }
+}
+
+let connectionSeq = 0;

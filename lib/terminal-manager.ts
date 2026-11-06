@@ -46,6 +46,7 @@ import {
   terminalFontOptions,
 } from "./workspace/fonts.ts";
 import { DEFAULT_THEME_ID, themeById } from "./workspace/themes.ts";
+import { DEFAULT_SANDBOX, type SandboxSettings } from "./sandbox/settings.ts";
 import {
   exitBanner,
   restartsOnEnter,
@@ -136,6 +137,7 @@ export interface TerminalDebugState {
 /** Creates, hosts and ends terminals. One instance per workspace. */
 export class TerminalManager {
   #backend: PtyBackend;
+  #sandbox: SandboxSettings = { ...DEFAULT_SANDBOX };
   #keyBindings: KeyBindings = NO_KEY_BINDINGS;
   #events: TerminalManagerEvents;
   #terms = new Map<string, Managed>();
@@ -187,6 +189,11 @@ export class TerminalManager {
   }
 
   /** Apply a colour theme to every live terminal (parked ones included) and to new ones. */
+  /** The window's sandbox settings, sent with a sandboxed tile's first spawn. */
+  setSandbox(settings: SandboxSettings): void {
+    this.#sandbox = settings;
+  }
+
   setTheme(theme: ITheme): void {
     const prev = this.#theme;
     const keys = new Set([...Object.keys(prev), ...Object.keys(theme)]);
@@ -391,6 +398,11 @@ export class TerminalManager {
   async #spawn(m: Managed): Promise<void> {
     m.spawning = true;
     try {
+      if (m.profile.kind !== "ssh" && m.profile.sandbox) {
+        // The first sandboxed tile starts the container (a first image pull can take minutes).
+        m.term.write(`${DIM}[starting the sandbox…]${RESET}\r\n`);
+        await this.#backend.sandboxEnsure(this.#sandbox);
+      }
       const { cols, rows } = m.term;
       const spawned = await this.#backend.spawn({
         cols,
@@ -443,14 +455,28 @@ export class TerminalManager {
   async #command(
     profile: TerminalProfile,
   ): Promise<
-    { shell?: string; program?: string; args?: string[]; agent?: string }
+    {
+      shell?: string;
+      program?: string;
+      args?: string[];
+      agent?: string;
+      sandbox?: boolean;
+    }
   > {
+    const sandbox = profile.kind !== "ssh" && profile.sandbox
+      ? { sandbox: true }
+      : {};
     switch (profile.kind) {
       case "shell":
-        return profile.shell ? { shell: profile.shell } : {};
+        return profile.shell ? { shell: profile.shell, ...sandbox } : sandbox;
       case "agent":
         // `agent` lets the hub add the flags that connect it (desktop/hub.ts).
-        return { program: profile.program, args: [], agent: profile.name };
+        return {
+          program: profile.program,
+          args: [],
+          agent: profile.name,
+          ...sandbox,
+        };
       case "ssh": {
         const { program, args } = await this.#backend.sshCommand(
           profile.target,

@@ -9,6 +9,7 @@
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { McpClient } from "@rullama/mcp-client";
+import { LATEST_PROTOCOL_VERSION } from "@rullama/mcp-server";
 import { HubService, parseHookLine, prepareSocketDir } from "../desktop/hub.ts";
 import { PtyHost, setPtyTaps } from "../desktop/pty.ts";
 import { Recorder } from "./pty_helpers.ts";
@@ -110,7 +111,7 @@ Deno.test({
     await withClients(["test-a", "claude-code"], async (f, [a, b], [sockA]) => {
       assertEquals(Deno.lstatSync(sockA).isSocket, true);
       assertEquals((Deno.lstatSync(sockA).mode ?? 0) & 0o777, 0o600);
-      assertEquals(a.getProtocolVersion("hub"), "2025-06-18");
+      assertEquals(a.getProtocolVersion("hub"), LATEST_PROTOCOL_VERSION);
       assertEquals(a.getServerInfo("hub").name, "qutty");
       const tools = (await a.listTools("hub")).map((t) => t.name);
       assert(tools.includes("send_message") && tools.includes("write_tile"));
