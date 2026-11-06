@@ -23,7 +23,7 @@ jobs:
     name: Lint, types, fallow
     runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -54,7 +54,7 @@ jobs:
             arch: linux-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -68,7 +68,7 @@ jobs:
     name: End-to-end (Chromium)
     runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -78,7 +78,7 @@ jobs:
           E2E_TIMEOUT_SCALE: "3"
       - name: Upload screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots
           path: tests/e2e/__screenshots__/
