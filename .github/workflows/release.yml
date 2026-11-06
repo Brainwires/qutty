@@ -136,3 +136,46 @@ jobs:
           case "$VERSION" in *-*) PRE="--prerelease" ;; *) PRE="--latest" ;; esac
           gh release create "$GITHUB_REF_NAME" release/* $PRE \
             --title "Qutty ${VERSION}" --notes-file notes.md
+
+  homebrew:
+    name: Update the Homebrew cask
+    needs: release
+    # Prereleases (v1.2.0-beta.1) stay out of the cask.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Bump brainwires/tap's qutty cask
+        env:
+          # A fine-grained token with Contents read/write on Brainwires/homebrew-tap only.
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set; the cask was not updated."
+            exit 0
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARM=$(cut -d' ' -f1 "release/Qutty-${VERSION}-arm64.dmg.sha256")
+          INTEL=$(cut -d' ' -f1 "release/Qutty-${VERSION}-x86_64.dmg.sha256")
+          git clone -q "https://x-access-token:${TAP_TOKEN}@github.com/Brainwires/homebrew-tap.git" tap
+          cd tap
+          sed -i -E \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/(sha256 arm: +)\"[0-9a-f]{64}\"/\1\"${ARM}\"/" \
+            -e "s/(intel: +)\"[0-9a-f]{64}\"/\1\"${INTEL}\"/" \
+            Casks/qutty.rb
+          grep -q "version \"${VERSION}\"" Casks/qutty.rb
+          grep -q "$ARM" Casks/qutty.rb
+          grep -q "$INTEL" Casks/qutty.rb
+          if git diff --quiet; then
+            echo "The cask is already at ${VERSION}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "qutty ${VERSION}"
+          git push -q origin HEAD:main

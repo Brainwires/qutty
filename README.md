@@ -27,7 +27,15 @@ Website: <https://qutty.org>
 
 ## Install
 
-Download the `.dmg` for your Mac from the
+With [Homebrew](https://brew.sh):
+
+```sh
+brew tap brainwires/tap
+brew trust --cask brainwires/tap/qutty   # Homebrew 7+ asks you to trust casks from other taps
+brew install --cask brainwires/tap/qutty
+```
+
+Or download the `.dmg` for your Mac from the
 [latest release](https://github.com/Brainwires/qutty/releases/latest): `arm64`
 for Apple Silicon, `x86_64` for Intel. Open it and drag Qutty to Applications.
 Builds are signed with a Developer ID and notarized by Apple.
