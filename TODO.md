@@ -80,9 +80,24 @@
     so the installed app's folder is untouched. Streaming transcripts (partials)
     and a wake word are possible with the same library.
   - Done (phase 2c): the shared Docker sandbox (see below).
+  - Done (phase 3): the shell is the harness —
+    `resources/shell/qutty.{zsh,bash}` (a `,` line goes to the model, the
+    proposed command lands in the edit buffer), the bash-only `qutty-agent`
+    client over the tile socket, the hub side in `lib/hub/shell-agent.ts`
+    (prompt, bounds, redaction, reply parsing, danger flags, `, inbox` / `, say`
+    / `, to`) and `desktop/shell-agent.ts` (headless Claude Code, or a local
+    Ollama through `@rullama/provider`), the rc opt-in rows in Settings → Agent
+    integration.
+  - Shell agent, open: bash 4.0–5.0 draws the request line once more than 5.1+
+    may (only 5.1+ clears it before a `bind -x` command; untested there);
+    macOS's bash 3.2 gets the proposal in the history, not the buffer (no
+    `READLINE_LINE`); a running request cannot be cancelled hub-side (Ctrl-C
+    stops the client, the model call finishes and is dropped); new messages are
+    not announced at the prompt (`, inbox` pulls them). Upstream: Rullama's
+    `BashTool` denylist is five exact substrings (Qutty adds its own patterns),
+    and `OllamaChatProvider` ignores `ChatOptions.system`.
   - Next: the `@rullama/inference` brain adapter (`InferenceBrainOptions` is the
-    typed TODO), dragging Loopy, a floating window (Denext multi-window), the
-    shell-as-harness.
+    typed TODO), dragging Loopy, a floating window (Denext multi-window).
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP

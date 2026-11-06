@@ -171,7 +171,10 @@ suite("agent hub", (test) => {
       ["claude", "false", ["~/.claude.json", "~/.claude/settings.json"]],
       ["codex", "false", ["~/.codex/config.toml"]],
       ["hermes", "false", ["~/.hermes/config.yaml"]],
+      ["zsh", "false", ["~/.zshrc"]],
+      ["bash", "false", ["~/.bashrc"]],
     ]);
+    assert(rows[3].adds[0].includes("qutty.zsh"), rows[3].adds[0]);
     assert(rows[0].adds[0].includes('"qutty"'), rows[0].adds[0]);
     assert(rows[1].adds[0].includes("[mcp_servers.qutty]"), rows[1].adds[0]);
     const hint = await app.eval(() =>
@@ -202,6 +205,21 @@ suite("agent hub", (test) => {
     );
     assert(
       await app.exists(`${rowSel("codex")} [data-testid=integration-install]`),
+    );
+    assertEquals(await app.exists("[data-testid=integration-error]"), false);
+
+    // The shell agent's rc opt-in toggles the same way.
+    await app.click(`${rowSel("zsh")} [data-testid=integration-install]`);
+    await waitFor(
+      async () => (await app.attr(rowSel("zsh"), "data-installed")) === "true",
+      3000,
+      "zsh installed",
+    );
+    await app.click(`${rowSel("zsh")} [data-testid=integration-uninstall]`);
+    await waitFor(
+      async () => (await app.attr(rowSel("zsh"), "data-installed")) === "false",
+      3000,
+      "zsh uninstalled",
     );
     assertEquals(await app.exists("[data-testid=integration-error]"), false);
   });

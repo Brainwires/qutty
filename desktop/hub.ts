@@ -90,6 +90,24 @@ import {
   uninstallIntegration,
 } from "../lib/hub/integration.ts";
 import { QUTTY_HOOK_SCRIPT, QUTTY_MCP_SCRIPT } from "../lib/hub/scripts.ts";
+import {
+  QUTTY_AGENT_SCRIPT,
+  QUTTY_BASH_PLUGIN,
+  QUTTY_ZSH_PLUGIN,
+} from "../lib/hub/shell-scripts.ts";
+import { shellAgentPaths } from "../lib/hub/shell-integration.ts";
+import {
+  handleShellRequest,
+  parseAgentLine,
+  replyLines,
+  ShellConversation,
+  type ShellRequest,
+} from "../lib/hub/shell-agent.ts";
+import {
+  chooseShellBrain,
+  defaultShellBrainDeps,
+  type ShellBrainDeps,
+} from "./shell-agent.ts";
 import type {
   AskRequest,
   HubIdentity,
@@ -150,6 +168,12 @@ export async function installHubFiles(paths: HubPaths): Promise<void> {
     ),
     0o644,
   );
+  // The shell agent: its client, and the plugins an rc file sources (Settings → Agent integration).
+  const shell = shellAgentPaths(paths);
+  ensureDir(shell.dir, 0o755);
+  await writeIfChanged(shell.agent, QUTTY_AGENT_SCRIPT, 0o755);
+  await writeIfChanged(shell.zsh, QUTTY_ZSH_PLUGIN, 0o644);
+  await writeIfChanged(shell.bash, QUTTY_BASH_PLUGIN, 0o644);
 }
 
 /** The home folder `paths` were made for (`~/.qutty` is in it). */
@@ -250,6 +274,8 @@ export interface HubServiceOptions {
   appSupportDir?: string;
   /** Another companion brain (tests). Default: Claude Code. */
   createBrain?: (cfg: { mcpConfig: string; model?: string }) => BrainAdapter;
+  /** The shell agent's model backends (tests). Default: Claude Code, else a local Ollama. */
+  shellBrains?: ShellBrainDeps;
 }
 
 /** The hub: sockets, MCP sessions, mirrors and the {@linkcode HubCore}. */
@@ -274,6 +300,9 @@ export class HubService {
   #tcpQueue: ConnectionQueue | undefined;
   /** Sandboxed tiles' tokens → tile ids. */
   #tokens = new Map<string, string>();
+  /** The shell agent: its backends, and each tile's conversation. */
+  #shellBrains: ShellBrainDeps;
+  #shellTalks = new Map<string, ShellConversation>();
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -281,6 +310,10 @@ export class HubService {
     this.socketDir = opts.socketDir;
     this.#emit = opts.emit;
     this.#fs = opts.fs ?? desktopFs;
+    this.#shellBrains = opts.shellBrains ?? defaultShellBrainDeps({
+      cwd: `${this.paths.dir}/shell-agent`,
+      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
+    });
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
       mirror: (id) => this.#mirrors.get(id),
@@ -437,6 +470,7 @@ export class HubService {
     this.#conns.delete(id);
     this.#mirrors.get(id)?.dispose();
     this.#mirrors.delete(id);
+    this.#shellTalks.delete(id);
     this.core.removeTile(id);
   }
 
@@ -510,6 +544,13 @@ export class HubService {
       }));
       return { action: "close", reply: JSON.stringify(reply) };
     }
+    const agent = parseAgentLine(line);
+    if (agent) {
+      return {
+        action: "close",
+        reply: replyLines(await this.shellRequest(identity.tileId, agent)),
+      };
+    }
     const hook = parseHookLine(line);
     if (hook) {
       const reply = this.core.hook(
@@ -521,6 +562,19 @@ export class HubService {
       return { action: "close", reply: JSON.stringify(reply) };
     }
     return { action: "mcp" };
+  }
+
+  /** A shell agent request from tile `tileId` (`qutty-agent`): the model, or a hub word. */
+  shellRequest(tileId: string, req: ShellRequest) {
+    let talk = this.#shellTalks.get(tileId);
+    if (!talk) this.#shellTalks.set(tileId, talk = new ShellConversation());
+    const me: HubIdentity = { role: "tile", tileId };
+    return handleShellRequest(req, talk, {
+      inbox: () => this.core.read(me),
+      send: (to, text) => this.core.send(me, to, text).map((m) => m.to),
+      brain: (choice, model) =>
+        chooseShellBrain(this.#shellBrains, choice, model),
+    });
   }
 
   // --- the TCP endpoint (sandboxed tiles) ----------------------------------------------------
@@ -725,16 +779,23 @@ const answerInput = objectSchema<{ id: string; action: string | null }>(
   },
 );
 
+const INTEGRATION_TARGETS: readonly IntegrationTarget[] = [
+  "claude",
+  "codex",
+  "hermes",
+  "zsh",
+  "bash",
+];
+
 const targetInput = objectSchema<{ target: IntegrationTarget }>((v, issues) => {
-  if (v.target !== "claude" && v.target !== "codex" && v.target !== "hermes") {
+  const target = INTEGRATION_TARGETS.find((t) => t === v.target);
+  if (!target) {
     issues.push({
-      message: "target must be claude, codex or hermes",
+      message: "target must be claude, codex, hermes, zsh or bash",
       path: ["target"],
     });
   }
-  return {
-    target: v.target === "codex" || v.target === "hermes" ? v.target : "claude",
-  };
+  return { target: target ?? "claude" };
 });
 
 const labelInput = objectSchema<{ id: string; label: string }>((v, issues) => ({

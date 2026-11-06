@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# qutty-agent [--shell zsh|bash] [--] <request...>: the shell agent's client ("the shell is the
+# harness"). It sends the request, with the recent commands read from stdin, to this tile's hub
+# socket ($QUTTY_SOCK) as one {"qutty":"agent",...} line; the hub asks the model and answers
+# with an explanation and one proposed command. The explanation and any warning go to stderr;
+# the command goes to stdout, for the shell plugin (~/.qutty/shell/qutty.{zsh,bash}) to put in
+# the edit buffer. Nothing is run. Exit status 1: the hub refused or failed (reason on stderr);
+# 2: not in a Qutty tile. Installed to ~/.qutty/bin by Qutty. Plain bash (3.2 and later) + nc.
+#
+# stdin (optional): recent commands, one per line, "<exit status>\t<folder>\t<command line>".
+# Words the hub answers itself: help, inbox, say <text>, to <tile> <text>, reset.
+#
+# In the shared Docker sandbox the hub is reached over TCP ($QUTTY_HUB, host:port), the tile's
+# token ($QUTTY_TILE_TOKEN) sent as the first line.
+if [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ]; then
+  unset QUTTY_HUB
+elif [ -z "${QUTTY_HUB:-}" ] || [ -z "${QUTTY_TILE_TOKEN:-}" ]; then
+  echo "qutty-agent: not in a Qutty tile (no QUTTY_SOCK)" >&2
+  exit 2
+fi
+
+shell_name="sh"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --shell) shell_name="${2:-sh}"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+case "$shell_name" in *[!a-z]*) shell_name="sh" ;; esac
+request="$*"
+
+# How long the model may take (the hub gives up after 120 s).
+WAIT=150
+
+# A JSON string for $1 (control characters other than tab and newline are dropped).
+json_str() {
+  local s
+  s="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+history_json=""
+if [ ! -t 0 ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    exit_status="${line%%$'\t'*}"
+    rest="${line#*$'\t'}"
+    dir="${rest%%$'\t'*}"
+    cmd="${rest#*$'\t'}"
+    case "$exit_status" in '' | *[!0-9]*) exit_status=-1 ;; esac
+    [ -n "$cmd" ] || continue
+    history_json="${history_json:+$history_json,}{\"exit\":$exit_status,\"cwd\":$(json_str "$dir"),\"cmd\":$(json_str "$cmd")}"
+  done
+fi
+
+line="{\"qutty\":\"agent\",\"text\":$(json_str "$request"),\"cwd\":$(json_str "$PWD")"
+line="$line,\"shell\":$(json_str "$shell_name"),\"os\":$(json_str "$(uname -s 2>/dev/null)")"
+line="$line,\"brain\":$(json_str "${QUTTY_AGENT_BRAIN:-auto}"),\"model\":$(json_str "${QUTTY_AGENT_MODEL:-}")"
+line="$line,\"history\":[$history_json]}"
+
+# Send the line, print every line back until the hub closes.
+ask_hub() {
+  if [ -n "${QUTTY_HUB:-}" ]; then
+    local host="${QUTTY_HUB%:*}" port="${QUTTY_HUB##*:}"
+    if exec 3<>"/dev/tcp/$host/$port"; then
+      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$1" >&3
+      cat <&3
+      exec 3>&-
+    elif command -v nc >/dev/null 2>&1; then
+      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$1" | nc -w "$WAIT" "$host" "$port"
+    fi
+  elif command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+    printf '%s\n' "$1" | nc -w "$WAIT" -U "$QUTTY_SOCK"
+  elif command -v socat >/dev/null 2>&1; then
+    printf '%s\n' "$1" | socat -t "$WAIT" - "UNIX-CONNECT:$QUTTY_SOCK"
+  else
+    echo "qutty-agent: needs nc with -U (BSD netcat) or socat" >&2
+  fi
+} 2>/dev/null
+
+# The hub percent-encodes %, \ and control characters: printf %b reads %XX as \xXX.
+# (The replacement comes from a variable: bash 5.2 treats a literal backslash there as a quote.)
+pct_x='\x'
+decode() {
+  printf '%b' "${1//%/$pct_x}"
+}
+
+if [ -t 2 ]; then
+  dim=$'\033[2m' warn=$'\033[33m' err=$'\033[31m' off=$'\033[0m'
+  printf '%s' "${dim}qutty: thinking…${off}" >&2
+  clear_status() { printf '\r\033[K' >&2; }
+else
+  dim="" warn="" err="" off=""
+  clear_status() { :; }
+fi
+
+command_text=""
+failed=""
+got_end=""
+while IFS= read -r reply; do
+  key="${reply%% *}"
+  value="${reply#* }"
+  [ "$key" = "$reply" ] && value=""
+  case "$key" in
+    explain)
+      clear_status
+      printf '%s%s%s\n' "$dim" "$(decode "$value")" "$off" >&2 ;;
+    warn)
+      clear_status
+      printf '%s! %s%s\n' "$warn" "$(decode "$value")" "$off" >&2 ;;
+    command) command_text="$(decode "$value")" ;;
+    error)
+      clear_status
+      printf '%squtty: %s%s\n' "$err" "$(decode "$value")" "$off" >&2
+      failed=1 ;;
+    end) got_end=1; break ;;
+  esac
+done < <(ask_hub "$line")
+clear_status
+if [ -z "$got_end" ]; then
+  printf '%squtty: no answer from the hub%s\n' "$err" "$off" >&2
+  exit 1
+fi
+[ -z "$failed" ] || exit 1
+[ -z "$command_text" ] || printf '%s\n' "$command_text"
+exit 0

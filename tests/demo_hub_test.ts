@@ -141,6 +141,8 @@ Deno.test("demo hub: integration Install / Uninstall toggle and restore the file
     ["claude", false],
     ["codex", false],
     ["hermes", false],
+    ["zsh", false],
+    ["bash", false],
   ]);
   assertEquals(before[0].changes.map((c) => c.path), [
     "~/.claude.json",
@@ -150,13 +152,36 @@ Deno.test("demo hub: integration Install / Uninstall toggle and restore the file
   assertStringIncludes(before[0].changes[0].adds, "/Users/demo/.qutty/bin");
   assertStringIncludes(before[1].changes[0].adds, "[mcp_servers.qutty]");
   const installed = await hub.integrationInstall("claude");
-  assertEquals(installed.map((s) => s.installed), [true, false, false]);
+  assertEquals(installed.map((s) => s.installed), [
+    true,
+    false,
+    false,
+    false,
+    false,
+  ]);
   assertEquals(
     (await hub.integrationInstall("codex")).map((s) => s.installed),
-    [true, true, false],
+    [true, true, false, false, false],
   );
   const after = await hub.integrationUninstall("claude");
-  assertEquals(after.map((s) => s.installed), [false, true, false]);
+  assertEquals(after.map((s) => s.installed), [
+    false,
+    true,
+    false,
+    false,
+    false,
+  ]);
+  // The shell agent's opt-in: one line in ~/.zshrc, removed again.
+  const zsh = await hub.integrationInstall("zsh");
+  assertEquals(zsh.map((s) => s.installed), [false, true, false, true, false]);
+  assertStringIncludes(
+    zsh[3].changes[0].adds,
+    "/Users/demo/.qutty/shell/qutty.zsh",
+  );
+  assertEquals(
+    (await hub.integrationUninstall("zsh")).map((s) => s.installed),
+    [false, true, false, false, false],
+  );
   assertEquals(after[0].note, undefined, "nothing left behind");
 });
 
