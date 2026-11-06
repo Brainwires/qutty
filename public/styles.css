@@ -2155,16 +2155,21 @@ kbd {
 }
 
 /* ---- The companion: Loopy -------------------------------------------------------------------
-   Copied from Denext's examples/companion (public/styles.css on feat/loopy-voice-tools: the
-   crossed-triangle wire with a steel bead head and 13 moods; same author, MIT) with the same
-   shapes, sizes, keyframes and moves: only scoped under .companion-overlay (selectors) and
-   prefixed (keyframe names and custom properties, which are global). Loopy's own colours are the
-   example's: the bare steel wire, each mood's wire tint, the bead and the face on it. The UI around
-   it (the bubble, its buttons, the thought dots, the sparkles, the shadow) is coloured from the
-   theme (the palette below, and the overrides after the copy). Loopy is the example's size in its
-   desktop window (120 x 150). tests/companion_look_test.ts and tests/e2e/companion_test.ts keep
-   its shape, moods and moves from drifting. Qutty's own parts (the overlay's placement, the chat
-   box, the brain's status dot) follow. */
+   Loopy is the face of Denext's examples/companion Loopy (public/styles.css on
+   feat/loopy-voice-tools: the crossed-triangle wire with a steel bead head and 13 moods; same
+   author, MIT) on its own: the bead head, its faces and the moods' extras, without the wire body,
+   drawn 2.5 times the size it had there (app/companion/loopy.tsx crops and scales the drawing).
+   The speech bubble and every rule of the face (the bead, eyes, brows, mouth, extras, blink, the
+   voice turn) are copied from the example with the same shapes and keyframes: only scoped under
+   .companion-overlay (selectors) and prefixed (keyframe names and custom properties, which are
+   global). The avatar is Qutty's: its size, the stage, the poke target and the moves, re-made for
+   a head alone on `.loopy-face`. Loopy's own colours are the example's: the bare steel, each
+   mood's tint (once the wire's; now the extras' and a rim on the bead), the bead and the face on
+   it. The UI around it (the bubble, its buttons, the thought dots, the sparkles) is coloured from
+   the theme (the palette below, and the overrides after the copy). tests/companion_look_test.ts
+   and tests/e2e/companion_test.ts keep the face, its moods and the avatar's size from drifting.
+   Qutty's own parts (the overlay's placement, the chat box, the brain's status dot, the rim)
+   follow. */
 
 .companion-overlay {
   /* The UI's palette, from the theme (the example's teal-on-paper values are commented). */
@@ -2172,7 +2177,7 @@ kbd {
   --loopy-wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow)); /* #0b6b5c */
   --loopy-wire-shine: rgba(var(--hi-rgb), 0.6); /* #a6efe0 */
   --loopy-ink: var(--text); /* #1d2b33: the chat box's text */
-  /* Loopy's wire: bare steel, like a real paper clip; each mood tints it (.loopy[data-mood]). */
+  /* Loopy's tint: bare steel, like a real paper clip; each mood has its own (.loopy[data-mood]). */
   --loopy-clip: #b9c1c8;
   --loopy-clip-edge: #5c656d;
   --loopy-clip-shine: #ffffff;
@@ -2211,13 +2216,13 @@ kbd {
   -webkit-user-select: text;
 }
 
-/* The tail points down-left, at Loopy's top loop. */
+/* The tail points down at Loopy's face, a little left of its middle. */
 
 .companion-overlay .bubble::after {
   content: "";
   position: absolute;
   bottom: -8px;
-  left: 48px;
+  left: 74px;
   width: 14px;
   height: 14px;
   background: var(--loopy-bubble);
@@ -2296,27 +2301,30 @@ kbd {
 
 /* ---------------------------------------------------------------- stage */
 
+/* Room on the left for the extras that stick out beside the head (zaps, steam, a heart). */
 .companion-overlay .stage {
   position: relative;
   display: flex;
   justify-content: flex-start;
-  padding-left: 24px;
+  padding-left: 36px;
   cursor: grab;
 }
 
+/* Squashed from the bottom of the bead. */
 .companion-overlay .squash {
   position: relative;
-  transform-origin: 50% 96%;
+  transform-origin: 50% 98%;
 }
 
-/* The poke target: Loopy's top loop (the face), in the SVG's proportions. */
+/* The poke target: the whole bead, in the SVG's proportions (the bead, x 51–109 and y 47–105, in
+   the 62 x 74 crop from (49, 33)). */
 
 .companion-overlay .poke {
   position: absolute;
-  left: 28%;
-  top: 10%;
-  width: 36%;
-  height: 26%;
+  left: 3.226%;
+  top: 18.919%;
+  width: 93.548%;
+  height: 78.378%;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -2326,30 +2334,22 @@ kbd {
 
 /* ---------------------------------------------------------------- Loopy */
 
+/* The face avatar: the 62 x 74 crop at 1.875 px a unit (the bead 108.75 px across). */
 .companion-overlay .loopy {
   display: block;
-  width: 160px;
-  height: 200px;
+  width: 116.25px;
+  height: 138.75px;
   overflow: visible;
 }
 
-/* In the small desktop window Loopy is a little smaller, leaving room for the bubble. */
-.companion-overlay .loopy {
-  width: 120px;
-  height: 150px;
-}
-
-.companion-overlay .loopy path,
-.companion-overlay .loopy-wire-edge,
-.companion-overlay .loopy-wire,
-.companion-overlay .loopy-wire-shine {
+.companion-overlay .loopy path {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-/* The wire takes the mood of the message on screen: steel when neutral, violet while thinking,
-   amber for attention, green for success. */
+/* Each mood's tint (the example's wire colours): steel when neutral, violet while thinking,
+   amber for attention, green for success… The extras and the rim on the bead take it. */
 .companion-overlay .loopy[data-mood="thinking"] {
   --loopy-clip: #a596ff;
   --loopy-clip-edge: #4a3da6;
@@ -2366,12 +2366,6 @@ kbd {
   --loopy-clip: #3ccf7a;
   --loopy-clip-edge: #17734a;
   --loopy-clip-shine: #dbffe9;
-}
-
-.companion-overlay .loopy-wire-edge,
-.companion-overlay .loopy-wire,
-.companion-overlay .loopy-wire-shine {
-  transition: stroke 400ms ease-out;
 }
 
 .companion-overlay .loopy[data-mood="confused"] {
@@ -2471,13 +2465,13 @@ kbd {
   animation: loopy-flicker 0.25s steps(2) infinite;
 }
 
-/* surprised: a pop up; shocked: a stiff jolt and a jitter. */
-.companion-overlay .loopy[data-state="idle"][data-mood="surprised"] .loopy-body {
+/* surprised: a pop; shocked: a stiff jolt and a jitter (the head's, as the clip's were). */
+.companion-overlay .loopy[data-state="idle"][data-mood="surprised"] .loopy-face {
   animation: loopy-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="shocked"] .loopy-body,
-.companion-overlay .loopy[data-state="blink"][data-mood="shocked"] .loopy-body {
+.companion-overlay .loopy[data-state="idle"][data-mood="shocked"] .loopy-face,
+.companion-overlay .loopy[data-state="blink"][data-mood="shocked"] .loopy-face {
   animation: loopy-jitter 0.12s linear infinite;
 }
 
@@ -2627,21 +2621,21 @@ kbd {
   }
 }
 
-/* Body language for the moods that hold idle: a shake (mad), a droop (sad), a slow nod (sleepy). */
-.companion-overlay .loopy[data-state="idle"][data-mood="mad"] .loopy-body,
-.companion-overlay .loopy[data-state="blink"][data-mood="mad"] .loopy-body {
+/* Head language for the moods that hold idle: a shake (mad), a droop (sad), a slow nod (sleepy). */
+.companion-overlay .loopy[data-state="idle"][data-mood="mad"] .loopy-face,
+.companion-overlay .loopy[data-state="blink"][data-mood="mad"] .loopy-face {
   animation: loopy-shake 0.45s ease-in-out infinite;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="sad"] .loopy-body,
-.companion-overlay .loopy[data-state="blink"][data-mood="sad"] .loopy-body {
+.companion-overlay .loopy[data-state="idle"][data-mood="sad"] .loopy-face,
+.companion-overlay .loopy[data-state="blink"][data-mood="sad"] .loopy-face {
   animation: none;
-  transform: translateY(4px) scale(1.03, 0.95);
+  transform: translateY(3px) rotate(-4deg) scale(1.02, 0.97);
   transition: transform 500ms ease-out;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="sleepy"] .loopy-body,
-.companion-overlay .loopy[data-state="blink"][data-mood="sleepy"] .loopy-body {
+.companion-overlay .loopy[data-state="idle"][data-mood="sleepy"] .loopy-face,
+.companion-overlay .loopy[data-state="blink"][data-mood="sleepy"] .loopy-face {
   animation: loopy-nod 3.6s ease-in-out infinite;
 }
 
@@ -2666,23 +2660,6 @@ kbd {
   60% {
     transform: rotate(-6deg) translateY(2px);
   }
-}
-
-.companion-overlay .loopy-wire-edge {
-  stroke: var(--loopy-clip-edge);
-  stroke-width: 15;
-}
-
-.companion-overlay .loopy-wire {
-  stroke: var(--loopy-clip);
-  stroke-width: 11.5;
-}
-
-.companion-overlay .loopy-wire-shine {
-  stroke: var(--loopy-clip-shine);
-  stroke-width: 3;
-  opacity: 0.8;
-  transform: translate(-2.4px, -1.8px);
 }
 
 .companion-overlay .loopy-eyes circle {
@@ -2721,21 +2698,10 @@ kbd {
   stroke-width: 2.8;
 }
 
-.companion-overlay .loopy-shadow {
-  fill: rgb(0 0 0 / 0.12);
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.companion-overlay .loopy-body {
+/* The head moves about the bottom of the bead (80, 105), in the drawing's units. */
+.companion-overlay .loopy-face {
   transform-box: view-box;
-  transform-origin: 80px 186px;
-}
-
-.companion-overlay .loopy-arm {
-  transform-box: view-box;
-  transform-origin: 80px 138px;
-  transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
+  transform-origin: 80px 105px;
 }
 
 .companion-overlay .loopy-thought,
@@ -2752,29 +2718,25 @@ kbd {
   stroke: none;
 }
 
-/* hidden: folded away */
-.companion-overlay .loopy[data-state="hidden"] .loopy-body {
-  transform: scale(1, 0.04);
+/* hidden: shrunk away */
+.companion-overlay .loopy[data-state="hidden"] .loopy-face {
+  transform: scale(0.05);
   opacity: 0;
 }
 
-.companion-overlay .loopy[data-state="hidden"] .loopy-shadow {
-  opacity: 0;
+/* idle: a gentle bob with a tilt */
+.companion-overlay .loopy[data-state="idle"] .loopy-face,
+.companion-overlay .loopy[data-state="blink"] .loopy-face {
+  animation: loopy-face-bob 3.4s ease-in-out infinite;
 }
 
-/* idle: a gentle sway about the bottom bend */
-.companion-overlay .loopy[data-state="idle"] .loopy-body,
-.companion-overlay .loopy[data-state="blink"] .loopy-body {
-  animation: loopy-sway 3.4s ease-in-out infinite;
-}
-
-@keyframes loopy-sway {
+@keyframes loopy-face-bob {
   0%,
   100% {
-    transform: rotate(-2.5deg);
+    transform: translateY(0) rotate(-3deg);
   }
   50% {
-    transform: rotate(2.5deg);
+    transform: translateY(-2px) rotate(3deg);
   }
 }
 
@@ -2789,34 +2751,31 @@ kbd {
   }
 }
 
-/* appear: spring up from the desk */
-.companion-overlay .loopy[data-state="appear"] .loopy-body {
-  animation: loopy-spring 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+/* appear: pop in, overshoot, settle */
+.companion-overlay .loopy[data-state="appear"] .loopy-face {
+  animation: loopy-face-pop-in 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
-@keyframes loopy-spring {
+@keyframes loopy-face-pop-in {
   0% {
-    transform: translateY(30px) scale(0.7, 0.1);
+    transform: scale(0.1);
     opacity: 0;
   }
-  35% {
-    transform: translateY(-14px) scale(0.9, 1.15);
+  45% {
+    transform: scale(1.12, 1.08);
     opacity: 1;
   }
-  60% {
-    transform: translateY(0) scale(1.12, 0.88);
-  }
-  80% {
-    transform: scale(0.96, 1.04);
+  70% {
+    transform: scale(0.95, 1.03);
   }
   100% {
     transform: none;
   }
 }
 
-/* think: a tilt, eyes up, a trail of dots */
-.companion-overlay .loopy[data-state="think"] .loopy-body {
-  transform: rotate(-5deg);
+/* think: the head tilts back, eyes up, a trail of dots */
+.companion-overlay .loopy[data-state="think"] .loopy-face {
+  transform: translateY(-1px) rotate(-8deg);
   transition: transform 300ms ease-out;
 }
 
@@ -2859,14 +2818,10 @@ kbd {
   }
 }
 
-/* point: the outer leg unbends up toward the bubble, and Loopy leans after it */
-.companion-overlay .loopy[data-state="point"] .loopy-arm {
-  transform: rotate(12deg);
-}
-
-.companion-overlay .loopy[data-state="point"] .loopy-body {
-  transform: rotate(4deg);
-  transition: transform 300ms ease-out;
+/* point: a nudge toward the bubble (up here; down in a top corner, see the overlay's rules) */
+.companion-overlay .loopy[data-state="point"] .loopy-face {
+  transform: translate(2px, -4px) rotate(5deg);
+  transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 
 .companion-overlay .loopy[data-state="point"] .loopy-eyes {
@@ -2874,15 +2829,15 @@ kbd {
 }
 
 /* celebrate: two hops and a shimmer */
-.companion-overlay .loopy[data-state="celebrate"] .loopy-body {
-  animation: loopy-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
+.companion-overlay .loopy[data-state="celebrate"] .loopy-face {
+  animation: loopy-face-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
 }
 
 .companion-overlay .loopy[data-state="celebrate"] .loopy-sparkles {
   animation: loopy-sparkle 1.2s ease-out;
 }
 
-@keyframes loopy-hop {
+@keyframes loopy-face-hop {
   0%,
   45%,
   100% {
@@ -2890,14 +2845,14 @@ kbd {
   }
   10%,
   55% {
-    transform: scale(1.1, 0.88);
+    transform: scale(1.08, 0.9);
   }
   25%,
   70% {
-    transform: translateY(-26px) rotate(-6deg) scale(0.95, 1.06);
+    transform: translateY(-12px) rotate(-6deg) scale(0.97, 1.04);
   }
   85% {
-    transform: translateY(-14px) rotate(6deg);
+    transform: translateY(-6px) rotate(6deg);
   }
 }
 
@@ -2908,29 +2863,18 @@ kbd {
   }
 }
 
-/* dismiss: fold down into the desk */
-.companion-overlay .loopy[data-state="dismiss"] .loopy-body {
-  animation: loopy-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
+/* dismiss: a squash, then shrink away with a turn */
+.companion-overlay .loopy[data-state="dismiss"] .loopy-face {
+  animation: loopy-face-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
 }
 
-.companion-overlay .loopy[data-state="dismiss"] .loopy-shadow {
-  animation: loopy-fold-shadow 450ms ease-in both;
-}
-
-@keyframes loopy-fold {
+@keyframes loopy-face-fold {
   30% {
-    transform: scale(1.06, 0.92) rotate(3deg);
+    transform: scale(1.08, 0.92);
   }
   100% {
-    transform: scale(1, 0.04);
+    transform: scale(0.05) rotate(-25deg);
     opacity: 0;
-  }
-}
-
-@keyframes loopy-fold-shadow {
-  to {
-    opacity: 0;
-    transform: scaleX(0.4);
   }
 }
 
@@ -3008,14 +2952,11 @@ kbd {
   background: var(--loopy-wire);
   color: var(--accent-ink);
 }
-.companion-overlay .loopy-shadow {
-  fill: rgba(var(--shadow-rgb), 0.3);
-}
 .companion-overlay .loopy-sparkles path {
   fill: var(--amber);
 }
-/* The moods' extras drawn beside the head (?, z's, !, zap lines) are in the wire's dark edge,
-   which a dark theme's terminal swallows: there they take the wire's own tint instead. */
+/* The moods' extras drawn beside the head (?, z's, !, zap lines) are in the tint's dark edge,
+   which a dark theme's terminal swallows: there they take the tint itself instead. */
 .companion-overlay .loopy .loopy-question,
 .companion-overlay .loopy .loopy-zs text,
 .companion-overlay .loopy .loopy-exclaim {
@@ -3023,6 +2964,15 @@ kbd {
 }
 .companion-overlay .loopy .loopy-zaps path {
   stroke: light-dark(var(--loopy-clip-edge), var(--loopy-clip));
+}
+
+/* ---- The mood rim: the wire used to carry the mood's colour; now a thin glow of the tint rings
+   the bead (none while neutral, and the listening glow takes over while listening). This one rule
+   is the whole rim: delete it to go back to bare steel. */
+.companion-overlay .loopy:not([data-mood="neutral"]):not([data-voice="listening"]) .loopy-bead {
+  filter: drop-shadow(0 0 0.6px var(--loopy-clip))
+    drop-shadow(0 0 1.6px var(--loopy-clip));
+  transition: filter 400ms ease-out;
 }
 
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the
@@ -3059,9 +3009,18 @@ kbd {
   flex-direction: column-reverse;
 }
 .companion-overlay .bubble,
-.companion-overlay .squash,
+.companion-overlay .poke,
 .companion-overlay .companion-chat {
   pointer-events: auto;
+}
+/* The bubble stays over the extras that rise beside Loopy's head. */
+.companion-overlay .bubble-slot {
+  position: relative;
+  z-index: 1;
+}
+/* The nudge of `point` goes toward the bubble, which is under Loopy in a top corner. */
+.companion-overlay[data-corner^="top"] .loopy[data-state="point"] .loopy-face {
+  transform: translate(2px, 4px) rotate(5deg);
 }
 /* Under Loopy (top corners) the tail points up at it instead of down. */
 .companion-overlay[data-corner^="top"] .bubble-slot {
@@ -3266,7 +3225,8 @@ kbd {
   flex-direction: column;
   justify-content: flex-end;
   gap: 5px;
-  margin: 0 0 12px 4px;
+  /* Clear of the extras beside the head (the zaps, a heart). */
+  margin: 0 0 12px 24px;
   pointer-events: auto;
 }
 .companion-overlay .voice-buttons button {

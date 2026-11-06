@@ -1,20 +1,22 @@
-// Loopy keeps the shape, the moods and the moves of Denext's examples/companion as it is on the
-// branch feat/loopy-voice-tools (the crossed-triangle wire with a steel bead head and 13 moods).
-// Checked against a snapshot taken from the example (tests/fixtures/companion/loopy-shape.json):
-// the SVG app/companion/loopy.tsx renders in each of the 13 moods, each mood's wire tint, and
-// every non-colour declaration and keyframe of Loopy's CSS in public/styles.css (scoped under
-// .companion-overlay there). Where the example can be read (DENEXT_DIR, default ../denext beside
-// the repo, at the git ref DENEXT_LOOPY_REF, default origin/feat/loopy-voice-tools; an empty ref
-// reads the checkout's files), the snapshot is also compared with it, and
-// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it. The voice turn is included: Loopy
-// listening, thinking and speaking at each lip-sync step, and the example's voice rules (the
-// listening pulse, the speaking mouth); its size setting is not Qutty's and is left out.
+// Loopy's face keeps the shape and the moods of Denext's examples/companion as it is on the branch
+// feat/loopy-voice-tools (the crossed-triangle wire with a steel bead head and 13 moods). Qutty
+// draws the bead head alone, larger, without the wire body, so only the face is compared, against
+// a snapshot taken from the example (tests/fixtures/companion/loopy-shape.json): the head group
+// app/companion/loopy.tsx renders in each of the 13 moods and in the voice turn (listening,
+// thinking, speaking at each lip-sync step), the bead's shading, each mood's tint, and every
+// non-colour declaration and keyframe of the face's CSS in public/styles.css (scoped under
+// .companion-overlay there). The wire, the body's moves and the layout are Qutty's and left out.
+// The snapshot also holds the avatar's own size (Qutty's: the crop and the scale), checked against
+// the render. Where the example can be read (DENEXT_DIR, default ../denext beside the repo, at the
+// git ref DENEXT_LOOPY_REF, default origin/feat/loopy-voice-tools; an empty ref reads the
+// checkout's files), the face in the snapshot is also compared with it, and
+// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it (and the avatar from the render).
 
 import { assert, assertEquals } from "@std/assert";
 import { join, toFileUrl } from "@std/path";
 import { renderToString } from "denext";
 import { jsx } from "denext/jsx-runtime";
-import { Loopy } from "../app/companion/loopy.tsx";
+import { Loopy, LOOPY_SCALE, LOOPY_VIEWBOX } from "../app/companion/loopy.tsx";
 import { MOODS } from "../lib/companion/loopy-machine.ts";
 
 const ROOT = new URL("../", import.meta.url);
@@ -35,18 +37,31 @@ const COLOUR_PROPS = new Set([
   "box-shadow",
 ]);
 
+/** The face, as the example and Qutty both draw it. */
 interface Shape {
-  /** selector → declarations, without the colour ones. */
+  /** The face's selectors → declarations, without the colour ones. */
   rules: Record<string, Record<string, string>>;
-  /** keyframe name → its body, whitespace-normalised. */
+  /** The keyframes the face's rules use: name → its body, whitespace-normalised. */
   keyframes: Record<string, string>;
-  /** mood → the wire's tint: [colour, edge, shine]. */
+  /** mood → its tint: [colour, edge, shine] (the example's wire; Qutty's extras and rim). */
   tints: Record<string, string[]>;
-  /** mood → the SVG Loopy renders in it (idle), without the voice turn's attributes. */
-  svg: Record<string, string>;
-  /** voice turn (`speaking-<step>`, `listening-<step>`, `thinking`) → the SVG (neutral, idle). */
+  /** The bead's shading: the SVG's `<defs>`. */
+  defs: string;
+  /** mood → the head group (`.loopy-head`) Loopy renders in it (idle). */
+  head: Record<string, string>;
+  /** voice turn (`speaking-<step>`, `listening-<step>`, `thinking`) → the head group (neutral). */
   voice: Record<string, string>;
 }
+
+/** Qutty's avatar: the crop of the drawing and its size in CSS px. */
+interface Avatar {
+  viewBox: string;
+  width: number;
+  height: number;
+}
+
+/** The snapshot: the example's face, and Qutty's avatar size. */
+type Snapshot = Shape & { avatar: Avatar };
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -91,11 +106,25 @@ function declarations(body: string): [string, string][] {
   });
 }
 
-/** Loopy's shape from a stylesheet: rules matching `keep`, with `scope` taken off selectors. */
+/**
+ * The face's parts of a selector list (scope already off), joined; "" when it has none. A face
+ * part names the head or a part of it (the bead, eyes, brows, mouth, an extra), or is one of the
+ * example's catch-alls for the drawing (`.loopy path`, the reduced-motion `.loopy *`).
+ */
+function faceSelector(selector: string): string {
+  return selector.split(", ").filter((p) =>
+    /\.loopy-(head|bead|eyes|eye-white|brows|mouth|tongue|star-eyes|heart-eyes|wow-sparks|exclaim|zaps|question|zs|steam|tear|blush|floating-hearts|extra)\b/
+      .test(p) || /^(@reduce )?\.loopy (path|\*)$/.test(p)
+  ).join(", ");
+}
+
+/**
+ * The face's shape from a stylesheet: its rules (with `scope` taken off selectors and the parts
+ * that are not the face's dropped), and the keyframes those rules use.
+ */
 function cssShape(
   css: string,
   scope: string | RegExp,
-  keep: (selector: string) => boolean,
 ): Pick<Shape, "rules" | "keyframes"> {
   const rules: Shape["rules"] = {};
   const keyframes: Shape["keyframes"] = {};
@@ -105,13 +134,15 @@ function cssShape(
       keyframes[name] = norm(body);
       continue;
     }
-    const selector = prelude.split(",").map((s) =>
-      norm(s).replace(scope, "").replace(
-        /^@media \(prefers-reduced-motion: reduce\) /,
-        "@reduce ",
-      )
-    ).join(", ");
-    if (!keep(selector)) continue;
+    const selector = faceSelector(
+      prelude.split(",").map((s) =>
+        norm(s).replace(scope, "").replace(
+          /^@media \(prefers-reduced-motion: reduce\) /,
+          "@reduce ",
+        )
+      ).join(", "),
+    );
+    if (!selector) continue;
     const decls: Record<string, string> = {};
     for (const [prop, raw] of declarations(body)) {
       const value = raw.replace(/(animation:\s*)?\bloopy-/g, "");
@@ -121,7 +152,17 @@ function cssShape(
     if (Object.keys(decls).length === 0) continue;
     rules[selector] = { ...(rules[selector] ?? {}), ...decls };
   }
-  return { rules, keyframes };
+  const used = new Set(
+    Object.values(rules).flatMap((d) =>
+      `${d.animation ?? ""} ${d["animation-name"] ?? ""}`.split(/[\s,]+/)
+    ),
+  );
+  return {
+    rules,
+    keyframes: Object.fromEntries(
+      Object.entries(keyframes).filter(([name]) => used.has(name)),
+    ),
+  };
 }
 
 /**
@@ -150,31 +191,49 @@ function tints(
   return out;
 }
 
-/** Loopy's own selectors (the example's speech bubble, stage and Loopy sections). */
-const LOOPY_SELECTOR =
-  /^(@reduce )?\.(loopy|bubble|squash|poke|stage)\b|^\.loopy-|^\.bubble-(slot|text|close|actions)|^button$/;
-
 // deno-lint-ignore no-explicit-any
 type LoopyComponent = (props: any) => unknown;
 
-/** The SVG a Loopy component renders in each mood, without the voice turn's attributes. */
-async function renderMoods(
-  component: LoopyComponent,
-): Promise<Shape["svg"]> {
-  const out: Shape["svg"] = {};
-  for (const mood of MOODS) {
-    const html = await renderToString(
-      jsx(component as never, { state: "idle", mood }) as never,
-    );
-    out[mood] = html.replace(/ (style|data-voice)="[^"]*"/g, "");
+/** The element of `html` that starts at `open` (`<g class="loopy-head">`, `<defs>`), whole. */
+function element(html: string, open: string): string {
+  const start = html.indexOf(open);
+  assert(start >= 0, `${open} in the render`);
+  const tag = /^<(\w+)/.exec(open)![1];
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, "g");
+  re.lastIndex = start;
+  let depth = 0;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    if (m[0].endsWith("/>")) continue;
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start, m.index + m[0].length);
   }
-  return out;
+  throw new Error(`${open} is not closed`);
 }
 
-/** The SVG a Loopy component renders in each voice turn: every lip-sync step, listening, thinking. */
-async function renderVoice(
+const head = (html: string) => element(html, '<g class="loopy-head">');
+
+/** A Loopy component's render with `props` (idle). */
+function render(
   component: LoopyComponent,
-): Promise<Shape["voice"]> {
+  props: Record<string, unknown>,
+): Promise<string> {
+  return renderToString(
+    jsx(component as never, { state: "idle", ...props }) as never,
+  );
+}
+
+/** What a Loopy component draws of the face: the shading, the head in each mood and voice turn. */
+async function drawnFace(
+  component: LoopyComponent,
+): Promise<Pick<Shape, "defs" | "head" | "voice">> {
+  const out: Pick<Shape, "defs" | "head" | "voice"> = {
+    defs: element(await render(component, {}), "<defs>"),
+    head: {},
+    voice: {},
+  };
+  for (const mood of MOODS) {
+    out.head[mood] = head(await render(component, { mood }));
+  }
   const turns: [string, Record<string, unknown>][] = [
     ["thinking", { voice: "thinking" }],
   ];
@@ -182,16 +241,13 @@ async function renderVoice(
     turns.push([`speaking-${step}`, { voice: "speaking", level: step }]);
     turns.push([`listening-${step}`, { voice: "listening", level: step }]);
   }
-  const out: Shape["voice"] = {};
   for (const [name, props] of turns) {
-    out[name] = await renderToString(
-      jsx(component as never, { state: "idle", ...props }) as never,
-    );
+    out.voice[name] = head(await render(component, props));
   }
   return out;
 }
 
-/** Qutty's shape: the CSS block scoped under .companion-overlay, and the rendered SVG. */
+/** Qutty's face: the CSS block scoped under .companion-overlay, and the rendered head. */
 async function qutty(): Promise<Shape> {
   const css = await Deno.readTextFile(new URL("public/styles.css", ROOT));
   const start = css.indexOf("/* ---- The companion: Loopy");
@@ -200,13 +256,22 @@ async function qutty(): Promise<Shape> {
   );
   assert(start > 0 && end > start, "Loopy's block in public/styles.css");
   const block = css.slice(start, end);
-  const keep = (s: string) =>
-    s.split(", ").every((p) => LOOPY_SELECTOR.test(p));
   return {
-    ...cssShape(block, /\.companion-overlay /g, keep),
+    ...cssShape(block, /\.companion-overlay /g),
     tints: tints(block, ".companion-overlay", /^\.companion-overlay /),
-    svg: await renderMoods(Loopy),
-    voice: await renderVoice(Loopy),
+    ...await drawnFace(Loopy),
+  };
+}
+
+/** Qutty's avatar as rendered: the SVG's viewBox, width and height. */
+async function avatar(): Promise<Avatar> {
+  const html = await render(Loopy, {});
+  const attr = (name: string) =>
+    new RegExp(`<svg[^>]* ${name}="([^"]*)"`).exec(html)?.[1] ?? "";
+  return {
+    viewBox: attr("viewBox"),
+    width: Number(attr("width")),
+    height: Number(attr("height")),
   };
 }
 
@@ -280,57 +345,52 @@ async function example(): Promise<Shape | null> {
   ) + (voiceAt < 0
     ? ""
     : css.slice(voiceAt, settingsAt < 0 ? undefined : settingsAt));
-  const keep = (s: string) =>
-    s.split(", ").filter((p) =>
-      !/^\.(controls|demo|companion)\b|^button$/.test(p)
-    )
-      .every((p) => LOOPY_SELECTOR.test(p) || p === ".is-desktop .loopy");
-  const shape = cssShape(loopyCss, "", keep);
-  // Its desktop-window size is the overlay's.
-  const small = shape.rules[".is-desktop .loopy"];
-  delete shape.rules[".is-desktop .loopy"];
-  shape.rules[".loopy"] = { ...shape.rules[".loopy"], ...small };
-  for (const sel of Object.keys(shape.rules)) {
-    // `.bubble-actions button, .controls button, .demo button` keeps its bubble part.
-    if (sel.includes(".controls") || sel.includes(".demo")) {
-      const kept = sel.split(", ").filter((p) => !/\.(controls|demo)/.test(p))
-        .join(", ");
-      shape.rules[kept] = shape.rules[sel];
-      delete shape.rules[sel];
-    }
-  }
-  delete shape.rules[""]; // the controls and demo rows, which Qutty has not
   return {
-    ...shape,
+    ...cssShape(loopyCss, ""),
     tints: tints(css, ":root", ""),
-    svg: await renderMoods(component),
-    voice: await renderVoice(component),
+    ...await drawnFace(component),
   };
 }
 
-Deno.test("Loopy's look: the SVG in every mood, the tints, the CSS shapes and the moves match the example's snapshot", async () => {
-  const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Shape;
+Deno.test("Loopy's look: the face in every mood and voice turn, the tints, the face's CSS and the avatar's size match the snapshot", async () => {
+  const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Snapshot;
   const mine = await qutty();
-  assertEquals(Object.keys(snap.svg), [...MOODS], "the 13 moods");
+  assertEquals(Object.keys(snap.head), [...MOODS], "the 13 moods");
   for (const mood of MOODS) {
-    assertEquals(mine.svg[mood], snap.svg[mood], `Loopy drawn ${mood}`);
+    assertEquals(mine.head[mood], snap.head[mood], `Loopy's face ${mood}`);
   }
+  assertEquals(mine.defs, snap.defs, "the bead's shading");
   assertEquals(mine.voice, snap.voice, "Loopy listening, thinking, speaking");
-  assertEquals(mine.tints, snap.tints, "each mood's wire tint");
-  assertEquals(mine.keyframes, snap.keyframes, "the keyframes of every move");
-  for (const [sel, decls] of Object.entries(snap.rules)) {
-    assertEquals(mine.rules[sel], decls, `the shape of ${sel}`);
+  assertEquals(mine.tints, snap.tints, "each mood's tint");
+  assertEquals(mine.keyframes, snap.keyframes, "the face's keyframes");
+  assertEquals(mine.rules, snap.rules, "the face's CSS");
+  assertEquals(await avatar(), snap.avatar, "the avatar's crop and size");
+});
+
+Deno.test("Loopy's look: the avatar is the head alone, 2.5 times the clip's, smaller than the clip was", async () => {
+  const [, , w, h] = LOOPY_VIEWBOX;
+  // The bead (r 29) at the clip's 0.75 px a unit was 43.5 px across; now 2.5 times that.
+  assertEquals(58 * LOOPY_SCALE, 43.5 * 2.5);
+  // Smaller than the whole clip was in its window (120 x 150).
+  assert(w * LOOPY_SCALE < 120 && h * LOOPY_SCALE < 150);
+  const html = await render(Loopy, { mood: "love" });
+  for (const gone of ["loopy-wire", "loopy-body", "loopy-shadow"]) {
+    assert(!html.includes(gone), `no ${gone}`);
   }
 });
 
 Deno.test({
-  name: "Loopy's look: the snapshot matches the example (where it can be read)",
+  name:
+    "Loopy's look: the snapshot's face matches the example (where it can be read)",
   async fn() {
     const ex = await example();
     if (!ex) return; // CI: no Denext checkout; the snapshot stands in for it.
     if (Deno.env.get("UPDATE_LOOPY_SNAPSHOT")) {
-      await Deno.writeTextFile(SNAPSHOT, JSON.stringify(ex, null, 2) + "\n");
+      const next: Snapshot = { ...ex, avatar: await avatar() };
+      await Deno.writeTextFile(SNAPSHOT, JSON.stringify(next, null, 2) + "\n");
     }
-    assertEquals(JSON.parse(await Deno.readTextFile(SNAPSHOT)), ex);
+    const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Snapshot;
+    const { avatar: _qutty, ...face } = snap;
+    assertEquals(face, ex);
   },
 });
