@@ -98,7 +98,12 @@ Deno.test({
         10_000,
         "the written command's output on the screen",
       );
-      assertStringIncludes(screen ?? "", "echo companion-wrote-$((6*7))");
+      // The typed command is echoed, but a long prompt (a CI VM's "host:~ user$") can wrap it
+      // onto the next screen row, so compare with the row breaks removed.
+      assertStringIncludes(
+        (screen ?? "").replaceAll("\n", ""),
+        "echo companion-wrote-$((6*7))",
+      );
 
       // The tile's own socket: the same tool is refused.
       await connect(tileClient, "hub", hub.socketPath(id));
