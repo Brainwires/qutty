@@ -1,18 +1,27 @@
-// Loopy keeps the shape and the moves of Denext's examples/companion (its colours follow Qutty's
-// theme). Checked against a snapshot taken from the example (tests/fixtures/companion/
-// loopy-shape.json): the SVG's geometry as app/companion/loopy.tsx renders it, the speech
-// bubble's markup, and every non-colour declaration and keyframe of Loopy's CSS in
-// public/styles.css (scoped under .companion-overlay there). Where the example is checked out
-// (DENEXT_DIR, default ../denext beside the repo), the snapshot is also compared with it, and
-// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it.
+// Loopy keeps the shape, the moods and the moves of Denext's examples/companion as it is on the
+// branch feat/loopy-voice-tools (the crossed-triangle wire with a steel bead head and 13 moods).
+// Checked against a snapshot taken from the example (tests/fixtures/companion/loopy-shape.json):
+// the SVG app/companion/loopy.tsx renders in each of the 13 moods, each mood's wire tint, and
+// every non-colour declaration and keyframe of Loopy's CSS in public/styles.css (scoped under
+// .companion-overlay there). Where the example can be read (DENEXT_DIR, default ../denext beside
+// the repo, at the git ref DENEXT_LOOPY_REF, default origin/feat/loopy-voice-tools; an empty ref
+// reads the checkout's files), the snapshot is also compared with it, and
+// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it. The example's voice turn (lip-sync,
+// the listening pulse, its size setting) is not Qutty's and is left out.
 
 import { assert, assertEquals } from "@std/assert";
+import { join, toFileUrl } from "@std/path";
+import { renderToString } from "denext";
+import { jsx } from "denext/jsx-runtime";
+import { Loopy } from "../app/companion/loopy.tsx";
+import { MOODS } from "../lib/companion/loopy-machine.ts";
 
 const ROOT = new URL("../", import.meta.url);
 const SNAPSHOT = new URL(
   "./fixtures/companion/loopy-shape.json",
   import.meta.url,
 );
+const EXAMPLE = "examples/companion";
 
 /** Properties that only colour things (the theme's business). */
 const COLOUR_PROPS = new Set([
@@ -30,8 +39,10 @@ interface Shape {
   rules: Record<string, Record<string, string>>;
   /** keyframe name → its body, whitespace-normalised. */
   keyframes: Record<string, string>;
-  /** The SVG's geometry: every d / cx / cy / r / rx / ry / viewBox / width / height. */
-  svg: string[];
+  /** mood → the wire's tint: [colour, edge, shine]. */
+  tints: Record<string, string[]>;
+  /** mood → the SVG Loopy renders in it (idle), without the voice turn's attributes. */
+  svg: Record<string, string>;
 }
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -69,6 +80,14 @@ function blocks(css: string): [string, string][] {
   return out;
 }
 
+/** The `prop: value` declarations of a block body. */
+function declarations(body: string): [string, string][] {
+  return body.split(";").flatMap((d): [string, string][] => {
+    const at = d.indexOf(":");
+    return at < 0 ? [] : [[d.slice(0, at).trim(), norm(d.slice(at + 1))]];
+  });
+}
+
 /** Loopy's shape from a stylesheet: rules matching `keep`, with `scope` taken off selectors. */
 function cssShape(
   css: string,
@@ -91,14 +110,8 @@ function cssShape(
     ).join(", ");
     if (!keep(selector)) continue;
     const decls: Record<string, string> = {};
-    for (const d of body.split(";")) {
-      const at = d.indexOf(":");
-      if (at < 0) continue;
-      const prop = d.slice(0, at).trim();
-      const value = norm(d.slice(at + 1)).replace(
-        /(animation:\s*)?\bloopy-/g,
-        "",
-      );
+    for (const [prop, raw] of declarations(body)) {
+      const value = raw.replace(/(animation:\s*)?\bloopy-/g, "");
       if (prop.startsWith("--") || COLOUR_PROPS.has(prop)) continue;
       decls[prop] = shapeValue(prop, value);
     }
@@ -108,17 +121,51 @@ function cssShape(
   return { rules, keyframes };
 }
 
+/**
+ * Each mood's wire tint: the bare steel on `root` (neutral), and every `.loopy[data-mood]` rule
+ * (with `scope` taken off), as [--clip, --clip-edge, --clip-shine] (`--loopy-` prefixed in Qutty).
+ */
+function tints(
+  css: string,
+  root: string,
+  scope: string | RegExp,
+): Shape["tints"] {
+  const out: Shape["tints"] = {};
+  for (const [prelude, body] of blocks(css)) {
+    const selector = prelude.replace(scope, "");
+    const mood = selector === root
+      ? "neutral"
+      : /^\.loopy\[data-mood="(\w+)"\]$/.exec(selector)?.[1];
+    if (!mood) continue;
+    const vars = Object.fromEntries(
+      declarations(body).map(([p, v]) => [p.replace(/^--loopy-/, "--"), v]),
+    );
+    if (vars["--clip"]) {
+      out[mood] = [vars["--clip"], vars["--clip-edge"], vars["--clip-shine"]];
+    }
+  }
+  return out;
+}
+
 /** Loopy's own selectors (the example's speech bubble, stage and Loopy sections). */
 const LOOPY_SELECTOR =
   /^(@reduce )?\.(loopy|bubble|squash|poke|stage)\b|^\.loopy-|^\.bubble-(slot|text|close|actions)|^button$/;
 
-/** The SVG's geometry in a Loopy component's source (its paths, circles, ellipse, viewBox). */
-function svgShape(tsx: string): string[] {
-  const body = tsx.slice(tsx.indexOf("/** The wire"));
-  return [
-    ...body.matchAll(/const (WIRE|ARM)\s*=\s*"([^"]+)"/g),
-    ...body.matchAll(/\b(d|cx|cy|r|rx|ry|viewBox|width|height)="([^"]*)"/g),
-  ].map((m) => `${m[1]}=${m[2]}`);
+// deno-lint-ignore no-explicit-any
+type LoopyComponent = (props: any) => unknown;
+
+/** The SVG a Loopy component renders in each mood, without the voice turn's attributes. */
+async function renderMoods(
+  component: LoopyComponent,
+): Promise<Shape["svg"]> {
+  const out: Shape["svg"] = {};
+  for (const mood of MOODS) {
+    const html = await renderToString(
+      jsx(component as never, { state: "idle", mood }) as never,
+    );
+    out[mood] = html.replace(/ (style|data-voice)="[^"]*"/g, "");
+  }
+  return out;
 }
 
 /** Qutty's shape: the CSS block scoped under .companion-overlay, and the rendered SVG. */
@@ -129,66 +176,118 @@ async function qutty(): Promise<Shape> {
     "/* ---------------------------------------------------------------- Qutty's additions */",
   );
   assert(start > 0 && end > start, "Loopy's block in public/styles.css");
+  const block = css.slice(start, end);
   const keep = (s: string) =>
     s.split(", ").every((p) => LOOPY_SELECTOR.test(p));
-  const tsx = await Deno.readTextFile(new URL("app/companion/loopy.tsx", ROOT));
   return {
-    ...cssShape(css.slice(start, end), /\.companion-overlay /g, keep),
-    svg: svgShape(tsx),
+    ...cssShape(block, /\.companion-overlay /g, keep),
+    tints: tints(block, ".companion-overlay", /^\.companion-overlay /),
+    svg: await renderMoods(Loopy),
   };
 }
 
-/** The example's shape, when it is checked out. */
-async function example(): Promise<Shape | null> {
-  const dir = Deno.env.get("DENEXT_DIR") ??
-    new URL("../denext/", ROOT).pathname;
+/** A file of the example at `ref` (git show), or in the checkout when `ref` is empty; or null. */
+async function exampleFile(
+  dir: string,
+  ref: string,
+  path: string,
+): Promise<string | null> {
   try {
-    const css = await Deno.readTextFile(
-      `${dir}/examples/companion/public/styles.css`,
-    );
-    const tsx = await Deno.readTextFile(
-      `${dir}/examples/companion/components/Loopy.tsx`,
-    );
-    const bubble = css.slice(
-      css.indexOf(
-        "/* ---------------------------------------------------------------- speech bubble */",
-      ),
-    );
-    const keep = (s: string) =>
-      s.split(", ").filter((p) =>
-        !/^\.(controls|demo|companion)\b|^button$/.test(p)
-      )
-        .every((p) => LOOPY_SELECTOR.test(p) || p === ".is-desktop .loopy");
-    const shape = cssShape(bubble, "", keep);
-    // Its desktop-window size is the overlay's.
-    const small = shape.rules[".is-desktop .loopy"];
-    delete shape.rules[".is-desktop .loopy"];
-    shape.rules[".loopy"] = { ...shape.rules[".loopy"], ...small };
-    for (const sel of Object.keys(shape.rules)) {
-      // `.bubble-actions button, .controls button, .demo button` keeps its bubble part.
-      if (sel.includes(".controls") || sel.includes(".demo")) {
-        const kept = sel.split(", ").filter((p) => !/\.(controls|demo)/.test(p))
-          .join(", ");
-        shape.rules[kept] = shape.rules[sel];
-        delete shape.rules[sel];
-      }
-    }
-    delete shape.rules[""]; // the controls and demo rows, which Qutty has not
-    return { ...shape, svg: svgShape(tsx) };
+    if (!ref) return await Deno.readTextFile(join(dir, EXAMPLE, path));
+    const out = await new Deno.Command("git", {
+      args: ["-C", dir, "show", `${ref}:${EXAMPLE}/${path}`],
+      stdout: "piped",
+      stderr: "null",
+    }).output();
+    return out.success ? new TextDecoder().decode(out.stdout) : null;
   } catch (e) {
     if (e instanceof Deno.errors.NotFound) return null;
     throw e;
   }
 }
 
-Deno.test("Loopy's look: the SVG's geometry, the CSS shapes and the moves match the example's snapshot", async () => {
+/** The example's Loopy component: its source and the modules it imports, copied out and loaded. */
+async function exampleLoopy(
+  read: (path: string) => Promise<string | null>,
+): Promise<LoopyComponent | null> {
+  const tsx = await read("components/Loopy.tsx");
+  if (tsx === null) return null;
+  const tmp = await Deno.makeTempDir({ prefix: "loopy-example-" });
+  try {
+    await Deno.mkdir(join(tmp, "components"));
+    await Deno.mkdir(join(tmp, "lib"));
+    await Deno.writeTextFile(join(tmp, "components/Loopy.tsx"), tsx);
+    for (const [, lib] of tsx.matchAll(/from "\.\.\/lib\/([\w-]+\.ts)"/g)) {
+      const src = await read(`lib/${lib}`);
+      if (src === null) return null;
+      await Deno.writeTextFile(join(tmp, "lib", lib), src);
+    }
+    const mod = await import(
+      toFileUrl(join(tmp, "components/Loopy.tsx")).href
+    );
+    return mod.Loopy as LoopyComponent;
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+}
+
+/** The example's shape, when it can be read. */
+async function example(): Promise<Shape | null> {
+  const dir = Deno.env.get("DENEXT_DIR") ??
+    new URL("../denext/", ROOT).pathname;
+  const ref = Deno.env.get("DENEXT_LOOPY_REF") ??
+    "origin/feat/loopy-voice-tools";
+  const read = (path: string) => exampleFile(dir, ref, path);
+  const css = await read("public/styles.css");
+  if (css === null) return null;
+  const component = await exampleLoopy(read);
+  if (!component) return null;
+  // The speech bubble, stage and Loopy sections; not the voice turn's size setting after them.
+  const from = css.indexOf(
+    "/* ---------------------------------------------------------------- speech bubble */",
+  );
+  const to = css.indexOf(
+    "/* ---------------------------------------------------------------- size */",
+  );
+  const loopyCss = css.slice(from, to < 0 ? undefined : to);
+  const keep = (s: string) =>
+    s.split(", ").filter((p) =>
+      !/^\.(controls|demo|companion)\b|^button$/.test(p)
+    )
+      .every((p) =>
+        (LOOPY_SELECTOR.test(p) || p === ".is-desktop .loopy") &&
+        !p.includes("[data-voice")
+      );
+  const shape = cssShape(loopyCss, "", keep);
+  // Its desktop-window size is the overlay's.
+  const small = shape.rules[".is-desktop .loopy"];
+  delete shape.rules[".is-desktop .loopy"];
+  shape.rules[".loopy"] = { ...shape.rules[".loopy"], ...small };
+  for (const sel of Object.keys(shape.rules)) {
+    // `.bubble-actions button, .controls button, .demo button` keeps its bubble part.
+    if (sel.includes(".controls") || sel.includes(".demo")) {
+      const kept = sel.split(", ").filter((p) => !/\.(controls|demo)/.test(p))
+        .join(", ");
+      shape.rules[kept] = shape.rules[sel];
+      delete shape.rules[sel];
+    }
+  }
+  delete shape.rules[""]; // the controls and demo rows, which Qutty has not
+  return {
+    ...shape,
+    tints: tints(css, ":root", ""),
+    svg: await renderMoods(component),
+  };
+}
+
+Deno.test("Loopy's look: the SVG in every mood, the tints, the CSS shapes and the moves match the example's snapshot", async () => {
   const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Shape;
   const mine = await qutty();
-  assertEquals(
-    mine.svg,
-    snap.svg,
-    "the SVG geometry (paths, eyes, mouth, dots, sparkles)",
-  );
+  assertEquals(Object.keys(snap.svg), [...MOODS], "the 13 moods");
+  for (const mood of MOODS) {
+    assertEquals(mine.svg[mood], snap.svg[mood], `Loopy drawn ${mood}`);
+  }
+  assertEquals(mine.tints, snap.tints, "each mood's wire tint");
   assertEquals(mine.keyframes, snap.keyframes, "the keyframes of every move");
   for (const [sel, decls] of Object.entries(snap.rules)) {
     assertEquals(mine.rules[sel], decls, `the shape of ${sel}`);
@@ -196,8 +295,7 @@ Deno.test("Loopy's look: the SVG's geometry, the CSS shapes and the moves match 
 });
 
 Deno.test({
-  name:
-    "Loopy's look: the snapshot matches the example (where it is checked out)",
+  name: "Loopy's look: the snapshot matches the example (where it can be read)",
   async fn() {
     const ex = await example();
     if (!ex) return; // CI: no Denext checkout; the snapshot stands in for it.

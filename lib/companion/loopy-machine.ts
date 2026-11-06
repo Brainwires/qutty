@@ -1,4 +1,5 @@
-// Ported from Denext's examples/companion (lib/loopy-machine.ts; same author, MIT) unchanged.
+// Ported from Denext's examples/companion (lib/loopy-machine.ts on feat/loopy-voice-tools: the
+// crossed-triangle Loopy with 13 moods; same author, MIT) unchanged.
 //
 // Loopy's animation state machine: a pure reducer the page runs with `useReducer`. Each state is
 // one of Loopy's moves (styles.css draws them from the `data-state` attribute); the timed ones end
@@ -21,7 +22,20 @@ export type LoopyState =
   | "dismiss";
 
 /** How a message wants Loopy to look while it speaks. */
-export type LoopyMood = "neutral" | "thinking" | "attention" | "success";
+export type LoopyMood =
+  | "neutral"
+  | "thinking"
+  | "attention"
+  | "success"
+  | "confused"
+  | "mad"
+  | "sad"
+  | "excited"
+  | "sleepy"
+  | "love"
+  | "surprised"
+  | "shocked"
+  | "wow";
 
 /** Every mood, for validation. */
 export const MOODS: readonly LoopyMood[] = [
@@ -29,6 +43,15 @@ export const MOODS: readonly LoopyMood[] = [
   "thinking",
   "attention",
   "success",
+  "confused",
+  "mad",
+  "sad",
+  "excited",
+  "sleepy",
+  "love",
+  "surprised",
+  "shocked",
+  "wow",
 ];
 
 /** What the machine holds. */
@@ -54,12 +77,21 @@ export const INITIAL_MODEL: LoopyModel = { state: "hidden", pendingMood: null };
 export function moodState(mood: LoopyMood): LoopyState {
   switch (mood) {
     case "thinking":
+    case "confused":
       return "think";
     case "attention":
       return "point";
     case "success":
+    case "excited":
+    case "love":
+    case "wow":
       return "celebrate";
     case "neutral":
+    case "mad":
+    case "sad":
+    case "sleepy":
+    case "surprised":
+    case "shocked":
       return "idle";
   }
 }

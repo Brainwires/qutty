@@ -68,6 +68,25 @@ export function readingTimeMs(text: string): number {
   return Math.min(15_000, 4_000 + text.length * 50);
 }
 
+/**
+ * Qutty: other names a sender may use for a mood, after the companion's own states (idle, an
+ * `ask_user` question, an error). The four moods Qutty had before the 13 keep their names.
+ */
+export const MOOD_ALIASES: Readonly<Record<string, LoopyMood>> = {
+  idle: "neutral",
+  ask: "attention",
+  error: "sad",
+};
+
+/** The `mood` field, validated: one of {@linkcode MOODS} or an alias of one. */
+function parseMood(raw: unknown): LoopyMood {
+  if (typeof raw === "string") {
+    if (MOODS.includes(raw as LoopyMood)) return raw as LoopyMood;
+    if (Object.hasOwn(MOOD_ALIASES, raw)) return MOOD_ALIASES[raw];
+  }
+  throw new SayError(`mood must be one of ${MOODS.join(", ")}`);
+}
+
 /** One action, validated. */
 function parseAction(raw: unknown, index: number): LoopyAction {
   if (typeof raw !== "object" || raw === null) {
@@ -134,17 +153,14 @@ export function parseSayRequest(
   if (!text || text.length > MAX_TEXT) {
     throw new SayError(`text must be 1-${MAX_TEXT} characters`);
   }
-  const mood = body.mood ?? "neutral";
-  if (!MOODS.includes(mood as LoopyMood)) {
-    throw new SayError(`mood must be one of ${MOODS.join(", ")}`);
-  }
+  const mood = parseMood(body.mood ?? "neutral");
   if (body.wait !== undefined && typeof body.wait !== "boolean") {
     throw new SayError("wait must be a boolean");
   }
   const actions = parseActions(body.actions);
   const timeoutMs = parseTimeout(body.timeoutMs, text, actions.length > 0);
   return {
-    message: { id, text, mood: mood as LoopyMood, actions, timeoutMs },
+    message: { id, text, mood, actions, timeoutMs },
     wait: body.wait === true,
   };
 }

@@ -69,7 +69,8 @@ export function replyTimeoutMs(text: string): number {
  * The bubble for a `turn` update: the whole message to show (`enqueue` when new, `update` when
  * on screen already), or `null` when the turn shows nothing — a turn on agents' messages shows
  * only once it is done, and not when the brain said `(quiet)`. A user turn shows at once: `…`
- * while the brain thinks, then the text as it streams.
+ * while the brain thinks, then the text as it streams. Loopy's mood: `thinking` until the turn
+ * ends, then `neutral`, or `sad` when the turn failed.
  */
 export function turnBubble(
   update: Extract<CompanionUpdate, { kind: "turn" }>,
@@ -84,7 +85,7 @@ export function turnBubble(
     id: turnBubbleId(update.turn),
     kind: "reply",
     text,
-    mood: !update.done ? "thinking" : update.isError ? "attention" : "neutral",
+    mood: !update.done ? "thinking" : update.isError ? "sad" : "neutral",
     actions: [],
     timeoutMs: update.done ? replyTimeoutMs(text) : 0,
   };
