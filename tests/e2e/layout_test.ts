@@ -9,6 +9,9 @@ const area = (r: { w: number; h: number }) => r.w * r.h;
 
 /** Ranks from the DOM must equal the MRU index; the focused tile is the biggest. */
 async function assertMruSizing(app: App): Promise<void> {
+  // A focus change animates every tile to its new rect; measure once they have stopped moving,
+  // or a loaded machine catches them mid-transition (the focused tile still small).
+  await app.settle();
   const mru = await app.mru();
   const rects = await app.tileRects();
   const tiles = (await app.tiles()).filter((t) => t.id in rects);
