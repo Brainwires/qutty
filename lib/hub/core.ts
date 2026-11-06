@@ -52,17 +52,31 @@ export interface HubEnv {
   ask(request: AskRequest): void;
   /** The question was answered or withdrawn: take it off the page. */
   askClosed(id: string): void;
-  /** A companion command the page carries out (spawn / close / focus a tile). */
-  control(command: ControlCommand): void;
+  /**
+   * A companion command the page carries out (spawn / close / focus a tile); resolves with the
+   * page's answer (a spawned tile's id).
+   */
+  control(command: ControlCommand): Promise<ControlResult>;
   /** The registry changed. */
   changed(snapshot: HubSnapshot): void;
+  /** A message for the companion was queued (the companion runtime picks it up). */
+  companionMail?(): void;
 }
 
-/** A companion command for the page. */
+/**
+ * A companion command for the page. `spawn` opens a tile from the `+` picker entry `profile`
+ * (an entry id, `shell:/bin/zsh`, `agent:claude`, `ssh:host`; default: the login shell); with
+ * `command`, the hub types that line into the new tile once it exists.
+ */
 export type ControlCommand =
   | { kind: "spawn"; command?: string; profile?: string }
   | { kind: "close"; tileId: string }
   | { kind: "focus"; tileId: string };
+
+/** The page's answer to a {@linkcode ControlCommand}: the spawned tile's PTY id, or why not. */
+export type ControlResult =
+  | { ok: true; tileId?: string }
+  | { ok: false; error: string };
 
 /** A user-facing failure (bad target, bad name, …): becomes an `isError` tool result. */
 export class HubError extends Error {
@@ -90,6 +104,8 @@ export class HubCore {
     this.mailboxes = new Mailboxes((owner) => {
       if (owner !== COMPANION) {
         this.registry.setUnread(owner, this.mailboxes.unread(owner));
+      } else if (this.mailboxes.unread(COMPANION) > 0) {
+        this.#env.companionMail?.();
       }
     });
   }
@@ -291,23 +307,47 @@ export class HubCore {
     await this.#env.write(this.tile(target).id, text);
   }
 
-  /** `deliver`: type a one-line nudge into an idle tile whose agent has no hooks. */
+  /**
+   * `deliver`: nudge an agent tile whose agent has no hooks: type a one-line notice of its
+   * pending messages into its prompt and press Enter, so the agent takes a turn and reads them.
+   * Only an agent tile (one with a harness; a plain shell would run the line) that is not busy (a
+   * busy agent with hooks gets them at its next tool call). Returns how many messages wait.
+   */
   async deliver(target: string): Promise<number> {
     const tile = this.tile(target);
     const n = this.mailboxes.unread(tile.id);
     if (n === 0) return 0;
+    if (!tile.harness) {
+      throw new HubError(
+        `${tile.name} is not an agent tile; typing a notice would run it as a command`,
+      );
+    }
+    if (tile.status === "busy") {
+      throw new HubError(
+        `${tile.name} is busy; its hooks hand it the messages at its next step`,
+      );
+    }
     await this.#env.write(
       tile.id,
       `You have ${n} new Qutty message${
         n === 1 ? "" : "s"
-      } — call the qutty read_messages tool.`,
+      } — call the qutty read_messages tool.\r`,
     );
     return n;
   }
 
-  control(command: ControlCommand): void {
+  /**
+   * Carry out a companion command through the page. A `spawn` with a `command` types it into the
+   * new tile. Throws a {@linkcode HubError} with the page's reason when it fails.
+   */
+  async control(command: ControlCommand): Promise<{ tileId?: string }> {
     if (command.kind !== "spawn") this.tile(command.tileId);
-    this.#env.control(command);
+    const result = await this.#env.control(command);
+    if (!result.ok) throw new HubError(result.error);
+    if (command.kind === "spawn" && command.command && result.tileId) {
+      await this.#env.write(result.tileId, `${command.command}\r`);
+    }
+    return result.tileId ? { tileId: result.tileId } : {};
   }
 
   // --- hooks -----------------------------------------------------------------------------------

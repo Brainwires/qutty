@@ -24,6 +24,11 @@ import {
 import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
 import type { SshProfile } from "../ssh-ui.ts";
 import { isEntryId, type PlusOpens, sanitizePlusOpens } from "../launcher.ts";
+import {
+  type CompanionSettings,
+  DEFAULT_COMPANION,
+  sanitizeCompanion,
+} from "../companion/settings.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -49,12 +54,18 @@ export const BAR_POSITIONS: readonly BarPosition[] = [
   "right",
 ];
 /** A collapsible section of the settings panel. */
-export type SettingsSection = "layout" | "theme" | "font" | "integration";
+export type SettingsSection =
+  | "layout"
+  | "theme"
+  | "font"
+  | "companion"
+  | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "layout",
   "theme",
   "font",
+  "companion",
   "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
@@ -106,6 +117,8 @@ export interface Settings extends FontSettings {
   plusOpens: PlusOpens;
   /** The picker entry chosen last (`agent:claude`), for `plusOpens: "last"`. */
   lastLaunch: string | null;
+  /** Settings → Companion (Loopy and its brain; lib/companion/settings.ts). */
+  companion: CompanionSettings;
 }
 
 /** The whole workspace. */
@@ -162,6 +175,7 @@ export type WorkspaceAction =
   | { type: "setInactiveTiles"; mode: InactiveTiles }
   | { type: "setTheme"; theme: ThemeId }
   | { type: "setPlusOpens"; plusOpens: PlusOpens }
+  | { type: "setCompanion"; patch: Partial<CompanionSettings> }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -180,6 +194,7 @@ export const DEFAULT_SETTINGS: Settings = {
   collapsedSections: ["integration"],
   plusOpens: "default",
   lastLaunch: null,
+  companion: { ...DEFAULT_COMPANION },
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -202,6 +217,7 @@ function cloneSettings(s: Settings): Settings {
     ...s,
     layout: { ...s.layout },
     collapsedSections: [...s.collapsedSections],
+    companion: { ...s.companion },
   };
 }
 
@@ -305,6 +321,9 @@ export function sanitizeSettings(
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
   if (r.lastLaunch === null || isEntryId(r.lastLaunch)) {
     out.lastLaunch = r.lastLaunch;
+  }
+  if (r.companion !== undefined) {
+    out.companion = sanitizeCompanion(r.companion, out.companion);
   }
   if (Array.isArray(r.collapsedSections)) {
     out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
@@ -562,6 +581,19 @@ export function reduce(
       const plusOpens = sanitizePlusOpens(action.plusOpens);
       if (state.settings.plusOpens === plusOpens) return state;
       return { ...state, settings: { ...state.settings, plusOpens } };
+    }
+    case "setCompanion": {
+      const companion = sanitizeCompanion(
+        action.patch,
+        state.settings.companion,
+      );
+      const before = state.settings.companion;
+      if (
+        (Object.keys(companion) as (keyof CompanionSettings)[]).every((k) =>
+          companion[k] === before[k]
+        )
+      ) return state;
+      return { ...state, settings: { ...state.settings, companion } };
     }
     case "launched":
       if (

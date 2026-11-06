@@ -1,7 +1,7 @@
 // The settings popover, in collapsible sections: Layout (pattern grid with live previews, the
 // sliders the engine understands, the bar's edge and order), Theme (preview tiles, dark and
-// light), Fonts (the terminal font), Agent integration (app/agent-integration.tsx; folded by
-// default); the shortcut list stays visible below them. Every change goes straight to the store,
+// light), Fonts (the terminal font), Companion (app/companion/companion-settings.tsx), Agent
+// integration (app/agent-integration.tsx; folded by default); the shortcut list stays visible below them. Every change goes straight to the store,
 // so the cluster animates while the slider moves.
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "denext";
@@ -36,6 +36,8 @@ import { PatternPreview } from "./pattern-preview.tsx";
 import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
 import { AgentIntegration } from "./agent-integration.tsx";
+import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
+import type { CompanionSettings } from "../lib/companion/settings.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 
 export interface SettingsPanelProps {
@@ -51,7 +53,9 @@ export interface SettingsPanelProps {
   /** The `+` picker's entries, for "+ opens". */
   launchSections: LaunchSection[];
   onPlusOpens(plusOpens: PlusOpens): void;
-  /** For Agent integration (the section is left out without one). */
+  /** Settings → Companion. */
+  onCompanion(patch: Partial<CompanionSettings>): void;
+  /** For Agent integration (the section is left out without one) and the companion's status. */
   backend: PtyBackend | null;
   onClose(): void;
 }
@@ -320,6 +324,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onFont={props.onFont}
         />,
         "font-section",
+      )}
+
+      {section(
+        "companion",
+        "Companion",
+        <CompanionSettingsSection
+          settings={settings.companion}
+          backend={props.backend}
+          onChange={props.onCompanion}
+        />,
+        "companion-section",
       )}
 
       {props.backend && section(

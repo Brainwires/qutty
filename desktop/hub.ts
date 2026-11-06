@@ -16,7 +16,11 @@
 //   (answered with one line, then closed); anything else is MCP, served by @rullama/mcp-server.
 // - The screen mirror: a headless xterm per terminal, fed the PTY's output (lib/hub/mirror.ts).
 // - The page: `snapshot` + the `tiles` event (badges), `ask` / `askClosed` (ask_user), `answer`,
-//   `control` (companion commands), and the Agent integration panel's methods.
+//   `control` (companion commands, answered with `controlDone`), and the Agent integration
+//   panel's methods.
+// - The companion (desktop/companion.ts): its own socket and privileged identity, the brain
+//   runtime (`companion` events, `companionSend` / `companionConfigure` / `companionStatus`), the
+//   audit log, and `qutty-hook say …` lines (`say` events, answered with `companionSayDone`).
 //
 // The hub is optional: if it cannot start, it logs why and the terminals work as before. Nothing
 // here may throw into the app's startup or a terminal's spawn.
@@ -44,6 +48,9 @@ import {
   unlinkPath,
 } from "./hub-socket.ts";
 import { HubCore } from "../lib/hub/core.ts";
+import { CompanionHost, removeCompanionDir } from "./companion.ts";
+import type { BrainAdapter } from "../lib/companion/brain.ts";
+import type { AuditEntry, CompanionStatus } from "../lib/companion/protocol.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
 import { buildToolRegistry, createHubHandler } from "../lib/hub/tools.ts";
 import {
@@ -137,7 +144,10 @@ export async function prepareSocketDir(base = "/tmp"): Promise<string> {
     }
     if (processAlive(pid)) continue;
     const dead = `${userDir}/${entry.name}`;
-    for await (const f of Deno.readDir(dead)) unlinkPath(`${dead}/${f.name}`);
+    for await (const f of Deno.readDir(dead)) {
+      if (f.isDirectory) await removeCompanionDir(`${dead}/${f.name}`);
+      else unlinkPath(`${dead}/${f.name}`);
+    }
     removeDir(dead);
   }
   const own = `${userDir}/${Deno.pid}`;
@@ -172,7 +182,13 @@ const desktopFs: ConfigFs = {
 
 /** Where the hub's events go (the extension host's `emit`, or a test's recorder). */
 export type HubEmit = (event: HubEvent, data: unknown) => void;
-export type HubEvent = "tiles" | "ask" | "askClosed" | "control";
+export type HubEvent =
+  | "tiles"
+  | "ask"
+  | "askClosed"
+  | "control"
+  | "companion"
+  | "say";
 
 export interface HubServiceOptions {
   home: string;
@@ -183,6 +199,10 @@ export interface HubServiceOptions {
   write?: (id: string, text: string) => Promise<void>;
   /** File access for the integration installer (default: libc writes). */
   fs?: ConfigFs;
+  /** Where the companion's audit log goes (none: kept in memory only). */
+  appSupportDir?: string;
+  /** Another companion brain (tests). Default: Claude Code. */
+  createBrain?: (cfg: { mcpConfig: string; model?: string }) => BrainAdapter;
 }
 
 /** The hub: sockets, MCP sessions, mirrors and the {@linkcode HubCore}. */
@@ -191,6 +211,7 @@ export class HubService {
   readonly paths: HubPaths;
   readonly files: IntegrationFiles;
   readonly socketDir: string;
+  readonly companion: CompanionHost;
   #emit: HubEmit;
   #fs: ConfigFs;
   #reactor = new FdReactor();
@@ -199,6 +220,7 @@ export class HubService {
   #conns = new Map<string, Set<FdConnection>>();
   #mirrors = new Map<string, ScreenMirror>();
   #installed: { claude?: boolean; codex?: boolean } = {};
+  #companionListener: FdUnixListener | undefined;
   #tilesQueued = false;
 
   constructor(opts: HubServiceOptions) {
@@ -213,11 +235,32 @@ export class HubService {
       write,
       ask: (request) => this.#emit("ask", request),
       askClosed: (id) => this.#emit("askClosed", { id }),
-      control: (command) => this.#emit("control", command),
+      control: (command) => this.companion.control(command),
       changed: () => this.#queueTiles(),
+      companionMail: () => this.companion.runtime.mailArrived(),
+    });
+    this.companion = new CompanionHost({
+      core: this.core,
+      socketDir: this.socketDir,
+      mcpShim: this.paths.mcp,
+      quttyDir: this.paths.dir,
+      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
+      ...(opts.createBrain ? { createBrain: opts.createBrain } : {}),
+      emit: (event, data) => this.#emit(event, data),
+      listen: (path) => {
+        this.#companionListener = FdUnixListener.listen(
+          path,
+          this.#reactor,
+          (conn) => void this.#serve(conn, { role: "companion" }),
+        );
+      },
     });
     const tools = buildToolRegistry(this.core);
-    this.#server = new McpServer(createHubHandler(this.core, tools));
+    this.#server = new McpServer(
+      createHubHandler(this.core, tools, {
+        audit: (call) => this.companion.record(call),
+      }),
+    );
     void this.refreshIntegration();
   }
 
@@ -296,9 +339,12 @@ export class HubService {
     this.core.removeTile(id);
   }
 
-  /** Close every socket and remove this process's socket folder. */
-  stop(): void {
+  /** Close every socket, stop the companion and remove this process's socket folder. */
+  async stop(): Promise<void> {
     for (const id of [...this.#listeners.keys()]) this.ended(id);
+    this.#companionListener?.close();
+    for (const c of this.#conns.get("companion") ?? []) void c.close();
+    await this.companion.stop();
     removeDir(this.socketDir);
   }
 
@@ -312,6 +358,17 @@ export class HubService {
     try {
       const first = await firstLine(conn, HOOK_LINE_MS);
       if (first === null) return void await conn.close();
+      const say = parseSayLine(first);
+      if (say && identity.role === "tile") {
+        const from = this.core.registry.get(identity.tileId)?.name ??
+          identity.tileId;
+        const reply = await this.companion.say(say, from).catch((e) => ({
+          error: e instanceof Error ? e.message : String(e),
+        }));
+        await conn.writeResponse(JSON.stringify(reply)).catch(() => {});
+        await conn.close();
+        return;
+      }
       const hook = parseHookLine(first);
       if (hook && identity.role === "tile") {
         const reply = this.core.hook(
@@ -380,6 +437,23 @@ async function firstLine(
   }
 }
 
+/** A `qutty-hook say` line: `{"qutty":"say","args":["text",…]}` → its arguments, else `undefined`. */
+export function parseSayLine(line: string): string[] | undefined {
+  let v: unknown;
+  try {
+    v = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof v !== "object" || v === null) return undefined;
+  const { qutty, args } = v as { qutty?: unknown; args?: unknown };
+  if (qutty !== "say" || !Array.isArray(args) || args.length > 64) {
+    return undefined;
+  }
+  return args.filter((a): a is string => typeof a === "string")
+    .map((a) => a.slice(0, 2000));
+}
+
 /** A `qutty-hook` line: `{"qutty":"hook","harness":"claude","input":{…}}`, else `undefined`. */
 export function parseHookLine(
   line: string,
@@ -422,10 +496,15 @@ async function start(host: DesktopExtensionHost): Promise<void> {
   const hub = new HubService({
     home,
     socketDir,
+    appSupportDir: host.appSupportDir,
     emit: (event, data) => host.emit(event, data),
   });
   await installHubFiles(hub.paths);
   service = hub;
+  // The companion is optional too: without its socket the hub still serves the tiles.
+  await hub.companion.start().catch((e) =>
+    console.error("hub: the companion did not start", e)
+  );
   setPtyTaps({
     spawning: (id, info) => hub.spawning(id, info),
     data: (id, text) => hub.data(id, text),
@@ -433,9 +512,7 @@ async function start(host: DesktopExtensionHost): Promise<void> {
     ended: (id) => hub.ended(id),
   });
   globalThis.addEventListener("unload", () => {
-    try {
-      hub.stop();
-    } catch { /* exiting */ }
+    hub.stop().catch(() => {/* exiting */});
   });
 }
 
@@ -481,9 +558,42 @@ const labelInput = objectSchema<{ id: string; label: string }>((v, issues) => ({
   label: str(v, "label", issues, 200),
 }));
 
+const sayDoneInput = objectSchema<{ id: string; action: string | null }>(
+  (v, issues) => ({
+    id: str(v, "id", issues, 64),
+    action: typeof v.action === "string" ? v.action.slice(0, 64) : null,
+  }),
+);
+
+const sendInput = objectSchema<{ text: string }>((v, issues) => ({
+  text: str(v, "text", issues, 8000),
+}));
+
+const configureInput = objectSchema<{ enabled: boolean; model: string }>(
+  (v, issues) => {
+    if (typeof v.enabled !== "boolean") {
+      issues.push({ message: "enabled must be a boolean", path: ["enabled"] });
+    }
+    const model = typeof v.model === "string" ? v.model : "";
+    if (!/^[A-Za-z0-9._:-]{0,64}$/.test(model)) {
+      issues.push({ message: "model must be a model name", path: ["model"] });
+    }
+    return { enabled: v.enabled === true, model };
+  },
+);
+
+const controlDoneInput = objectSchema<
+  { requestId: string; ok: boolean; tileId?: string; error?: string }
+>((v, issues) => ({
+  requestId: str(v, "requestId", issues, 64),
+  ok: v.ok === true,
+  ...(typeof v.tileId === "string" ? { tileId: v.tileId.slice(0, 64) } : {}),
+  ...(typeof v.error === "string" ? { error: v.error.slice(0, 500) } : {}),
+}));
+
 export default defineDesktopExtension({
   name: "hub",
-  events: ["tiles", "ask", "askClosed", "control"],
+  events: ["tiles", "ask", "askClosed", "control", "companion", "say"],
   setup: (host) => {
     // Never throw into the app's startup: a hub that cannot start leaves the terminals as they were.
     start(host).catch((e) => {
@@ -513,6 +623,55 @@ export default defineDesktopExtension({
       handler: (args: unknown): void => {
         const { id, label } = args as { id: string; label: string };
         service?.core.registry.setMeta(id, { label });
+      },
+    },
+    /** The companion's status and recent privileged actions. */
+    companionStatus: {
+      input: emptyInput,
+      handler: (): { status: CompanionStatus; activity: AuditEntry[] } =>
+        requireService().companion.status(),
+    },
+    /** The user typed to the companion; the reply streams as `companion` events. */
+    companionSend: {
+      input: sendInput,
+      handler: (args: unknown): { turn: number } => ({
+        turn: requireService().companion.runtime.userSays(
+          (args as { text: string }).text,
+        ),
+      }),
+    },
+    /** Settings → Companion: whether the brain may run, and its model. */
+    companionConfigure: {
+      input: configureInput,
+      handler: (args: unknown): CompanionStatus => {
+        const { enabled, model } = args as { enabled: boolean; model: string };
+        return requireService().companion.configure(enabled, model);
+      },
+    },
+    /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */
+    companionSayDone: {
+      input: sayDoneInput,
+      handler: (args: unknown): boolean => {
+        const { id, action } = args as { id: string; action: string | null };
+        return requireService().companion.sayDone(id, action);
+      },
+    },
+    /** The page carried out a `control` command (spawn / close / focus a tile). */
+    controlDone: {
+      input: controlDoneInput,
+      handler: (args: unknown): boolean => {
+        const a = args as {
+          requestId: string;
+          ok: boolean;
+          tileId?: string;
+          error?: string;
+        };
+        return requireService().companion.controlDone(
+          a.requestId,
+          a.ok
+            ? { ok: true, ...(a.tileId ? { tileId: a.tileId } : {}) }
+            : { ok: false, error: a.error ?? "failed" },
+        );
       },
     },
     integrationStatus: {

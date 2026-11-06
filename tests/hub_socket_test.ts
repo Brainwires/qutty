@@ -9,72 +9,21 @@
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { McpClient } from "@rullama/mcp-client";
-import {
-  type HubEvent,
-  HubService,
-  parseHookLine,
-  prepareSocketDir,
-} from "../desktop/hub.ts";
+import { HubService, parseHookLine, prepareSocketDir } from "../desktop/hub.ts";
 import { PtyHost, setPtyTaps } from "../desktop/pty.ts";
 import { Recorder } from "./pty_helpers.ts";
 import { resultText, waitUntil } from "./hub_helpers.ts";
+import {
+  connect,
+  type Fixture,
+  fixture,
+  HAS_NC,
+  HOOK_SHIM,
+  MCP_SHIM,
+  tapHub,
+} from "./socket_helpers.ts";
 
-const ROOT = new URL("../", import.meta.url).pathname;
-const MCP_SHIM = `${ROOT}resources/bin/qutty-mcp`;
-const HOOK_SHIM = `${ROOT}resources/bin/qutty-hook`;
-
-function ncHasUnix(): boolean {
-  if (Deno.build.os === "windows") return false;
-  try {
-    const out = new Deno.Command("sh", {
-      args: ["-c", "nc -h 2>&1"],
-      stdout: "piped",
-    })
-      .outputSync();
-    return new TextDecoder().decode(out.stdout).includes("-U");
-  } catch {
-    return false;
-  }
-}
-
-const HAS_NC = ncHasUnix();
 const ignore = !HAS_NC;
-
-interface Fixture {
-  hub: HubService;
-  events: { event: HubEvent; data: unknown }[];
-  base: string;
-  home: string;
-  dispose(): Promise<void>;
-}
-
-/** A hub with two fake tiles (sockets only, no PTYs), in a private /tmp folder. */
-async function fixture(): Promise<Fixture> {
-  // /tmp, not $TMPDIR: macOS's is long, and sun_path holds 104 bytes.
-  const base = await Deno.makeTempDir({ dir: "/tmp", prefix: "qh" });
-  const home = await Deno.makeTempDir({ prefix: "qutty-home" });
-  const socketDir = await prepareSocketDir(base);
-  const events: { event: HubEvent; data: unknown }[] = [];
-  const hub = new HubService({
-    home,
-    socketDir,
-    emit: (event, data) => events.push({ event, data }),
-    write: () => Promise.resolve(),
-  });
-  return {
-    hub,
-    events,
-    base,
-    home,
-    async dispose() {
-      hub.stop();
-      // Let the reactor's last poll finish before the folders go.
-      await new Promise((r) => setTimeout(r, 150));
-      await Deno.remove(base, { recursive: true }).catch(() => {});
-      await Deno.remove(home, { recursive: true }).catch(() => {});
-    },
-  };
-}
 
 function spawnFake(hub: HubService, id: string, agent?: string): string {
   const { env } = hub.spawning(id, {
@@ -84,20 +33,6 @@ function spawnFake(hub: HubService, id: string, agent?: string): string {
     ...(agent ? { agent } : {}),
   });
   return env.QUTTY_SOCK;
-}
-
-/** An MCP client connected to `sock` through the qutty-mcp shim (`nc -U`). */
-async function connect(
-  client: McpClient,
-  name: string,
-  sock: string,
-): Promise<void> {
-  await client.connect({
-    name,
-    command: "bash",
-    args: [MCP_SHIM],
-    env: { QUTTY_SOCK: sock },
-  });
 }
 
 /**
@@ -409,12 +344,7 @@ Deno.test({
     const f = await fixture();
     const rec = new Recorder();
     const host = new PtyHost(rec.emit, { tapped: true });
-    setPtyTaps({
-      spawning: (id, info) => f.hub.spawning(id, info),
-      data: (id, text) => f.hub.data(id, text),
-      resized: (id, c, r) => f.hub.resized(id, c, r),
-      ended: (id) => f.hub.ended(id),
-    });
+    tapHub(f.hub);
     const client = new McpClient("probe", "1");
     try {
       const { id } = await host.spawn({ cols: 40, rows: 8, shell: "/bin/sh" });

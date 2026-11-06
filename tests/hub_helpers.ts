@@ -1,6 +1,11 @@
 // Shared helpers for the agent hub tests (not a test module itself).
 
-import { type ControlCommand, HubCore, type HubEnv } from "../lib/hub/core.ts";
+import {
+  type ControlCommand,
+  type ControlResult,
+  HubCore,
+  type HubEnv,
+} from "../lib/hub/core.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
 import type {
   AskRequest,
@@ -17,6 +22,10 @@ export class FakeEnv implements HubEnv {
   closed: string[] = [];
   controls: ControlCommand[] = [];
   snapshots: HubSnapshot[] = [];
+  /** What the page answers a control command with (default: ok; a spawn makes `pty-9`). */
+  controlResult: (command: ControlCommand) => ControlResult = (c) =>
+    c.kind === "spawn" ? { ok: true, tileId: "pty-9" } : { ok: true };
+  companionMails = 0;
 
   mirror(tileId: string) {
     return this.mirrors.get(tileId);
@@ -31,8 +40,12 @@ export class FakeEnv implements HubEnv {
   askClosed(id: string): void {
     this.closed.push(id);
   }
-  control(command: ControlCommand): void {
+  control(command: ControlCommand): Promise<ControlResult> {
     this.controls.push(command);
+    return Promise.resolve(this.controlResult(command));
+  }
+  companionMail(): void {
+    this.companionMails++;
   }
   changed(snapshot: HubSnapshot): void {
     this.snapshots.push(snapshot);

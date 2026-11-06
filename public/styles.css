@@ -2140,3 +2140,557 @@ kbd {
 .app.reduced-motion .tile-agent-dot {
   animation: none !important;
 }
+
+/* ---- The companion: Loopy -------------------------------------------------------------------
+   Ported from Denext's examples/companion (public/styles.css; same author, MIT): every move is
+   keyed off the SVG's data-state (app/companion/loopy.tsx), the durations match
+   lib/companion/loopy-machine.ts. Qutty draws it in the theme's colours (the wire in the accent,
+   the face in the text colour, over the terminal) and lets clicks through the overlay except on
+   Loopy, its bubble and the chat box. */
+
+.companion-overlay {
+  --wire: var(--accent);
+  --wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow));
+  --wire-shine: rgba(var(--hi-rgb), 0.55);
+  position: absolute;
+  z-index: 400; /* over the tiles, under the menus and the settings popover */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(340px, calc(100% - 24px));
+  pointer-events: none;
+}
+.companion-overlay[data-corner="bottom-right"] {
+  right: 14px;
+  bottom: 6px;
+}
+.companion-overlay[data-corner="bottom-left"] {
+  left: 14px;
+  bottom: 6px;
+  align-items: flex-start;
+}
+.companion-overlay[data-corner="top-right"] {
+  right: 14px;
+  top: 6px;
+  flex-direction: column-reverse;
+}
+.companion-overlay[data-corner="top-left"] {
+  left: 14px;
+  top: 6px;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+}
+.companion-bubble-slot {
+  display: flex;
+  min-height: 0;
+}
+.companion-overlay .bubble,
+.companion-overlay .squash,
+.companion-chat {
+  pointer-events: auto;
+}
+
+/* The bubble: a panel in the theme, its tail pointing at Loopy. */
+.companion-overlay .bubble {
+  position: relative;
+  max-width: 320px;
+  padding: 9px 26px 10px 12px;
+  border-radius: 12px;
+  background: rgba(var(--panel-rgb), 0.97);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(var(--shadow-rgb), calc(0.45 * var(--shadow-a)));
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.45;
+  animation: loopy-bubble-in 220ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.companion-overlay .bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  right: 30px;
+  width: 12px;
+  height: 12px;
+  background: rgb(var(--panel-rgb));
+  border-right: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
+  transform: rotate(45deg);
+}
+.companion-overlay[data-corner$="left"] .bubble::after {
+  right: auto;
+  left: 30px;
+}
+.companion-overlay[data-corner^="top"] .bubble::after {
+  bottom: auto;
+  top: -7px;
+  transform: rotate(225deg);
+}
+.companion-overlay .bubble[data-mood="attention"] {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  box-shadow:
+    0 0 0 3px var(--accent-glow),
+    0 10px 30px rgba(var(--shadow-rgb), calc(0.45 * var(--shadow-a)));
+}
+.companion-overlay .bubble[data-mood="success"] {
+  border-color: var(--accent);
+}
+.bubble-from {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.bubble-from > span:first-child {
+  font: 600 11px/1 var(--mono);
+  color: var(--accent);
+}
+.bubble-more {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--line);
+  font-size: 10.5px;
+}
+.bubble-text {
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bubble-note {
+  margin: 4px 0 0;
+  font: 10.5px/1.3 var(--mono);
+  color: var(--text-3);
+}
+.bubble-close {
+  appearance: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bubble-close:hover {
+  background: rgba(var(--hi-rgb), 0.06);
+  color: var(--text);
+}
+.bubble-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bubble-actions button {
+  appearance: none;
+  padding: 4px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: 500 11.5px/1.2 var(--sans);
+  cursor: pointer;
+}
+.bubble-actions button:first-child {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  color: var(--accent);
+}
+.bubble-actions button:hover {
+  background: rgba(var(--hi-rgb), 0.06);
+}
+.bubble-actions button:first-child:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+}
+@keyframes loopy-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+}
+
+/* The chat box under the bubble. */
+.companion-chat {
+  display: flex;
+  gap: 4px;
+  width: 260px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(var(--panel-rgb), 0.97);
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 8px 24px rgba(var(--shadow-rgb), calc(0.4 * var(--shadow-a)));
+}
+.companion-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12.5px/1.3 var(--sans);
+}
+.companion-chat-input::placeholder {
+  color: var(--text-3);
+}
+.companion-chat-send {
+  appearance: none;
+  width: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+  cursor: pointer;
+}
+.companion-chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Loopy's stage: the clip, the poke target over it, the brain's status dot. */
+.companion-stage {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 6px;
+}
+.companion-overlay .squash {
+  position: relative;
+  transform-origin: 50% 96%;
+}
+.companion-overlay .poke {
+  appearance: none;
+  position: absolute;
+  inset: 4% 14% 10%;
+  padding: 0;
+  border: 0;
+  border-radius: 40%;
+  background: transparent;
+  cursor: pointer;
+}
+.companion-overlay .poke:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.companion-status {
+  position: absolute;
+  right: 2px;
+  bottom: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 2px var(--tile);
+}
+.companion-status[data-state="ready"] {
+  background: var(--accent);
+}
+.companion-status[data-state="starting"],
+.companion-status[data-state="thinking"] {
+  background: var(--amber);
+  animation: loopy-dot 1.2s ease-in-out infinite;
+}
+.companion-status[data-state="error"] {
+  background: var(--red);
+}
+.companion-status[data-state="off"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-3);
+}
+
+.loopy {
+  display: block;
+  width: 60px;
+  height: 100px;
+  overflow: visible;
+}
+.loopy path,
+.loopy-wire-edge,
+.loopy-wire,
+.loopy-wire-shine {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.loopy-wire-edge {
+  stroke: var(--wire-edge);
+  stroke-width: 10;
+}
+.loopy-wire {
+  stroke: var(--wire);
+  stroke-width: 7.5;
+}
+.loopy-wire-shine {
+  stroke: var(--wire-shine);
+  stroke-width: 2;
+  opacity: 0.8;
+  transform: translate(-1.6px, -1.2px);
+}
+.loopy-eyes circle {
+  fill: var(--text);
+}
+.loopy-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.loopy .loopy-mouth {
+  stroke: var(--text);
+  stroke-width: 2.2;
+}
+.loopy-shadow {
+  fill: rgba(var(--shadow-rgb), 0.3);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.loopy-body {
+  transform-box: view-box;
+  transform-origin: 60px 186px;
+}
+.loopy-arm {
+  transform-box: view-box;
+  transform-origin: 84px 160px;
+  transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.loopy-thought,
+.loopy-sparkles {
+  opacity: 0;
+}
+.loopy-thought circle {
+  fill: var(--text-2);
+}
+.loopy-sparkles path {
+  fill: var(--amber);
+  stroke: none;
+}
+
+/* hidden: folded away */
+.loopy[data-state="hidden"] .loopy-body {
+  transform: scale(1, 0.04);
+  opacity: 0;
+}
+.loopy[data-state="hidden"] .loopy-shadow {
+  opacity: 0;
+}
+
+/* idle: a gentle sway about the bottom bend */
+.loopy[data-state="idle"] .loopy-body,
+.loopy[data-state="blink"] .loopy-body {
+  animation: loopy-sway 3.4s ease-in-out infinite;
+}
+@keyframes loopy-sway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+
+/* blink */
+.loopy[data-state="blink"] .loopy-eyes {
+  animation: loopy-blink 160ms ease-in-out;
+}
+@keyframes loopy-blink {
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* appear: spring up from the desk */
+.loopy[data-state="appear"] .loopy-body {
+  animation: loopy-spring 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes loopy-spring {
+  0% {
+    transform: translateY(30px) scale(0.7, 0.1);
+    opacity: 0;
+  }
+  35% {
+    transform: translateY(-14px) scale(0.9, 1.15);
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(0) scale(1.12, 0.88);
+  }
+  80% {
+    transform: scale(0.96, 1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* think: a tilt, eyes up, a trail of dots */
+.loopy[data-state="think"] .loopy-body {
+  transform: rotate(-5deg);
+  transition: transform 300ms ease-out;
+}
+.loopy[data-state="think"] .loopy-eyes {
+  transform: translate(2px, -2.5px);
+}
+.loopy[data-state="think"] .loopy-thought {
+  opacity: 1;
+}
+.loopy[data-state="think"] .loopy-thought circle {
+  animation: loopy-dot 1.2s ease-in-out infinite;
+}
+.loopy[data-state="think"] .loopy-thought circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.loopy[data-state="think"] .loopy-thought circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes loopy-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* point: the outer leg unbends up toward the bubble, and Loopy leans after it */
+.loopy[data-state="point"] .loopy-arm {
+  transform: rotate(34deg);
+}
+.loopy[data-state="point"] .loopy-body {
+  transform: rotate(4deg);
+  transition: transform 300ms ease-out;
+}
+.loopy[data-state="point"] .loopy-eyes {
+  transform: translate(2px, -1.5px);
+}
+
+/* celebrate: two hops and a shimmer */
+.loopy[data-state="celebrate"] .loopy-body {
+  animation: loopy-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+.loopy[data-state="celebrate"] .loopy-sparkles {
+  animation: loopy-sparkle 1.2s ease-out;
+}
+@keyframes loopy-hop {
+  0%,
+  45%,
+  100% {
+    transform: none;
+  }
+  10%,
+  55% {
+    transform: scale(1.1, 0.88);
+  }
+  25%,
+  70% {
+    transform: translateY(-26px) rotate(-6deg) scale(0.95, 1.06);
+  }
+  85% {
+    transform: translateY(-14px) rotate(6deg);
+  }
+}
+@keyframes loopy-sparkle {
+  20%,
+  70% {
+    opacity: 1;
+  }
+}
+
+/* dismiss: fold down into the desk */
+.loopy[data-state="dismiss"] .loopy-body {
+  animation: loopy-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
+}
+.loopy[data-state="dismiss"] .loopy-shadow {
+  animation: loopy-fold-shadow 450ms ease-in both;
+}
+@keyframes loopy-fold {
+  30% {
+    transform: scale(1.06, 0.92) rotate(3deg);
+  }
+  100% {
+    transform: scale(1, 0.04);
+    opacity: 0;
+  }
+}
+@keyframes loopy-fold-shadow {
+  to {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+}
+
+/* Reduced motion: every move lands at once (the OS setting, or the app's own class). */
+@media (prefers-reduced-motion: reduce) {
+  .loopy *,
+  .companion-overlay .bubble,
+  .companion-status {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
+}
+.app.reduced-motion .loopy *,
+.app.reduced-motion .companion-overlay .bubble,
+.app.reduced-motion .companion-status {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition: none !important;
+}
+
+/* Settings → Companion */
+.companion-settings {
+  display: flex;
+  flex-direction: column;
+}
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-check .field-label {
+  margin: 0;
+}
+.companion-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow: auto;
+  font: 10.5px/1.35 var(--mono);
+  color: var(--text-2);
+}
+.companion-activity li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.companion-activity time {
+  color: var(--text-3);
+}
+.companion-activity b {
+  color: var(--text);
+  font-weight: 600;
+}
+.companion-activity li[data-ok="false"] b,
+.companion-activity em {
+  color: var(--red);
+  font-style: normal;
+}

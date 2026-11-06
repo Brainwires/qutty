@@ -25,6 +25,9 @@ function recorded() {
     tiles: (s) => snapshots.push(s),
     ask: (r) => asks.push(r),
     askClosed: (id) => closed.push(id),
+    companion: () => {},
+    say: () => {},
+    control: () => {},
   });
   return { hub, snapshots, asks, closed };
 }

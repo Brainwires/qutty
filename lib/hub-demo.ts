@@ -10,6 +10,14 @@
 // - `/msg <name> <text>`: a message for another tile. Its unread count goes up until that tile's
 //   agent takes its next turn (any line typed into it), which prints the message and clears it.
 //
+// - `/msg companion <text>`: a message for the companion (Loopy), handled by the fake brain
+//   (lib/companion/demo-brain.ts) under the real companion runtime;
+// - `/say <text> [--mood m] [--action id:label] [--wait]`: `qutty-hook say` (the answer to a
+//   `--wait` is printed).
+//
+// The companion's chat box talks to that same fake brain; its privileged actions go to the
+// audit list in Settings like the desktop app's.
+//
 // Settings → Agent integration runs the real installer (lib/hub/integration.ts) over an in-memory
 // home folder (`/Users/demo`) that starts with small agent configs of its own, so Install and
 // Uninstall show and do exactly what the desktop app would.
@@ -32,6 +40,15 @@ import type {
   TileStatus,
 } from "./hub/protocol.ts";
 import { Registry } from "./hub/registry.ts";
+import { Mailboxes } from "./hub/mailbox.ts";
+import { COMPANION } from "./hub/protocol.ts";
+import type { ControlCommand, ControlResult } from "./hub/core.ts";
+import { CompanionRuntime } from "./companion/runtime.ts";
+import { DemoBrain } from "./companion/demo-brain.ts";
+import { AuditLog } from "./companion/audit.ts";
+import { parseSayRequest } from "./companion/messages.ts";
+import { parseSayArgs } from "./companion/say-args.ts";
+import type { CompanionUpdate, SayEvent } from "./companion/protocol.ts";
 
 /** Where the demo hub's events go (the demo backend's fan-outs to the page). */
 export interface DemoHubEmit {
@@ -39,6 +56,9 @@ export interface DemoHubEmit {
   tiles(snapshot: HubSnapshot): void;
   ask(request: AskRequest): void;
   askClosed(id: string): void;
+  companion(update: CompanionUpdate): void;
+  say(say: SayEvent): void;
+  control(request: { requestId: string; command: ControlCommand }): void;
 }
 
 /** A message one demo tile queued for another. */
@@ -105,6 +125,64 @@ export function createDemoHub(emit: DemoHubEmit) {
   >();
   const inboxes = new Map<string, DemoMessage[]>();
   let nextAsk = 0;
+
+  // The companion: the real runtime over the fake brain, the companion's real mailbox.
+  const companionBox = new Mailboxes((owner) => {
+    if (owner === COMPANION && companionBox.unread(COMPANION) > 0) {
+      runtime.mailArrived();
+    }
+  });
+  const audit = new AuditLog(
+    undefined,
+    (entry) => emit.companion({ kind: "activity", entry }),
+  );
+  const controls = new Map<string, (r: ControlResult) => void>();
+  let nextControl = 0;
+  const control = (command: ControlCommand): Promise<ControlResult> => {
+    const requestId = `demo-ctl-${++nextControl}`;
+    return new Promise<ControlResult>((resolve) => {
+      controls.set(requestId, resolve);
+      emit.control({ requestId, command });
+    }).then((result) => {
+      audit.record({
+        tool: `${command.kind}_tile`,
+        by: COMPANION,
+        args: { ...command },
+        ok: result.ok,
+        ...(result.ok ? {} : { error: result.error }),
+      });
+      return result;
+    });
+  };
+  const runtime = new CompanionRuntime({
+    mailbox: companionBox,
+    adapter: "Demo brain",
+    enabled: false, // until the page sends its settings
+    emit: (update) => emit.companion(update),
+    createBrain: () =>
+      new DemoBrain({
+        tiles: () => registry.list(),
+        send: (to, text) => deliverTo(COMPANION, COMPANION, to, text),
+        control,
+      }),
+  });
+  const says = new Map<string, (action: string | null) => void>();
+
+  /** Queue `text` from `fromName` for the tile `to` names; its name, or `undefined`. */
+  const deliverTo = (
+    from: string,
+    fromName: string,
+    to: string,
+    text: string,
+  ): string | undefined => {
+    const recipient = registry.resolve(to);
+    if (!recipient || recipient.id === from) return undefined;
+    const inbox = inboxes.get(recipient.id) ?? [];
+    inbox.push({ fromName, text });
+    inboxes.set(recipient.id, inbox);
+    registry.setUnread(recipient.id, inbox.length);
+    return recipient.name;
+  };
 
   const fs = memoryFs(demoConfigFiles());
   const paths = hubPaths(DEMO_HOME);
@@ -204,13 +282,58 @@ export function createDemoHub(emit: DemoHubEmit) {
      * recipient's name, or `undefined` when there is no other tile by that name.
      */
     send(from: string, to: string, text: string): string | undefined {
-      const recipient = registry.resolve(to);
-      if (!recipient || recipient.id === from) return undefined;
-      const inbox = inboxes.get(recipient.id) ?? [];
-      inbox.push({ fromName: registry.get(from)?.name ?? from, text });
-      inboxes.set(recipient.id, inbox);
-      registry.setUnread(recipient.id, inbox.length);
-      return recipient.name;
+      const fromName = registry.get(from)?.name ?? from;
+      if (to.toLowerCase() === COMPANION) {
+        companionBox.post({ from, fromName, to: COMPANION, text });
+        return COMPANION;
+      }
+      return deliverTo(from, fromName, to, text);
+    },
+    /**
+     * `qutty-hook say …` from tile `from`: the bubble shows it; `reply` gets the button pressed
+     * when the args ask to `--wait`. Returns an error to print, if any.
+     */
+    say(
+      from: string,
+      args: string[],
+      reply: (action: string | null) => void,
+    ): string | undefined {
+      try {
+        const { message, wait } = parseSayRequest(parseSayArgs(args));
+        if (wait) says.set(message.id, reply);
+        emit.say({
+          message: { ...message, from: registry.get(from)?.name ?? from },
+          wait,
+        });
+        return undefined;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    /** The companion's page half (the `hub` extension's companion methods). */
+    companion: {
+      status: () =>
+        Promise.resolve({
+          status: runtime.status(),
+          activity: audit.recent(),
+        }),
+      send: (text: string) => Promise.resolve({ turn: runtime.userSays(text) }),
+      configure(enabled: boolean, _model: string) {
+        runtime.setEnabled(enabled);
+        return Promise.resolve(runtime.status());
+      },
+      sayDone(id: string, action: string | null): Promise<boolean> {
+        const done = says.get(id);
+        says.delete(id);
+        done?.(action);
+        return Promise.resolve(done !== undefined);
+      },
+      controlDone(requestId: string, result: ControlResult): Promise<boolean> {
+        const done = controls.get(requestId);
+        controls.delete(requestId);
+        done?.(result);
+        return Promise.resolve(done !== undefined);
+      },
     },
     /** Hand tile `id` its queued messages (its unread count drops to 0). */
     take(id: string): DemoMessage[] {
@@ -223,6 +346,7 @@ export function createDemoHub(emit: DemoHubEmit) {
     dispose(): void {
       clearTimeout(pendingTiles);
       pendingTiles = undefined;
+      runtime.stop();
     },
   };
 }

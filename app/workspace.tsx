@@ -3,7 +3,9 @@
 // The workspace island: owns the store, the terminal manager, the keyboard and the layout
 // measurement, and renders the switcher bar, the tile cluster and the settings popover. The
 // SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`; the agent
-// hub's tiles (the agent badges) in `useHub`, and its `ask_user` questions in `AskDialog`.
+// hub's tiles (the agent badges) in `useHub`; the companion (Loopy, in a corner of the tile area:
+// `ask_user` questions, `qutty-hook say`, the chat with its brain) in `CompanionOverlay`, its
+// settings and commands in `useCompanion`. With the companion Off, `AskDialog` asks instead.
 //
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
@@ -61,7 +63,10 @@ import { useSsh } from "./use-ssh.ts";
 import { useLauncher } from "./use-launcher.ts";
 import { useHub } from "./use-hub.ts";
 import { AskDialog } from "./ask-dialog.tsx";
-import { plusLabel } from "../lib/launcher.ts";
+import { CompanionOverlay } from "./companion/companion-overlay.tsx";
+import { useCompanion } from "./use-companion.ts";
+import { flatEntries, plusLabel } from "../lib/launcher.ts";
+import { effectiveMode } from "../lib/companion/settings.ts";
 
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
@@ -166,6 +171,28 @@ export function Workspace() {
     run({ type: "focus", id, now: Date.now() });
     managerRef.current?.focus(id);
   }, [run]);
+
+  useCompanion({
+    manager: managerRef.current,
+    settings: state.settings.companion,
+    terminals: () => stateRef.current.terminals,
+    sections: launcher.sections,
+    openTile,
+    launchSsh: (entryId) => {
+      const entry = flatEntries(launcher.sections).find((e) =>
+        e.id === entryId
+      );
+      if (!entry) return false;
+      launcher.launch(entry, false);
+      return true;
+    },
+    closeTile: closeTerminal,
+    focusTile: focusTerminal,
+  });
+  const refocus = useCallback(() => {
+    const id = stateRef.current.focusedId;
+    if (id) managerRef.current?.focus(id);
+  }, []);
 
   const runCommand = useCallback((cmd: KeyCommand) => {
     const now = Date.now();
@@ -470,6 +497,15 @@ export function Workspace() {
               )}
           />
         )}
+        {manager && effectiveMode(settings.companion.mode) === "window" && (
+          <CompanionOverlay
+            backend={manager.backend}
+            corner={settings.companion.corner}
+            brain={settings.companion.brain}
+            reducedMotion={reducedMotion}
+            onRefocus={refocus}
+          />
+        )}
         {ready && state.terminals.length === 0 && (
           <div class="empty" data-testid="empty">
             <p>No terminals open.</p>
@@ -498,18 +534,13 @@ export function Workspace() {
           onToggleSection={(section) => run({ type: "toggleSection", section })}
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
+          onCompanion={(patch) => run({ type: "setCompanion", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
         />
       )}
-      {manager && (
-        <AskDialog
-          backend={manager.backend}
-          onDone={() => {
-            const id = stateRef.current.focusedId;
-            if (id) managerRef.current?.focus(id);
-          }}
-        />
+      {manager && effectiveMode(settings.companion.mode) === "off" && (
+        <AskDialog backend={manager.backend} onDone={refocus} />
       )}
       {manager && ssh.dialog && (
         <ConnectionsDialog

@@ -65,6 +65,22 @@ export class Mailboxes {
     return out.map((m) => ({ ...m }));
   }
 
+  /**
+   * Put messages `ids` of `owner` back in the queue (handed to a recipient that went away before
+   * it handled them: the companion's brain exiting mid-turn). Returns how many were requeued.
+   */
+  requeue(owner: string, ids: readonly string[]): number {
+    let n = 0;
+    for (const m of this.#boxes.get(owner) ?? []) {
+      if (m.state !== "queued" && ids.includes(m.id)) {
+        m.state = "queued";
+        n++;
+      }
+    }
+    if (n > 0) this.#onChange(owner);
+    return n;
+  }
+
   /** The last `limit` messages of `owner`'s mailbox, any state. */
   history(owner: string, limit = 50): HubMessage[] {
     return (this.#boxes.get(owner) ?? []).slice(-limit).map((m) => ({ ...m }));

@@ -1,36 +1,19 @@
 // The agent hub's page side against the demo backend's fake hub (lib/hub-demo.ts): the agent
 // badge on a tile launched from the `+` picker (name, busy → idle, unread messages from `/msg`),
-// `ask_user` questions answered from the card (the demo agent prints the answer it got) and
-// queued, and Settings → Agent integration showing what Install changes and toggling it.
+// `ask_user` questions answered from the card while the companion is Off (the demo agent prints
+// the answer it got) and queued, and Settings → Agent integration showing what Install changes
+// and toggling it.
 
 import { assert, assertEquals } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
+import { launchAgent } from "./agent_helpers.ts";
 
 const ASK = "[data-testid=ask-dialog]";
 const badgeSel = (id: string) =>
   `${tileSel(id)} [data-testid=tile-agent-badge]`;
 const rowSel = (target: string) =>
   `[data-testid=integration-row][data-target="${target}"]`;
-
-/** Start `agent:<name>` from the `+` picker; returns the new tile's id once it greeted. */
-async function launchAgent(app: App, name: string): Promise<string> {
-  const before = new Set((await app.chips()).map((c) => c.id));
-  await app.click("[data-testid=bar-new-menu]");
-  const entry = `[data-testid=launch-item][data-id="agent:${name}"]`;
-  await waitFor(() => app.exists(entry), 3000, "the picker");
-  await app.click(entry);
-  const id = await waitFor(
-    async () => {
-      const f = await app.focusedId();
-      return f && !before.has(f) ? f : null;
-    },
-    5000,
-    `the ${name} tile`,
-  );
-  await app.waitForText(id, "/help for commands");
-  return id;
-}
 
 /** Tile `id`'s agent badge: name, status and unread count (`null`: no badge). */
 function badge(app: App, id: string) {
@@ -105,7 +88,11 @@ suite("agent hub", (test) => {
     assertEquals((await badge(app, claude2))?.name, "claude-2");
   });
 
-  test("ask_user: the card's buttons answer the waiting agent; questions queue; dismiss", async (app) => {
+  test("ask_user (companion Off): the card's buttons answer the waiting agent; questions queue; dismiss", async (app) => {
+    // With the companion shown, questions go to Loopy's bubble (companion_test.ts); Off, the card.
+    await app.openSettings();
+    await app.click('[data-testid=setting-companion-mode][data-value="off"]');
+    await app.closeSettings();
     const claude = await launchAgent(app, "claude");
     assertEquals(await app.exists(ASK), false);
     await app.typeInTerminal(claude, "/ask Deploy now?\n");

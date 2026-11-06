@@ -119,6 +119,18 @@ export function canCall(identity: HubIdentity, tool: string): boolean {
   return false;
 }
 
+/** One privileged call (or a refused attempt at one), for the companion's audit log. */
+export interface PrivilegedCall {
+  tool: string;
+  /** `companion`, or the tile id that tried. */
+  by: string;
+  args: Record<string, unknown>;
+  /** Whether it was allowed and succeeded. */
+  ok: boolean;
+  /** Why it failed or was refused. */
+  error?: string;
+}
+
 /** What the page's tile badges are drawn from (the hub's `tiles` event and `snapshot`). */
 export interface HubSnapshot {
   /** Whether the hub is running (false: it failed to start; the app works without it). */

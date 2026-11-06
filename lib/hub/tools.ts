@@ -15,7 +15,9 @@ import {
 import type { CallToolResult } from "@rullama/mcp-client";
 import {
   canCall,
+  COMPANION_TOOLS,
   type HubIdentity,
+  type PrivilegedCall,
   TILE_STATUSES,
   type TileStatus,
 } from "./protocol.ts";
@@ -164,7 +166,8 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
       tiles: core.registry.list(),
       companion: {
         name: "companion",
-        note: "the window's assistant (phase 2)",
+        note:
+          "the window's assistant (Loopy): it talks to the user and can act on any tile",
       },
     }),
   );
@@ -321,61 +324,107 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   );
   add(
     "spawn_tile",
-    "(Companion only.) Open a new tile running a command or a terminal profile.",
-    obj({ command: { type: "string" }, profile: { type: "string" } }),
-    (a) => {
+    "(Companion only.) Open a new tile: the login shell, or a `+` picker entry (profile: " +
+      '"shell:/bin/bash", "agent:claude", "ssh:myhost"). With command, that line is typed into ' +
+      "the new tile and run. Returns the new tile's id and name.",
+    obj({
+      command: {
+        type: "string",
+        description: "A shell command line to run in it",
+      },
+      profile: {
+        type: "string",
+        description: "A + picker entry id (default: the login shell)",
+      },
+    }),
+    async (a) => {
       const command = optStr(a, "command");
       const profile = optStr(a, "profile");
-      core.control({
+      const { tileId } = await core.control({
         kind: "spawn",
         ...(command ? { command } : {}),
         ...(profile ? { profile } : {}),
       });
-      return "requested";
+      const tile = tileId ? core.registry.get(tileId) : undefined;
+      return tile
+        ? { tile: tile.id, name: tile.name }
+        : { tile: tileId ?? null };
     },
   );
   add(
     "close_tile",
-    "(Companion only.) Close a tile.",
+    "(Companion only.) Close a tile (its program is hung up).",
     obj({ tile: TILE_ARG }, ["tile"]),
-    (a) => {
-      core.control({
+    async (a) => {
+      await core.control({
         kind: "close",
         tileId: core.tile(str(a, "tile", 256)).id,
       });
-      return "requested";
+      return "closed";
     },
   );
   add(
     "focus_tile",
-    "(Companion only.) Bring a tile to the front.",
+    "(Companion only.) Bring a tile to the front and give it the keyboard.",
     obj({ tile: TILE_ARG }, ["tile"]),
-    (a) => {
-      core.control({
+    async (a) => {
+      await core.control({
         kind: "focus",
         tileId: core.tile(str(a, "tile", 256)).id,
       });
-      return "requested";
+      return "focused";
     },
   );
   add(
     "deliver",
-    "(Companion only.) Nudge a tile whose agent has no hooks: type a one-line notice of its " +
-      "pending messages into its prompt.",
+    "(Companion only.) Nudge an idle agent tile whose agent has no hooks: type a one-line " +
+      "notice of its pending messages into its prompt and press Enter.",
     obj({ tile: TILE_ARG }, ["tile"]),
     async (a) => ({ pending: await core.deliver(str(a, "tile", 256)) }),
   );
   return reg;
 }
 
+/** Options of {@linkcode createHubHandler}. */
+export interface HubHandlerOptions {
+  /** Every companion-only tool call, allowed or refused (the audit log). */
+  audit?(call: PrivilegedCall): void;
+}
+
+/** A result's text, for the audit log. */
+const textOf = (r: CallToolResult) =>
+  r.content.map((c) => ("text" in c ? String(c.text) : "")).join(" ");
+
 /**
- * The `McpHandler` for every hub connection: the registry's tools, the permission check, and the
- * harness learnt from the client's `initialize` (`claude-code` → `claude`).
+ * The `McpHandler` for every hub connection: the registry's tools, the permission check, the
+ * audit of companion-only calls, and the harness learnt from the client's `initialize`
+ * (`claude-code` → `claude`).
  */
 export function createHubHandler(
   core: HubCore,
   tools: McpToolRegistry,
+  opts: HubHandlerOptions = {},
 ): McpHandler {
+  const privileged = (name: string) =>
+    (COMPANION_TOOLS as readonly string[]).includes(name);
+  const audit = (
+    name: string,
+    who: HubIdentity,
+    args: Record<string, unknown>,
+    ok: boolean,
+    error?: string,
+  ) => {
+    if (!privileged(name) || !opts.audit) return;
+    try {
+      opts.audit({
+        tool: name,
+        by: who.role === "companion" ? "companion" : who.tileId,
+        args,
+        ok,
+        ...(error ? { error } : {}),
+      });
+    } catch { /* the log must never fail a call */ }
+  };
   return {
     serverInfo: () => ({ name: SERVER_NAME, version: SERVER_VERSION }),
     capabilities: () => ({ tools: { listChanged: false } }),
@@ -389,12 +438,32 @@ export function createHubHandler(
       }
       if (!tools.hasTool(name)) return fail(`unknown tool: ${name}`);
       if (!canCall(who, name)) {
+        audit(name, who, args, false, "refused: companion only");
         return fail(
           `${name} is for the companion only. Ask the tile's agent (send_message) or the ` +
             "companion to do it.",
         );
       }
-      return await tools.dispatch(name, args, ctx);
+      try {
+        const result = await tools.dispatch(name, args, ctx);
+        audit(
+          name,
+          who,
+          args,
+          !result.isError,
+          result.isError ? textOf(result) : undefined,
+        );
+        return result;
+      } catch (e) {
+        audit(
+          name,
+          who,
+          args,
+          false,
+          e instanceof Error ? e.message : String(e),
+        );
+        throw e;
+      }
     },
     // deno-lint-ignore require-await
     async onInitialize(params, ctx) {
