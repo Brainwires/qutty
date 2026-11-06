@@ -294,7 +294,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       data-loopy-state={model.loopy.state}
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
     >
-      <div class="companion-bubble-slot">
+      <div class="bubble-slot">
         {current && (
           <SpeechBubble
             key={current.id}
@@ -313,7 +313,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           onClose={closeChat}
         />
       )}
-      <div class="companion-stage">
+      <div class="stage">
         <div class="squash" ref={squashRef} data-loopy-hit="">
           <Loopy state={model.loopy.state} />
           <button

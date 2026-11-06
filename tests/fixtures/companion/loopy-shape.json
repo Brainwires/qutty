@@ -1,0 +1,240 @@
+{
+  "rules": {
+    ".bubble-slot": {
+      "display": "flex",
+      "align-items": "flex-end",
+      "justify-content": "flex-start",
+      "padding": "0 0 4px 4px",
+      "min-height": "0"
+    },
+    ".bubble": {
+      "position": "relative",
+      "max-width": "240px",
+      "padding": "10px 26px 10px 12px",
+      "border": "1.5px solid",
+      "border-radius": "14px",
+      "font-size": "13.5px",
+      "line-height": "1.35",
+      "animation": "bubble-in 220ms cubic-bezier(0.3, 1.4, 0.6, 1) both",
+      "user-select": "text",
+      "-webkit-user-select": "text"
+    },
+    ".bubble::after": {
+      "content": "\"\"",
+      "position": "absolute",
+      "bottom": "-8px",
+      "left": "48px",
+      "width": "14px",
+      "height": "14px",
+      "border-right": "1.5px solid",
+      "border-bottom": "1.5px solid",
+      "transform": "rotate(45deg)"
+    },
+    ".bubble-text": {
+      "margin": "0",
+      "max-height": "110px",
+      "overflow-y": "auto",
+      "white-space": "pre-wrap",
+      "overflow-wrap": "anywhere"
+    },
+    ".bubble-close": {
+      "position": "absolute",
+      "top": "3px",
+      "right": "4px",
+      "width": "20px",
+      "height": "20px",
+      "padding": "0",
+      "border": "0",
+      "font-size": "16px",
+      "line-height": "1",
+      "cursor": "pointer"
+    },
+    ".bubble-actions": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "gap": "6px",
+      "margin-top": "8px"
+    },
+    "button": {
+      "font": "inherit",
+      "-webkit-app-region": "no-drag",
+      "app-region": "no-drag"
+    },
+    ".stage": {
+      "position": "relative",
+      "display": "flex",
+      "justify-content": "flex-start",
+      "padding-left": "24px",
+      "cursor": "grab"
+    },
+    ".squash": {
+      "position": "relative",
+      "transform-origin": "50% 96%"
+    },
+    ".poke": {
+      "position": "absolute",
+      "left": "28%",
+      "top": "10%",
+      "width": "36%",
+      "height": "26%",
+      "padding": "0",
+      "border": "0",
+      "border-radius": "50%",
+      "cursor": "pointer"
+    },
+    ".loopy": {
+      "display": "block",
+      "width": "90px",
+      "height": "150px",
+      "overflow": "visible"
+    },
+    ".loopy path, .loopy-wire-edge, .loopy-wire, .loopy-wire-shine": {
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    },
+    ".loopy-wire-edge": {
+      "stroke-width": "10"
+    },
+    ".loopy-wire": {
+      "stroke-width": "7.5"
+    },
+    ".loopy-wire-shine": {
+      "stroke-width": "2",
+      "opacity": "0.8",
+      "transform": "translate(-1.6px, -1.2px)"
+    },
+    ".loopy-eyes": {
+      "transform-box": "fill-box",
+      "transform-origin": "center"
+    },
+    ".loopy .loopy-mouth": {
+      "stroke-width": "2.2"
+    },
+    ".loopy-shadow": {
+      "transform-box": "fill-box",
+      "transform-origin": "center"
+    },
+    ".loopy-body": {
+      "transform-box": "view-box",
+      "transform-origin": "60px 186px"
+    },
+    ".loopy-arm": {
+      "transform-box": "view-box",
+      "transform-origin": "84px 160px",
+      "transition": "transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1)"
+    },
+    ".loopy-thought, .loopy-sparkles": {
+      "opacity": "0"
+    },
+    ".loopy[data-state=\"hidden\"] .loopy-body": {
+      "transform": "scale(1, 0.04)",
+      "opacity": "0"
+    },
+    ".loopy[data-state=\"hidden\"] .loopy-shadow": {
+      "opacity": "0"
+    },
+    ".loopy[data-state=\"idle\"] .loopy-body, .loopy[data-state=\"blink\"] .loopy-body": {
+      "animation": "sway 3.4s ease-in-out infinite"
+    },
+    ".loopy[data-state=\"blink\"] .loopy-eyes": {
+      "animation": "blink 160ms ease-in-out"
+    },
+    ".loopy[data-state=\"appear\"] .loopy-body": {
+      "animation": "spring 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both"
+    },
+    ".loopy[data-state=\"think\"] .loopy-body": {
+      "transform": "rotate(-5deg)",
+      "transition": "transform 300ms ease-out"
+    },
+    ".loopy[data-state=\"think\"] .loopy-eyes": {
+      "transform": "translate(2px, -2.5px)"
+    },
+    ".loopy[data-state=\"think\"] .loopy-thought": {
+      "opacity": "1"
+    },
+    ".loopy[data-state=\"think\"] .loopy-thought circle": {
+      "animation": "dot 1.2s ease-in-out infinite"
+    },
+    ".loopy[data-state=\"think\"] .loopy-thought circle:nth-child(2)": {
+      "animation-delay": "0.2s"
+    },
+    ".loopy[data-state=\"think\"] .loopy-thought circle:nth-child(3)": {
+      "animation-delay": "0.4s"
+    },
+    ".loopy[data-state=\"point\"] .loopy-arm": {
+      "transform": "rotate(34deg)"
+    },
+    ".loopy[data-state=\"point\"] .loopy-body": {
+      "transform": "rotate(4deg)",
+      "transition": "transform 300ms ease-out"
+    },
+    ".loopy[data-state=\"point\"] .loopy-eyes": {
+      "transform": "translate(2px, -1.5px)"
+    },
+    ".loopy[data-state=\"celebrate\"] .loopy-body": {
+      "animation": "hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1)"
+    },
+    ".loopy[data-state=\"celebrate\"] .loopy-sparkles": {
+      "animation": "sparkle 1.2s ease-out"
+    },
+    ".loopy[data-state=\"dismiss\"] .loopy-body": {
+      "animation": "fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both"
+    },
+    ".loopy[data-state=\"dismiss\"] .loopy-shadow": {
+      "animation": "fold-shadow 450ms ease-in both"
+    },
+    "@reduce .loopy *, .bubble": {
+      "animation-duration": "1ms !important",
+      "animation-iteration-count": "1 !important",
+      "transition": "none !important"
+    },
+    ".bubble-actions button": {
+      "padding": "3px 10px",
+      "border": "1.5px solid",
+      "border-radius": "999px",
+      "font-size": "12px",
+      "cursor": "pointer"
+    }
+  },
+  "keyframes": {
+    "bubble-in": "from { opacity: 0; transform: translateY(6px) scale(0.92); }",
+    "sway": "0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); }",
+    "blink": "50% { transform: scaleY(0.1); }",
+    "spring": "0% { transform: translateY(30px) scale(0.7, 0.1); opacity: 0; } 35% { transform: translateY(-14px) scale(0.9, 1.15); opacity: 1; } 60% { transform: translateY(0) scale(1.12, 0.88); } 80% { transform: scale(0.96, 1.04); } 100% { transform: none; }",
+    "dot": "0%, 100% { opacity: 0.25; } 50% { opacity: 1; }",
+    "hop": "0%, 45%, 100% { transform: none; } 10%, 55% { transform: scale(1.1, 0.88); } 25%, 70% { transform: translateY(-26px) rotate(-6deg) scale(0.95, 1.06); } 85% { transform: translateY(-14px) rotate(6deg); }",
+    "sparkle": "20%, 70% { opacity: 1; }",
+    "fold": "30% { transform: scale(1.06, 0.92) rotate(3deg); } 100% { transform: scale(1, 0.04); opacity: 0; }",
+    "fold-shadow": "to { opacity: 0; transform: scaleX(0.4); }"
+  },
+  "svg": [
+    "WIRE=M48 62 V146 A12 12 0 0 0 72 146 V44 A18 18 0 0 0 36 44 V160 A24 24 0 0 0 84 160",
+    "ARM=M84 160 V74",
+    "viewBox=0 0 120 200",
+    "width=120",
+    "height=200",
+    "cx=60",
+    "cy=192",
+    "rx=30",
+    "ry=5",
+    "cx=47",
+    "cy=44",
+    "r=3.4",
+    "cx=61",
+    "cy=44",
+    "r=3.4",
+    "d=M49 53 Q54 57.5 59 53",
+    "cx=82",
+    "cy=22",
+    "r=2.6",
+    "cx=90",
+    "cy=16",
+    "r=2.6",
+    "cx=98",
+    "cy=10",
+    "r=2.6",
+    "d=M14 40 l3 -8 l3 8 l-3 8 z",
+    "d=M100 52 l2.5 -6 l2.5 6 l-2.5 6 z",
+    "d=M20 96 l2 -5 l2 5 l-2 5 z"
+  ]
+}

@@ -429,6 +429,100 @@ suite("companion", (test) => {
     { width: 1280, height: 800 },
   );
 
+  test("look: Loopy is drawn with the example's geometry, sizes and moves", async (app) => {
+    await landed(app);
+    const snap = JSON.parse(
+      await Deno.readTextFile(
+        join(ROOT, "tests/fixtures/companion/loopy-shape.json"),
+      ),
+    ) as { svg: string[] };
+    const drawn = await app.eval((s: string) => {
+      const svg = document.querySelector<SVGSVGElement>(`${s} svg.loopy`)!;
+      const attrs: string[] = [];
+      const wire = svg.querySelector(".loopy-wire")!.getAttribute("d")!;
+      const arm = svg.querySelector(".loopy-arm .loopy-wire")!.getAttribute(
+        "d",
+      )!;
+      attrs.push(`WIRE=${wire}`, `ARM=${arm}`);
+      for (const n of ["viewBox", "width", "height"]) {
+        attrs.push(`${n}=${svg.getAttribute(n)}`);
+      }
+      for (
+        const el of svg.querySelectorAll(
+          "ellipse, circle, .loopy-mouth, .loopy-sparkles path",
+        )
+      ) {
+        for (const n of ["cx", "cy", "rx", "ry", "r", "d"]) {
+          const v = el.getAttribute(n);
+          if (v !== null) attrs.push(`${n}=${v}`);
+        }
+      }
+      const css = (sel: string, prop: string) =>
+        getComputedStyle(svg.querySelector(sel) ?? svg).getPropertyValue(prop);
+      const box = svg.getBoundingClientRect();
+      // Each move's animation, as the example's stylesheet sets it.
+      const moves: Record<string, string> = {};
+      for (const state of ["appear", "idle", "celebrate", "dismiss"]) {
+        svg.setAttribute("data-state", state);
+        moves[state] = css(".loopy-body", "animation-name");
+      }
+      svg.setAttribute("data-state", "point");
+      moves.point = css(".loopy-arm", "transform");
+      svg.setAttribute("data-state", "idle");
+      return {
+        attrs,
+        size: [Math.round(box.width), Math.round(box.height)],
+        strokes: [".loopy-wire-edge", ".loopy-wire", ".loopy-wire-shine"].map((
+          c,
+        ) => css(c, "stroke-width")),
+        moves,
+      };
+    }, OVERLAY);
+    assertEquals(drawn.attrs, snap.svg);
+    assertEquals(
+      drawn.size,
+      [90, 150],
+      "the example's size in its desktop window",
+    );
+    assertEquals(drawn.strokes, ["10px", "7.5px", "2px"]);
+    assertEquals(drawn.moves.appear, "loopy-spring");
+    assertEquals(drawn.moves.idle, "loopy-sway");
+    assertEquals(drawn.moves.celebrate, "loopy-hop");
+    assertEquals(drawn.moves.dismiss, "loopy-fold");
+    assert(
+      drawn.moves.point.startsWith("matrix("),
+      `the arm unbends: ${drawn.moves.point}`,
+    );
+
+    // The bubble's shape: the example's radius, border, padding and tail.
+    const shell = (await app.focusedId())!;
+    await app.run(shell, "qutty-hook say Shape check");
+    await waitBubble(app, (b) => b.text === "Shape check", "the bubble");
+    const bubbleShape = await app.eval((s: string) => {
+      const b = document.querySelector<HTMLElement>(s)!;
+      const cs = getComputedStyle(b);
+      const tail = getComputedStyle(b, "::after");
+      return [
+        cs.borderTopLeftRadius,
+        cs.padding,
+        cs.maxWidth,
+        cs.fontSize,
+        tail.width,
+        tail.left,
+        tail.bottom,
+      ];
+    }, BUBBLE);
+    assertEquals(bubbleShape, [
+      "14px",
+      "10px 26px 10px 12px",
+      "240px",
+      "13.5px",
+      "14px",
+      "48px",
+      "-8px",
+    ]);
+  });
+
   test("reduced motion: Loopy's moves land at once", async (app) => {
     await waitFor(() => app.exists(OVERLAY), 3000, "the overlay");
     const durations = await app.eval(() => {
