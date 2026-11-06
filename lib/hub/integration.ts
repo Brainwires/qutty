@@ -4,7 +4,10 @@
  *
  * - Claude Code: `mcpServers.qutty` in `~/.claude.json` (what `claude mcp add --scope user`
  *   writes) and a `qutty-hook` group per event under `hooks` in `~/.claude/settings.json`;
- * - Codex: an `[mcp_servers.qutty]` table in `~/.codex/config.toml`, between marker comments.
+ * - Codex: in `~/.codex/config.toml`, between marker comments, an `[mcp_servers.qutty]` table
+ *   (with the `env_vars` that let `QUTTY_SOCK` through), a `[[hooks.<Event>]]` group per event
+ *   running `qutty-hook codex`, and `[hooks.state."<config.toml>:<event>:<n>:0"]` trust entries
+ *   for exactly those groups (what Codex's own `/hooks` review writes when you trust a hook).
  *
  * These are the user's own files, so the rules are strict: everything else in them is kept as
  * it was (JSON is re-serialised with the file's own indentation, which is byte-identical for the
@@ -19,12 +22,20 @@
  * @module
  */
 
+import { parse as parseToml } from "@std/toml";
 import type { IntegrationStatus, IntegrationTarget } from "./protocol.ts";
+import { CODEX_HOOK_EVENTS } from "./hooks.ts";
 import {
   claudeHooks,
   claudeMcpEntry,
+  type CodexHookEvent,
+  codexHookHandler,
+  codexHookHash,
+  codexHookKey,
+  codexMcpEntry,
   hookCommand,
   type HubPaths,
+  tomlInline,
   tomlString,
 } from "./launch.ts";
 
@@ -275,51 +286,168 @@ function removeClaudeHooks(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Codex: ~/.codex/config.toml [mcp_servers.qutty]
+// Codex: ~/.codex/config.toml [mcp_servers.qutty], [[hooks.<Event>]] and their trust
 // ---------------------------------------------------------------------------------------------
 
 const BEGIN =
   "# >>> qutty (Settings → Agent integration; Uninstall removes this block) >>>";
 const END = "# <<< qutty <<<";
 
-/** The block Qutty appends to config.toml (with its leading blank line). */
-function codexBlock(paths: HubPaths): string {
-  return `\n${BEGIN}\n[mcp_servers.qutty]\ncommand = ${
-    tomlString(paths.mcp)
-  }\nargs = []\n${END}\n`;
+/** How many hook groups the user's own config.toml has per event (Qutty's go after them). */
+type CodexGroups = Record<CodexHookEvent, number>;
+
+const NO_GROUPS = Object.fromEntries(
+  CODEX_HOOK_EVENTS.map((e) => [e, 0]),
+) as CodexGroups;
+
+/**
+ * The block Qutty appends to config.toml (with its leading newline): the MCP server, one hook
+ * group per event, and the trust Codex needs to run them, keyed by the config file's path and
+ * each group's index (`groups`: the user's groups before ours).
+ */
+function codexBlock(
+  paths: HubPaths,
+  keySource: string,
+  groups: CodexGroups,
+): string {
+  const mcp = codexMcpEntry(paths.mcp);
+  const lines = [
+    BEGIN,
+    "[mcp_servers.qutty]",
+    `command = ${tomlString(mcp.command)}`,
+    "args = []",
+    `env_vars = ${tomlInline(mcp.env_vars)}`,
+  ];
+  for (const event of CODEX_HOOK_EVENTS) {
+    lines.push(
+      "",
+      `[[hooks.${event}]]`,
+      `hooks = [${tomlInline(codexHookHandler(paths, event))}]`,
+    );
+  }
+  for (const event of CODEX_HOOK_EVENTS) {
+    const key = codexHookKey(keySource, event, groups[event]);
+    lines.push(
+      "",
+      `[hooks.state.${tomlString(key)}]`,
+      `trusted_hash = ${tomlString(codexHookHash(paths, event))}`,
+    );
+  }
+  lines.push(END);
+  return `\n${lines.join("\n")}\n`;
 }
 
-/** Where Qutty's block is in `text` (start of its leading newline, end after END's newline). */
+/**
+ * Where Qutty's block is in `text`: from its leading newline (or the file's start, in a file
+ * Qutty created) to after END's line and one blank line.
+ */
 function findCodexBlock(
   text: string,
-): { start: number; end: number } | undefined {
-  const b = text.indexOf(`\n${BEGIN}\n`);
+): { start: number; end: number; atStart: boolean } | undefined {
+  const atStart = text.startsWith(`${BEGIN}\n`);
+  const b = atStart ? 0 : text.indexOf(`\n${BEGIN}\n`);
   if (b < 0) return undefined;
   const e = text.indexOf(`\n${END}`, b + 1);
   if (e < 0) return undefined;
   let end = e + END.length + 1;
   if (text[end] === "\n") end++;
-  return { start: b, end };
+  return { start: b, end, atStart };
+}
+
+/** `text` without Qutty's block. */
+function outsideCodexBlock(text: string): string {
+  const block = findCodexBlock(text);
+  return block ? text.slice(0, block.start) + text.slice(block.end) : text;
+}
+
+/**
+ * The config file name Codex keys the trust of its hooks by: config.toml in the real path of
+ * Codex's home (Codex resolves `~/.codex`; on macOS a temp folder's `/var` is `/private/var`).
+ */
+async function codexKeySource(
+  fs: ConfigFs,
+  files: IntegrationFiles,
+): Promise<string> {
+  const dir = files.codexConfig.slice(0, files.codexConfig.lastIndexOf("/"));
+  const real = await fs.realPath(dir);
+  if (real !== dir) return `${real}/config.toml`;
+  // Not there yet (Install creates it): resolve the home folder it will be made in.
+  const parent = dir.slice(0, dir.lastIndexOf("/"));
+  return `${await fs.realPath(parent)}${dir.slice(parent.length)}/config.toml`;
 }
 
 /** A `[mcp_servers.qutty]` table outside Qutty's block: the user's own. */
 function hasForeignCodexTable(text: string): boolean {
-  const block = findCodexBlock(text);
-  const outside = block
-    ? text.slice(0, block.start) + text.slice(block.end)
-    : text;
+  const outside = outsideCodexBlock(text);
   return /^\s*\[\s*mcp_servers\s*\.\s*(qutty|"qutty")\s*\]/m.test(outside) ||
     /^\s*mcp_servers\s*\.\s*qutty\s*[.=]/m.test(outside);
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The user's own hook groups per event in `outside` (config.toml without Qutty's block). Qutty
+ * appends `[[hooks.<Event>]]` tables, which TOML only allows after tables of that same form, so
+ * hooks or trust written inline (`hooks.Stop = [...]`, `state = { ... }`) are refused, as is a
+ * trust entry already under one of Qutty's keys.
+ */
+function codexGroups(outside: string, keySource: string): CodexGroups {
+  let doc: Record<string, unknown>;
+  try {
+    doc = parseToml(outside);
+  } catch {
+    throw new Error("~/.codex/config.toml is not valid TOML; fix it first");
+  }
+  const inline = (what: string) =>
+    new Error(
+      `~/.codex/config.toml writes ${what} inline; Qutty can only add its hooks next to [[hooks.<Event>]] tables`,
+    );
+  // A top-level `hooks = { … }` (before the first table header).
+  const top = outside.split(/^[ \t]*\[/m)[0];
+  if (/^[ \t]*hooks[ \t]*=/m.test(top)) throw inline("hooks");
+  const hooks = isObject(doc.hooks) ? doc.hooks : {};
+  const groups = { ...NO_GROUPS };
+  for (const event of CODEX_HOOK_EVENTS) {
+    const list = hooks[event];
+    const count = Array.isArray(list) ? list.length : 0;
+    const header = new RegExp(
+      `^[ \\t]*\\[\\[[ \\t]*hooks[ \\t]*\\.[ \\t]*("?)${
+        escapeRe(event)
+      }\\1[ \\t]*\\]\\]`,
+      "gm",
+    );
+    if (list !== undefined && (outside.match(header)?.length ?? 0) !== count) {
+      throw inline(`hooks.${event}`);
+    }
+    groups[event] = count;
+  }
+  if (hooks.state !== undefined) {
+    if (
+      !/^[ \t]*\[[ \t]*hooks[ \t]*\.[ \t]*"?state"?[ \t]*[.\]]/m.test(outside)
+    ) {
+      throw inline("hooks.state");
+    }
+    const state = isObject(hooks.state) ? hooks.state : {};
+    for (const event of CODEX_HOOK_EVENTS) {
+      if (codexHookKey(keySource, event, groups[event]) in state) {
+        throw new Error(
+          `~/.codex/config.toml already has hook trust for the slot Qutty's ${event} hook takes`,
+        );
+      }
+    }
+  }
+  return groups;
+}
+
 function addCodex(
   text: string | undefined,
+  keySource: string,
   paths: HubPaths,
   state: IntegrationState,
 ): string {
   if (text === undefined) {
     state.codexCreated = true;
-    return codexBlock(paths).slice(1);
+    return codexBlock(paths, keySource, NO_GROUPS).slice(1);
   }
   if (hasForeignCodexTable(text)) {
     throw new Error(
@@ -327,14 +455,19 @@ function addCodex(
     );
   }
   const block = findCodexBlock(text);
+  const fresh = codexBlock(
+    paths,
+    keySource,
+    codexGroups(outsideCodexBlock(text), keySource),
+  );
   if (block) {
-    // Refresh it in place (the path may have changed).
-    return text.slice(0, block.start) + codexBlock(paths) +
-      text.slice(block.end);
+    // Refresh it in place (the path, or the user's hooks before it, may have changed).
+    return text.slice(0, block.start) +
+      (block.atStart ? fresh.slice(1) : fresh) + text.slice(block.end);
   }
   const needsNewline = text.length > 0 && !text.endsWith("\n");
   state.codexNewlineAdded = needsNewline;
-  return text + (needsNewline ? "\n" : "") + codexBlock(paths);
+  return text + (needsNewline ? "\n" : "") + fresh;
 }
 
 /** config.toml without Qutty's block (`undefined`: remove the file Qutty created). */
@@ -343,14 +476,7 @@ function removeCodex(
   state: IntegrationState,
 ): string | undefined {
   const block = findCodexBlock(text);
-  if (!block) {
-    // A file Qutty created holds only the block, without its leading newline.
-    if (state.codexCreated && text.startsWith(`${BEGIN}\n`)) {
-      const rest = removeCodex(`\n${text}`, {});
-      return rest === "" ? undefined : rest;
-    }
-    return text;
-  }
+  if (!block) return text;
   let start = block.start;
   if (
     state.codexNewlineAdded && block.end === text.length &&
@@ -362,9 +488,27 @@ function removeCodex(
   return out === "" && state.codexCreated ? undefined : out;
 }
 
-function hasCodexBlock(text: string | undefined): boolean {
-  return text !== undefined &&
-    (findCodexBlock(text) !== undefined || text.startsWith(`${BEGIN}\n`));
+/**
+ * Qutty's block in config.toml: absent, current, or out of date (an older Qutty's, or the
+ * user's own hook groups before it changed, which moves the trust keys).
+ */
+function codexBlockState(
+  text: string | undefined,
+  keySource: string,
+  paths: HubPaths,
+): "none" | "current" | "stale" {
+  const block = text === undefined ? undefined : findCodexBlock(text);
+  if (!text || !block) return "none";
+  let groups = NO_GROUPS;
+  try {
+    groups = codexGroups(outsideCodexBlock(text), keySource);
+  } catch {
+    return "stale";
+  }
+  const want = codexBlock(paths, keySource, groups);
+  const have = (block.atStart ? "\n" : "") +
+    text.slice(block.start, block.end);
+  return have === want || have === `${want}\n` ? "current" : "stale";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -407,8 +551,23 @@ export async function integrationStatus(
     ? "Partly installed: Install completes it."
     : undefined;
 
-  const codexInstalled = hasCodexBlock(codex);
-  const codexForeign = codex !== undefined && hasForeignCodexTable(codex);
+  const codexKeys = await codexKeySource(fs, files);
+  const codexState = codexBlockState(codex, codexKeys, paths);
+  let codexGroupsNow = NO_GROUPS;
+  let codexProblem: string | undefined;
+  try {
+    if (codex !== undefined) {
+      codexGroupsNow = codexGroups(outsideCodexBlock(codex), codexKeys);
+    }
+  } catch (e) {
+    codexProblem = `${(e as Error).message}.`;
+  }
+  const codexNote = codex !== undefined && hasForeignCodexTable(codex)
+    ? "~/.codex/config.toml already configures an MCP server named qutty."
+    : codexProblem ??
+      (codexState === "stale"
+        ? "Out of date (from an older Qutty, or your own hooks before it changed): Install refreshes it."
+        : undefined);
 
   return [
     {
@@ -433,16 +592,11 @@ export async function integrationStatus(
     {
       target: "codex",
       label: TARGET_LABELS.codex,
-      installed: codexInstalled,
-      ...(codexForeign
-        ? {
-          note:
-            "~/.codex/config.toml already configures an MCP server named qutty.",
-        }
-        : {}),
+      installed: codexState === "current",
+      ...(codexNote ? { note: codexNote } : {}),
       changes: [{
         path: tilde(files, files.codexConfig),
-        adds: codexBlock(paths).slice(1),
+        adds: codexBlock(paths, codexKeys, codexGroupsNow).slice(1),
       }],
     },
   ];
@@ -499,7 +653,12 @@ export async function installIntegration(
       (t) => addClaudeHooks(t, paths, state),
     );
   } else {
-    await editFile(fs, files.codexConfig, (t) => addCodex(t, paths, state));
+    const codexKeys = await codexKeySource(fs, files);
+    await editFile(
+      fs,
+      files.codexConfig,
+      (t) => addCodex(t, codexKeys, paths, state),
+    );
   }
   await fs.write(files.state, JSON.stringify(state, null, 2) + "\n", 0o644);
 }

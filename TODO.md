@@ -83,9 +83,19 @@
   - Next: the `@rullama/inference` brain adapter (`InferenceBrainOptions` is the
     typed TODO), dragging Loopy, a floating window (Denext multi-window), the
     shell-as-harness.
-  - Open: Codex hooks (Codex has Claude-style lifecycle hooks behind
-    `features.hooks`); for now Codex gets messages through `read_messages`.
-    `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could cut it.
+  - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
+    SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
+    Interrupt with their trust (session flags, or the user's config.toml), MCP
+    tool hints for Codex's approval. `tests/hub_codex_cli_test.ts` checks the
+    installed CLI with no model call; `QUTTY_LIVE_CODEX=1` runs
+    `tests/hub_codex_live_test.ts`, one small real request.
+  - Open: Codex's hook trust hash is its own algorithm (SHA-256 over the
+    normalized hook); if a Codex release changes it, Qutty's hooks show as
+    untrusted (Codex skips them; messages still arrive through `read_messages`),
+    and `tests/hub_codex_cli_test.ts` fails locally.
+  - Open: no session id in the registry yet (Claude Code and Codex both send
+    `session_id` with every hook). `qutty-hook` starts bash + nc per call (~0.2
+    s); a tiny relay could cut it.
 
 - [x] **Sandboxed shells (Docker)**, as one shared container per window
       (Settings → Sandbox; `desktop/sandbox.ts`, `lib/sandbox/`).

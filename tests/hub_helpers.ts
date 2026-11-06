@@ -7,6 +7,7 @@ import {
   type HubEnv,
 } from "../lib/hub/core.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
+import type { ConfigFs } from "../lib/hub/integration.ts";
 import type {
   AskRequest,
   HubIdentity,
@@ -97,3 +98,36 @@ export async function waitUntil<T>(
   }
   throw new Error(`timed out waiting for ${what}`);
 }
+
+/** ConfigFs over Deno's file APIs (the app uses libc writes; the logic is the same). */
+export const denoConfigFs: ConfigFs = {
+  async read(path) {
+    try {
+      return await Deno.readTextFile(path);
+    } catch {
+      return undefined;
+    }
+  },
+  async write(path, text, mode) {
+    await Deno.mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+    await Deno.writeTextFile(path, text, { mode });
+    await Deno.chmod(path, mode);
+  },
+  async remove(path) {
+    await Deno.remove(path);
+  },
+  async mode(path) {
+    try {
+      return ((await Deno.stat(path)).mode ?? 0) & 0o777;
+    } catch {
+      return undefined;
+    }
+  },
+  async realPath(path) {
+    try {
+      return await Deno.realPath(path);
+    } catch {
+      return path;
+    }
+  },
+};

@@ -21,9 +21,8 @@ import {
 import {
   contextOutput,
   formatMessages,
-  HOOK_EVENTS,
-  type HookEvent,
   type HookOutput,
+  isHookEvent,
   notificationStatus,
   sessionIntro,
   stopOutput,
@@ -363,13 +362,13 @@ export class HubCore {
     harness?: string,
   ): HookOutput {
     const tile = this.registry.get(tileId);
-    if (!tile || !(HOOK_EVENTS as readonly string[]).includes(event)) return {};
+    if (!tile || !isHookEvent(event)) return {};
     if (harness) this.registry.setHarness(tileId, harness);
     if (typeof input.cwd === "string" && input.cwd.startsWith("/")) {
       this.registry.setMeta(tileId, { cwd: input.cwd });
     }
     const take = () => this.mailboxes.take(tileId, "delivered");
-    switch (event as HookEvent) {
+    switch (event) {
       case "SessionStart": {
         const self = this.registry.get(tileId)!;
         const pending = take();
@@ -384,7 +383,7 @@ export class HubCore {
         this.registry.setStatus(tileId, "busy");
         const pending = take();
         return contextOutput(
-          event as HookEvent,
+          event,
           pending.length > 0 ? formatMessages(pending) : "",
         );
       }
@@ -402,6 +401,14 @@ export class HubCore {
         if (status) this.registry.setStatus(tileId, status);
         return {};
       }
+      // Codex: an approval prompt is about to show ({} leaves the decision to the user), or the
+      // user interrupted the turn (no Stop follows).
+      case "PermissionRequest":
+        this.registry.setStatus(tileId, "waiting");
+        return {};
+      case "Interrupt":
+        this.registry.setStatus(tileId, "idle");
+        return {};
     }
   }
 }

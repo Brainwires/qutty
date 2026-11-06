@@ -92,3 +92,29 @@ export function tapHub(hub: HubService): void {
     ended: (id) => hub.ended(id),
   });
 }
+
+/** Run the qutty-hook shim with `input` on stdin. */
+export async function runHook(
+  input: unknown,
+  env: Record<string, string>,
+  harness = "claude",
+): Promise<{ code: number; out: string }> {
+  const child = new Deno.Command("bash", {
+    args: [HOOK_SHIM, harness],
+    env,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const w = child.stdin.getWriter();
+  try {
+    await w.write(new TextEncoder().encode(JSON.stringify(input, null, 2)));
+    await w.close();
+  } catch (err) {
+    // Outside Qutty the shim exits without reading stdin (that's the behaviour under test), so
+    // the write can race its exit and see a broken pipe; the exit code and output still count.
+    if (!(err instanceof Deno.errors.BrokenPipe)) throw err;
+  }
+  const out = await child.output();
+  return { code: out.code, out: new TextDecoder().decode(out.stdout) };
+}
