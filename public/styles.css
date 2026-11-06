@@ -279,6 +279,22 @@ kbd {
 .tile-body .xterm .xterm-viewport {
   background: transparent !important;
 }
+/* Scaled inactive tiles (Settings → Inactive tiles: scale): the body is laid out at the focused
+   tile's body size (inline width/height; lib/layout/scale.ts mirrors the 1px border and the
+   26px header above) and an inactive one is scaled into its own body (inline transform), in
+   step with the tile's own transition. The click-catcher covers the body, not the header. */
+.tile.is-scaled .tile-body {
+  flex: none;
+  transform-origin: 0 0;
+  transition: transform var(--tile-ms) var(--ease);
+}
+.tile-catcher {
+  position: absolute;
+  inset: 26px 0 0;
+}
+.tile.is-focused .tile-catcher {
+  display: none;
+}
 .tile.has-activity:not(.is-focused) .tile-head::before {
   content: "";
   width: 6px;

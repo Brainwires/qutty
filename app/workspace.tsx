@@ -21,7 +21,12 @@ import { makeWindowDraggable } from "denext/desktop/window";
 import { computeLayout, type Rect } from "../lib/layout/mod.ts";
 import { getPtyBackend, isDesktop } from "../lib/pty-client.ts";
 import { TerminalManager } from "../lib/terminal-manager.ts";
-import { installE2eHooks, isTestMode, withKillSpy } from "../lib/test-hooks.ts";
+import {
+  type BackendSpy,
+  installE2eHooks,
+  isTestMode,
+  withBackendSpy,
+} from "../lib/test-hooks.ts";
 import { makeTitle } from "../lib/workspace/format.ts";
 import {
   commandForKey,
@@ -173,11 +178,12 @@ export function Workspace() {
     const saved = loadSettings();
     if (saved) dispatch({ type: "hydrateSettings", settings: saved });
 
-    // `?test=1` (the e2e suite): record PTY kills and expose terminal state on `window.__e2e`.
+    // `?test=1` (the e2e suite): record PTY kills and resizes and expose terminal state on
+    // `window.__e2e`.
     const testMode = isTestMode();
-    const kills: string[] = [];
+    const spy: BackendSpy = { kills: [], resizes: [] };
     const backend = testMode
-      ? withKillSpy(getPtyBackend(), kills)
+      ? withBackendSpy(getPtyBackend(), spy)
       : getPtyBackend();
     const manager = new TerminalManager(backend, {
       onExit: (id, exit) =>
@@ -200,7 +206,7 @@ export function Workspace() {
       isWorkspaceShortcut: (e) => commandForKey(e, plat) !== null,
     });
     managerRef.current = manager;
-    if (testMode) installE2eHooks(manager, kills);
+    if (testMode) installE2eHooks(manager, spy);
     setReady(true);
     return () => {
       mq?.removeEventListener?.("change", onMq);
@@ -385,6 +391,7 @@ export function Workspace() {
             decay={settings.layout.decay}
             now={now}
             reducedMotion={reducedMotion}
+            scaleInactive={settings.inactiveTiles === "scale"}
             onFocus={focusTerminal}
             onClose={closeTerminal}
             dropTargetId={ssh.dropTarget}
@@ -429,6 +436,7 @@ export function Workspace() {
           onBarPosition={(position) =>
             run({ type: "setBarPosition", position })}
           onBarOrder={(order) => run({ type: "setBarOrder", order })}
+          onInactiveTiles={(mode) => run({ type: "setInactiveTiles", mode })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           onToggleSection={(section) => run({ type: "toggleSection", section })}

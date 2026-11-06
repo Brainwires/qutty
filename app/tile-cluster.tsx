@@ -9,9 +9,18 @@
 //
 // SSH tiles add a badge and their host tint (`data-tint`), plus whatever the workspace renders
 // into the header (`renderHeadActions`) and over the terminal (`renderOverlay`).
+//
+// Scaled inactive tiles (Settings → Inactive tiles: scale): every tile's terminal body is laid
+// out at the focused tile's body size, so the terminal manager fits every terminal to that one
+// size and a focus change never changes a host's size (nothing to refit, no PTY resize). A
+// non-focused tile shows its body letterboxed with `transform: scale()` (which the fit and the
+// ResizeObserver do not see) under a transparent click-catcher: xterm's mouse maths does not
+// survive a transform, so a scaled terminal takes no selection or mouse reports, and a click
+// only focuses the tile.
 
 import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
+import { letterbox, type Size, tileBodySize } from "../lib/layout/scale.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import { formatAge } from "../lib/workspace/format.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
@@ -33,12 +42,19 @@ export interface TileClusterProps extends TileExtras {
   decay: number;
   now: number;
   reducedMotion: boolean;
+  /** Show inactive tiles scaled down at the focused tile's size instead of resizing them. */
+  scaleInactive: boolean;
   onFocus(id: string): void;
   onClose(id: string): void;
 }
 
 export function TileCluster(props: TileClusterProps) {
   const byId = new Map(props.tiles.map((t) => [t.id, t]));
+  // The tiles are in rank order: the first is the focused one.
+  const focusedRect = props.tiles[0]?.rect;
+  const full = props.scaleInactive && focusedRect
+    ? tileBodySize(focusedRect)
+    : null;
   return (
     <div class="tiles" data-testid="tiles">
       {props.terminals.map((entry) => (
@@ -51,6 +67,7 @@ export function TileCluster(props: TileClusterProps) {
           decay={props.decay}
           now={props.now}
           reducedMotion={props.reducedMotion}
+          full={full}
           onFocus={props.onFocus}
           onClose={props.onClose}
           dropTargetId={props.dropTargetId}
@@ -75,8 +92,22 @@ interface TerminalTileProps extends TileExtras {
   decay: number;
   now: number;
   reducedMotion: boolean;
+  /** Scale mode: the focused tile's body size, which every body is laid out at; else `null`. */
+  full: Size | null;
   onFocus(id: string): void;
   onClose(id: string): void;
+}
+
+/** Scale mode: the body at the full size, letterboxed into the tile's own body unless focused. */
+function scaledBodyStyle(full: Size, rect: Rect, focused: boolean) {
+  const fit = focused ? null : letterbox(tileBodySize(rect), full);
+  return {
+    width: `${full.w}px`,
+    height: `${full.h}px`,
+    transform: fit
+      ? `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`
+      : "none",
+  };
 }
 
 function TerminalTile(props: TerminalTileProps) {
@@ -166,7 +197,9 @@ function TerminalTile(props: TerminalTileProps) {
     "--rank-dim": String(dim),
   };
 
+  const { full } = props;
   const classes = ["tile", `is-${phase}`];
+  if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
   if (entry.activity) classes.push("has-activity");
@@ -248,7 +281,23 @@ function TerminalTile(props: TerminalTileProps) {
             </button>
           </span>
         </header>
-        <div class="tile-body" data-testid="tile-body" ref={hostRef} />
+        <div
+          class="tile-body"
+          data-testid="tile-body"
+          ref={hostRef}
+          style={full ? scaledBodyStyle(full, rect, focused) : undefined}
+        />
+        {full && (
+          // Hidden (CSS) rather than unmounted once focused: the pointerdown that focuses the
+          // tile re-renders it, and the mousedown that follows must still land here so its
+          // default (moving keyboard focus to <body>, as on the header) can be cancelled.
+          <div
+            class="tile-catcher"
+            data-testid="tile-catcher"
+            aria-hidden="true"
+            onMouseDown={(e) => e.preventDefault()}
+          />
+        )}
         {props.renderOverlay?.(entry, focused)}
       </div>
     </div>
