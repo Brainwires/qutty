@@ -16,6 +16,13 @@ import {
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TerminalProfile } from "../lib/ssh-ui.ts";
 import type { ConnectRequest } from "./connections-dialog.tsx";
+import type { OllamaStatus } from "../lib/ollama/cli.ts";
+import { ollamaProfile } from "../lib/ollama/harnesses.ts";
+import {
+  type OllamaPair,
+  type OllamaSettings,
+  pairOfEntryId,
+} from "../lib/ollama/settings.ts";
 
 export interface UseLauncherOptions {
   manager: TerminalManager | null;
@@ -32,9 +39,26 @@ export interface UseLauncherOptions {
    * `null` while the sandbox is off (no toggle).
    */
   sandboxDefault?: boolean | null;
+  /** The Ollama helper's status and settings (its pairs join the menu once Ollama is found). */
+  ollama?: { status: OllamaStatus; settings: OllamaSettings };
 }
 
 const NONE: Launchables = { shells: [], agents: [] };
+
+/** The pairs the menu offers: recent ones, the default pair, and the one plain `+` opens. */
+function candidatePairs(
+  settings: OllamaSettings,
+  plusOpens: PlusOpens,
+): OllamaPair[] {
+  const plus = pairOfEntryId(plusOpens);
+  return [
+    ...(plus ? [plus] : []),
+    ...settings.recents,
+    ...(settings.harness && settings.model
+      ? [{ harness: settings.harness, model: settings.model }]
+      : []),
+  ];
+}
 
 export function useLauncher(opts: UseLauncherOptions) {
   const { manager } = opts;
@@ -70,7 +94,36 @@ export function useLauncher(opts: UseLauncherOptions) {
     if (manager) refresh();
   }, [manager, refresh]);
 
-  const sections = useMemo(() => launchSections(found, hosts), [found, hosts]);
+  const ollama = opts.ollama;
+  const ollamaKey = ollama
+    ? JSON.stringify([
+      ollama.status.installed,
+      ollama.status.harnesses,
+      ollama.status.models.map((m) => m.name),
+      ollama.settings,
+      opts.plusOpens,
+    ])
+    : "";
+  const sections = useMemo(
+    () =>
+      launchSections(
+        found,
+        hosts,
+        ollama?.status.installed
+          ? {
+            pairs: candidatePairs(ollama.settings, opts.plusOpens),
+            harnesses: new Set(
+              ollama.status.harnesses.filter((h) => h.installed).map((h) =>
+                h.name
+              ),
+            ),
+            models: new Set(ollama.status.models.map((m) => m.name)),
+          }
+          : undefined,
+      ),
+    // `ollamaKey` stands for the Ollama inputs.
+    [found, hosts, ollamaKey],
+  );
   const plus = plusEntry(
     opts.plusOpens,
     opts.lastLaunch,
@@ -107,6 +160,16 @@ export function useLauncher(opts: UseLauncherOptions) {
           target: { alias: entry.host.alias },
           label: entry.host.alias,
           ...(entry.host.tint ? { tint: entry.host.tint } : {}),
+        });
+        break;
+      case "ollama":
+        // Always on the host: the sandbox has no Ollama server.
+        o.openTile({
+          ...ollamaProfile(
+            o.ollama?.status.path ?? "ollama",
+            entry.pair,
+          ),
+          sandbox: false,
         });
         break;
     }

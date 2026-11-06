@@ -110,7 +110,7 @@ suite("launcher", (test) => {
         "[data-testid=launch-section]",
       )].map((el) => el.dataset.section)
     );
-    assertEquals(sections, ["shells", "agents", "ssh"]);
+    assertEquals(sections, ["shells", "agents", "ollama", "ssh"]);
     const ids = await itemIds(app);
     assertEquals(ids.slice(0, 5), [
       "shell:/bin/zsh",

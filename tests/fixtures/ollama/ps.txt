@@ -1,0 +1,2 @@
+NAME               ID              SIZE     PROCESSOR    CONTEXT    RUNNER    UNTIL              
+qwen3.8:27b-mlx    5642e97495e1    18 GB    100% GPU     4096       mlx       2 minutes from now    

@@ -21,6 +21,8 @@ export interface TileInfo {
   name: string;
   /** The agent harness in the tile (`claude`, `codex`, …), once it is known. */
   harness?: string;
+  /** The local model it runs on, when started through `ollama launch` (`qwen3.8:27b-mlx`). */
+  model?: string;
   /** The tile's title as the page shows it. */
   label?: string;
   /** Its working directory, when known. */
@@ -143,7 +145,7 @@ export interface HubSnapshot {
 }
 
 /** Which agent configs the integration panel manages. */
-export type IntegrationTarget = "claude" | "codex";
+export type IntegrationTarget = "claude" | "codex" | "hermes";
 
 /** One file the integration installer would change, and how. */
 export interface IntegrationChange {

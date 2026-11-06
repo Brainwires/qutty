@@ -47,6 +47,15 @@ export interface AgentProfile {
   name: string;
   /** What the menu calls it (`Claude Code`). */
   label: string;
+  /** Its arguments (none for a tool from the menu). */
+  args?: string[];
+  /**
+   * Started through `ollama launch` (lib/ollama/harnesses.ts) on this model: `program` is
+   * `ollama` (or `/bin/sh` to pull first), `name` the harness.
+   */
+  ollamaModel?: string;
+  /** A plain command (`ollama pull …`), not an agent: the hub gives it no agent wiring or badge. */
+  plain?: boolean;
   /** Runs in the window's shared Docker sandbox. */
   sandbox?: boolean;
 }

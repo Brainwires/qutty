@@ -35,6 +35,13 @@ import {
   sanitizeSandbox,
 } from "../sandbox/settings.ts";
 import {
+  DEFAULT_OLLAMA,
+  type OllamaSettings,
+  pairOfEntryId,
+  rememberPair,
+  sanitizeOllama,
+} from "../ollama/settings.ts";
+import {
   DEFAULT_VOICE,
   sameVoice,
   sanitizeVoice,
@@ -72,6 +79,7 @@ export type SettingsSection =
   | "companion"
   | "voice"
   | "sandbox"
+  | "ollama"
   | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -81,6 +89,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "companion",
   "voice",
   "sandbox",
+  "ollama",
   "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
@@ -140,6 +149,8 @@ export interface Settings extends FontSettings {
   voice: VoiceSettings;
   /** Settings → Sandbox (the window's shared Docker sandbox; lib/sandbox/settings.ts). */
   sandbox: SandboxSettings;
+  /** Settings → Ollama (default and recent harness × model pairs; lib/ollama/settings.ts). */
+  ollama: OllamaSettings;
 }
 
 /** The whole workspace. */
@@ -200,6 +211,7 @@ export type WorkspaceAction =
   | { type: "setCompanion"; patch: Partial<CompanionSettings> }
   | { type: "setVoice"; patch: Partial<VoiceSettings> }
   | { type: "setSandbox"; patch: Partial<SandboxSettings> }
+  | { type: "setOllama"; patch: Partial<OllamaSettings> }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -221,6 +233,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companion: { ...DEFAULT_COMPANION },
   voice: { ...DEFAULT_VOICE },
   sandbox: { ...DEFAULT_SANDBOX },
+  ollama: { ...DEFAULT_OLLAMA, recents: [] },
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -246,6 +259,10 @@ function cloneSettings(s: Settings): Settings {
     companion: { ...s.companion },
     voice: { ...s.voice },
     sandbox: { ...s.sandbox },
+    ollama: {
+      ...s.ollama,
+      recents: s.ollama.recents.map((p) => ({ ...p })),
+    },
   };
 }
 
@@ -353,6 +370,7 @@ export function sanitizeSettings(
   if (r.sandbox !== undefined) {
     out.sandbox = sanitizeSandbox(r.sandbox, out.sandbox);
   }
+  if (r.ollama !== undefined) out.ollama = sanitizeOllama(r.ollama, out.ollama);
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
   }
@@ -640,15 +658,34 @@ export function reduce(
       }
       return { ...state, settings: { ...state.settings, sandbox } };
     }
-    case "launched":
+    case "setOllama": {
+      const ollama = sanitizeOllama(action.patch, state.settings.ollama);
+      if (JSON.stringify(ollama) === JSON.stringify(state.settings.ollama)) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, ollama } };
+    }
+    case "launched": {
+      if (!isEntryId(action.entryId)) return state;
+      // An Ollama pair also goes first in the recent pairs.
+      const pair = pairOfEntryId(action.entryId);
+      const recents = pair
+        ? rememberPair(state.settings.ollama.recents, pair)
+        : state.settings.ollama.recents;
       if (
-        !isEntryId(action.entryId) ||
-        state.settings.lastLaunch === action.entryId
+        state.settings.lastLaunch === action.entryId &&
+        JSON.stringify(recents) ===
+          JSON.stringify(state.settings.ollama.recents)
       ) return state;
       return {
         ...state,
-        settings: { ...state.settings, lastLaunch: action.entryId },
+        settings: {
+          ...state.settings,
+          lastLaunch: action.entryId,
+          ...(pair ? { ollama: { ...state.settings.ollama, recents } } : {}),
+        },
       };
+    }
     case "toggleSection": {
       if (!SETTINGS_SECTIONS.includes(action.section)) return state;
       const collapsed = state.settings.collapsedSections;

@@ -460,6 +460,7 @@ export class TerminalManager {
       program?: string;
       args?: string[];
       agent?: string;
+      ollamaModel?: string;
       sandbox?: boolean;
     }
   > {
@@ -471,12 +472,22 @@ export class TerminalManager {
         return profile.shell ? { shell: profile.shell, ...sandbox } : sandbox;
       case "agent":
         // `agent` lets the hub add the flags that connect it (desktop/hub.ts).
-        return {
-          program: profile.program,
-          args: [],
-          agent: profile.name,
-          ...sandbox,
-        };
+        if (profile.plain) {
+          return { program: profile.program, args: profile.args ?? [] };
+        }
+        return profile.ollamaModel !== undefined
+          ? {
+            program: profile.program,
+            args: profile.args ?? [],
+            agent: profile.name,
+            ollamaModel: profile.ollamaModel,
+          }
+          : {
+            program: profile.program,
+            args: profile.args ?? [],
+            agent: profile.name,
+            ...sandbox,
+          };
       case "ssh": {
         const { program, args } = await this.#backend.sshCommand(
           profile.target,

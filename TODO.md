@@ -212,6 +212,28 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
+- [ ] **Ollama helper** (`desktop/ollama.ts`, `lib/ollama/`,
+      `app/ollama-*.tsx`).
+  - Done: model tracking (CLI in hidden PTYs, `show` cached by digest, no
+    `ollama list` while the server is down), the `+` menu section and dialog
+    (harness × model, recent pairs, no-tools warning), Pull a model…, the
+    ollama.com library (search, Applications per model, Pull & launch, "new"
+    badge), Settings → Ollama, "+ opens" a pair, hub wiring per harness
+    (`lib/hub/wiring.ts`), Hermes in Agent integration.
+  - Hooks for mid-turn delivery beyond Claude Code and Codex: OpenCode and
+    OpenClaw only have JS/TS plugin hooks (a small plugin that calls
+    `qutty-hook` would do), Hermes's shell hooks take another input and ask for
+    consent, Qwen Code and Kimi have Claude-style hooks but no per-session way
+    to add them. Until then their messages arrive through `read_messages`.
+  - Verify the wiring of the harnesses not installed here (Qwen Code, Copilot
+    CLI, Kimi, DeepSeek Harness), and find routes for Droid, Cline, OMP, Muse
+    and Pool (config files only).
+  - OpenClaw's first `ollama launch` runs its onboarding, which writes the
+    config; the hub wiring needs that config, so it applies from the second
+    launch on.
+  - The library is read from ollama.com's HTML (it has no search API): if the
+    markup changes, the parser returns less, never junk. Watch the fixtures.
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

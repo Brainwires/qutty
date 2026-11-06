@@ -78,13 +78,21 @@ export function formatMessages(messages: readonly HubMessage[]): string {
 /** What `SessionStart` tells the agent about where it runs. */
 export function sessionIntro(
   self: { id: string; name: string },
-  peers: readonly { id: string; name: string; harness?: string }[],
+  peers: readonly {
+    id: string;
+    name: string;
+    harness?: string;
+    model?: string;
+  }[],
 ): string {
   const others = peers.filter((p) => p.id !== self.id);
   const list = others.length === 0
     ? "no other tiles yet"
-    : others.map((p) => `${p.name}${p.harness ? ` (${p.harness})` : ""}`)
-      .join(", ");
+    : others.map((p) =>
+      `${p.name}${
+        p.harness ? ` (${p.harness}${p.model ? ` · ${p.model}` : ""})` : ""
+      }`
+    ).join(", ");
   return `[Qutty] You run in Qutty tile "${self.name}" (${self.id}). Other tiles: ${list}. ` +
     "The qutty MCP server's tools let you list peers, read any tile's screen or scrollback, " +
     "message other agents or the companion, and ask the user. Messages for you arrive here " +

@@ -73,6 +73,14 @@ import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { effectiveMode } from "../lib/companion/settings.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
+import { useOllama } from "./use-ollama.ts";
+import { OllamaDialog } from "./ollama-dialog.tsx";
+import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
+import {
+  type OllamaPair,
+  pairEntryId,
+  pairTitle,
+} from "../lib/ollama/settings.ts";
 
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
@@ -141,7 +149,15 @@ export function Workspace() {
       now: Date.now(),
       ...(profile.kind === "ssh" ? { ssh: profile } : {}),
       ...(profile.kind === "agent"
-        ? { agent: { name: profile.name, label: profile.label } }
+        ? {
+          agent: {
+            // An Ollama tile says which model: "claude · qwen3.8:27b-mlx — ~/proj".
+            name: profile.ollamaModel
+              ? pairTitle({ harness: profile.name, model: profile.ollamaModel })
+              : profile.name,
+            label: profile.label,
+          },
+        }
         : {}),
       ...(profile.kind === "shell" && profile.shell
         ? { title: baseName(profile.shell) }
@@ -164,6 +180,11 @@ export function Workspace() {
   const sshRef = useRef(ssh);
   sshRef.current = ssh;
 
+  const [ollamaOpen, setOllamaOpen] = useState(false);
+  const ollama = useOllama(ready ? managerRef.current?.backend ?? null : null, {
+    active: ollamaOpen || settingsOpen,
+    lookedAt: state.settings.ollama.libraryLookedAt,
+  });
   const launcher = useLauncher({
     manager: managerRef.current,
     plusOpens: state.settings.plusOpens,
@@ -174,10 +195,30 @@ export function Workspace() {
     openTile,
     connect: (req) => sshRef.current.connect(req),
     remember: (entryId) => dispatch({ type: "launched", entryId }),
+    ...(ollama.status.installed
+      ? { ollama: { status: ollama.status, settings: state.settings.ollama } }
+      : {}),
   });
+  /** The Ollama dialog's launches and pulls (on the host: the sandbox has no Ollama). */
+  const launchOllama = useCallback((pair: OllamaPair, pullFirst: boolean) => {
+    setOllamaOpen(false);
+    openTile({
+      ...ollamaProfile(ollama.status.path ?? "ollama", pair, pullFirst),
+      sandbox: false,
+    });
+    dispatch({ type: "launched", entryId: pairEntryId(pair) });
+  }, [openTile, ollama.status.path]);
+  const pullOllama = useCallback((model: string) => {
+    setOllamaOpen(false);
+    openTile({
+      ...pullProfile(ollama.status.path ?? "ollama", model),
+      sandbox: false,
+    });
+  }, [openTile, ollama.status.path]);
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
-  const modalOpen = ssh.dialog !== null || ssh.browseFor !== null;
+  const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
+    ollamaOpen;
   const hubTileOf = useHub(managerRef.current, state.terminals);
 
   const closeTerminal = useCallback((id: string) => {
@@ -500,8 +541,19 @@ export function Workspace() {
           ...(launcher.sandboxChoice
             ? { sandbox: launcher.sandboxChoice }
             : {}),
+          ...(ollama.status.installed
+            ? {
+              ollama: {
+                newCount: ollama.newCount,
+                onOpen: () => setOllamaOpen(true),
+              },
+            }
+            : {}),
         }}
-        onLaunchOpen={launcher.refresh}
+        onLaunchOpen={() => {
+          launcher.refresh();
+          ollama.refresh();
+        }}
         onRefocus={() => {
           const id = stateRef.current.focusedId;
           if (id) managerRef.current?.focus(id);
@@ -590,8 +642,26 @@ export function Workspace() {
           onVoice={(patch) => run({ type: "setVoice", patch })}
           voice={manager ? voice : null}
           onSandbox={(patch) => run({ type: "setSandbox", patch })}
+          {...(ollama.loaded ? { ollama } : {})}
+          onOllama={(patch) => run({ type: "setOllama", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {manager && ollamaOpen && (
+        <OllamaDialog
+          backend={manager.backend}
+          status={ollama.status}
+          settings={settings.ollama}
+          newCount={ollama.newCount}
+          onLaunch={launchOllama}
+          onPull={pullOllama}
+          onLooked={() =>
+            run({ type: "setOllama", patch: { libraryLookedAt: Date.now() } })}
+          onClose={() => {
+            setOllamaOpen(false);
+            refocus();
+          }}
         />
       )}
       {manager && effectiveMode(settings.companion.mode) === "off" && (

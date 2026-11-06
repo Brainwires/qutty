@@ -147,6 +147,23 @@ export async function waitFor<T>(
   }
 }
 
+/** The ids of the bar's chips (the open terminals). */
+export async function chipIdSet(app: App): Promise<Set<string>> {
+  return new Set((await app.chips()).map((c) => c.id));
+}
+
+/** Wait for a focused terminal that is not in `before` (a new tile) and return its id. */
+export function newFocusedTile(app: App, before: Set<string>): Promise<string> {
+  return waitFor(
+    async () => {
+      const f = await app.focusedId();
+      return f && !before.has(f) ? f : null;
+    },
+    5000,
+    "a new focused terminal",
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // The app under test
 // ---------------------------------------------------------------------------------------------

@@ -3352,3 +3352,190 @@ kbd {
 .voice-error {
   color: var(--red);
 }
+
+/* ---- The Ollama helper (app/ollama-dialog.tsx, app/ollama-settings.tsx) ------------------- */
+
+.launch-item[data-kind="ollama"] .launch-icon,
+[data-testid="launch-ollama"] .launch-icon {
+  color: var(--accent);
+}
+.launch-badge.is-new {
+  color: var(--amber);
+  background: rgba(243, 195, 122, 0.12);
+}
+.modal.ollama {
+  width: min(820px, 100%);
+  height: min(600px, 100%);
+}
+.ollama-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ollama-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 10px;
+  padding: 0 12px 10px 16px;
+}
+.ollama-list,
+.ollama-lib-list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ollama-lib-list {
+  flex: 1;
+  padding: 0 12px 10px 16px;
+  gap: 6px;
+}
+.ollama-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: 12px/1.3 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.ollama-row:hover,
+.ollama-row:focus-visible {
+  outline: none;
+  background: rgba(var(--hi-rgb), 0.05);
+}
+.ollama-row.is-selected {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--text);
+}
+.ollama-row.is-missing {
+  opacity: 0.5;
+  cursor: default;
+}
+.ollama-name {
+  font: 12px/1.3 var(--mono);
+  color: var(--text);
+}
+.ollama-meta {
+  font: 10.5px/1.3 var(--mono);
+  color: var(--text-3);
+}
+.ollama-caps {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.ollama-cap,
+.ollama-warn,
+.ollama-loaded,
+.ollama-listed {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font: 9.5px/1.4 var(--mono);
+  color: var(--text-2);
+  background: rgba(var(--hi-rgb), 0.06);
+}
+.ollama-cap.cap-tools {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.ollama-warn {
+  color: var(--amber);
+  background: rgba(243, 195, 122, 0.12);
+}
+.ollama-loaded {
+  color: var(--tint-green);
+}
+.ollama-listed {
+  color: var(--accent);
+}
+.ollama-pull {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1 1 260px;
+}
+.ollama-pull .field-text {
+  flex: 1;
+}
+.ollama-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px 16px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--amber);
+  font: 11.5px/1.35 var(--sans);
+}
+.ollama-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px 16px;
+}
+.ollama-search .field-text {
+  flex: 1;
+}
+.ollama-lib {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.ollama-lib-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ollama-desc {
+  margin-top: 4px;
+  font: 11.5px/1.4 var(--sans);
+  color: var(--text-2);
+}
+.ollama-lib-detail,
+.ollama-lib-actions,
+.ollama-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ollama-lib-detail {
+  flex-direction: column;
+}
+.ollama-table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+  font: 10.5px/1.4 var(--mono);
+  color: var(--text-2);
+}
+.ollama-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--line);
+}
+.ollama-table td,
+.ollama-table th {
+  padding: 3px 6px 3px 0;
+}

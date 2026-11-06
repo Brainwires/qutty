@@ -40,6 +40,9 @@ import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
 import type { SandboxSettings } from "../lib/sandbox/settings.ts";
 import { SandboxSettingsSection } from "./sandbox-settings.tsx";
+import { OllamaSettingsSection } from "./ollama-settings.tsx";
+import type { OllamaTracking } from "./use-ollama.ts";
+import type { OllamaSettings } from "../lib/ollama/settings.ts";
 import { VoiceSettingsSection } from "./companion/voice-settings.tsx";
 import type { VoiceSettings } from "../lib/voice/settings.ts";
 import type { VoiceApi } from "./use-voice.ts";
@@ -64,6 +67,9 @@ export interface SettingsPanelProps {
   onSandbox(patch: Partial<SandboxSettings>): void;
   /** Settings → Voice. */
   onVoice(patch: Partial<VoiceSettings>): void;
+  /** Settings → Ollama: the tracking (the section is left out without it). */
+  ollama?: OllamaTracking;
+  onOllama(patch: Partial<OllamaSettings>): void;
   /** The voice layer (its engines' status, the model download, cloud keys). */
   voice: VoiceApi | null;
   /** For Agent integration (the section is left out without one) and the companion's status. */
@@ -371,6 +377,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
         "sandbox-section",
       )}
 
+      {props.backend && props.ollama && section(
+        "ollama",
+        "Ollama",
+        <OllamaSettingsSection
+          settings={settings.ollama}
+          tracking={props.ollama}
+          backend={props.backend}
+          onChange={props.onOllama}
+        />,
+        "ollama-section",
+      )}
+
       {props.backend && section(
         "integration",
         "Agent integration",
@@ -416,7 +434,7 @@ function PlusOpensField(props: {
       >
         <option value="default">Default shell</option>
         <option value="last">Last used</option>
-        {props.sections.map((s) => (
+        {props.sections.filter((s) => s.entries.length > 0).map((s) => (
           <optgroup label={s.title} key={s.id}>
             {s.entries.map((e) => (
               <option value={e.id} key={e.id}>

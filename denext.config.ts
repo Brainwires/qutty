@@ -36,6 +36,9 @@ export default {
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",
         "./desktop/voice.ts",
+        // The Ollama helper (`desktop/ollama.ts`): `ollama` and the library fetch (`curl`) run in
+        // hidden PTYs, so it needs no `run` or `net` either.
+        "./desktop/ollama.ts",
       ],
       // The microphone: push-to-talk opens it in the app's own process (the native audio
       // library's cpal capture), not through the page, so Denext's `microphone` capability (4.13,

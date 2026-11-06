@@ -1,6 +1,8 @@
 // The `+` split button: `+` opens a new terminal (the default shell, or what Settings says plain
 // `+` opens), and the arrow beside it opens a menu of what a new terminal can run: the installed
-// shells, agent tools (Claude Code, Codex, ...), the saved SSH hosts and "Connections…".
+// shells, agent tools (Claude Code, Codex, ...), Ollama's recent harness × model pairs and
+// "Ollama models…" (app/ollama-dialog.tsx) when Ollama is installed, the saved SSH hosts and
+// "Connections…".
 //
 // Keyboard: the arrow is a menu button (Enter, Space or ↓ opens the menu with the first entry
 // focused); in the menu ↑/↓ move (wrapping), Home/End jump, Enter launches, Escape closes and
@@ -32,6 +34,11 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
+  /**
+   * The Ollama section's "Ollama models…" item (the harness × model dialog, the library, pulls),
+   * with the count of library models new since the last look.
+   */
+  ollama?: { newCount: number; onOpen(): void };
 }
 
 const ITEM = "[role=menuitem],[role=menuitemcheckbox]";
@@ -163,6 +170,30 @@ export function LaunchMenu(props: LaunchMenuProps) {
                 {section.title}
               </div>
               {section.entries.map(item)}
+              {section.id === "ollama" && props.ollama && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="menu-item launch-item"
+                  data-testid="launch-ollama"
+                  title="Pick a harness and a local model, browse the Ollama library, pull a model"
+                  onClick={props.ollama.onOpen}
+                >
+                  <LaunchIcon kind="ollama" />
+                  <span class="menu-label">Ollama models…</span>
+                  {props.ollama.newCount > 0 && (
+                    <span
+                      class="launch-badge is-new"
+                      data-testid="launch-ollama-new"
+                      title={`${props.ollama.newCount} library model${
+                        props.ollama.newCount === 1 ? "" : "s"
+                      } updated since you last looked`}
+                    >
+                      {props.ollama.newCount} new
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           ))}
           <div class="launch-sep" role="separator" />
@@ -226,6 +257,15 @@ function LaunchIcon(
       return (
         <svg {...common}>
           <path d="M3 4.5 6.5 8 3 11.5M8 12h5" {...stroke} />
+        </svg>
+      );
+    case "ollama":
+      return (
+        <svg {...common}>
+          <path
+            d="M5 6.5V4a1.2 1.2 0 0 1 2.4 0M8.6 4a1.2 1.2 0 0 1 2.4 0v2.5M3.5 11a4.5 4.5 0 0 1 9 0v2.5h-9z"
+            {...stroke}
+          />
         </svg>
       );
     case "agent":
