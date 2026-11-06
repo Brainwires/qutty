@@ -21,7 +21,7 @@ env:
 jobs:
   checks:
     name: Lint, types, fallow
-    runs-on: macos-15
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
     steps:
       - uses: actions/checkout@v5
       - uses: denoland/setup-deno@v2
@@ -46,9 +46,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
             arch: arm64
-          - runner: macos-15-intel
+          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
             arch: x86_64
           - runner: ubuntu-24.04
             arch: linux-x86_64
@@ -66,7 +66,7 @@ jobs:
 
   e2e:
     name: End-to-end (Chromium)
-    runs-on: macos-15
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
     steps:
       - uses: actions/checkout@v5
       - uses: denoland/setup-deno@v2

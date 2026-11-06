@@ -20,9 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
             arch: arm64
-          - runner: macos-15-intel
+          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
             arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
