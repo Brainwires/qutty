@@ -2142,20 +2142,29 @@ kbd {
 }
 
 /* ---- The companion: Loopy -------------------------------------------------------------------
-   Copied from Denext's examples/companion (public/styles.css; same author, MIT) with the same
-   shapes, sizes, keyframes and moves: only scoped under .companion-overlay (selectors), prefixed
-   (keyframe names and custom properties, which are global) and coloured from the theme (the
-   palette below, and the colour overrides after the copy). Loopy is the example's size in its
-   desktop window (90 x 150). tests/companion_look_test.ts and tests/e2e/companion_test.ts keep
-   its shape and moves from drifting. Qutty's own parts (the overlay's placement, the chat box,
-   the brain's status dot) follow. */
+   Copied from Denext's examples/companion (public/styles.css on feat/loopy-voice-tools: the
+   crossed-triangle wire with a steel bead head and 13 moods; same author, MIT) with the same
+   shapes, sizes, keyframes and moves: only scoped under .companion-overlay (selectors) and
+   prefixed (keyframe names and custom properties, which are global). Loopy's own colours are the
+   example's: the bare steel wire, each mood's wire tint, the bead and the face on it. The UI around
+   it (the bubble, its buttons, the thought dots, the sparkles, the shadow) is coloured from the
+   theme (the palette below, and the overrides after the copy). Loopy is the example's size in its
+   desktop window (120 x 150). tests/companion_look_test.ts and tests/e2e/companion_test.ts keep
+   its shape, moods and moves from drifting. Qutty's own parts (the overlay's placement, the chat
+   box, the brain's status dot) follow. */
 
 .companion-overlay {
-  /* Loopy's palette, from the theme (the example's teal-on-paper values are commented). */
+  /* The UI's palette, from the theme (the example's teal-on-paper values are commented). */
   --loopy-wire: var(--accent); /* #17a08a */
   --loopy-wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow)); /* #0b6b5c */
   --loopy-wire-shine: rgba(var(--hi-rgb), 0.6); /* #a6efe0 */
-  --loopy-ink: var(--text); /* #1d2b33: the face is drawn over the terminal */
+  --loopy-ink: var(--text); /* #1d2b33: the chat box's text */
+  /* Loopy's wire: bare steel, like a real paper clip; each mood tints it (.loopy[data-mood]). */
+  --loopy-clip: #b9c1c8;
+  --loopy-clip-edge: #5c656d;
+  --loopy-clip-shine: #ffffff;
+  /* The face, drawn on the steel bead whatever the theme. */
+  --loopy-face-ink: #1d2b33;
   --loopy-bubble: rgb(var(--panel-rgb)); /* #ffffff */
   --loopy-bubble-edge: var(--line-2); /* #d9d2c3 */
   --loopy-accent: var(--accent); /* #17a08a */
@@ -2306,15 +2315,14 @@ kbd {
 
 .companion-overlay .loopy {
   display: block;
-  width: 120px;
+  width: 160px;
   height: 200px;
   overflow: visible;
 }
 
 /* In the small desktop window Loopy is a little smaller, leaving room for the bubble. */
-
 .companion-overlay .loopy {
-  width: 90px;
+  width: 120px;
   height: 150px;
 }
 
@@ -2327,25 +2335,367 @@ kbd {
   stroke-linejoin: round;
 }
 
+/* The wire takes the mood of the message on screen: steel when neutral, violet while thinking,
+   amber for attention, green for success. */
+.companion-overlay .loopy[data-mood="thinking"] {
+  --loopy-clip: #a596ff;
+  --loopy-clip-edge: #4a3da6;
+  --loopy-clip-shine: #ebe7ff;
+}
+
+.companion-overlay .loopy[data-mood="attention"] {
+  --loopy-clip: #f2b544;
+  --loopy-clip-edge: #9a6400;
+  --loopy-clip-shine: #fff2cc;
+}
+
+.companion-overlay .loopy[data-mood="success"] {
+  --loopy-clip: #3ccf7a;
+  --loopy-clip-edge: #17734a;
+  --loopy-clip-shine: #dbffe9;
+}
+
+.companion-overlay .loopy-wire-edge,
+.companion-overlay .loopy-wire,
+.companion-overlay .loopy-wire-shine {
+  transition: stroke 400ms ease-out;
+}
+
+.companion-overlay .loopy[data-mood="confused"] {
+  --loopy-clip: #c58cf5;
+  --loopy-clip-edge: #6b2fa0;
+  --loopy-clip-shine: #f3e3ff;
+}
+
+.companion-overlay .loopy[data-mood="mad"] {
+  --loopy-clip: #e5484d;
+  --loopy-clip-edge: #8a1a1f;
+  --loopy-clip-shine: #ffd6d7;
+}
+
+.companion-overlay .loopy[data-mood="sad"] {
+  --loopy-clip: #5b9cff;
+  --loopy-clip-edge: #1f4f9e;
+  --loopy-clip-shine: #dce9ff;
+}
+
+.companion-overlay .loopy[data-mood="excited"] {
+  --loopy-clip: #ff8a3d;
+  --loopy-clip-edge: #a84a0c;
+  --loopy-clip-shine: #ffe2cc;
+}
+
+.companion-overlay .loopy[data-mood="sleepy"] {
+  --loopy-clip: #8d9bb3;
+  --loopy-clip-edge: #46526a;
+  --loopy-clip-shine: #e7ecf5;
+}
+
+.companion-overlay .loopy[data-mood="love"] {
+  --loopy-clip: #ff6fae;
+  --loopy-clip-edge: #a3245f;
+  --loopy-clip-shine: #ffe0ee;
+}
+
+.companion-overlay .loopy[data-mood="surprised"] {
+  --loopy-clip: #ffd23f;
+  --loopy-clip-edge: #9c7600;
+  --loopy-clip-shine: #fff6cf;
+}
+
+.companion-overlay .loopy[data-mood="shocked"] {
+  --loopy-clip: #36e2ff;
+  --loopy-clip-edge: #0a7a94;
+  --loopy-clip-shine: #dcfaff;
+}
+
+.companion-overlay .loopy[data-mood="wow"] {
+  --loopy-clip: #ffc83d;
+  --loopy-clip-edge: #b06f00;
+  --loopy-clip-shine: #fff3c4;
+}
+
+.companion-overlay .loopy-eyes ellipse:not(.loopy-eye-white) {
+  fill: #3b1e14;
+}
+
+.companion-overlay .loopy .loopy-tongue {
+  fill: #e86a7a;
+}
+
+.companion-overlay .loopy-star-eyes path,
+.companion-overlay .loopy-wow-sparks path {
+  fill: #ffb800;
+  stroke: #8a5a00;
+  stroke-width: 0.8;
+}
+
+.companion-overlay .loopy-wow-sparks path {
+  animation: loopy-twinkle 0.9s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.companion-overlay .loopy-wow-sparks path:nth-child(2) {
+  animation-delay: 0.3s;
+}
+
+.companion-overlay .loopy-wow-sparks path:nth-child(3) {
+  animation-delay: 0.6s;
+}
+
+.companion-overlay .loopy .loopy-exclaim {
+  fill: var(--loopy-clip-edge);
+  font: 900 24px system-ui, sans-serif;
+  animation: loopy-pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.companion-overlay .loopy .loopy-zaps path {
+  stroke: var(--loopy-clip-edge);
+  stroke-width: 2.6;
+  animation: loopy-flicker 0.25s steps(2) infinite;
+}
+
+/* surprised: a pop up; shocked: a stiff jolt and a jitter. */
+.companion-overlay .loopy[data-state="idle"][data-mood="surprised"] .loopy-body {
+  animation: loopy-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.companion-overlay .loopy[data-state="idle"][data-mood="shocked"] .loopy-body,
+.companion-overlay .loopy[data-state="blink"][data-mood="shocked"] .loopy-body {
+  animation: loopy-jitter 0.12s linear infinite;
+}
+
+@keyframes loopy-pop {
+  0% {
+    transform: scale(0.85);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes loopy-jitter {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-1.5px, 1px);
+  }
+  50% {
+    transform: translate(1.5px, -1px);
+  }
+  75% {
+    transform: translate(-1px, -1px);
+  }
+}
+
+@keyframes loopy-twinkle {
+  0%,
+  100% {
+    transform: scale(0.7) rotate(0);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.15) rotate(20deg);
+    opacity: 1;
+  }
+}
+
+@keyframes loopy-flicker {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Face parts that only some moods show. */
+.companion-overlay .loopy .loopy-mouth.is-open {
+  fill: #5a1f24;
+}
+
+.companion-overlay .loopy-heart-eyes path {
+  fill: #e2306c;
+  stroke: none;
+}
+
+.companion-overlay .loopy-extra {
+  pointer-events: none;
+}
+
+.companion-overlay .loopy .loopy-question,
+.companion-overlay .loopy .loopy-zs text {
+  fill: var(--loopy-clip-edge);
+  font: 800 22px system-ui, sans-serif;
+}
+
+.companion-overlay .loopy .loopy-zs text {
+  font-size: 13px;
+  animation: loopy-drift 2.4s ease-in-out infinite;
+}
+
+.companion-overlay .loopy .loopy-zs text:nth-child(2) {
+  animation-delay: 0.4s;
+}
+
+.companion-overlay .loopy .loopy-zs text:nth-child(3) {
+  animation-delay: 0.8s;
+}
+
+.companion-overlay .loopy .loopy-question {
+  animation: loopy-wobble 1.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.companion-overlay .loopy .loopy-steam path {
+  stroke: #c9cdd1;
+  stroke-width: 3;
+  animation: loopy-drift 1s ease-in-out infinite;
+}
+
+.companion-overlay .loopy .loopy-tear {
+  fill: #7fc3ff;
+  stroke: #3b82c4;
+  stroke-width: 0.8;
+  animation: loopy-fall 2.2s ease-in infinite;
+}
+
+.companion-overlay .loopy-blush ellipse {
+  fill: #ff7aa8;
+  opacity: 0.55;
+}
+
+.companion-overlay .loopy-floating-hearts path {
+  fill: #ff4f93;
+  stroke: none;
+  animation: loopy-drift 2s ease-in-out infinite;
+}
+
+.companion-overlay .loopy-floating-hearts path:nth-child(2) {
+  animation-delay: 0.7s;
+}
+
+@keyframes loopy-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+@keyframes loopy-wobble {
+  0%,
+  100% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes loopy-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+
+/* Body language for the moods that hold idle: a shake (mad), a droop (sad), a slow nod (sleepy). */
+.companion-overlay .loopy[data-state="idle"][data-mood="mad"] .loopy-body,
+.companion-overlay .loopy[data-state="blink"][data-mood="mad"] .loopy-body {
+  animation: loopy-shake 0.45s ease-in-out infinite;
+}
+
+.companion-overlay .loopy[data-state="idle"][data-mood="sad"] .loopy-body,
+.companion-overlay .loopy[data-state="blink"][data-mood="sad"] .loopy-body {
+  animation: none;
+  transform: translateY(4px) scale(1.03, 0.95);
+  transition: transform 500ms ease-out;
+}
+
+.companion-overlay .loopy[data-state="idle"][data-mood="sleepy"] .loopy-body,
+.companion-overlay .loopy[data-state="blink"][data-mood="sleepy"] .loopy-body {
+  animation: loopy-nod 3.6s ease-in-out infinite;
+}
+
+@keyframes loopy-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  25% {
+    transform: translateX(-3px) rotate(-2deg);
+  }
+  75% {
+    transform: translateX(3px) rotate(2deg);
+  }
+}
+
+@keyframes loopy-nod {
+  0%,
+  100% {
+    transform: rotate(-1deg);
+  }
+  60% {
+    transform: rotate(-6deg) translateY(2px);
+  }
+}
+
 .companion-overlay .loopy-wire-edge {
-  stroke: var(--loopy-wire-edge);
-  stroke-width: 10;
+  stroke: var(--loopy-clip-edge);
+  stroke-width: 15;
 }
 
 .companion-overlay .loopy-wire {
-  stroke: var(--loopy-wire);
-  stroke-width: 7.5;
+  stroke: var(--loopy-clip);
+  stroke-width: 11.5;
 }
 
 .companion-overlay .loopy-wire-shine {
-  stroke: var(--loopy-wire-shine);
-  stroke-width: 2;
+  stroke: var(--loopy-clip-shine);
+  stroke-width: 3;
   opacity: 0.8;
-  transform: translate(-1.6px, -1.2px);
+  transform: translate(-2.4px, -1.8px);
 }
 
 .companion-overlay .loopy-eyes circle {
-  fill: var(--loopy-ink);
+  fill: var(--loopy-face-ink);
+}
+
+.companion-overlay .loopy-eyes .loopy-eye-white {
+  fill: #ffffff;
+  stroke: var(--loopy-face-ink);
+  stroke-width: 1;
+}
+
+.companion-overlay .loopy-bead {
+  stroke: #4b545b;
+  stroke-width: 1;
+}
+
+.companion-overlay .loopy .loopy-brows path {
+  stroke: var(--loopy-face-ink);
+  stroke-width: 3.4;
+}
+
+.companion-overlay .loopy-brows {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 200ms ease-out;
 }
 
 .companion-overlay .loopy-eyes {
@@ -2354,8 +2704,8 @@ kbd {
 }
 
 .companion-overlay .loopy .loopy-mouth {
-  stroke: var(--loopy-ink);
-  stroke-width: 2.2;
+  stroke: var(--loopy-face-ink);
+  stroke-width: 2.8;
 }
 
 .companion-overlay .loopy-shadow {
@@ -2366,12 +2716,12 @@ kbd {
 
 .companion-overlay .loopy-body {
   transform-box: view-box;
-  transform-origin: 60px 186px;
+  transform-origin: 80px 186px;
 }
 
 .companion-overlay .loopy-arm {
   transform-box: view-box;
-  transform-origin: 84px 160px;
+  transform-origin: 80px 138px;
   transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 
@@ -2390,7 +2740,6 @@ kbd {
 }
 
 /* hidden: folded away */
-
 .companion-overlay .loopy[data-state="hidden"] .loopy-body {
   transform: scale(1, 0.04);
   opacity: 0;
@@ -2401,7 +2750,6 @@ kbd {
 }
 
 /* idle: a gentle sway about the bottom bend */
-
 .companion-overlay .loopy[data-state="idle"] .loopy-body,
 .companion-overlay .loopy[data-state="blink"] .loopy-body {
   animation: loopy-sway 3.4s ease-in-out infinite;
@@ -2418,7 +2766,6 @@ kbd {
 }
 
 /* blink */
-
 .companion-overlay .loopy[data-state="blink"] .loopy-eyes {
   animation: loopy-blink 160ms ease-in-out;
 }
@@ -2430,7 +2777,6 @@ kbd {
 }
 
 /* appear: spring up from the desk */
-
 .companion-overlay .loopy[data-state="appear"] .loopy-body {
   animation: loopy-spring 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
@@ -2456,7 +2802,6 @@ kbd {
 }
 
 /* think: a tilt, eyes up, a trail of dots */
-
 .companion-overlay .loopy[data-state="think"] .loopy-body {
   transform: rotate(-5deg);
   transition: transform 300ms ease-out;
@@ -2468,6 +2813,15 @@ kbd {
 
 .companion-overlay .loopy[data-state="think"] .loopy-thought {
   opacity: 1;
+}
+
+.companion-overlay .loopy[data-state="think"] .loopy-brows {
+  transform: translateY(-2px) rotate(-4deg);
+}
+
+.companion-overlay .loopy[data-state="celebrate"] .loopy-brows,
+.companion-overlay .loopy[data-state="appear"] .loopy-brows {
+  transform: translateY(-2.5px);
 }
 
 .companion-overlay .loopy[data-state="think"] .loopy-thought circle {
@@ -2493,9 +2847,8 @@ kbd {
 }
 
 /* point: the outer leg unbends up toward the bubble, and Loopy leans after it */
-
 .companion-overlay .loopy[data-state="point"] .loopy-arm {
-  transform: rotate(34deg);
+  transform: rotate(12deg);
 }
 
 .companion-overlay .loopy[data-state="point"] .loopy-body {
@@ -2508,7 +2861,6 @@ kbd {
 }
 
 /* celebrate: two hops and a shimmer */
-
 .companion-overlay .loopy[data-state="celebrate"] .loopy-body {
   animation: loopy-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
 }
@@ -2544,7 +2896,6 @@ kbd {
 }
 
 /* dismiss: fold down into the desk */
-
 .companion-overlay .loopy[data-state="dismiss"] .loopy-body {
   animation: loopy-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
 }
@@ -2579,6 +2930,30 @@ kbd {
   }
 }
 
+/* wow: the mouth says the word once, slowly — small "w", big "O", small "w" — and stays on the last
+   "w". The tongue moves with it. */
+.companion-overlay .loopy[data-mood="wow"] .loopy-mouth,
+.companion-overlay .loopy[data-mood="wow"] .loopy-tongue {
+  transform-box: view-box;
+  transform-origin: 80px 92px;
+  animation: loopy-say-wow 2.6s ease-in-out 0.6s both;
+}
+
+@keyframes loopy-say-wow {
+  0%,
+  15% {
+    transform: scale(0.45, 0.5);
+  }
+  40%,
+  60% {
+    transform: scale(1.05, 1.08);
+  }
+  85%,
+  100% {
+    transform: scale(0.45, 0.5);
+  }
+}
+
 /* ---------------------------------------------------------------- Qutty's additions */
 
 /* The example's fixed colours, from the theme (shapes untouched). */
@@ -2600,6 +2975,16 @@ kbd {
 }
 .companion-overlay .loopy-sparkles path {
   fill: var(--amber);
+}
+/* The moods' extras drawn beside the head (?, z's, !, zap lines) are in the wire's dark edge,
+   which a dark theme's terminal swallows: there they take the wire's own tint instead. */
+.companion-overlay .loopy .loopy-question,
+.companion-overlay .loopy .loopy-zs text,
+.companion-overlay .loopy .loopy-exclaim {
+  fill: light-dark(var(--loopy-clip-edge), var(--loopy-clip));
+}
+.companion-overlay .loopy .loopy-zaps path {
+  stroke: light-dark(var(--loopy-clip-edge), var(--loopy-clip));
 }
 
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the

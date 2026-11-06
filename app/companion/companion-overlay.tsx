@@ -28,6 +28,8 @@ import {
 } from "../../lib/companion/companion-state.ts";
 import {
   type LoopyModel,
+  type LoopyMood,
+  type LoopyState,
   nextTimer,
 } from "../../lib/companion/loopy-machine.ts";
 import type { LoopyMessage } from "../../lib/companion/messages.ts";
@@ -234,6 +236,18 @@ function ChatBox(props: {
   );
 }
 
+/**
+ * The mood Loopy wears: the message's on screen (as in the example), else `thinking` while it
+ * thinks with nothing to show (the brain working), else none (bare steel).
+ */
+function loopyMood(
+  current: LoopyMessage | undefined,
+  state: LoopyState,
+): LoopyMood | undefined {
+  if (current) return current.mood;
+  return state === "think" ? "thinking" : undefined;
+}
+
 /** Loopy, its bubble and its chat box, in a corner of the tile area. */
 export function CompanionOverlay(props: CompanionOverlayProps) {
   const { backend } = props;
@@ -315,7 +329,10 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       )}
       <div class="stage">
         <div class="squash" ref={squashRef} data-loopy-hit="">
-          <Loopy state={model.loopy.state} />
+          <Loopy
+            state={model.loopy.state}
+            mood={loopyMood(current, model.loopy.state)}
+          />
           <button
             type="button"
             class="poke"

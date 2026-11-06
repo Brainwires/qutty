@@ -15,6 +15,9 @@ import {
   isVisible,
   type LoopyEvent,
   type LoopyModel,
+  type LoopyMood,
+  type LoopyState,
+  MOODS,
   moodState,
   nextTimer,
   stateDurationMs,
@@ -29,6 +32,7 @@ import {
 import {
   type LoopyMessage,
   MAX_TEXT,
+  MOOD_ALIASES,
   parseSayRequest,
   readingTimeMs,
   SayError,
@@ -77,6 +81,31 @@ Deno.test("loopy machine: show springs up and settles; blinks only while idle; m
   for (const mood of ["thinking", "attention", "success"] as const) {
     const moved = transition(idle, { type: "say", mood });
     assertEquals(transition(moved, { type: "settle" }).state, "idle", mood);
+  }
+});
+
+Deno.test("loopy machine: the 13 moods each take the example's move", () => {
+  assertEquals(MOODS.length, 13);
+  const moves: Record<LoopyMood, LoopyState> = {
+    neutral: "idle",
+    thinking: "think",
+    attention: "point",
+    success: "celebrate",
+    confused: "think",
+    mad: "idle",
+    sad: "idle",
+    excited: "celebrate",
+    sleepy: "idle",
+    love: "celebrate",
+    surprised: "idle",
+    shocked: "idle",
+    wow: "celebrate",
+  };
+  assertEquals(Object.keys(moves), [...MOODS]);
+  const idle = run([{ type: "show" }, { type: "settle" }]);
+  for (const mood of MOODS) {
+    assertEquals(moodState(mood), moves[mood], mood);
+    assertEquals(transition(idle, { type: "say", mood }).state, moves[mood]);
   }
 });
 
@@ -205,11 +234,33 @@ Deno.test("say: the example's message shape and validation", () => {
   });
   assertEquals(asked.message.timeoutMs, 0);
   assertEquals(asked.wait, true);
+  // Every one of the 13 moods; Qutty's state names are aliases of three of them.
+  for (const mood of MOODS) {
+    assertEquals(parseSayRequest({ text: "x", mood }).message.mood, mood);
+  }
+  for (const [alias, mood] of Object.entries(MOOD_ALIASES)) {
+    assertEquals(
+      parseSayRequest({ text: "x", mood: alias }).message.mood,
+      mood,
+    );
+  }
+  assertEquals(MOOD_ALIASES, {
+    idle: "neutral",
+    ask: "attention",
+    error: "sad",
+  });
+  assertMatch(
+    assertThrows(() => parseSayRequest({ text: "x", mood: "angry" }), SayError)
+      .message,
+    /neutral, thinking, attention, success, confused, mad, sad, excited, sleepy, love, surprised, shocked, wow/,
+  );
   for (
     const [body, reason] of [
       [{}, /text/],
       [{ text: "x".repeat(MAX_TEXT + 1) }, /text/],
       [{ text: "x", mood: "angry" }, /mood/],
+      [{ text: "x", mood: "constructor" }, /mood/],
+      [{ text: "x", mood: 3 }, /mood/],
       [{ text: "x", actions: [{ id: "a b", label: "A" }] }, /actions\[0\]\.id/],
       [{ text: "x", timeoutMs: 10 }, /timeoutMs/],
     ] as Array<[unknown, RegExp]>
@@ -225,6 +276,10 @@ Deno.test("qutty-hook say: words and flags become the say request; usage errors 
   assertEquals(parseSayArgs(["Tests", "passed", "--mood", "success"]), {
     text: "Tests passed",
     mood: "success",
+  });
+  assertEquals(parseSayArgs(["Night", "--mood", "sleepy"]), {
+    text: "Night",
+    mood: "sleepy",
   });
   assertEquals(
     parseSayArgs([
@@ -313,7 +368,7 @@ Deno.test("bubbles: a user turn shows at once and streams; an agents' turn only 
   assertEquals(done.timeoutMs, replyTimeoutMs("Tile 1 is a shell."));
   assertEquals(
     turnBubble({ ...base, text: "I stopped", done: true, isError: true })!.mood,
-    "attention",
+    "sad",
   );
   const mail = { ...base, source: "mail" as const };
   assertEquals(

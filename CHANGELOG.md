@@ -18,6 +18,12 @@
   Companion, which also sets the corner, the brain and its model, and Off
   (questions then use the card, as before). Follows the theme and reduced
   motion.
+- Loopy is redrawn as Denext's current companion: one continuous wire bent into
+  two crossed triangle clips, with a steel bead head and a face. It has 13 moods
+  (`neutral`, `thinking`, `attention`, `success`, `confused`, `mad`, `sad`,
+  `excited`, `sleepy`, `love`, `surprised`, `shocked`, `wow`), each with its own
+  wire tint, face and extras, for `qutty-hook say --mood`; `idle`, `ask` and
+  `error` are accepted as aliases. A failed companion turn now looks sad.
 
 ## 0.2.0 — SSH, shell picker, scaled tiles
 
