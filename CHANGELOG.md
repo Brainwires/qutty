@@ -49,7 +49,8 @@
   on?", asks Loopy for a short summary of every tile. Answers can be read aloud
   (voice, rate, volume), and optional spoken alerts say when an agent finishes,
   needs you, or reports a failed build (`set_status` now takes a `note`).
-  Talking or pressing the mic stops the speech.
+  Talking or pressing the mic stops the speech. Loopy's head glows while it
+  listens, and its mouth moves while it speaks.
   - Speech to text runs on your computer by default: rullama-hardware's Whisper,
     through a native library (`deno task audio:lib` builds it from Rullama). Its
     model (Whisper base.en, 57 MB) is downloaded once, after a size notice, and

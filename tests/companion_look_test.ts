@@ -6,8 +6,9 @@
 // .companion-overlay there). Where the example can be read (DENEXT_DIR, default ../denext beside
 // the repo, at the git ref DENEXT_LOOPY_REF, default origin/feat/loopy-voice-tools; an empty ref
 // reads the checkout's files), the snapshot is also compared with it, and
-// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it. The example's voice turn (lip-sync,
-// the listening pulse, its size setting) is not Qutty's and is left out.
+// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it. The voice turn is included: Loopy
+// listening, thinking and speaking at each lip-sync step, and the example's voice rules (the
+// listening pulse, the speaking mouth); its size setting is not Qutty's and is left out.
 
 import { assert, assertEquals } from "@std/assert";
 import { join, toFileUrl } from "@std/path";
@@ -43,6 +44,8 @@ interface Shape {
   tints: Record<string, string[]>;
   /** mood → the SVG Loopy renders in it (idle), without the voice turn's attributes. */
   svg: Record<string, string>;
+  /** voice turn (`speaking-<step>`, `listening-<step>`, `thinking`) → the SVG (neutral, idle). */
+  voice: Record<string, string>;
 }
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -168,6 +171,26 @@ async function renderMoods(
   return out;
 }
 
+/** The SVG a Loopy component renders in each voice turn: every lip-sync step, listening, thinking. */
+async function renderVoice(
+  component: LoopyComponent,
+): Promise<Shape["voice"]> {
+  const turns: [string, Record<string, unknown>][] = [
+    ["thinking", { voice: "thinking" }],
+  ];
+  for (let step = 0; step <= 4; step++) {
+    turns.push([`speaking-${step}`, { voice: "speaking", level: step }]);
+    turns.push([`listening-${step}`, { voice: "listening", level: step }]);
+  }
+  const out: Shape["voice"] = {};
+  for (const [name, props] of turns) {
+    out[name] = await renderToString(
+      jsx(component as never, { state: "idle", ...props }) as never,
+    );
+  }
+  return out;
+}
+
 /** Qutty's shape: the CSS block scoped under .companion-overlay, and the rendered SVG. */
 async function qutty(): Promise<Shape> {
   const css = await Deno.readTextFile(new URL("public/styles.css", ROOT));
@@ -183,6 +206,7 @@ async function qutty(): Promise<Shape> {
     ...cssShape(block, /\.companion-overlay /g, keep),
     tints: tints(block, ".companion-overlay", /^\.companion-overlay /),
     svg: await renderMoods(Loopy),
+    voice: await renderVoice(Loopy),
   };
 }
 
@@ -242,22 +266,25 @@ async function example(): Promise<Shape | null> {
   if (css === null) return null;
   const component = await exampleLoopy(read);
   if (!component) return null;
-  // The speech bubble, stage and Loopy sections; not the voice turn's size setting after them.
-  const from = css.indexOf(
-    "/* ---------------------------------------------------------------- speech bubble */",
-  );
-  const to = css.indexOf(
-    "/* ---------------------------------------------------------------- size */",
-  );
-  const loopyCss = css.slice(from, to < 0 ? undefined : to);
+  // The speech bubble, stage, Loopy and voice sections; not the size setting between them.
+  const section = (name: string) =>
+    css.indexOf(
+      `/* ---------------------------------------------------------------- ${name} */`,
+    );
+  const sizeAt = section("size");
+  const voiceAt = section("voice");
+  const settingsAt = section("settings");
+  const loopyCss = css.slice(
+    section("speech bubble"),
+    sizeAt < 0 ? undefined : sizeAt,
+  ) + (voiceAt < 0
+    ? ""
+    : css.slice(voiceAt, settingsAt < 0 ? undefined : settingsAt));
   const keep = (s: string) =>
     s.split(", ").filter((p) =>
       !/^\.(controls|demo|companion)\b|^button$/.test(p)
     )
-      .every((p) =>
-        (LOOPY_SELECTOR.test(p) || p === ".is-desktop .loopy") &&
-        !p.includes("[data-voice")
-      );
+      .every((p) => LOOPY_SELECTOR.test(p) || p === ".is-desktop .loopy");
   const shape = cssShape(loopyCss, "", keep);
   // Its desktop-window size is the overlay's.
   const small = shape.rules[".is-desktop .loopy"];
@@ -277,6 +304,7 @@ async function example(): Promise<Shape | null> {
     ...shape,
     tints: tints(css, ":root", ""),
     svg: await renderMoods(component),
+    voice: await renderVoice(component),
   };
 }
 
@@ -287,6 +315,7 @@ Deno.test("Loopy's look: the SVG in every mood, the tints, the CSS shapes and th
   for (const mood of MOODS) {
     assertEquals(mine.svg[mood], snap.svg[mood], `Loopy drawn ${mood}`);
   }
+  assertEquals(mine.voice, snap.voice, "Loopy listening, thinking, speaking");
   assertEquals(mine.tints, snap.tints, "each mood's wire tint");
   assertEquals(mine.keyframes, snap.keyframes, "the keyframes of every move");
   for (const [sel, decls] of Object.entries(snap.rules)) {

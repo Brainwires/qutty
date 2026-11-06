@@ -21,10 +21,12 @@
 // until the next click), a Summarize button ("what's going on in the window?") and, while an
 // answer is read aloud, a stop button. With review on, a transcript waits in the chat box with
 // Send / Edit / Cancel before it goes to the companion (or, in dictate mode, the focused tile).
+// Loopy shows the voice turn as the example does: it listens (the head glows), thinks while the
+// transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync).
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
-import { Loopy } from "./loopy.tsx";
+import { Loopy, type LoopyProps } from "./loopy.tsx";
 import { SpeechBubble } from "./speech-bubble.tsx";
 import {
   type CompanionEvent,
@@ -53,6 +55,7 @@ import type { AskRequest } from "../../lib/hub/protocol.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
 import type { VoiceApi } from "../use-voice.ts";
 import type { VoicePhase } from "../../lib/voice/controller.ts";
+import { TALK_STEP_MS, talkStep } from "../../lib/companion/lip-sync.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -345,6 +348,32 @@ function loopyMood(
   return state === "think" ? "thinking" : undefined;
 }
 
+/** What Loopy does in the voice turn: listens, thinks while transcribing, or speaks. */
+function loopyVoice(
+  phase: VoicePhase,
+  speaking: boolean,
+): LoopyProps["voice"] {
+  if (phase === "starting" || phase === "listening") return "listening";
+  if (phase === "transcribing") return "thinking";
+  return speaking ? "speaking" : undefined;
+}
+
+/**
+ * Loopy's mouth step while something is said: the talking pattern, a step every
+ * {@linkcode TALK_STEP_MS}; with reduced motion a steady open mouth. Closed (0) otherwise.
+ */
+function useTalkStep(speaking: boolean, reducedMotion: boolean): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!speaking || reducedMotion) return;
+    setTick(0);
+    const timer = setInterval(() => setTick((t) => t + 1), TALK_STEP_MS);
+    return () => clearInterval(timer);
+  }, [speaking, reducedMotion]);
+  if (!speaking) return 0;
+  return reducedMotion ? 2 : talkStep(tick);
+}
+
 /** Loopy, its bubble and its chat box, in a corner of the tile area. */
 export function CompanionOverlay(props: CompanionOverlayProps) {
   const { backend } = props;
@@ -392,6 +421,11 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
 
   const voice = props.voice;
   const voicePhase = voice?.state.phase ?? "idle";
+  const loopyVoiceTurn = loopyVoice(voicePhase, voice?.speaking === true);
+  const talk = useTalkStep(
+    loopyVoiceTurn === "speaking",
+    props.reducedMotion,
+  );
   const voiceNote = voice
     ? voice.state.message || PHASE_NOTE[voicePhase] || ""
     : "";
@@ -466,6 +500,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           <Loopy
             state={model.loopy.state}
             mood={loopyMood(current, model.loopy.state)}
+            voice={loopyVoiceTurn}
+            level={talk}
           />
           <button
             type="button"

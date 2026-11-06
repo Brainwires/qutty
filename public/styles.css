@@ -2967,6 +2967,31 @@ kbd {
   }
 }
 
+/* ---------------------------------------------------------------- voice */
+
+/* Listening: the head swells gently with the microphone's level (--loopy-listen, 0–1) and glows. */
+.companion-overlay .loopy[data-voice="listening"] .loopy-head {
+  transform-box: view-box;
+  transform-origin: 80px 76px;
+  transform: scale(calc(1 + var(--loopy-listen, 0) * 0.07));
+  transition: transform 90ms ease-out;
+}
+
+.companion-overlay .loopy[data-voice="listening"] .loopy-bead {
+  filter: drop-shadow(0 0 calc(2px + var(--loopy-listen, 0) * 6px)
+    var(--accent));
+}
+
+/* Speaking: the mouth is the lip-sync shape; the wow mood's own mouth move stays off. */
+.companion-overlay .loopy[data-voice="speaking"] .loopy-mouth,
+.companion-overlay .loopy[data-voice="speaking"] .loopy-tongue {
+  animation: none;
+}
+
+.companion-overlay .loopy[data-voice="speaking"] .loopy-tongue {
+  display: none;
+}
+
 /* ---------------------------------------------------------------- Qutty's additions */
 
 /* The example's fixed colours, from the theme (shapes untouched). */

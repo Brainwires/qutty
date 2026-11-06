@@ -15,6 +15,8 @@ const OVERLAY = "[data-testid=companion-overlay]";
 const MIC = "[data-testid=loopy-mic]";
 const REVIEW = "[data-testid=voice-review]";
 const BUBBLE_TEXT = "[data-testid=loopy-bubble-text]";
+const LOOPY = `${OVERLAY} svg.loopy`;
+const MOUTH = `${LOOPY} .loopy-mouth`;
 
 /** Settings → Voice as given (persisted, then the page reloaded). */
 async function withVoice(app: App, patch: Partial<VoiceSettings>) {
@@ -148,6 +150,7 @@ suite("voice", (test) => {
     );
     assertEquals(await app.attr(MIC, "data-phase"), "listening");
     assertEquals(await app.attr(OVERLAY, "data-voice"), "listening");
+    assertEquals(await app.attr(LOOPY, "data-voice"), "listening");
     // The listening mic pulses (App.click waits for stillness): click its centre.
     const { x, y } = await center(app, MIC);
     await app.clickAt(x, y);
@@ -200,6 +203,19 @@ suite("voice", (test) => {
       "speaking",
     );
     assert(await app.exists("[data-testid=loopy-stop-speaking]"));
+    // Loopy speaks: its mouth is the lip-sync shape and moves (steady and open with reduced motion).
+    assertEquals(await app.attr(LOOPY, "data-voice"), "speaking");
+    const mouths = new Set<string>();
+    let opened = false;
+    for (let i = 0; i < 8; i++) {
+      mouths.add((await app.attr(MOUTH, "d")) ?? "");
+      opened ||= ((await app.attr(MOUTH, "class")) ?? "").includes("is-open");
+      await new Promise((r) => setTimeout(r, 90));
+    }
+    assert(opened, "the mouth opens while speaking");
+    if (!(await app.exists("[data-testid=app].reduced-motion"))) {
+      assert(mouths.size > 1, `the mouth moves: ${[...mouths].join(" | ")}`);
+    }
     const spoken = (await script(app)).spoken;
     assertEquals(spoken.length, 1);
     assertStringIncludes(spoken[0], "Tile 1 is");
@@ -211,6 +227,7 @@ suite("voice", (test) => {
       2000,
       "stopped speaking",
     );
+    assert((await app.attr(LOOPY, "data-voice")) !== "speaking");
     assert((await script(app)).stops >= 1);
   });
 
