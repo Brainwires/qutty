@@ -27,12 +27,24 @@ export default {
       // socket + MCP server per terminal, the screen mirror, ask_user, Settings → Agent
       // integration) taps the PTY host. The shared Docker sandbox (`desktop/sandbox.ts`) runs
       // docker in hidden PTYs and gives the PTY host the `docker exec` argv of sandboxed tiles.
+      // The voice backend (`desktop/voice.ts`: push-to-talk through rullama-hardware's audio
+      // library over FFI, the Whisper model download, cloud speech) serves the companion's voice
+      // layer (lib/voice/).
       extensions: [
         "./desktop/pty.ts",
         "./desktop/ssh.ts",
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",
+        "./desktop/voice.ts",
       ],
+      // The microphone: push-to-talk opens it in the app's own process (the native audio
+      // library's cpal capture), not through the page, so Denext's `microphone` capability (4.13,
+      // whose pinned runtime 3.0.0-denext.12 breaks node-pty's addon in the packaged app: TODO.md)
+      // is not used. The entitlement is `desktop.macos.entitlements` below; the Info.plist usage
+      // text is written by scripts/package-macos.ts (MICROPHONE_USAGE).
+      // Not yet: `secureStore: true` for cloud voice keys (Deepgram, ElevenLabs). Denext's packager
+      // then bakes `--allow-run=security` and `--allow-sys`, which the app must not have, so the
+      // cloud engines are off (lib/voice/engines.ts CLOUD_KEYS_UNAVAILABLE; TODO.md).
     },
     // What the extensions need beyond the baseline (which already has broad read + env):
     // - ffi "*": node-pty's prebuilt Node-API addon (pty.node) is loaded from the compiled app's
@@ -45,7 +57,16 @@ export default {
     //   The hub's TCP loopback endpoint for the shared Docker sandbox is bound the same way
     //   (`FdTcpListener`), so it needs no `net` permission either; docker itself runs through
     //   the PTY path.
+    //   The voice extension loads rullama-hardware's audio library (`librullama_audio_ffi`) from
+    //   the app-support folder the same way.
     //   No `run`, `write`, `net` or `sys` is needed.
+    // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either. (With the
+    // cloud voices on: `netConnect: ["api.deepgram.com", "api.elevenlabs.io"]`.)
     extraPermissions: { ffi: ["*"] },
+    // A signed (hardened runtime) build may open the microphone only with this entitlement; macOS
+    // then asks the user once, with the Info.plist text.
+    macos: {
+      entitlements: { "com.apple.security.device.audio-input": true },
+    },
   },
 } satisfies DenextConfig;

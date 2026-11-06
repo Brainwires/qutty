@@ -20,13 +20,19 @@
         "./desktop/pty.ts",
         "./desktop/ssh.ts",
         "./desktop/hub.ts",
-        "./desktop/sandbox.ts"
+        "./desktop/sandbox.ts",
+        "./desktop/voice.ts"
       ]
     },
     "extraPermissions": {
       "ffi": [
         "*"
       ]
+    },
+    "macos": {
+      "entitlements": {
+        "com.apple.security.device.audio-input": true
+      }
     }
   }
 }

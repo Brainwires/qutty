@@ -35,8 +35,11 @@ import {
   commandForKey,
   detectPlatform,
   isModifierRelease,
+  isPushToTalk,
   type KeyCommand,
   type KeyPlatform,
+  pttAvailable,
+  shortcutLabel,
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
@@ -65,6 +68,7 @@ import { useHub } from "./use-hub.ts";
 import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
+import { useVoice } from "./use-voice.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { effectiveMode } from "../lib/companion/settings.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
@@ -210,6 +214,23 @@ export function Workspace() {
     const id = stateRef.current.focusedId;
     if (id) managerRef.current?.focus(id);
   }, []);
+  const voice = useVoice({
+    backend: managerRef.current?.backend,
+    settings: state.settings.voice,
+    platform,
+    enabled: effectiveMode(state.settings.companion.mode) === "window",
+    typeIntoFocused: (text) => {
+      const manager = managerRef.current;
+      const id = stateRef.current.focusedId;
+      const pty = id ? manager?.ptyId(id) : undefined;
+      if (!manager || !pty) return false;
+      void manager.backend.write(pty, text).catch(() => {});
+      manager.focus(id!);
+      return true;
+    },
+  });
+  const pttKeyRef = useRef(state.settings.voice.pttKey);
+  pttKeyRef.current = state.settings.voice.pttKey;
 
   const runCommand = useCallback((cmd: KeyCommand) => {
     const now = Date.now();
@@ -290,7 +311,9 @@ export function Workspace() {
       onActivity: (id) => dispatch({ type: "activity", id }),
       // The shell needs a moment to start its foreground process before `info` is meaningful.
       onSpawned: (id) => setTimeout(() => void pollTitle(id), 400),
-      isWorkspaceShortcut: (e) => commandForKey(e, plat) !== null,
+      isWorkspaceShortcut: (e) =>
+        commandForKey(e, plat) !== null ||
+        isPushToTalk(e, pttKeyRef.current, plat),
     });
     managerRef.current = manager;
     if (testMode) installE2eHooks(manager, spy);
@@ -529,6 +552,10 @@ export function Workspace() {
             brain={settings.companion.brain}
             reducedMotion={reducedMotion}
             onRefocus={refocus}
+            voice={voice}
+            pttLabel={pttAvailable(settings.voice.pttKey, platform)
+              ? shortcutLabel(settings.voice.pttKey, platform)
+              : ""}
           />
         )}
         {ready && state.terminals.length === 0 && (
@@ -560,6 +587,8 @@ export function Workspace() {
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
+          onVoice={(patch) => run({ type: "setVoice", patch })}
+          voice={manager ? voice : null}
           onSandbox={(patch) => run({ type: "setSandbox", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}

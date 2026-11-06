@@ -268,6 +268,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     "theme",
     "font",
     "companion",
+    "voice",
     "sandbox",
     "integration",
   ]);

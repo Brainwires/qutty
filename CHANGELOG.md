@@ -39,6 +39,30 @@
   `excited`, `sleepy`, `love`, `surprised`, `shocked`, `wow`), each with its own
   wire tint, face and extras, for `qutty-hook say --mood`; `idle`, `ask` and
   `error` are accepted as aliases. A failed companion turn now looks sad.
+- Voice for the companion (Settings → Voice). Hold the mic button beside Loopy,
+  or hold ⌘⇧M (configurable, never a key the terminal gets), and speak. A short
+  click keeps listening until the next click. What you said appears in the chat
+  box for review (Send / Edit / Cancel; this step can be turned off), then goes
+  to the companion, which can answer, act on a tile or pass it to an agent. In
+  "Dictate into focused tile" mode, the transcript is typed into the focused
+  tile with no model involved. The Summarize button, or saying "what's going
+  on?", asks Loopy for a short summary of every tile. Answers can be read aloud
+  (voice, rate, volume), and optional spoken alerts say when an agent finishes,
+  needs you, or reports a failed build (`set_status` now takes a `note`).
+  Talking or pressing the mic stops the speech.
+  - Speech to text runs on your computer by default: rullama-hardware's Whisper,
+    through a native library (`deno task audio:lib` builds it from Rullama). Its
+    model (Whisper base.en, 57 MB) is downloaded once, after a size notice, and
+    checked against its SHA-256.
+  - Cloud engines (Deepgram, ElevenLabs, Deepgram Aura) are built in but
+    switched off in this release: keeping their keys would give the app more
+    permissions than it should have. They appear in Settings, disabled, with the
+    reason.
+  - Web Speech is offered only where the window has it.
+  - Nothing goes to a cloud service unless you pick one.
+  - The packaged macOS app asks for the microphone once
+    (`NSMicrophoneUsageDescription`, and the hardened runtime's audio-input
+    entitlement).
 
 ## 0.2.0 — SSH, shell picker, scaled tiles
 

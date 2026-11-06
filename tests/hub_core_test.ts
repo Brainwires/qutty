@@ -342,6 +342,18 @@ Deno.test("MCP handler: send_message / read_messages / set_name / set_status / b
   await call("pty-3", "set_status", { status: "waiting" });
   assertEquals(core.registry.get("pty-3")?.status, "waiting");
   assert((await call("pty-3", "set_status", { status: "sleeping" })).r.isError);
+  // A note says how it went (spoken alerts read it), and the next status clears it.
+  await call("pty-3", "set_status", { status: "idle", note: "build  failed" });
+  assertEquals(core.registry.get("pty-3")?.note, "build failed");
+  await call("pty-3", "set_status", { status: "busy" });
+  assertEquals(core.registry.get("pty-3")?.note, undefined);
+  assert(
+    (await call("pty-3", "set_status", {
+      status: "idle",
+      note: "x".repeat(121),
+    }))
+      .r.isError,
+  );
   assert((await call("pty-1", "send_message", { to: "runner" })).r.isError);
   assert((await call("pty-1", "set_name", { name: "codex" })).r.isError);
   assert((await call("pty-1", "nope", {})).r.isError);

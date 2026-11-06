@@ -520,6 +520,13 @@ export function writeFileAtomic(
   }
 }
 
+/** `rename(from, to)`, replacing `to` (both in one file system). */
+export function renamePath(from: string, to: string): void {
+  if (libc().rename(cstr(from), cstr(to)) !== 0) {
+    throw new Error(`cannot move ${from} to ${to} (errno ${errno()})`);
+  }
+}
+
 /** The bin folders a Finder-launched app's `PATH` lacks, searched after `PATH` itself. */
 const FALLBACK_BIN = [
   "/usr/local/bin",

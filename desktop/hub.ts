@@ -702,9 +702,12 @@ const sayDoneInput = objectSchema<{ id: string; action: string | null }>(
   }),
 );
 
-const sendInput = objectSchema<{ text: string }>((v, issues) => ({
-  text: str(v, "text", issues, 8000),
-}));
+const sendInput = objectSchema<{ text: string; via: "chat" | "voice" }>(
+  (v, issues) => ({
+    text: str(v, "text", issues, 8000),
+    via: v.via === "voice" ? "voice" : "chat",
+  }),
+);
 
 const configureInput = objectSchema<{ enabled: boolean; model: string }>(
   (v, issues) => {
@@ -768,14 +771,13 @@ export default defineDesktopExtension({
       handler: (): { status: CompanionStatus; activity: AuditEntry[] } =>
         requireService().companion.status(),
     },
-    /** The user typed to the companion; the reply streams as `companion` events. */
+    /** The user typed (or said) something to the companion; the reply streams as `companion` events. */
     companionSend: {
       input: sendInput,
-      handler: (args: unknown): { turn: number } => ({
-        turn: requireService().companion.runtime.userSays(
-          (args as { text: string }).text,
-        ),
-      }),
+      handler: (args: unknown): { turn: number } => {
+        const { text, via } = args as { text: string; via: "chat" | "voice" };
+        return { turn: requireService().companion.runtime.userSays(text, via) };
+      },
     },
     /** Settings → Companion: whether the brain may run, and its model. */
     companionConfigure: {

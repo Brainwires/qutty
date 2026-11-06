@@ -34,6 +34,12 @@ import {
   type SandboxSettings,
   sanitizeSandbox,
 } from "../sandbox/settings.ts";
+import {
+  DEFAULT_VOICE,
+  sameVoice,
+  sanitizeVoice,
+  type VoiceSettings,
+} from "../voice/settings.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -64,6 +70,7 @@ export type SettingsSection =
   | "theme"
   | "font"
   | "companion"
+  | "voice"
   | "sandbox"
   | "integration";
 /** Every settings-panel section, top to bottom. */
@@ -72,6 +79,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "theme",
   "font",
   "companion",
+  "voice",
   "sandbox",
   "integration",
 ];
@@ -128,6 +136,8 @@ export interface Settings extends FontSettings {
   lastLaunch: string | null;
   /** Settings → Companion (Loopy and its brain; lib/companion/settings.ts). */
   companion: CompanionSettings;
+  /** Settings → Voice (spoken answers and alerts, push-to-talk; lib/voice/settings.ts). */
+  voice: VoiceSettings;
   /** Settings → Sandbox (the window's shared Docker sandbox; lib/sandbox/settings.ts). */
   sandbox: SandboxSettings;
 }
@@ -188,6 +198,7 @@ export type WorkspaceAction =
   | { type: "setTheme"; theme: ThemeId }
   | { type: "setPlusOpens"; plusOpens: PlusOpens }
   | { type: "setCompanion"; patch: Partial<CompanionSettings> }
+  | { type: "setVoice"; patch: Partial<VoiceSettings> }
   | { type: "setSandbox"; patch: Partial<SandboxSettings> }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
@@ -208,6 +219,7 @@ export const DEFAULT_SETTINGS: Settings = {
   plusOpens: "default",
   lastLaunch: null,
   companion: { ...DEFAULT_COMPANION },
+  voice: { ...DEFAULT_VOICE },
   sandbox: { ...DEFAULT_SANDBOX },
   ...DEFAULT_FONT_SETTINGS,
 };
@@ -232,6 +244,7 @@ function cloneSettings(s: Settings): Settings {
     layout: { ...s.layout },
     collapsedSections: [...s.collapsedSections],
     companion: { ...s.companion },
+    voice: { ...s.voice },
     sandbox: { ...s.sandbox },
   };
 }
@@ -343,6 +356,7 @@ export function sanitizeSettings(
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
   }
+  if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
   if (Array.isArray(r.collapsedSections)) {
     out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
       (r.collapsedSections as unknown[]).includes(s)
@@ -613,6 +627,11 @@ export function reduce(
         )
       ) return state;
       return { ...state, settings: { ...state.settings, companion } };
+    }
+    case "setVoice": {
+      const voice = sanitizeVoice(action.patch, state.settings.voice);
+      if (sameVoice(voice, state.settings.voice)) return state;
+      return { ...state, settings: { ...state.settings, voice } };
     }
     case "setSandbox": {
       const sandbox = sanitizeSandbox(action.patch, state.settings.sandbox);

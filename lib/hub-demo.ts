@@ -249,8 +249,8 @@ export function createDemoHub(emit: DemoHubEmit) {
         if (a.request.from === id) close(askId);
       }
     },
-    setStatus(id: string, status: TileStatus): void {
-      registry.setStatus(id, status);
+    setStatus(id: string, status: TileStatus, note?: string): void {
+      registry.setStatus(id, status, note);
     },
     /**
      * Ask the user from tile `from`: the tile waits until `reply` gets the answer (`null` when
@@ -321,7 +321,8 @@ export function createDemoHub(emit: DemoHubEmit) {
           status: runtime.status(),
           activity: audit.recent(),
         }),
-      send: (text: string) => Promise.resolve({ turn: runtime.userSays(text) }),
+      send: (text: string, via: "chat" | "voice" = "chat") =>
+        Promise.resolve({ turn: runtime.userSays(text, via) }),
       configure(enabled: boolean, _model: string) {
         runtime.setEnabled(enabled);
         return Promise.resolve(runtime.status());
