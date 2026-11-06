@@ -5,6 +5,10 @@
 - The Homebrew cask now follows releases on its own: brainwires/homebrew-tap
   checks hourly for a new Qutty release and updates itself, so the release
   workflow no longer needs a token for it.
+- Loopy is now just its face: the steel bead head with its 13 moods, drawn 2.5
+  times larger and without the wire body. A thin rim in the mood's colour rings
+  the bead, the head bobs, hops and tilts in place of the body's moves, and
+  clicking anywhere on the face opens the chat.
 
 ## 0.3.0 — agent hub, companion, voice, SSH, sandbox
 

@@ -429,97 +429,132 @@ suite("companion", (test) => {
     { width: 1280, height: 800 },
   );
 
-  test("look: Loopy is drawn with the example's geometry, moods, sizes and moves", async (app) => {
+  test("look: Loopy's face is the example's, 2.5 times the clip's head, with its moods, rim and moves", async (app) => {
     await landed(app);
     const snap = JSON.parse(
       await Deno.readTextFile(
         join(ROOT, "tests/fixtures/companion/loopy-shape.json"),
       ),
-    ) as { svg: Record<string, string>; tints: Record<string, string[]> };
-    /** Loopy as drawn, and the snapshot's SVG for `mood`, as one line per element. */
+    ) as {
+      head: Record<string, string>;
+      tints: Record<string, string[]>;
+      avatar: { viewBox: string; width: number; height: number };
+    };
+    /** Loopy's head as drawn, and the snapshot's for `mood`, as one line per element. */
     const compare = (mood: string) =>
       app.eval(
         (s: string, markup: string) => {
-          const lines = (svg: Element) =>
-            [svg, ...svg.querySelectorAll("*")].map((el) =>
+          const lines = (g: Element) =>
+            [g, ...g.querySelectorAll("*")].map((el) =>
               [
-                el.tagName,
-                ...[...el.attributes]
-                  .filter((a) => a.name !== "data-state" && a.name !== "style")
-                  .map((a) => `${a.name}=${a.value}`),
+                el.tagName.toLowerCase(),
+                ...[...el.attributes].map((a) => `${a.name}=${a.value}`),
                 el.children.length ? "" : (el.textContent ?? ""),
               ].join(" ")
             );
           const live = document.querySelector(`${s} svg.loopy`)!;
-          const parsed = new DOMParser().parseFromString(markup, "text/html")
-            .querySelector("svg")!;
+          const parsed = new DOMParser().parseFromString(
+            `<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
+            "image/svg+xml",
+          ).querySelector("g")!;
           return {
-            live: lines(live),
+            mood: live.getAttribute("data-mood"),
+            live: lines(live.querySelector(".loopy-head")!),
             expected: lines(parsed),
-            wire: getComputedStyle(live.querySelector(".loopy-wire")!).stroke,
+            rim: getComputedStyle(live.querySelector(".loopy-bead")!).filter,
           };
         },
         OVERLAY,
-        snap.svg[mood],
+        snap.head[mood],
       );
     const rgb = (hex: string) =>
       `rgb(${
         [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")
       })`;
 
-    /** Loopy in `mood`, once its wire has eased into the mood's tint. */
+    /** Loopy in `mood`, once the rim has eased into the mood's tint (neutral: no rim). */
     const inMood = (mood: string) =>
       waitFor(
         async () => {
           const look = await compare(mood);
-          return look.wire === rgb(snap.tints[mood][0]) ? look : null;
+          if (look.mood !== mood) return null;
+          const tinted = mood === "neutral"
+            ? look.rim === "none"
+            : look.rim.includes(rgb(snap.tints[mood][0]));
+          return tinted ? look : null;
         },
         3000,
-        `Loopy's wire tinted ${mood}`,
+        `Loopy's rim tinted ${mood}`,
       );
 
-    // Neutral (nothing said): the bare steel wire, the bead head, the example's face.
+    // Neutral (nothing said): the bare steel bead, the example's face, no rim and no wire.
     const neutral = await inMood("neutral");
     assertEquals(neutral.live, neutral.expected);
 
     const drawn = await app.eval((s: string) => {
       const svg = document.querySelector<SVGSVGElement>(`${s} svg.loopy`)!;
-      const css = (sel: string, prop: string) =>
-        getComputedStyle(svg.querySelector(sel) ?? svg).getPropertyValue(prop);
+      const face = svg.querySelector(".loopy-face")!;
       const box = svg.getBoundingClientRect();
-      // Each move's animation (or pose), as the example's stylesheet sets it.
+      const poke = document.querySelector("[data-testid=loopy-poke]")!
+        .getBoundingClientRect();
+      const bead = svg.querySelector<SVGCircleElement>(".loopy-bead")!;
+      const beadBox = bead.getBBox();
+      const scale = svg.getScreenCTM()!.a;
+      // The bead on screen, without the face's own moves (the SVG's scale only).
+      const beadOnScreen = {
+        x: box.x + (beadBox.x - svg.viewBox.baseVal.x) * scale,
+        y: box.y + (beadBox.y - svg.viewBox.baseVal.y) * scale,
+        size: beadBox.width * scale,
+      };
+      // Each move's animation (or pose), on the head.
       const moves: Record<string, string> = {};
       for (const state of ["appear", "idle", "celebrate", "dismiss"]) {
         svg.setAttribute("data-state", state);
-        moves[state] = css(".loopy-body", "animation-name");
+        moves[state] = getComputedStyle(face).animationName;
       }
       for (const state of ["think", "point"]) {
         svg.setAttribute("data-state", state);
-        moves[state] = css(".loopy-body", "transform");
+        moves[state] = getComputedStyle(face).transform;
       }
       svg.setAttribute("data-state", "idle");
       return {
-        size: [Math.round(box.width), Math.round(box.height)],
-        strokes: [".loopy-wire-edge", ".loopy-wire", ".loopy-wire-shine"].map((
-          c,
-        ) => css(c, "stroke-width")),
+        size: [box.width, box.height],
+        viewBox: svg.getAttribute("viewBox"),
+        bead: beadOnScreen,
+        poke: { x: poke.x, y: poke.y, w: poke.width, h: poke.height },
+        wire: svg.querySelectorAll(".loopy-wire, .loopy-body").length,
         moves,
       };
     }, OVERLAY);
     assertEquals(
       drawn.size,
-      [120, 150],
-      "the example's size in its desktop window",
+      [snap.avatar.width, snap.avatar.height],
+      "the avatar's size",
     );
-    assertEquals(drawn.strokes, ["15px", "11.5px", "3px"]);
-    assertEquals(drawn.moves.appear, "loopy-spring");
-    assertEquals(drawn.moves.idle, "loopy-sway");
-    assertEquals(drawn.moves.celebrate, "loopy-hop");
-    assertEquals(drawn.moves.dismiss, "loopy-fold");
-    assert(drawn.moves.think.startsWith("matrix("), "think: a tilt");
-    assert(drawn.moves.point.startsWith("matrix("), "point: a lean");
+    assertEquals(drawn.viewBox, snap.avatar.viewBox);
+    assert(
+      drawn.size[0] < 120 && drawn.size[1] < 150,
+      "smaller than the whole clip was (120 x 150)",
+    );
+    // The clip's head was 43.5 px across in its 120 x 150 window.
+    assertEquals(drawn.bead.size, 43.5 * 2.5, "the head 2.5 times the clip's");
+    assertEquals(drawn.wire, 0, "no wire body");
+    // The poke target is the whole bead.
+    const near = (a: number, b: number) => Math.abs(a - b) < 1;
+    assert(
+      near(drawn.poke.x, drawn.bead.x) && near(drawn.poke.y, drawn.bead.y) &&
+        near(drawn.poke.w, drawn.bead.size) &&
+        near(drawn.poke.h, drawn.bead.size),
+      `the poke target covers the bead: ${JSON.stringify(drawn)}`,
+    );
+    assertEquals(drawn.moves.appear, "loopy-face-pop-in");
+    assertEquals(drawn.moves.idle, "loopy-face-bob");
+    assertEquals(drawn.moves.celebrate, "loopy-face-hop");
+    assertEquals(drawn.moves.dismiss, "loopy-face-fold");
+    assert(drawn.moves.think.startsWith("matrix("), "think: a tilt back");
+    assert(drawn.moves.point.startsWith("matrix("), "point: a nudge");
 
-    // A mood said: its face, its extras and its wire tint (and an alias of Qutty's states).
+    // A mood said: its face, its extras and its rim (and an alias of Qutty's states).
     const shell = (await app.focusedId())!;
     for (
       const [said, mood] of [["sleepy", "sleepy"], ["error", "sad"]] as const
@@ -531,7 +566,7 @@ suite("companion", (test) => {
       await app.click("[data-testid=loopy-bubble-close]");
     }
 
-    // The bubble's shape: the example's radius, border, padding and tail.
+    // The bubble's shape: the example's radius, border, padding and tail (re-aimed at the face).
     await app.run(shell, "qutty-hook say Shape check");
     await waitBubble(app, (b) => b.text === "Shape check", "the bubble");
     const bubbleShape = await app.eval((s: string) => {
@@ -554,7 +589,7 @@ suite("companion", (test) => {
       "240px",
       "13.5px",
       "14px",
-      "48px",
+      "74px",
       "-8px",
     ]);
   });
@@ -562,8 +597,8 @@ suite("companion", (test) => {
   test("reduced motion: Loopy's moves land at once", async (app) => {
     await waitFor(() => app.exists(OVERLAY), 3000, "the overlay");
     const durations = await app.eval(() => {
-      const body = document.querySelector(".loopy-body")!;
-      return getComputedStyle(body).animationDuration;
+      const face = document.querySelector(".loopy-face")!;
+      return getComputedStyle(face).animationDuration;
     });
     assertEquals(durations, "0.001s");
     await chat(app, "hello");
