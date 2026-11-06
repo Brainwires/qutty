@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — SSH, shell picker, scaled tiles
+
 - Homebrew: `brew install --cask brainwires/tap/qutty`. Each release updates the
   cask automatically.
 - Public repository, contributing guide, security policy and issue templates.
