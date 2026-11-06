@@ -442,12 +442,15 @@ export class TerminalManager {
    */
   async #command(
     profile: TerminalProfile,
-  ): Promise<{ shell?: string; program?: string; args?: string[] }> {
+  ): Promise<
+    { shell?: string; program?: string; args?: string[]; agent?: string }
+  > {
     switch (profile.kind) {
       case "shell":
         return profile.shell ? { shell: profile.shell } : {};
       case "agent":
-        return { program: profile.program, args: [] };
+        // `agent` lets the hub add the flags that connect it (desktop/hub.ts).
+        return { program: profile.program, args: [], agent: profile.name };
       case "ssh": {
         const { program, args } = await this.#backend.sshCommand(
           profile.target,
@@ -551,6 +554,14 @@ export class TerminalManager {
   /** What terminal `id` runs (`undefined` when unknown). */
   profile(id: string): TerminalProfile | undefined {
     return this.#terms.get(id)?.profile;
+  }
+
+  /**
+   * The id of the PTY behind terminal `id` (`pty-3`; the agent hub keys its tiles by it), or
+   * `null` while none is running. It changes when the terminal restarts.
+   */
+  ptyId(id: string): string | null {
+    return this.#terms.get(id)?.ptyId ?? null;
   }
 
   /** An SSH tile's remote working directory, from its last OSC 7 report. */

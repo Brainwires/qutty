@@ -72,6 +72,11 @@ export interface PtySpawnArgs {
   program?: string;
   /** The program's arguments (after its name). */
   args?: string[];
+  /**
+   * The agent tool `program` is (an `AGENT_TOOLS` name, lib/launcher.ts): the agent hub adds the
+   * arguments that connect it (desktop/hub.ts).
+   */
+  agent?: string;
 }
 
 /** `spawn` result. */
@@ -123,6 +128,7 @@ const spawnInput = objectSchema<PtySpawnArgs>((v, issues) => {
     shell: optStr(v, "shell", issues),
     program: optStr(v, "program", issues),
     ...(args === undefined ? {} : { args }),
+    ...(v.agent === undefined ? {} : { agent: str(v, "agent", issues, 64) }),
   };
 });
 
@@ -256,7 +262,7 @@ function darwinLibc() {
 }
 
 /** The calling thread's errno (read right after the failing call, on the same JS thread). */
-function errno(): number {
+export function errno(): number {
   const ptr = IS_DARWIN
     ? darwinLibc().__error()
     : (linuxCache ??= Deno.dlopen(LIBC_PATH, LINUX_SYMBOLS).symbols)
@@ -658,6 +664,53 @@ export type PtyEmit = (
   data: PtyDataEvent | PtyExitEvent,
 ) => void;
 
+/**
+ * Observers of the app's terminals: the agent hub (desktop/hub.ts) gives each terminal its socket
+ * and environment, mirrors its output and forgets it when it ends. Only the PTY extension's own
+ * host is tapped (not the hidden PTYs desktop/ssh.ts runs scp/sftp in). A tap that throws is
+ * logged and ignored: the hub must never break a terminal.
+ */
+export interface PtyTaps {
+  /** Before the fork: extra environment, and arguments put before a program's own. */
+  spawning?(
+    id: string,
+    info: {
+      program?: string;
+      agent?: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+    },
+  ): {
+    env?: Record<string, string>;
+    /** A folder put first on `PATH`. */
+    pathPrepend?: string;
+    args?: string[];
+  } | undefined;
+  /** Output, as the page gets it (decoded, coalesced). */
+  data?(id: string, data: string): void;
+  resized?(id: string, cols: number, rows: number): void;
+  /** The terminal ended (or its spawn failed after `spawning`). */
+  ended?(id: string): void;
+}
+
+let ptyTaps: PtyTaps | undefined;
+
+/** Install (or with `undefined` remove) the {@linkcode PtyTaps} of the extension's host. */
+export function setPtyTaps(taps: PtyTaps | undefined): void {
+  ptyTaps = taps;
+}
+
+/** Call a tap, logging (not throwing) its failure. */
+function tap<T>(name: string, fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch (err) {
+    console.error(`pty: ${name} tap failed`, err);
+    return undefined;
+  }
+}
+
 /** Options for {@linkcode PtyHost.spawn}. */
 export interface PtySpawnOptions {
   /** Where to copy spawn-helper when the package's copy cannot be executed. */
@@ -671,9 +724,16 @@ export class PtyHost {
   readonly #terms = new Map<string, Term>();
   #emit: PtyEmit;
   #nextId = 0;
+  readonly #tapped: boolean;
 
-  constructor(emit: PtyEmit) {
+  /** @param opts `tapped`: report to the module's {@linkcode PtyTaps} (the extension's host only). */
+  constructor(emit: PtyEmit, opts: { tapped?: boolean } = {}) {
     this.#emit = emit;
+    this.#tapped = opts.tapped === true;
+  }
+
+  #taps(): PtyTaps | undefined {
+    return this.#tapped ? ptyTaps : undefined;
   }
 
   /** Replace the event sink (the extension re-binds to the latest handler's `ctx.emit`). */
@@ -738,9 +798,29 @@ export class PtyHost {
     if (args.program !== undefined) env.PATH = programPath(file);
     // A Finder-launched app has no locale; a UTF-8 one keeps the shell's line editing sane.
     if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = "en_US.UTF-8";
-    const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
 
     const id = `pty-${++this.#nextId}`;
+    const taps = this.#taps();
+    const extra = taps?.spawning
+      ? tap("spawning", () =>
+        taps.spawning!(id, {
+          ...(args.program !== undefined ? { program: file } : {}),
+          ...(args.agent !== undefined ? { agent: args.agent } : {}),
+          cwd,
+          cols: args.cols,
+          rows: args.rows,
+        }))
+      : undefined;
+    Object.assign(env, extra?.env ?? {});
+    if (extra?.pathPrepend) {
+      env.PATH = [extra.pathPrepend, ...(env.PATH ?? "").split(":")]
+        .filter((d, i, all) => d !== "" && all.indexOf(d) === i).join(":");
+    }
+    if (args.program !== undefined && extra?.args?.length) {
+      argv = [...extra.args, ...argv];
+    }
+    const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+
     // Assigned once after fork; the exit callback reads it first (it can fire before then).
     // deno-lint-ignore prefer-const
     let term: Term | undefined;
@@ -766,6 +846,7 @@ export class PtyHost {
         },
       );
     } catch (err) {
+      if (taps?.ended) tap("ended", () => taps.ended!(id));
       throw new DesktopCapError(
         "spawn_failed",
         `could not start ${args.program ? "the program" : "the shell"}: ${
@@ -827,6 +908,8 @@ export class PtyHost {
     try {
       native.resize(t.fd, cols, rows);
     } catch { /* the pty went away */ }
+    const taps = this.#taps();
+    if (taps?.resized) tap("resized", () => taps.resized!(id, cols, rows));
   }
 
   kill(id: string): void {
@@ -879,6 +962,8 @@ export class PtyHost {
         libc().close(t.fd);
       } catch { /* best effort */ }
       t.finalized = true;
+      const taps = this.#taps();
+      if (taps?.ended) tap("ended", () => taps.ended!(t.id));
     }
     this.#terms.clear();
   }
@@ -970,6 +1055,8 @@ export class PtyHost {
     if (t.pending.length === 0) return;
     const data = t.pending.join("");
     t.pending = [];
+    const taps = this.#taps();
+    if (taps?.data) tap("data", () => taps.data!(t.id, data));
     this.#safeEmit("data", { id: t.id, seq: ++t.seq, data });
   }
 
@@ -997,6 +1084,8 @@ export class PtyHost {
     this.#flush(t);
     libc().close(t.fd);
     this.#terms.delete(t.id);
+    const taps = this.#taps();
+    if (taps?.ended) tap("ended", () => taps.ended!(t.id));
     const exit = t.exit ?? { exitCode: -1, signal: null };
     this.#safeEmit("exit", {
       id: t.id,
@@ -1068,7 +1157,7 @@ let host: PtyHost | undefined;
 
 function getHost(emit: PtyEmit): PtyHost {
   if (!host) {
-    host = new PtyHost(emit);
+    host = new PtyHost(emit, { tapped: true });
     globalThis.addEventListener("unload", () => host?.killAllNow());
   } else {
     host.setEmit(emit);
@@ -1081,6 +1170,11 @@ function requireHost(): PtyHost {
     throw new DesktopCapError("not_found", "no such terminal", { status: 404 });
   }
   return host;
+}
+
+/** Type into one of the app's terminals (the agent hub's `write_tile`). */
+export async function writeTerminal(id: string, data: string): Promise<void> {
+  await requireHost().write(id, data);
 }
 
 export default defineDesktopExtension({

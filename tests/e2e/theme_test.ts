@@ -292,7 +292,8 @@ suite("theme", (test) => {
     assertEquals((await section(app, "theme")).open, true);
     await waitFor(
       async () =>
-        (await app.settings()).collapsedSections.join() === "layout,font",
+        (await app.settings()).collapsedSections.join() ===
+          "layout,font,integration",
       2000,
       "persisted",
     );

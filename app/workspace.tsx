@@ -2,7 +2,8 @@
 
 // The workspace island: owns the store, the terminal manager, the keyboard and the layout
 // measurement, and renders the switcher bar, the tile cluster and the settings popover. The
-// SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`.
+// SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`; the agent
+// hub's tiles (the agent badges) in `useHub`, and its `ask_user` questions in `AskDialog`.
 //
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
@@ -58,6 +59,8 @@ import { RemoteBrowser } from "./remote-browser.tsx";
 import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
 import { useSsh } from "./use-ssh.ts";
 import { useLauncher } from "./use-launcher.ts";
+import { useHub } from "./use-hub.ts";
+import { AskDialog } from "./ask-dialog.tsx";
 import { plusLabel } from "../lib/launcher.ts";
 
 const TITLE_POLL_MS = 2000;
@@ -149,6 +152,7 @@ export function Workspace() {
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
   const modalOpen = ssh.dialog !== null || ssh.browseFor !== null;
+  const hubTileOf = useHub(managerRef.current, state.terminals);
 
   const closeTerminal = useCallback((id: string) => {
     managerRef.current?.dispose(id);
@@ -446,6 +450,7 @@ export function Workspace() {
             onFocus={focusTerminal}
             onClose={closeTerminal}
             dropTargetId={ssh.dropTarget}
+            agentOf={hubTileOf}
             renderHeadActions={(entry) =>
               entry.ssh && (
                 <SshHeadActions
@@ -493,7 +498,17 @@ export function Workspace() {
           onToggleSection={(section) => run({ type: "toggleSection", section })}
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
+          backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {manager && (
+        <AskDialog
+          backend={manager.backend}
+          onDone={() => {
+            const id = stateRef.current.focusedId;
+            if (id) managerRef.current?.focus(id);
+          }}
         />
       )}
       {manager && ssh.dialog && (

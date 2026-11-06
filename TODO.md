@@ -32,6 +32,22 @@
     the last pick is remembered and Settings has "+ opens". User-defined entries
     are still open.
 
+- [ ] **Companion + agent hub** (plan: phases 1–4).
+  - Done (phase 1): `desktop/hub.ts` — a unix socket + MCP server per terminal
+    (`/tmp/qutty-<uid>/<pid>/<ptyId>.sock`, bound through libc), registry,
+    mailboxes, headless screen mirror, `ask_user` (a simple dialog for now),
+    `QUTTY_SOCK` / `QUTTY_TILE_ID` / `~/.qutty/bin` in every tile, the
+    `qutty-mcp` / `qutty-hook` shims, launch flags for Claude Code and Codex,
+    Settings → Agent integration, agent badges in tile headers.
+  - Next: the companion (Loopy overlay, privileged identity on its own socket,
+    `write_tile` / `spawn_tile` / `close_tile` / `focus_tile` / `deliver` wired
+    to the page — the hub already enforces that only the companion may call
+    them), re-attaching when the companion restarts, voice, the shared Docker
+    sandbox (TCP + token endpoint), the shell-as-harness.
+  - Open: Codex hooks (Codex has Claude-style lifecycle hooks behind
+    `features.hooks`); for now Codex gets messages through `read_messages`.
+    `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could cut it.
+
 - [ ] **Sandboxed shells (Docker).** Offer "Sandboxed shell" in the `+` picker:
       a terminal whose shell runs inside a Docker sandbox, isolated from the
       Mac, so untrusted scripts or AI agents (Claude Code, Codex) can run

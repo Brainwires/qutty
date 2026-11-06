@@ -1,7 +1,8 @@
 // The settings popover, in collapsible sections: Layout (pattern grid with live previews, the
 // sliders the engine understands, the bar's edge and order), Theme (preview tiles, dark and
-// light), Fonts (the terminal font); the shortcut list stays visible below them. Every change
-// goes straight to the store, so the cluster animates while the slider moves.
+// light), Fonts (the terminal font), Agent integration (app/agent-integration.tsx; folded by
+// default); the shortcut list stays visible below them. Every change goes straight to the store,
+// so the cluster animates while the slider moves.
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "denext";
 import { type LayoutOptions, PATTERN_INFO } from "../lib/layout/mod.ts";
@@ -34,6 +35,8 @@ import {
 import { PatternPreview } from "./pattern-preview.tsx";
 import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
+import { AgentIntegration } from "./agent-integration.tsx";
+import type { PtyBackend } from "../lib/pty-client.ts";
 
 export interface SettingsPanelProps {
   settings: Settings;
@@ -48,6 +51,8 @@ export interface SettingsPanelProps {
   /** The `+` picker's entries, for "+ opens". */
   launchSections: LaunchSection[];
   onPlusOpens(plusOpens: PlusOpens): void;
+  /** For Agent integration (the section is left out without one). */
+  backend: PtyBackend | null;
   onClose(): void;
 }
 
@@ -315,6 +320,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onFont={props.onFont}
         />,
         "font-section",
+      )}
+
+      {props.backend && section(
+        "integration",
+        "Agent integration",
+        <AgentIntegration backend={props.backend} />,
       )}
 
       <dl class="shortcuts">

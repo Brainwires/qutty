@@ -49,12 +49,13 @@ export const BAR_POSITIONS: readonly BarPosition[] = [
   "right",
 ];
 /** A collapsible section of the settings panel. */
-export type SettingsSection = "layout" | "theme" | "font";
+export type SettingsSection = "layout" | "theme" | "font" | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "layout",
   "theme",
   "font",
+  "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
 export const PATTERNS: readonly LayoutPattern[] = Object.keys(
@@ -99,7 +100,7 @@ export interface Settings extends FontSettings {
   inactiveTiles: InactiveTiles;
   /** The colour theme (see themes.ts). */
   theme: ThemeId;
-  /** The settings-panel sections the user folded away (all open by default). */
+  /** The settings-panel sections the user folded away (Agent integration by default). */
   collapsedSections: SettingsSection[];
   /** What plain `+` (and ⌘T) opens: the default shell, the last pick, or one picker entry. */
   plusOpens: PlusOpens;
@@ -175,7 +176,8 @@ export const DEFAULT_SETTINGS: Settings = {
   barOrder: "mru",
   inactiveTiles: "resize",
   theme: DEFAULT_THEME_ID,
-  collapsedSections: [],
+  // Agent integration is for agents started by hand: folded until someone looks for it.
+  collapsedSections: ["integration"],
   plusOpens: "default",
   lastLaunch: null,
   ...DEFAULT_FONT_SETTINGS,

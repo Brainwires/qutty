@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# qutty-hook [harness]: a Claude Code (or compatible) hook command for the Qutty agent hub. It
+# sends the hook's JSON input (stdin) to this tile's hub socket ($QUTTY_SOCK) as one line and
+# prints the hub's one-line JSON reply (pending messages as context, or a Stop block) as the
+# hook's output. Outside Qutty, or when the hub cannot be reached, it prints nothing and exits 0,
+# so the agent carries on as if there were no hook. Installed to ~/.qutty/bin by Qutty.
+[ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ] || exit 0
+harness="${1:-}"
+case "$harness" in *[!A-Za-z0-9._-]*) harness="" ;; esac
+# One JSON object; a raw newline cannot occur inside a JSON string, so dropping them is safe.
+input="$(tr -d '\r\n')"
+[ -n "$input" ] || input="null"
+line="{\"qutty\":\"hook\",\"harness\":\"$harness\",\"input\":$input}"
+if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+  reply="$(printf '%s\n' "$line" | nc -w 10 -U "$QUTTY_SOCK" 2>/dev/null | head -n 1)"
+elif command -v socat >/dev/null 2>&1; then
+  reply="$(printf '%s\n' "$line" | socat -t 10 - "UNIX-CONNECT:$QUTTY_SOCK" 2>/dev/null | head -n 1)"
+else
+  exit 0
+fi
+case "$reply" in "{"*) printf '%s\n' "$reply" ;; esac
+exit 0
