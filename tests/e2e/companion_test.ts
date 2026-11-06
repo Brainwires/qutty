@@ -55,6 +55,18 @@ function waitBubble(
   );
 }
 
+/** Wait until Loopy has sprung up and stands idle. */
+function landed(app: App) {
+  return waitFor(
+    async () =>
+      ["idle", "blink"].includes(
+        await app.attr(OVERLAY, "data-loopy-state") ?? "",
+      ),
+    3000,
+    "Loopy landed",
+  );
+}
+
 /** Open the chat box (click Loopy) and send `text`. */
 async function chat(app: App, text: string): Promise<void> {
   if (!(await app.exists(INPUT))) await app.click("[data-testid=loopy-poke]");
@@ -85,14 +97,7 @@ suite("companion", (test) => {
   test("Loopy appears in the bottom-right corner; the overlay lets clicks through except Loopy", async (app) => {
     await waitFor(() => app.exists(OVERLAY), 3000, "the overlay");
     assertEquals(await app.attr(OVERLAY, "data-corner"), "bottom-right");
-    await waitFor(
-      async () =>
-        ["idle", "blink"].includes(
-          await app.attr(OVERLAY, "data-loopy-state") ?? "",
-        ),
-      3000,
-      "Loopy landed",
-    );
+    await landed(app);
     const geo = await app.eval((s: string) => {
       const o = document.querySelector<HTMLElement>(s)!;
       const c = document.querySelector("[data-testid=cluster]")!
@@ -134,6 +139,16 @@ suite("companion", (test) => {
     "chat: the reply streams into the bubble while Loopy thinks; Escape gives the keyboard back",
     async (app) => {
       const shell = (await app.focusedId())!;
+      await landed(app);
+      // Record Loopy's moves and the brain's status while it answers.
+      await app.eval((s: string) => {
+        const seen: string[] = [];
+        (globalThis as { __loopySeen?: string[] }).__loopySeen = seen;
+        const overlay = document.querySelector<HTMLElement>(s)!;
+        new MutationObserver(() =>
+          seen.push(`${overlay.dataset.loopyState}/${overlay.dataset.brain}`)
+        ).observe(overlay, { attributes: true });
+      }, OVERLAY);
       await chat(app, "what's in tile 1?");
       await waitBubble(app, (b) => b.kind === "reply", "the reply bubble");
       const done = await waitBubble(
@@ -142,6 +157,13 @@ suite("companion", (test) => {
         "the whole reply",
       );
       assertEquals(done.from, null);
+      const seen = await app.eval(() =>
+        (globalThis as { __loopySeen?: string[] }).__loopySeen ?? []
+      );
+      assert(seen.some((x) => x.startsWith("think/")), `thinking: ${seen}`);
+      for (const state of ["starting", "thinking", "ready"]) {
+        assert(seen.some((x) => x.endsWith(`/${state}`)), `${state}: ${seen}`);
+      }
       await waitFor(
         async () =>
           (await app.attr("[data-testid=loopy-status]", "data-state")) ===

@@ -2487,9 +2487,13 @@ kbd {
   opacity: 0;
 }
 
-/* idle: a gentle sway about the bottom bend */
-.loopy[data-state="idle"] .loopy-body,
-.loopy[data-state="blink"] .loopy-body {
+/* idle: a gentle sway about the bottom bend. Qutty sways the whole <svg> box rather than its body
+   inside: a transform on the box runs on the compositor, while one inside an SVG repaints on the
+   main thread every frame, which would hold up the tiles' own layout work for as long as Loopy
+   stands there. */
+.loopy[data-state="idle"],
+.loopy[data-state="blink"] {
+  transform-origin: 50% 93%;
   animation: loopy-sway 3.4s ease-in-out infinite;
 }
 @keyframes loopy-sway {
@@ -2635,6 +2639,7 @@ kbd {
 
 /* Reduced motion: every move lands at once (the OS setting, or the app's own class). */
 @media (prefers-reduced-motion: reduce) {
+  .loopy,
   .loopy *,
   .companion-overlay .bubble,
   .companion-status {
@@ -2643,6 +2648,7 @@ kbd {
     transition: none !important;
   }
 }
+.app.reduced-motion .loopy,
 .app.reduced-motion .loopy *,
 .app.reduced-motion .companion-overlay .bubble,
 .app.reduced-motion .companion-status {
