@@ -154,6 +154,7 @@
 - [x] On GitHub as `Brainwires/qutty` (private), with CI and a signed release
       workflow. Denext now comes from JSR (`jsr:@denext/denext`).
 - [x] v0.1.0 published (2026-11-04); repository public.
+- [x] v0.2.0: SSH, shell picker, scaled tiles, Homebrew.
 - [ ] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
       overflow: +N appears…" in tests/e2e/bar_test.ts fails about half the time
       with a bare assertion. CI runs with animations on, where it passes. Find
