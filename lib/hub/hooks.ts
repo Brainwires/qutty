@@ -9,6 +9,12 @@
  *   instruction; anything else lets it stop;
  * - `Notification`: no decision control; its input's `notification_type` says why it fired.
  *
+ * Codex (0.167, https://learn.chatgpt.com/docs/hooks and openai/codex `codex-rs/hooks`, checked
+ * 2026-11) takes the same input fields and the same output shapes for the events both have. It
+ * has no `Notification`; instead `PermissionRequest` fires before an approval prompt (answering
+ * `{}` leaves the prompt to the user) and `Interrupt` when the user stops a turn (no `Stop`
+ * follows). `Stop`'s `{ decision: "block", reason }` becomes Codex's next continuation prompt.
+ *
  * @module
  */
 
@@ -23,7 +29,26 @@ export const HOOK_EVENTS = [
   "Notification",
 ] as const;
 
-export type HookEvent = typeof HOOK_EVENTS[number];
+/** The events `qutty-hook codex` is registered for (Codex has no `Notification`). */
+export const CODEX_HOOK_EVENTS = [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PostToolUse",
+  "PermissionRequest",
+  "Stop",
+  "Interrupt",
+] as const;
+
+/** Every event the hub answers. */
+export type HookEvent =
+  | typeof HOOK_EVENTS[number]
+  | typeof CODEX_HOOK_EVENTS[number];
+
+/** Whether the hub answers `event`. */
+export function isHookEvent(event: string): event is HookEvent {
+  return (HOOK_EVENTS as readonly string[]).includes(event) ||
+    (CODEX_HOOK_EVENTS as readonly string[]).includes(event);
+}
 
 /** A hook's stdout JSON (`{}` = nothing to say). */
 export type HookOutput =

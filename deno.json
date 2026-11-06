@@ -39,6 +39,7 @@
     ]
   },
   "imports": {
+    "@std/toml": "jsr:@std/toml@^1.0.11",
     "denext": "jsr:@denext/denext@^4.12.0",
     "denext/jsx-runtime": "jsr:@denext/denext@^4.12.0/jsx-runtime",
     "denext/jsx-dev-runtime": "jsr:@denext/denext@^4.12.0/jsx-dev-runtime",

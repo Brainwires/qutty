@@ -1,0 +1,83 @@
+[
+  {
+    "session_id": "01a1b184-1871-7b00-ab4b-c4fbbe115e54",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "SessionStart",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "source": "startup"
+  },
+  {
+    "session_id": "01a1b184-1871-7b00-ab4b-c4fbbe115e54",
+    "turn_id": "01a1b184-1ac5-7483-a270-16e8396e8279",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "UserPromptSubmit",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "prompt": "Call the qutty MCP tool whoami and print its JSON result. Then call the qutty tool read_messages. Then answer every qutty message you have received (in your context or from read_messages) with the qutty tool send_message: to the sender's name, replyTo the message id, text pong. Do nothing else."
+  },
+  {
+    "session_id": "01a1b182-33ff-7370-b3c5-b76b54845bc8",
+    "turn_id": "01a1b182-3673-7572-8ecb-6a324c56b02a",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "PermissionRequest",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "tool_name": "mcp__qutty__whoami",
+    "tool_input": {}
+  },
+  {
+    "session_id": "01a1b184-1871-7b00-ab4b-c4fbbe115e54",
+    "turn_id": "01a1b184-1ac5-7483-a270-16e8396e8279",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "PostToolUse",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "tool_name": "mcp__qutty__whoami",
+    "tool_input": {},
+    "tool_response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"id\": \"pty-1\",\n  \"name\": \"codex\",\n  \"status\": \"busy\",\n  \"unread\": 0,\n  \"harness\": \"codex\",\n  \"cwd\": \"/Users/ann/proj\"\n}"
+        }
+      ]
+    },
+    "tool_use_id": "exec-18ad5172-2246-491e-acfc-3f0a94ead5cb"
+  },
+  {
+    "session_id": "01a1b184-1871-7b00-ab4b-c4fbbe115e54",
+    "turn_id": "01a1b184-1ac5-7483-a270-16e8396e8279",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "PostToolUse",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "tool_name": "mcp__qutty__read_messages",
+    "tool_input": {},
+    "tool_response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"messages\": []\n}"
+        }
+      ]
+    },
+    "tool_use_id": "exec-9d2aeb09-af2f-4fdf-923d-c43d6ce84033"
+  },
+  {
+    "session_id": "01a1b184-1871-7b00-ab4b-c4fbbe115e54",
+    "turn_id": "01a1b184-1ac5-7483-a270-16e8396e8279",
+    "transcript_path": null,
+    "cwd": "/Users/ann/proj",
+    "hook_event_name": "Stop",
+    "model": "gpt-6-luna",
+    "permission_mode": "bypassPermissions",
+    "stop_hook_active": false,
+    "last_assistant_message": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"id\\\": \\\"pty-1\\\",\\n  \\\"name\\\": \\\"codex\\\",\\n  \\\"status\\\": \\\"busy\\\",\\n  \\\"unread\\\": 0,\\n  \\\"harness\\\": \\\"codex\\\",\\n  \\\"cwd\\\": \\\"/Users/ann/proj\\\"\\n}\"}]}"
+  }
+]

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# qutty-hook [harness]: a Claude Code (or compatible) hook command for the Qutty agent hub. It
-# sends the hook's JSON input (stdin) to this tile's hub socket ($QUTTY_SOCK) as one line and
-# prints the hub's one-line JSON reply (pending messages as context, or a Stop block) as the
-# hook's output. Outside Qutty, or when the hub cannot be reached, it prints nothing and exits 0,
-# so the agent carries on as if there were no hook. Installed to ~/.qutty/bin by Qutty.
+# qutty-hook [harness]: a Claude Code or Codex hook command for the Qutty agent hub (`qutty-hook
+# claude`, `qutty-hook codex`; both send the same JSON shapes). It sends the hook's JSON input
+# (stdin) to this tile's hub socket ($QUTTY_SOCK) as one line and prints the hub's one-line JSON
+# reply (pending messages as context, or a Stop block) as the hook's output. Outside Qutty, or
+# when the hub cannot be reached, it prints nothing and exits 0, so the agent carries on as if
+# there were no hook. Installed to ~/.qutty/bin by Qutty.
 #
 # qutty-hook say <text...> [--mood neutral|thinking|attention|success|confused|mad|sad|excited|
 #                sleepy|love|surprised|shocked|wow] [--action id:label]... [--timeout ms] [--wait]

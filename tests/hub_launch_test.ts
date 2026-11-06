@@ -5,6 +5,7 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
   claudeHooksSettings,
   claudeMcpConfig,
+  codexHubArgs,
   hookCommand,
   hubArgsFor,
   hubPaths,
@@ -30,17 +31,15 @@ Deno.test("hubPaths: everything under ~/.qutty", () => {
   assertEquals(hubPaths("/home/bo/").dir, "/home/bo/.qutty");
 });
 
-Deno.test("argv: Claude Code gets --mcp-config and --settings; Codex a -c override; others nothing", () => {
+Deno.test("argv: Claude Code gets --mcp-config and --settings; Codex -c overrides; others nothing", () => {
   assertEquals(hubArgsFor("claude", paths), [
     "--mcp-config",
     "/Users/ann/.qutty/claude-mcp.json",
     "--settings",
     "/Users/ann/.qutty/claude-hooks.json",
   ]);
-  assertEquals(hubArgsFor("codex", paths), [
-    "-c",
-    'mcp_servers.qutty.command="/Users/ann/.qutty/bin/qutty-mcp"',
-  ]);
+  // (the Codex overrides in detail: tests/hub_codex_test.ts)
+  assertEquals(hubArgsFor("codex", paths), codexHubArgs(paths));
   for (
     const tool of AGENT_TOOLS.filter((t) =>
       t.name !== "claude" && t.name !== "codex"
@@ -54,12 +53,15 @@ Deno.test("argv: Claude Code gets --mcp-config and --settings; Codex a -c overri
 Deno.test("argv: skipped when the user-scope integration is installed (no double registration)", () => {
   assertEquals(hubArgsFor("claude", paths, { claude: true }), []);
   assertEquals(hubArgsFor("codex", paths, { codex: true }), []);
-  assertEquals(hubArgsFor("codex", paths, { claude: true }).length, 2);
+  assertEquals(
+    hubArgsFor("codex", paths, { claude: true }),
+    codexHubArgs(paths),
+  );
 });
 
 Deno.test("argv: paths with spaces and quotes stay one argument / valid TOML", () => {
   const odd = hubPaths(`/Users/a "b" c`);
-  const [, value] = hubArgsFor("codex", odd);
+  const [, value] = codexHubArgs(odd);
   assertEquals(
     value,
     `mcp_servers.qutty.command="/Users/a \\"b\\" c/.qutty/bin/qutty-mcp"`,

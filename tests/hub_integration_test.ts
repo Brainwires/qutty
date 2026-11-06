@@ -10,48 +10,21 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import {
-  type ConfigFs,
   installIntegration,
   type IntegrationFiles,
   integrationFiles,
   integrationStatus,
   uninstallIntegration,
 } from "../lib/hub/integration.ts";
-import { hookCommand, type HubPaths, hubPaths } from "../lib/hub/launch.ts";
-import { HOOK_EVENTS } from "../lib/hub/hooks.ts";
-
-/** ConfigFs over Deno's file APIs (the app uses libc writes; the logic is the same). */
-const denoFs: ConfigFs = {
-  async read(path) {
-    try {
-      return await Deno.readTextFile(path);
-    } catch {
-      return undefined;
-    }
-  },
-  async write(path, text, mode) {
-    await Deno.mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
-    await Deno.writeTextFile(path, text, { mode });
-    await Deno.chmod(path, mode);
-  },
-  async remove(path) {
-    await Deno.remove(path);
-  },
-  async mode(path) {
-    try {
-      return ((await Deno.stat(path)).mode ?? 0) & 0o777;
-    } catch {
-      return undefined;
-    }
-  },
-  async realPath(path) {
-    try {
-      return await Deno.realPath(path);
-    } catch {
-      return path;
-    }
-  },
-};
+import {
+  codexHookHash,
+  codexHookKey,
+  hookCommand,
+  type HubPaths,
+  hubPaths,
+} from "../lib/hub/launch.ts";
+import { CODEX_HOOK_EVENTS, HOOK_EVENTS } from "../lib/hub/hooks.ts";
+import { denoConfigFs } from "./hub_helpers.ts";
 
 interface Home {
   home: string;
@@ -84,8 +57,8 @@ async function withHome(fn: (h: Home) => Promise<void>): Promise<void> {
       });
       Deno.writeTextFileSync(`${home}/${rel}`, text);
     },
-    install: (t) => installIntegration(denoFs, files, paths, t),
-    uninstall: (t) => uninstallIntegration(denoFs, files, paths, t),
+    install: (t) => installIntegration(denoConfigFs, files, paths, t),
+    uninstall: (t) => uninstallIntegration(denoConfigFs, files, paths, t),
   };
   try {
     await fn(h);
@@ -172,7 +145,7 @@ Deno.test("claude: install adds mcpServers.qutty and one hook group per event, k
     assertEquals(h.read(".claude.json.qutty-backup"), CLAUDE_JSON);
     assertEquals(h.read(".claude/settings.json.qutty-backup"), SETTINGS);
 
-    const [claude] = await integrationStatus(denoFs, h.files, h.paths);
+    const [claude] = await integrationStatus(denoConfigFs, h.files, h.paths);
     assertEquals(claude.installed, true);
   });
 });
@@ -191,7 +164,7 @@ Deno.test("claude: install is idempotent; uninstall restores the original bytes"
     await h.uninstall("claude");
     assertEquals(h.read(".claude.json"), CLAUDE_JSON);
     assertEquals(h.read(".claude/settings.json"), SETTINGS);
-    const [claude] = await integrationStatus(denoFs, h.files, h.paths);
+    const [claude] = await integrationStatus(denoConfigFs, h.files, h.paths);
     assertEquals(claude.installed, false);
     // Uninstall again: nothing to do, nothing changes.
     await h.uninstall("claude");
@@ -254,7 +227,7 @@ Deno.test("claude: a qutty server Qutty did not write is refused and reported", 
     h.write(".claude.json", foreign);
     await assertRejects(() => h.install("claude"), Error, "did not add");
     assertEquals(h.read(".claude.json"), foreign);
-    const [claude] = await integrationStatus(denoFs, h.files, h.paths);
+    const [claude] = await integrationStatus(denoConfigFs, h.files, h.paths);
     assertEquals(claude.installed, false);
     assertStringIncludes(claude.note ?? "", "did not add");
   });
@@ -287,6 +260,25 @@ Deno.test("claude: invalid JSON is not touched", async () => {
   });
 });
 
+/** The Codex row of the panel's status. */
+async function codexStatus(h: Home) {
+  return (await integrationStatus(denoConfigFs, h.files, h.paths))[1];
+}
+
+/** Codex shows as installed; Uninstall then gives back exactly `original`. */
+async function installedThenRestored(h: Home, original: string) {
+  assertEquals((await codexStatus(h)).installed, true);
+  await h.uninstall("codex");
+  assertEquals(h.read(".codex/config.toml"), original);
+}
+
+/** Codex's block is there but out of date. */
+async function assertStale(h: Home) {
+  const codex = await codexStatus(h);
+  assertEquals(codex.installed, false);
+  assertStringIncludes(codex.note ?? "", "Out of date");
+}
+
 Deno.test("codex: install appends a marked block; idempotent; uninstall restores the bytes", async () => {
   await withHome(async (h) => {
     h.write(".codex/config.toml", CODEX);
@@ -295,15 +287,29 @@ Deno.test("codex: install appends a marked block; idempotent; uninstall restores
     assert(text.startsWith(CODEX));
     assertStringIncludes(
       text,
-      `[mcp_servers.qutty]\ncommand = "${h.paths.mcp}"\nargs = []\n`,
+      `[mcp_servers.qutty]\ncommand = "${h.paths.mcp}"\nargs = []\n` +
+        `env_vars = ["QUTTY_SOCK", "QUTTY_TILE_ID", "QUTTY_HUB", "QUTTY_TILE_TOKEN"]\n`,
     );
+    // One hook group per event, and its trust keyed by Codex's (resolved) config path.
+    const config = `${Deno.realPathSync(`${h.home}/.codex`)}/config.toml`;
+    for (const e of CODEX_HOOK_EVENTS) {
+      assertStringIncludes(
+        text,
+        `\n[[hooks.${e}]]\nhooks = [{ type = "command", command = "${h.paths.hook} codex", timeout = ${
+          e === "Interrupt" ? 3 : 15
+        } }]\n`,
+      );
+      assertStringIncludes(
+        text,
+        `\n[hooks.state."${codexHookKey(config, e, 0)}"]\ntrusted_hash = "${
+          codexHookHash(h.paths, e)
+        }"\n`,
+      );
+    }
     await h.install("codex");
     assertEquals(h.read(".codex/config.toml"), text);
     assertEquals(h.read(".codex/config.toml.qutty-backup"), CODEX);
-    const [, codex] = await integrationStatus(denoFs, h.files, h.paths);
-    assertEquals(codex.installed, true);
-    await h.uninstall("codex");
-    assertEquals(h.read(".codex/config.toml"), CODEX);
+    await installedThenRestored(h, CODEX);
   });
 });
 
@@ -325,7 +331,7 @@ Deno.test("codex: a file without a final newline, an absent file, and a foreign 
     h.write(".codex/config.toml", mine);
     await assertRejects(() => h.install("codex"), Error, "already configures");
     assertEquals(h.read(".codex/config.toml"), mine);
-    const [, codex] = await integrationStatus(denoFs, h.files, h.paths);
+    const [, codex] = await integrationStatus(denoConfigFs, h.files, h.paths);
     assertStringIncludes(codex.note ?? "", "already configures");
   });
 });
@@ -346,9 +352,98 @@ Deno.test("codex: content the user added after Qutty's block survives uninstall"
   });
 });
 
+Deno.test("codex: Qutty's hook groups go after the user's own, and their trust keys say so", async () => {
+  await withHome(async (h) => {
+    const mine = CODEX +
+      `\n[[hooks.Stop]]\nhooks = [{ type = "command", command = "say done" }]\n` +
+      `\n[[hooks.Stop]]\nmatcher = ""\nhooks = [{ type = "command", command = "true" }]\n` +
+      `\n[hooks.state."/elsewhere/config.toml:stop:0:0"]\ntrusted_hash = "sha256:00"\n`;
+    h.write(".codex/config.toml", mine);
+    await h.install("codex");
+    const text = h.read(".codex/config.toml")!;
+    assert(text.startsWith(mine));
+    const config = `${Deno.realPathSync(`${h.home}/.codex`)}/config.toml`;
+    assertStringIncludes(text, `"${codexHookKey(config, "Stop", 2)}"`);
+    assertStringIncludes(text, `"${codexHookKey(config, "SessionStart", 0)}"`);
+    assertEquals((await codexStatus(h)).note, undefined);
+    await installedThenRestored(h, mine);
+  });
+});
+
+Deno.test("codex: a hook group added before Qutty's block makes it out of date; Install refreshes it", async () => {
+  await withHome(async (h) => {
+    h.write(".codex/config.toml", CODEX);
+    await h.install("codex");
+    const config = `${Deno.realPathSync(`${h.home}/.codex`)}/config.toml`;
+    const theirs =
+      `\n[[hooks.Stop]]\nhooks = [{ type = "command", command = "say done" }]\n`;
+    h.write(
+      ".codex/config.toml",
+      CODEX + theirs + h.read(".codex/config.toml")!.slice(CODEX.length),
+    );
+    await assertStale(h);
+    await h.install("codex");
+    const text = h.read(".codex/config.toml")!;
+    assertEquals(text.split("# >>> qutty").length, 2);
+    assertStringIncludes(text, `"${codexHookKey(config, "Stop", 1)}"`);
+    await installedThenRestored(h, CODEX + theirs);
+  });
+});
+
+Deno.test("codex: an older Qutty's block (server only) is out of date and refreshed in place", async () => {
+  await withHome(async (h) => {
+    const old = CODEX +
+      "\n# >>> qutty (Settings → Agent integration; Uninstall removes this block) >>>\n" +
+      `[mcp_servers.qutty]\ncommand = "${h.paths.mcp}"\nargs = []\n# <<< qutty <<<\n`;
+    h.write(".codex/config.toml", old);
+    await assertStale(h);
+    await h.install("codex");
+    const text = h.read(".codex/config.toml")!;
+    assert(text.startsWith(CODEX));
+    assertEquals(text.split("[mcp_servers.qutty]").length, 2);
+    assertStringIncludes(text, "[[hooks.Stop]]");
+    await installedThenRestored(h, CODEX);
+  });
+});
+
+Deno.test("codex: inline hooks, inline trust and invalid TOML are refused untouched", async () => {
+  for (
+    const [mine, why] of [
+      [`${CODEX}\n[hooks]\nStop = [{ hooks = [] }]\n`, "hooks.Stop inline"],
+      [`hooks = {}\n${CODEX}`, "hooks inline"],
+      [`${CODEX}\n[hooks]\nstate = {}\n`, "hooks.state inline"],
+      [`${CODEX}\n[broken\n`, "not valid TOML"],
+    ]
+  ) {
+    await withHome(async (h) => {
+      h.write(".codex/config.toml", mine);
+      await assertRejects(() => h.install("codex"), Error, why);
+      assertEquals(h.read(".codex/config.toml"), mine);
+      assertEquals(h.read(".codex/config.toml.qutty-backup"), undefined);
+      const [, codex] = await integrationStatus(denoConfigFs, h.files, h.paths);
+      assertStringIncludes(codex.note ?? "", why);
+    });
+  }
+});
+
+Deno.test("codex: a config.toml Qutty created is refreshed, not duplicated, by a second Install", async () => {
+  await withHome(async (h) => {
+    await h.install("codex");
+    const once = h.read(".codex/config.toml")!;
+    await h.install("codex");
+    assertEquals(h.read(".codex/config.toml"), once);
+    await h.uninstall("codex");
+    assertEquals(h.read(".codex/config.toml"), undefined);
+  });
+});
+
 Deno.test("status: shows exactly what Install writes, with ~ for the home folder", async () => {
   await withHome(async (h) => {
-    const [claude, codex] = await integrationStatus(denoFs, h.files, h.paths);
+    const [claude, codex] = await integrationStatus(
+      denoConfigFs,
+      h.files,
+      h.paths,
+    );
     assertEquals(claude.changes.map((c) => c.path), [
       "~/.claude.json",
       "~/.claude/settings.json",

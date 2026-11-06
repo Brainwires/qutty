@@ -127,9 +127,53 @@ const obj = (
   additionalProperties: false,
 });
 
+/** MCP behaviour hints for a tool (`tools/list`'s `annotations`). */
+interface ToolHints {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  openWorldHint?: boolean;
+}
+
+const READS: ToolHints = { readOnlyHint: true, openWorldHint: false };
+const LOCAL: ToolHints = { destructiveHint: false, openWorldHint: false };
+const TYPES: ToolHints = { destructiveHint: true, openWorldHint: false };
+
+/**
+ * Each tool's hints. Codex runs an MCP tool without asking when its hints say it only reads, or
+ * changes nothing destructive and stays within a closed world (here: the window's tiles and
+ * mailboxes); otherwise it asks first, and in `codex exec` it refuses. Typing into a terminal,
+ * starting a command in a new tile and closing one are marked destructive.
+ */
+export const TOOL_HINTS: Readonly<Record<string, ToolHints>> = {
+  whoami: READS,
+  list_peers: READS,
+  read_screen: READS,
+  read_scrollback: READS,
+  set_name: LOCAL,
+  set_status: LOCAL,
+  send_message: LOCAL,
+  read_messages: LOCAL,
+  wait_for_message: LOCAL,
+  ask_user: LOCAL,
+  focus_tile: LOCAL,
+  deliver: LOCAL,
+  write_tile: TYPES,
+  spawn_tile: TYPES,
+  close_tile: TYPES,
+};
+
+/** `McpToolRegistry`, listing each tool with its {@linkcode TOOL_HINTS}. */
+class HintedToolRegistry extends McpToolRegistry {
+  override listTools(): ReturnType<McpToolRegistry["listTools"]> {
+    return super.listTools().map((t) =>
+      TOOL_HINTS[t.name] ? { ...t, annotations: { ...TOOL_HINTS[t.name] } } : t
+    );
+  }
+}
+
 /** Build the tool registry for `core`. */
 export function buildToolRegistry(core: HubCore): McpToolRegistry {
-  const reg = new McpToolRegistry();
+  const reg = new HintedToolRegistry();
   const add = (
     name: string,
     description: string,

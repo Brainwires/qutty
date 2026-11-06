@@ -9,6 +9,21 @@
   times larger and without the wire body. A thin rim in the mood's colour rings
   the bead, the head bobs, hops and tilts in place of the body's moves, and
   clicking anywhere on the face opens the chat.
+- Codex joins the agent hub for real (checked end to end with Codex CLI 0.167).
+  Its MCP server now gets `QUTTY_SOCK` (Codex passes only a few environment
+  variables to MCP servers, so before this the qutty server quietly failed to
+  connect). Codex hooks are wired the way Claude Code's are: SessionStart
+  registers the tile and hands over waiting messages, UserPromptSubmit and
+  PostToolUse mark it busy and deliver messages mid-turn, Stop keeps Codex going
+  only while messages are waiting, PermissionRequest shows "waiting for you",
+  and Interrupt marks it idle. Qutty marks exactly its own hooks as trusted, so
+  Codex runs them without a `/hooks` review. The hub's tools carry MCP hints, so
+  Codex runs them without asking for approval, except typing into, starting and
+  closing tiles.
+- Settings → Agent integration for Codex now also installs those hooks and their
+  trust in `~/.codex/config.toml`, still in one marked block that Uninstall
+  removes byte for byte. A block from an older Qutty shows as out of date, and
+  Install refreshes it.
 
 ## 0.3.0 — agent hub, companion, voice, SSH, sandbox
 

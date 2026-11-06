@@ -88,5 +88,13 @@ Deno.test("makeTitle: an agent tile names the tool, not its process", () => {
     "claude — ~/proj",
   );
   assertEquals(makeTitle({ process: "node" }, undefined, "codex"), "codex");
+  assertEquals(
+    makeTitle(
+      { process: "codex", cwd: "/Users/me/proj" },
+      "/Users/me",
+      "codex",
+    ),
+    "codex — ~/proj",
+  );
   assertEquals(makeTitle({ process: "zsh" }, undefined, ""), "zsh");
 });
