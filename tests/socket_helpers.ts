@@ -107,8 +107,14 @@ export async function runHook(
     stderr: "piped",
   }).spawn();
   const w = child.stdin.getWriter();
-  await w.write(new TextEncoder().encode(JSON.stringify(input, null, 2)));
-  await w.close();
+  try {
+    await w.write(new TextEncoder().encode(JSON.stringify(input, null, 2)));
+    await w.close();
+  } catch (err) {
+    // Outside Qutty the shim exits without reading stdin (that's the behaviour under test), so
+    // the write can race its exit and see a broken pipe; the exit code and output still count.
+    if (!(err instanceof Deno.errors.BrokenPipe)) throw err;
+  }
   const out = await child.output();
   return { code: out.code, out: new TextDecoder().decode(out.stdout) };
 }
