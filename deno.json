@@ -72,7 +72,9 @@
     "@xterm/xterm/types": "npm:@xterm/xterm@6.0.0/typings/xterm.d.ts",
     "@xterm/addon-fit/types": "npm:@xterm/addon-fit@0.11.0/typings/addon-fit.d.ts",
     "@xterm/addon-webgl/types": "npm:@xterm/addon-webgl@0.19.0/typings/addon-webgl.d.ts",
-    "@xterm/addon-web-links/types": "npm:@xterm/addon-web-links@0.12.0/typings/addon-web-links.d.ts"
+    "@xterm/addon-web-links/types": "npm:@xterm/addon-web-links@0.12.0/typings/addon-web-links.d.ts",
+    "file:///Users/nightness/Source/Brainwires/gui-terminal/.claude/worktrees/agent-a17197fb41803744f/public/styles.css": "file:///Users/nightness/Source/Brainwires/gui-terminal/.claude/worktrees/agent-a17197fb41803744f/.denext/css-shims/css_0.js",
+    "file:///Users/nightness/Source/Brainwires/gui-terminal/.claude/worktrees/agent-a17197fb41803744f/public/xterm.css": "file:///Users/nightness/Source/Brainwires/gui-terminal/.claude/worktrees/agent-a17197fb41803744f/.denext/css-shims/css_1.js"
   },
   "lint": {
     "plugins": [

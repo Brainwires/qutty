@@ -13,7 +13,14 @@
 //   every start). An agent started from the `+` picker also gets the flags that load the hub's
 //   MCP server and hooks (lib/hub/launch.ts).
 // - Each connection's first line decides what it is: `{"qutty":"hook",…}` is one hook call
-//   (answered with one line, then closed); anything else is MCP, served by @rullama/mcp-server.
+//   (answered with one line, then closed); anything else is MCP, served by @rullama/mcp-server
+//   (`StreamServerTransport` over the libc socket, the line routed by `serveConnection`'s
+//   `firstLine` hook).
+// - Sandboxed tiles (the shared Docker sandbox, desktop/sandbox.ts) cannot reach a host unix
+//   socket, so they get `QUTTY_HUB=host.docker.internal:<port>` and a per-tile
+//   `QUTTY_TILE_TOKEN`: one TCP listener on 127.0.0.1 (plus the bridge gateway on native Linux),
+//   a connection admitted only when its first line is a live token (`StreamServerListener`'s
+//   pre-auth), which then names the tile; the next line is routed as above.
 // - The screen mirror: a headless xterm per terminal, fed the PTY's output (lib/hub/mirror.ts).
 // - The page: `snapshot` + the `tiles` event (badges), `ask` / `askClosed` (ask_user), `answer`,
 //   `control` (companion commands, answered with `controlDone`), and the Agent integration

@@ -36,7 +36,7 @@ export interface SandboxSettings {
  * A general-purpose dev image: Debian with bash, git, curl, python3, a C toolchain, and Node.js
  * + npm (which `npm i -g @openai/codex` and most agent CLIs need).
  */
-export const DEFAULT_SANDBOX_IMAGE = "node:22-bookworm";
+const DEFAULT_SANDBOX_IMAGE = "node:22-bookworm";
 
 export const DEFAULT_SANDBOX: SandboxSettings = {
   mode: "off",

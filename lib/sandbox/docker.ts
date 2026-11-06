@@ -27,15 +27,15 @@
 import type { SandboxSettings } from "./settings.ts";
 
 /** The volume every window's sandbox keeps `$HOME` (`/root`) on. */
-export const HOME_VOLUME = "qutty-sandbox-home";
+const HOME_VOLUME = "qutty-sandbox-home";
 /** The home folder inside the sandbox. */
-export const SANDBOX_HOME = "/root";
+const SANDBOX_HOME = "/root";
 /** Where the opt-in host agent configs appear. */
 export const HOST_CONFIG_DIR = "/mnt/host";
 /** The label every sandbox container carries. */
-export const SANDBOX_LABEL = "org.qutty.sandbox";
+const SANDBOX_LABEL = "org.qutty.sandbox";
 /** The label holding the hash of the settings the container was created with. */
-export const CONFIG_LABEL = "org.qutty.config";
+const CONFIG_LABEL = "org.qutty.config";
 /**
  * `docker exec -it`'s detach sequence. The default (Ctrl-P Ctrl-Q) would delay every Ctrl-P
  * (the shell's history key); Docker cannot turn it off, so it is moved to a sequence nobody types.
@@ -106,7 +106,7 @@ export function specHash(spec: SandboxSpec): string {
  * The container's main process: link the shims onto `PATH`, then wait until stopped (`--init`
  * runs it under tini, so a TERM — `docker stop`, or the keepalive's `kill 1` — ends it at once).
  */
-export const ENTRY_SCRIPT =
+const ENTRY_SCRIPT =
   'mkdir -p /usr/local/bin; for f in "$1"/*; do ln -sf "$f" /usr/local/bin/ 2>/dev/null; done; ' +
   "trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done";
 
@@ -224,7 +224,7 @@ export function execArgs(
  * exits (or crashes) the PTY closes, docker's stdin ends and the container is stopped. Works
  * with the network off, too. A `keep` line (Settings → keep running) ends it without stopping.
  */
-export const KEEPALIVE_SCRIPT =
+const KEEPALIVE_SCRIPT =
   'while read -r l; do [ "$l" = keep ] && exit 0; done; kill -TERM 1';
 
 export function keepaliveArgs(name: string): string[] {

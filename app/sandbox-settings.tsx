@@ -33,7 +33,7 @@ export function useSandboxSettings(
 const POLL_MS = 2000;
 
 /** `3 h 12 min`, `4 min`, `12 s`. */
-export function uptimeLabel(startedAt: string, now: number): string {
+function uptimeLabel(startedAt: string, now: number): string {
   const ms = now - Date.parse(startedAt);
   if (!Number.isFinite(ms) || ms < 0) return "";
   const s = Math.floor(ms / 1000);
@@ -57,7 +57,7 @@ const PHASE_LABEL: Record<SandboxStatus["phase"], string> = {
   error: "Failed",
 };
 
-function useSandboxStatus(backend: PtyBackend | null) {
+function useSandboxStatus(backend: PtyBackend | null, settingsKey: string) {
   const [status, setStatus] = useState<SandboxStatus | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -75,6 +75,19 @@ function useSandboxStatus(backend: PtyBackend | null) {
       clearInterval(timer);
     };
   }, [backend]);
+  // A settings change: read the status again once the workspace has sent them (its effect runs
+  // after this child's).
+  useEffect(() => {
+    if (!backend) return;
+    let live = true;
+    const t = setTimeout(() => {
+      void backend.sandboxStatus().then((s) => live && setStatus(s), () => {});
+    }, 50);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [backend, settingsKey]);
   return { status, setStatus, now };
 }
 
@@ -86,7 +99,10 @@ export interface SandboxSettingsProps {
 
 export function SandboxSettingsSection(props: SandboxSettingsProps) {
   const { settings, onChange, backend } = props;
-  const { status, setStatus, now } = useSandboxStatus(backend);
+  const { status, setStatus, now } = useSandboxStatus(
+    backend,
+    JSON.stringify(settings),
+  );
   const [busy, setBusy] = useState(false);
   // The text fields as typed (the store keeps the checked form).
   const [image, setImage] = useState(settings.image);
@@ -162,7 +178,8 @@ export function SandboxSettingsSection(props: SandboxSettingsProps) {
           disabled={!on}
           spellcheck={false}
           onInput={(e) => setImage((e.target as HTMLInputElement).value)}
-          onChange={() => onChange({ image })}
+          onChange={(e) =>
+            onChange({ image: (e.target as HTMLInputElement).value })}
         />
       </label>
       <label class="field">
@@ -175,7 +192,8 @@ export function SandboxSettingsSection(props: SandboxSettingsProps) {
           disabled={!on}
           spellcheck={false}
           onInput={(e) => setProject((e.target as HTMLInputElement).value)}
-          onChange={() => onChange({ project })}
+          onChange={(e) =>
+            onChange({ project: (e.target as HTMLInputElement).value })}
         />
         <span class="field-hint">
           Mounted at the same path inside; empty for none.

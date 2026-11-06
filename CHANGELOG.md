@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Shared Docker sandbox (Settings → Sandbox → Shared container): one long-lived
+  container per window that sandboxed tiles `docker exec` into, so agents share
+  one filesystem, process space and set of tools without touching the Mac.
+  Choose the image (default `node:22-bookworm`), a project folder mounted at the
+  same path (read/write or read-only), network on or off, whether it keeps
+  running after the window closes, and whether new tiles open in it; the `+`
+  menu's "Run in sandbox" / "Run on host" overrides that per tile. `$HOME` lives
+  on a volume (`qutty-sandbox-home`), so agent logins and tools installed there
+  persist; the host's `~/.claude` and `~/.codex` can be mounted read-only at
+  `/mnt/host`. Sandboxed tiles get a SANDBOX badge and a hatched green header,
+  the companion's `list_peers` marks them, and agents inside reach the hub over
+  a loopback TCP port with a per-tile token. A status line shows the image and
+  uptime with Start/Restart, Stop and Reset volume; without Docker the option
+  says why. The container stops with the app (even after a crash) unless kept.
+
 - The companion: Loopy, an animated paper clip, sits in a corner of the window.
   Agents' questions (`ask_user`) appear in its speech bubble with their buttons;
   scripts and hooks can make it talk with
