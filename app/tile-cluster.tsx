@@ -8,7 +8,9 @@
 // shown, which is also how a new terminal animates in.
 //
 // SSH tiles add a badge and their host tint (`data-tint`), plus whatever the workspace renders
-// into the header (`renderHeadActions`) and over the terminal (`renderOverlay`).
+// into the header (`renderHeadActions`) and over the terminal (`renderOverlay`). A tile the agent
+// hub knows an agent harness for (`agentOf`) shows the agent's hub name, its status (busy, idle,
+// waiting for the user) and how many messages wait for it.
 //
 // Scaled inactive tiles (Settings → Inactive tiles: scale): every tile's terminal body is laid
 // out at the focused tile's body size, so the terminal manager fits every terminal to that one
@@ -22,14 +24,17 @@ import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
 import { letterbox, type Size, tileBodySize } from "../lib/layout/scale.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
+import type { TileInfo } from "../lib/hub/protocol.ts";
 import { formatAge } from "../lib/workspace/format.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
 
-/** The workspace's additions to a tile (SSH tiles). */
+/** The workspace's additions to a tile (SSH tiles, agent badges). */
 interface TileExtras {
   /** The tile files are being dragged over. */
   dropTargetId?: string | null;
+  /** The agent hub's entry for a tile (the badge is drawn when it has a harness). */
+  agentOf?(id: string): TileInfo | undefined;
   renderHeadActions?(entry: TerminalEntry): ReactNode;
   renderOverlay?(entry: TerminalEntry, focused: boolean): ReactNode;
 }
@@ -71,6 +76,7 @@ export function TileCluster(props: TileClusterProps) {
           onFocus={props.onFocus}
           onClose={props.onClose}
           dropTargetId={props.dropTargetId}
+          agentOf={props.agentOf}
           renderHeadActions={props.renderHeadActions}
           renderOverlay={props.renderOverlay}
         />
@@ -245,6 +251,7 @@ function TerminalTile(props: TerminalTileProps) {
           {entry.ssh && (
             <span class="tile-badge" data-testid="tile-ssh-badge">SSH</span>
           )}
+          <AgentBadge tile={props.agentOf?.(id)} />
           <span class="tile-title" data-testid="tile-title" title={entry.title}>
             {entry.title}
           </span>
@@ -301,5 +308,32 @@ function TerminalTile(props: TerminalTileProps) {
         {props.renderOverlay?.(entry, focused)}
       </div>
     </div>
+  );
+}
+
+/** An agent tile's hub name, status and unread count (nothing for a tile without a harness). */
+function AgentBadge(props: { tile: TileInfo | undefined }) {
+  const tile = props.tile;
+  if (!tile?.harness) return null;
+  const unread = tile.unread > 0
+    ? `, ${tile.unread} unread message${tile.unread === 1 ? "" : "s"}`
+    : "";
+  return (
+    <span
+      class="tile-agent"
+      data-testid="tile-agent-badge"
+      data-status={tile.status}
+      data-unread={String(tile.unread)}
+      title={`${tile.name} (${tile.harness}): ${tile.status}${unread}`}
+    >
+      <span class="tile-agent-dot" aria-hidden="true" />
+      <span class="tile-agent-name">{tile.name}</span>
+      <span class="tile-agent-status">{tile.status}</span>
+      {tile.unread > 0 && (
+        <span class="tile-agent-unread" data-testid="tile-agent-unread">
+          {tile.unread}
+        </span>
+      )}
+    </span>
   );
 }

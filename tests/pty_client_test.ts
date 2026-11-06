@@ -90,6 +90,9 @@ class FakeBridge {
     };
     for (const h of this.handlers.get("ssh:transfer") ?? []) h(event);
   }
+  hub(event: "tiles" | "ask" | "askClosed", data: unknown): void {
+    for (const h of this.handlers.get(`hub:${event}`) ?? []) h(data);
+  }
   data(id: string, seq: number, data: string): void {
     this.fire("data", { id, seq, data });
   }
@@ -123,7 +126,7 @@ const microtask = () => new Promise<void>((r) => queueMicrotask(r));
 Deno.test("desktop: kind, extension name, and no bridge traffic at creation", () => {
   const { bridge, backend } = setup();
   assertEquals(backend.kind, "desktop");
-  assertEquals(bridge.extensionNames, ["pty", "ssh"]);
+  assertEquals(bridge.extensionNames, ["pty", "ssh", "hub"]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");
 });
@@ -258,6 +261,74 @@ Deno.test("desktop: bridge errors reach the caller", async () => {
   await assertRejects(() => backend.resize("a", 1, 1), Error, "not_found");
   await assertRejects(() => backend.kill("a"), Error, "not_found");
   await assertRejects(() => backend.info("a"), Error, "not_found");
+});
+
+Deno.test("desktop: hub methods forward to the hub extension with exactly their arguments", async () => {
+  const { bridge, backend } = setup();
+  const snapshot = { running: true, tiles: [], asks: [] };
+  bridge.responders.snapshot = () => snapshot;
+  bridge.responders.answer = () => true;
+  bridge.responders.integrationStatus = () => [];
+  bridge.responders.integrationInstall = () => {
+    throw new Error("~/.claude.json already has a qutty entry");
+  };
+  assertEquals(await backend.hubSnapshot(), snapshot);
+  assertEquals(await backend.hubAnswer("ask-1", "Yes"), true);
+  await backend.hubAnswer("ask-2", null);
+  assertStrictEquals(await backend.hubSetLabel("pty-3", "vim"), undefined);
+  assertEquals(await backend.integrationStatus(), []);
+  await assertRejects(
+    () => backend.integrationInstall("claude"),
+    Error,
+    "already has a qutty entry",
+  );
+  await backend.integrationUninstall("codex");
+  assertEquals(bridge.calls, [
+    { method: "snapshot", args: {} },
+    { method: "answer", args: { id: "ask-1", action: "Yes" } },
+    { method: "answer", args: { id: "ask-2", action: null } },
+    { method: "setLabel", args: { id: "pty-3", label: "vim" } },
+    { method: "integrationStatus", args: {} },
+    { method: "integrationInstall", args: { target: "claude" } },
+    { method: "integrationUninstall", args: { target: "codex" } },
+  ]);
+  assertEquals(bridge.subscribeCount, 0, "no events subscribed by calls");
+});
+
+Deno.test("desktop: hub events subscribe once, lazily; asks are deduped by id, also after closing", () => {
+  const { bridge, backend } = setup();
+  const tiles: number[] = [];
+  const asks: string[] = [];
+  const closed: string[] = [];
+  backend.onHubTiles((s) => tiles.push(s.tiles.length));
+  const offAsk = backend.onHubAsk((r) => asks.push(r.id));
+  backend.onHubAskClosed((id) => closed.push(id));
+  assertEquals(
+    [...bridge.handlers.keys()].sort(),
+    ["hub:ask", "hub:askClosed", "hub:tiles"],
+  );
+  assertEquals(bridge.subscribeCount, 3);
+  const ask = (id: string) => ({
+    id,
+    from: "pty-1",
+    fromName: "claude",
+    text: "?",
+    actions: [],
+  });
+  bridge.hub("tiles", { running: true, tiles: [] });
+  bridge.hub("ask", ask("a1"));
+  bridge.hub("ask", ask("a1")); // replay
+  bridge.hub("ask", ask("a2"));
+  bridge.hub("askClosed", { id: "a1" });
+  bridge.hub("ask", ask("a1")); // replayed after it closed
+  bridge.hub("askClosed", { id: "a3" });
+  bridge.hub("ask", ask("a3")); // closed before it arrived
+  assertEquals(tiles, [0]);
+  assertEquals(asks, ["a1", "a2"]);
+  assertEquals(closed, ["a1", "a3"]);
+  offAsk();
+  bridge.hub("ask", ask("a4"));
+  assertEquals(asks, ["a1", "a2"]);
 });
 
 Deno.test("desktop: output before the first subscriber is delivered to it, once", async () => {

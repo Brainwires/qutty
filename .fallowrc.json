@@ -25,8 +25,8 @@
   // deno.json maps @xterm/* to vendor/xterm/*.mjs, which is excluded above, so fallow can't
   // follow lib/xterm.ts's re-exports. lib/terminal-manager.ts consumes all of them.
   "ignoreUnresolvedImports": ["./vendor/xterm/**"],
-  // Declared in deno.json's import map (npm:node-pty), which fallow doesn't read.
-  "ignoreDependencies": ["node-pty"],
+  // Declared in deno.json's import map (npm:node-pty, npm:@xterm/headless), which fallow doesn't read.
+  "ignoreDependencies": ["node-pty", "@xterm/headless"],
   "ignoreExports": [{ "file": "lib/xterm.ts", "exports": ["*"] }],
   "rules": {
     // Syntactic only: it misses calls made through a typed parameter (`manager.setFont()`,

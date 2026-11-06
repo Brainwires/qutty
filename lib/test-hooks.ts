@@ -72,6 +72,15 @@ export function withBackendSpy(
     sshList: (args) => backend.sshList(args),
     sshCancel: (transferId) => backend.sshCancel(transferId),
     onTransfer: (cb) => backend.onTransfer(cb),
+    hubSnapshot: () => backend.hubSnapshot(),
+    hubAnswer: (id, action) => backend.hubAnswer(id, action),
+    hubSetLabel: (ptyId, label) => backend.hubSetLabel(ptyId, label),
+    onHubTiles: (cb) => backend.onHubTiles(cb),
+    onHubAsk: (cb) => backend.onHubAsk(cb),
+    onHubAskClosed: (cb) => backend.onHubAskClosed(cb),
+    integrationStatus: () => backend.integrationStatus(),
+    integrationInstall: (target) => backend.integrationInstall(target),
+    integrationUninstall: (target) => backend.integrationUninstall(target),
   };
 }
 

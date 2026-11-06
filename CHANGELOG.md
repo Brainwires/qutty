@@ -38,6 +38,17 @@
   titled "claude — ~/proj") and their tile closes when they exit. The last pick
   is remembered, and Settings → Layout → "+ opens" chooses what plain `+` and ⌘T
   open (default shell, last used, or one entry).
+- Agent hub: every terminal gets its own MCP server, so coding agents in
+  different tiles (Claude Code, Codex, any MCP client, any account) can list
+  each other, read any tile's screen and scrollback, message each other or the
+  whole window, and ask you a question with buttons. Messages reach a Claude
+  Code agent between tool calls or when it would stop (through its hooks), or
+  any agent through `read_messages` / `wait_for_message`. Claude Code and Codex
+  started from the `+` picker are connected automatically; for agents started by
+  hand, Settings → Agent integration installs (and removes) the user-scope
+  registration, showing exactly what it changes and keeping backups. Agent tiles
+  show the agent's name, busy / idle / waiting and unread messages in their
+  header.
 
 ## 0.1.0 — first release
 

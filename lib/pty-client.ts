@@ -5,6 +5,10 @@
 // - `demoBackend` in a plain browser (`denext dev`): a fake shell (banner, prompt, echo, line
 //   editing, a few commands) so the UI can be built without the desktop app.
 //
+// Both also carry the agent hub's page side: the tiles behind the badges, `ask_user` questions
+// and their answers, and Settings → Agent integration (the `hub` extension, desktop/hub.ts; in the
+// demo, the fake hub in lib/hub-demo.ts).
+//
 // Detection: `desktopOs()` from `denext/desktop/client` is defined only in a page the desktop
 // runtime served (it reads the runtime-injected `__denext.desktop` marker; no bridge call). A
 // `?pty=demo` query parameter forces the demo backend, for testing the UI inside the window.
@@ -19,6 +23,14 @@ import {
 import type ptyExtension from "../desktop/pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "../desktop/pty.ts";
 import type sshExtension from "../desktop/ssh.ts";
+import type hubExtension from "../desktop/hub.ts";
+import type {
+  AskAnswer,
+  AskRequest,
+  HubSnapshot,
+  IntegrationStatus,
+  IntegrationTarget,
+} from "./hub/protocol.ts";
 import type {
   SshCommand,
   SshDownloadArgs,
@@ -31,6 +43,7 @@ import type {
 import type { SshHost, SshHostInput, SshTarget } from "./ssh-config.ts";
 import type { SshListing } from "./ssh-command.ts";
 import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
+import { createDemoHub, type DemoHub } from "./hub-demo.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 
@@ -59,6 +72,8 @@ export interface PtySpawnOptions {
   program?: string;
   /** Its arguments. */
   args?: string[];
+  /** The agent tool `program` is (`claude`): the agent hub adds the flags that connect it. */
+  agent?: string;
 }
 
 /** What `spawn` returns. */
@@ -136,6 +151,27 @@ export interface PtyBackend {
   sshCancel(transferId: string): Promise<void>;
   /** Progress and completion of every transfer. Subscribe before starting one. */
   onTransfer(cb: (event: SshTransferEvent) => void): () => void;
+
+  // --- Agent hub (desktop/hub.ts) ------------------------------------------------------------
+
+  /** The hub's tiles and open questions (`running: false, tiles: []` when it did not start). */
+  hubSnapshot(): Promise<HubSnapshot & { asks: AskRequest[] }>;
+  /** Answer `ask_user` question `id` with a button label, or `null` (dismissed). */
+  hubAnswer(id: string, action: AskAnswer["action"]): Promise<boolean>;
+  /** Tell the hub terminal `ptyId`'s title (agents see it in `list_peers`). */
+  hubSetLabel(ptyId: string, label: string): Promise<void>;
+  /** A full snapshot of the tiles after every change. */
+  onHubTiles(cb: (snapshot: HubSnapshot) => void): () => void;
+  /** A new `ask_user` question (each id once, also when the event stream replays). */
+  onHubAsk(cb: (request: AskRequest) => void): () => void;
+  /** A question was answered (here or elsewhere) or its tile went away. */
+  onHubAskClosed(cb: (id: string) => void): () => void;
+  /** Settings → Agent integration: what is installed, and what Install would change. */
+  integrationStatus(): Promise<IntegrationStatus[]>;
+  /** Install the user-scope registration for `target`; the new status (throws with the reason). */
+  integrationInstall(target: IntegrationTarget): Promise<IntegrationStatus[]>;
+  /** Remove exactly Qutty's entries for `target`; the new status. */
+  integrationUninstall(target: IntegrationTarget): Promise<IntegrationStatus[]>;
 }
 
 /** A set of callbacks: the transfer fan-out both backends share. */
@@ -261,6 +297,7 @@ export function createDesktopBackend(
   const { desktopExtension, onDesktopEvent } = deps;
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
+  const hub = desktopExtension<typeof hubExtension>("hub");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -268,6 +305,28 @@ export function createDesktopBackend(
   const transfers = fanout<SshTransferEvent>();
   const lastTransferSeq = new Map<string, number>();
   let listeningTransfers = false;
+  const hubTiles = fanout<HubSnapshot>();
+  const hubAsks = fanout<AskRequest>();
+  const hubAskClosed = fanout<string>();
+  /** Questions already delivered or closed: a replayed `ask` must not open one again. */
+  const seenAsks = new Set<string>();
+  let listeningHub = false;
+
+  const listenHub = () => {
+    if (listeningHub) return;
+    listeningHub = true;
+    // `tiles` is a full snapshot each time, so a repeat is harmless.
+    onDesktopEvent<HubSnapshot>("hub", "tiles", hubTiles.emit);
+    onDesktopEvent<AskRequest>("hub", "ask", (request) => {
+      if (seenAsks.has(request.id)) return;
+      seenAsks.add(request.id);
+      hubAsks.emit(request);
+    });
+    onDesktopEvent<{ id: string }>("hub", "askClosed", ({ id }) => {
+      seenAsks.add(id);
+      hubAskClosed.emit(id);
+    });
+  };
 
   const listenTransfers = () => {
     if (listeningTransfers) return;
@@ -360,6 +419,36 @@ export function createDesktopBackend(
       listenTransfers();
       return transfers.on(cb);
     },
+    async hubSnapshot() {
+      return await hub.snapshot({});
+    },
+    async hubAnswer(id, action) {
+      return await hub.answer({ id, action });
+    },
+    async hubSetLabel(ptyId, label) {
+      await hub.setLabel({ id: ptyId, label });
+    },
+    onHubTiles: (cb) => {
+      listenHub();
+      return hubTiles.on(cb);
+    },
+    onHubAsk: (cb) => {
+      listenHub();
+      return hubAsks.on(cb);
+    },
+    onHubAskClosed: (cb) => {
+      listenHub();
+      return hubAskClosed.on(cb);
+    },
+    async integrationStatus() {
+      return await hub.integrationStatus({});
+    },
+    async integrationInstall(target) {
+      return await hub.integrationInstall({ target });
+    },
+    async integrationUninstall(target) {
+      return await hub.integrationUninstall({ target });
+    },
   };
 }
 
@@ -402,6 +491,25 @@ const DEMO_HELP = [
   "",
 ];
 
+/** A demo agent's `/help`: what it can do with the demo agent hub (lib/hub-demo.ts). */
+const DEMO_AGENT_HELP = [
+  `${BOLD}demo agent${RESET} ${DIM}(no real model — browser dev mode)${RESET}`,
+  "",
+  `  ${fg(209)}/help${RESET}              this list`,
+  `  ${
+    fg(209)
+  }/ask${RESET} [question]     ask the user (Yes / No); the answer is printed here`,
+  `  ${
+    fg(209)
+  }/msg${RESET} <name> <text>  queue a message for another tile (its badge counts it)`,
+  `  ${fg(209)}/exit${RESET}              quit`,
+  `  anything else      busy for a moment, then idle; queued messages are read first`,
+  "",
+];
+
+/** How long a demo agent stays busy after a line. */
+const DEMO_BUSY_MS = 1500;
+
 /** What the demo backend says is installed (the e2e suite launches these). */
 const DEMO_LAUNCHABLES: Launchables = {
   shells: [
@@ -441,6 +549,8 @@ class DemoShell {
   line = "";
   cwd = "~";
   topTimer: ReturnType<typeof setInterval> | undefined;
+  /** A demo agent's busy → idle timer. */
+  idleTimer: ReturnType<typeof setTimeout> | undefined;
   exited = false;
 
   constructor(
@@ -449,6 +559,7 @@ class DemoShell {
     public rows: number,
     readonly out: (data: string) => void,
     readonly exit: (e: PtyExit) => void,
+    readonly hub: DemoHub,
     readonly mode: DemoMode = { name: "demo-sh" },
   ) {}
 
@@ -462,7 +573,7 @@ class DemoShell {
       this.out(
         `${
           fg(209)
-        }${BOLD}✻ ${agent.label}${RESET} ${DIM}demo backend — a fake ${agent.name}, type /exit to quit${RESET}\r\n\r\n`,
+        }${BOLD}✻ ${agent.label}${RESET} ${DIM}demo backend — a fake ${agent.name}, /help for commands, /exit to quit${RESET}\r\n\r\n`,
       );
       this.prompt();
       return;
@@ -555,17 +666,61 @@ class DemoShell {
     }
   }
 
-  /** A demo agent's turn: `/exit` (or `exit`) ends it, anything else gets a canned answer. */
+  /**
+   * A demo agent's turn: `/exit` (or `exit`) ends it; `/help`, `/ask` and `/msg` use the demo
+   * hub; anything else gets a canned answer and keeps the agent busy for a moment. Messages
+   * queued for it are read first.
+   */
   runAgent(raw: string): void {
     const text = raw.trim();
+    const println = (s: string) => this.out(`${s}\r\n`);
     if (text === "/exit" || text === "exit") {
       this.exited = true;
       this.exit({ exitCode: 0, signal: null });
-    } else if (text !== "") {
-      this.out(
-        `${DIM}(demo) ${this.mode.agent!.name} heard: ${text}${RESET}\r\n`,
+      return;
+    }
+    if (text === "") return;
+    for (const m of this.hub.take(this.id)) {
+      println(`${fg(81)}✉ ${m.fromName}:${RESET} ${m.text}`);
+    }
+    const [cmd, ...rest] = text.split(/\s+/);
+    if (cmd === "/help") {
+      for (const l of DEMO_AGENT_HELP) println(l);
+    } else if (cmd === "/ask") {
+      this.askUser(rest.join(" ") || "Apply the demo change to notes.md?");
+      println(`${DIM}(demo) asked the user, waiting for the answer…${RESET}`);
+    } else if (cmd === "/msg" && rest.length >= 2) {
+      const to = this.hub.send(this.id, rest[0], rest.slice(1).join(" "));
+      println(
+        `${DIM}(demo) ${
+          to ? `queued for ${to}` : `no other tile is named ${rest[0]}`
+        }${RESET}`,
+      );
+    } else if (cmd === "/msg") {
+      println(`${DIM}(demo) usage: /msg <name> <text>${RESET}`);
+    } else {
+      println(`${DIM}(demo) ${this.mode.agent!.name} heard: ${text}${RESET}`);
+      this.hub.setStatus(this.id, "busy");
+      clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(
+        () => this.hub.setStatus(this.id, "idle"),
+        DEMO_BUSY_MS,
       );
     }
+  }
+
+  /** `ask_user` through the demo hub; the answer is printed above a fresh prompt. */
+  askUser(question: string): void {
+    this.hub.ask(this.id, question, ["Yes", "No"], (action) => {
+      if (this.exited) return;
+      this.out(
+        `\r${ESC}[2K${DIM}(demo) the user answered: ${
+          action ?? "nothing (dismissed)"
+        }${RESET}\r\n`,
+      );
+      this.prompt();
+      this.out(this.line);
+    });
   }
 
   run(raw: string): void {
@@ -708,6 +863,7 @@ class DemoShell {
   dispose(): void {
     if (this.topTimer) clearInterval(this.topTimer);
     this.topTimer = undefined;
+    clearTimeout(this.idleTimer);
   }
 }
 
@@ -731,13 +887,22 @@ export function createDemoBackend(): PtyBackend {
       return Promise.reject(err);
     }
   };
+  const transfers = fanout<SshTransferEvent>();
+  const ssh = createDemoSsh(transfers.emit);
+  const hubTiles = fanout<HubSnapshot>();
+  const hubAsks = fanout<AskRequest>();
+  const hubAskClosed = fanout<string>();
+  const hub = createDemoHub({
+    tiles: hubTiles.emit,
+    ask: hubAsks.emit,
+    askClosed: hubAskClosed.emit,
+  });
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
+    hub.remove(id);
     events.emitExit(id, e);
   };
-  const transfers = fanout<SshTransferEvent>();
-  const ssh = createDemoSsh(transfers.emit);
 
   return {
     kind: "demo",
@@ -755,6 +920,7 @@ export function createDemoBackend(): PtyBackend {
         options.rows,
         (data) => events.emitData(id, data),
         (e) => setTimeout(() => end(id, e), 0),
+        hub,
         {
           name: options.shell ? baseName(options.shell) : "demo-sh",
           ...(remote ? { remote } : {}),
@@ -762,6 +928,7 @@ export function createDemoBackend(): PtyBackend {
         },
       );
       shells.set(id, shell);
+      hub.add(id, agent?.name);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
       setTimeout(() => {
         if (shells.get(id) === shell) shell.start(); // not if killed already
@@ -815,6 +982,15 @@ export function createDemoBackend(): PtyBackend {
     sshList: (args) => ssh.sshList(args),
     sshCancel: (transferId) => ssh.sshCancel(transferId),
     onTransfer: (cb) => transfers.on(cb),
+    hubSnapshot: () => hub.snapshot(),
+    hubAnswer: (id, action) => hub.answer(id, action),
+    hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
+    onHubTiles: (cb) => hubTiles.on(cb),
+    onHubAsk: (cb) => hubAsks.on(cb),
+    onHubAskClosed: (cb) => hubAskClosed.on(cb),
+    integrationStatus: () => hub.integrationStatus(),
+    integrationInstall: (target) => hub.integrationInstall(target),
+    integrationUninstall: (target) => hub.integrationUninstall(target),
   };
 }
 

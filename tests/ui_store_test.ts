@@ -242,7 +242,8 @@ Deno.test("settings sanitise untrusted input and round-trip through storage", ()
 
 Deno.test("settings: the theme and folded sections sanitise, reduce and persist", () => {
   assertEquals(DEFAULT_SETTINGS.theme, "sea-glass");
-  assertEquals(DEFAULT_SETTINGS.collapsedSections, []);
+  // Agent integration starts folded; the rest open.
+  assertEquals(DEFAULT_SETTINGS.collapsedSections, ["integration"]);
   assertEquals(sanitizeSettings({ theme: "plum" }).theme, "plum");
   for (const junk of ["solarized", "", 7, null, { id: "plum" }]) {
     assertEquals(sanitizeSettings({ theme: junk }).theme, "sea-glass");
@@ -257,11 +258,12 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
       .collapsedSections,
     ["layout", "font"],
   );
+  // Junk keeps the base's.
   assertEquals(
     sanitizeSettings({ collapsedSections: "layout" }).collapsedSections,
-    [],
+    ["integration"],
   );
-  assertEquals(SETTINGS_SECTIONS, ["layout", "theme", "font"]);
+  assertEquals(SETTINGS_SECTIONS, ["layout", "theme", "font", "integration"]);
 
   let s = initialState();
   s = reduce(s, { type: "setTheme", theme: "sakura" });
@@ -271,6 +273,8 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     reduce(s, { type: "setTheme", theme: "nope" as never }).settings.theme,
     "sea-glass",
   );
+  s = reduce(s, { type: "toggleSection", section: "integration" });
+  assertEquals(s.settings.collapsedSections, [], "integration unfolds");
   s = reduce(s, { type: "toggleSection", section: "font" });
   s = reduce(s, { type: "toggleSection", section: "layout" });
   assertEquals(s.settings.collapsedSections, ["layout", "font"]);

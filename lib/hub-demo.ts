@@ -1,0 +1,231 @@
+// The demo backend's agent hub (plain-browser development and the e2e suite), beside the demo SSH
+// in lib/ssh-demo.ts. Every demo terminal is a hub tile, kept in the real registry
+// (lib/hub/registry.ts: the same default names, `claude`, `claude-2`, `shell-3`); a demo agent tool
+// registers with its harness, so the page draws its badge. What the demo agents can do with it
+// (see `DemoShell.runAgent` in lib/pty-client.ts):
+//
+// - any line: the agent is busy for a moment, then idle again;
+// - `/ask [question]`: an `ask_user` question with Yes / No. The page's answer is printed in the
+//   asking terminal ("(demo) the user answered: Yes"), which proves it reached the caller;
+// - `/msg <name> <text>`: a message for another tile. Its unread count goes up until that tile's
+//   agent takes its next turn (any line typed into it), which prints the message and clears it.
+//
+// Settings → Agent integration runs the real installer (lib/hub/integration.ts) over an in-memory
+// home folder (`/Users/demo`) that starts with small agent configs of its own, so Install and
+// Uninstall show and do exactly what the desktop app would.
+//
+// Client-safe: only the hub modules without Deno or npm dependencies are imported.
+
+import {
+  type ConfigFs,
+  installIntegration,
+  integrationFiles,
+  integrationStatus,
+  uninstallIntegration,
+} from "./hub/integration.ts";
+import { hubPaths } from "./hub/launch.ts";
+import type {
+  AskRequest,
+  HubSnapshot,
+  IntegrationStatus,
+  IntegrationTarget,
+  TileStatus,
+} from "./hub/protocol.ts";
+import { Registry } from "./hub/registry.ts";
+
+/** Where the demo hub's events go (the demo backend's fan-outs to the page). */
+export interface DemoHubEmit {
+  /** A full snapshot after every change (coalesced: one per burst, after the current task). */
+  tiles(snapshot: HubSnapshot): void;
+  ask(request: AskRequest): void;
+  askClosed(id: string): void;
+}
+
+/** A message one demo tile queued for another. */
+interface DemoMessage {
+  fromName: string;
+  text: string;
+}
+
+const DEMO_HOME = "/Users/demo";
+
+/** The demo home's agent configs before any Install (the user's own settings, to be kept). */
+function demoConfigFiles(): Map<string, string> {
+  return new Map([
+    [
+      `${DEMO_HOME}/.claude.json`,
+      '{\n  "numStartups": 12,\n  "theme": "dark"\n}\n',
+    ],
+    [
+      `${DEMO_HOME}/.claude/settings.json`,
+      '{\n  "model": "opus",\n  "hooks": {}\n}\n',
+    ],
+    [`${DEMO_HOME}/.codex/config.toml`, 'model = "gpt-5-codex"\n'],
+  ]);
+}
+
+/** {@linkcode ConfigFs} over a map of path → text (no symlinks; every file is 0644). */
+function memoryFs(files: Map<string, string>): ConfigFs {
+  return {
+    read: (path) => Promise.resolve(files.get(path)),
+    write(path, text) {
+      files.set(path, text);
+      return Promise.resolve();
+    },
+    remove(path) {
+      files.delete(path);
+      return Promise.resolve();
+    },
+    mode: (path) => Promise.resolve(files.has(path) ? 0o644 : undefined),
+    realPath: (path) => Promise.resolve(path),
+  };
+}
+
+/**
+ * A new demo hub. `emit` delivers its events to the page; the demo backend's terminals call the
+ * tile half (`add`, `remove`, `setStatus`, `ask`, `send`, `take`).
+ */
+export function createDemoHub(emit: DemoHubEmit) {
+  let pendingTiles: ReturnType<typeof setTimeout> | undefined;
+  const snapshot = (): HubSnapshot => ({
+    running: true,
+    tiles: registry.list(),
+  });
+  // Coalesced and a little late, like the desktop event: the page learns a terminal's PTY id
+  // from `spawn` before it hears about the tile.
+  const registry = new Registry(() => {
+    pendingTiles ??= setTimeout(() => {
+      pendingTiles = undefined;
+      emit.tiles(snapshot());
+    }, 0);
+  });
+  const asks = new Map<
+    string,
+    { request: AskRequest; reply(action: string | null): void }
+  >();
+  const inboxes = new Map<string, DemoMessage[]>();
+  let nextAsk = 0;
+
+  const fs = memoryFs(demoConfigFiles());
+  const paths = hubPaths(DEMO_HOME);
+  const files = integrationFiles(DEMO_HOME, paths);
+  const status = () => integrationStatus(fs, files, paths);
+
+  /** Close question `id` (answered, or its tile went away) without replying. */
+  const close = (id: string) => {
+    const a = asks.get(id);
+    if (!a) return undefined;
+    asks.delete(id);
+    emit.askClosed(id);
+    return a;
+  };
+
+  return {
+    // --- The page's half (what the `hub` desktop extension offers) -------------------------
+
+    snapshot(): Promise<HubSnapshot & { asks: AskRequest[] }> {
+      return Promise.resolve({
+        ...snapshot(),
+        asks: [...asks.values()].map((a) => ({ ...a.request })),
+      });
+    },
+    /** The user's answer (`null`: dismissed); false when the question is already closed. */
+    answer(id: string, action: string | null): Promise<boolean> {
+      const a = close(id);
+      a?.reply(action);
+      return Promise.resolve(a !== undefined);
+    },
+    setLabel(id: string, label: string): Promise<void> {
+      registry.setMeta(id, { label });
+      return Promise.resolve();
+    },
+    integrationStatus: (): Promise<IntegrationStatus[]> => status(),
+    async integrationInstall(
+      target: IntegrationTarget,
+    ): Promise<IntegrationStatus[]> {
+      await installIntegration(fs, files, paths, target);
+      return await status();
+    },
+    async integrationUninstall(
+      target: IntegrationTarget,
+    ): Promise<IntegrationStatus[]> {
+      await uninstallIntegration(fs, files, paths, target);
+      return await status();
+    },
+
+    // --- The demo terminals' half ----------------------------------------------------------
+
+    /** Register terminal `id` (an agent tool with its `harness`); returns its hub name. */
+    add(id: string, harness?: string): string {
+      return registry.add({ id, ...(harness ? { harness } : {}) }).name;
+    },
+    /** Terminal `id` ended: its tile, mailbox and open questions go. */
+    remove(id: string): void {
+      registry.remove(id);
+      inboxes.delete(id);
+      for (const [askId, a] of [...asks]) {
+        if (a.request.from === id) close(askId);
+      }
+    },
+    setStatus(id: string, status: TileStatus): void {
+      registry.setStatus(id, status);
+    },
+    /**
+     * Ask the user from tile `from`: the tile waits until `reply` gets the answer (`null` when
+     * dismissed). Returns the question's id.
+     */
+    ask(
+      from: string,
+      text: string,
+      actions: string[],
+      reply: (action: string | null) => void,
+    ): string {
+      const id = `demo-ask-${++nextAsk}`;
+      const request: AskRequest = {
+        id,
+        from,
+        fromName: registry.get(from)?.name ?? from,
+        text,
+        actions: [...actions],
+      };
+      registry.setStatus(from, "waiting");
+      asks.set(id, {
+        request,
+        reply(action) {
+          registry.setStatus(from, "idle");
+          reply(action);
+        },
+      });
+      emit.ask({ ...request, actions: [...actions] });
+      return id;
+    },
+    /**
+     * Queue a message from tile `from` for the tile named (or with id) `to`. Returns the
+     * recipient's name, or `undefined` when there is no other tile by that name.
+     */
+    send(from: string, to: string, text: string): string | undefined {
+      const recipient = registry.resolve(to);
+      if (!recipient || recipient.id === from) return undefined;
+      const inbox = inboxes.get(recipient.id) ?? [];
+      inbox.push({ fromName: registry.get(from)?.name ?? from, text });
+      inboxes.set(recipient.id, inbox);
+      registry.setUnread(recipient.id, inbox.length);
+      return recipient.name;
+    },
+    /** Hand tile `id` its queued messages (its unread count drops to 0). */
+    take(id: string): DemoMessage[] {
+      const inbox = inboxes.get(id) ?? [];
+      inboxes.delete(id);
+      if (inbox.length > 0) registry.setUnread(id, 0);
+      return inbox;
+    },
+    /** Stop the pending snapshot timer (tests). */
+    dispose(): void {
+      clearTimeout(pendingTiles);
+      pendingTiles = undefined;
+    },
+  };
+}
+
+/** The demo hub (see {@linkcode createDemoHub}). */
+export type DemoHub = ReturnType<typeof createDemoHub>;

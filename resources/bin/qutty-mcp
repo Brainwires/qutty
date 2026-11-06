@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# qutty-mcp: the Qutty agent hub's MCP server, as a stdio command. It relays MCP's JSON-RPC lines
+# to this tile's hub socket ($QUTTY_SOCK, set by Qutty in every tile); the socket tells the hub
+# which tile is talking. Outside Qutty it exits at once, so a user-scope registration is harmless
+# in other terminals. Installed to ~/.qutty/bin by Qutty (updated on every start).
+[ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ] || exit 0
+# BSD/OpenBSD netcat has -U (unix sockets); busybox nc does not, so fall back to socat.
+if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+  exec nc -U "$QUTTY_SOCK"
+fi
+if command -v socat >/dev/null 2>&1; then
+  exec socat - "UNIX-CONNECT:$QUTTY_SOCK"
+fi
+echo "qutty-mcp: needs nc with -U (BSD netcat) or socat" >&2
+exit 1

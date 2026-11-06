@@ -14,6 +14,8 @@
     "jsr:@deno/cache-dir@0.22.2": "0.22.2",
     "jsr:@deno/graph@0.86": "0.86.9",
     "jsr:@luca/esbuild-deno-loader@0.11": "0.11.1",
+    "jsr:@rullama/mcp-client@~0.12.2": "0.12.2",
+    "jsr:@rullama/mcp-server@~0.12.2": "0.12.2",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/async@1": "1.5.1",
     "jsr:@std/async@^1.5.1": "1.5.1",
@@ -54,6 +56,7 @@
     "npm:@xterm/addon-fit@0.11.0": "0.11.0",
     "npm:@xterm/addon-web-links@0.12.0": "0.12.0",
     "npm:@xterm/addon-webgl@0.19.0": "0.19.0",
+    "npm:@xterm/headless@6.0.0": "6.0.0",
     "npm:@xterm/xterm@6.0.0": "6.0.0",
     "npm:node-pty@1.1.0": "1.1.0",
     "npm:sass@^1.80.0": "1.107.0",
@@ -150,6 +153,15 @@
         "jsr:@std/bytes",
         "jsr:@std/encoding@^1.0.5",
         "jsr:@std/path@^1.0.6"
+      ]
+    },
+    "@rullama/mcp-client@0.12.2": {
+      "integrity": "9587fb5604f6e0c0b2f8985a9fc65738aa87f36b1cd1e26aaa3a1887d0cfdea7"
+    },
+    "@rullama/mcp-server@0.12.2": {
+      "integrity": "bd8b90b9de24cc2d8fddc75878f9dd643f4723af684f69454eacec71723ee7ca",
+      "dependencies": [
+        "jsr:@rullama/mcp-client"
       ]
     },
     "@std/assert@1.0.19": {
@@ -620,6 +632,9 @@
     },
     "@xterm/addon-webgl@0.19.0": {
       "integrity": "sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A=="
+    },
+    "@xterm/headless@6.0.0": {
+      "integrity": "sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw=="
     },
     "@xterm/xterm@6.0.0": {
       "integrity": "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg=="
@@ -1599,6 +1614,8 @@
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
       "jsr:@denext/denext@^4.12.0",
+      "jsr:@rullama/mcp-client@~0.12.2",
+      "jsr:@rullama/mcp-server@~0.12.2",
       "jsr:@std/assert@1",
       "jsr:@std/async@1",
       "jsr:@std/encoding@1",
@@ -1611,6 +1628,7 @@
       "npm:@xterm/addon-fit@0.11.0",
       "npm:@xterm/addon-web-links@0.12.0",
       "npm:@xterm/addon-webgl@0.19.0",
+      "npm:@xterm/headless@6.0.0",
       "npm:@xterm/xterm@6.0.0",
       "npm:node-pty@1.1.0"
     ]
