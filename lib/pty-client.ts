@@ -202,8 +202,14 @@ export interface PtyBackend {
   companionStatus(): Promise<
     { status: CompanionStatus; activity: AuditEntry[] }
   >;
-  /** The user typed to the companion; its reply streams as `onCompanion` turn updates. */
-  companionSend(text: string): Promise<{ turn: number }>;
+  /**
+   * The user typed (or, `via: "voice"`, said) something to the companion; its reply streams as
+   * `onCompanion` turn updates.
+   */
+  companionSend(
+    text: string,
+    via?: "chat" | "voice",
+  ): Promise<{ turn: number }>;
   /** Settings → Companion: whether the brain may run, and its model (`""`: the default). */
   companionConfigure(enabled: boolean, model: string): Promise<CompanionStatus>;
   /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */
@@ -552,8 +558,8 @@ export function createDesktopBackend(
     async companionStatus() {
       return await hub.companionStatus({});
     },
-    async companionSend(text) {
-      return await hub.companionSend({ text });
+    async companionSend(text, via = "chat") {
+      return await hub.companionSend({ text, via });
     },
     async companionConfigure(enabled, model) {
       return await hub.companionConfigure({ enabled, model });
@@ -635,6 +641,9 @@ const DEMO_AGENT_HELP = [
   `  ${
     fg(209)
   }/msg companion${RESET} <text>  ask the companion (Loopy answers in its bubble)`,
+  `  ${
+    fg(209)
+  }/fail${RESET} [what]        report a failure (set_status note "<what> failed")`,
   `  ${fg(209)}/exit${RESET}              quit`,
   `  anything else      busy for a moment, then idle; queued messages are read first`,
   "",
@@ -837,6 +846,11 @@ class DemoShell {
       );
     } else if (cmd === "/msg") {
       println(`${DIM}(demo) usage: /msg <name> <text>${RESET}`);
+    } else if (cmd === "/fail") {
+      const note = `${rest.join(" ") || "build"} failed`;
+      clearTimeout(this.idleTimer);
+      this.hub.setStatus(this.id, "idle", note);
+      println(`${DIM}(demo) set_status idle, note: ${note}${RESET}`);
     } else {
       println(`${DIM}(demo) ${this.mode.agent!.name} heard: ${text}${RESET}`);
       this.hub.setStatus(this.id, "busy");
@@ -1163,7 +1177,7 @@ export function createDemoBackend(): PtyBackend {
     integrationInstall: (target) => hub.integrationInstall(target),
     integrationUninstall: (target) => hub.integrationUninstall(target),
     companionStatus: () => hub.companion.status(),
-    companionSend: (text) => hub.companion.send(text),
+    companionSend: (text, via) => hub.companion.send(text, via),
     companionConfigure: (enabled, model) =>
       hub.companion.configure(enabled, model),
     companionSayDone: (id, action) => hub.companion.sayDone(id, action),

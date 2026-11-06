@@ -14,8 +14,10 @@
     "jsr:@deno/cache-dir@0.22.2": "0.22.2",
     "jsr:@deno/graph@0.86": "0.86.9",
     "jsr:@luca/esbuild-deno-loader@0.11": "0.11.1",
+    "jsr:@rullama/core@~0.12.1": "0.12.1",
     "jsr:@rullama/mcp-client@~0.12.3": "0.12.3",
     "jsr:@rullama/mcp-server@~0.12.3": "0.12.3",
+    "jsr:@rullama/provider-speech@~0.12.1": "0.12.1",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/async@1": "1.5.1",
     "jsr:@std/async@^1.5.1": "1.5.1",
@@ -155,6 +157,12 @@
         "jsr:@std/path@^1.0.6"
       ]
     },
+    "@rullama/core@0.12.1": {
+      "integrity": "8521a61ba5fd4622943862dee6f7b40985d60c71dfb47bce43f059349d67dfd9",
+      "dependencies": [
+        "jsr:@std/path@1"
+      ]
+    },
     "@rullama/mcp-client@0.12.3": {
       "integrity": "d61524abd59b54f98361a8cca8bb037ebcff8e30d046342f1b90a6a670547c2f"
     },
@@ -162,6 +170,12 @@
       "integrity": "a59d3061f2e9c3c3e959c165ad7d91b08e92bae2e1cfeeb4c6fe9752a8c9d3b9",
       "dependencies": [
         "jsr:@rullama/mcp-client"
+      ]
+    },
+    "@rullama/provider-speech@0.12.1": {
+      "integrity": "b3853e6afb165ccde08efc6853f41e73427530fd4b0f86c61eaf131985761860",
+      "dependencies": [
+        "jsr:@rullama/core"
       ]
     },
     "@std/assert@1.0.19": {
@@ -1619,6 +1633,7 @@
       "jsr:@denext/denext@^4.12.0",
       "jsr:@rullama/mcp-client@~0.12.3",
       "jsr:@rullama/mcp-server@~0.12.3",
+      "jsr:@rullama/provider-speech@~0.12.1",
       "jsr:@std/assert@1",
       "jsr:@std/async@1",
       "jsr:@std/encoding@1",

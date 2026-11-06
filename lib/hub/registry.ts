@@ -128,8 +128,14 @@ export class Registry {
     this.#onChange();
   }
 
-  setStatus(id: string, status: TileStatus): void {
-    this.#patch(id, { status });
+  /** A new status; `note` (from `set_status`) says how it went, and any other change clears it. */
+  setStatus(id: string, status: TileStatus, note?: string): void {
+    const tile = this.#tiles.get(id);
+    if (!tile || (tile.status === status && tile.note === note)) return;
+    tile.status = status;
+    if (note === undefined) delete tile.note;
+    else tile.note = note;
+    this.#onChange();
   }
 
   setUnread(id: string, unread: number): void {

@@ -154,7 +154,24 @@ async function buildApp(out: string, target?: string): Promise<void> {
   if (await writeLaufeyLaunchConfig(import.meta.url, "darwin", out)) {
     resealNeeded = true;
   }
+  // Qutty (not generated): push-to-talk opens the microphone in the app's process, and macOS ends
+  // an app that does so without NSMicrophoneUsageDescription. Denext writes it only for its
+  // `microphone` capability (4.13+, not used here: see denext.config.ts), so it is set here. Keep
+  // this block when regenerating the script (`deno task desktop:scripts`).
+  await run([
+    "plutil",
+    "-replace",
+    "NSMicrophoneUsageDescription",
+    "-string",
+    MICROPHONE_USAGE,
+    `${out}/Contents/Info.plist`,
+  ]);
+  resealNeeded = true;
 }
+
+/** What macOS shows when it asks for the microphone (once). */
+const MICROPHONE_USAGE =
+  "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile.";
 
 /** Set when a bundle was modified after `deno desktop` signed it (see buildApp). */
 let resealNeeded = false;

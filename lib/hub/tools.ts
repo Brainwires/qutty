@@ -187,15 +187,26 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   );
   add(
     "set_status",
-    "Tell the window what you are doing: busy, idle, or waiting (for the user).",
-    obj({ status: { type: "string", enum: [...TILE_STATUSES] } }, ["status"]),
+    "Tell the window what you are doing: busy, idle, or waiting (for the user). An optional " +
+      'short note says how it went ("build failed", "tests pass"); the user may hear it.',
+    obj({
+      status: { type: "string", enum: [...TILE_STATUSES] },
+      note: {
+        type: "string",
+        description: "A few words, at most 120 characters",
+      },
+    }, ["status"]),
     (a, who) => {
       const status = str(a, "status") as TileStatus;
       if (!TILE_STATUSES.includes(status)) {
         throw new HubError(`status is one of ${TILE_STATUSES.join(", ")}`);
       }
+      const note = optStr(a, "note");
+      if (note !== undefined && note.length > 120) {
+        throw new HubError('"note" is too long (120 characters at most)');
+      }
       const self = core.self(who);
-      core.registry.setStatus(self.id, status);
+      core.registry.setStatus(self.id, status, note?.replace(/\s+/g, " "));
       return core.registry.get(self.id);
     },
   );

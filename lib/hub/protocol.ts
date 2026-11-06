@@ -28,6 +28,8 @@ export interface TileInfo {
   status: TileStatus;
   /** It runs in the window's shared Docker sandbox (its cwd is a path inside the container). */
   sandbox?: boolean;
+  /** How its last `set_status` went ("build failed"), until its status changes again. */
+  note?: string;
   /** Messages waiting for this tile (not yet handed to it). */
   unread: number;
 }

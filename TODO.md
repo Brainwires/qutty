@@ -46,12 +46,43 @@
     Claude Code in a hidden PTY behind an adapter (`lib/companion/brain.ts`,
     `desktop/companion-brain.ts`), re-attach after it exits, the audit log and
     Settings → Companion.
-  - Next: voice (phase 2b: `CompanionRuntime.userSays(text, "voice")` is the
-    transcript's way in, `subscribe` the answers' way out), the
-    `@rullama/inference` brain adapter (`InferenceBrainOptions` is the typed
-    TODO), dragging Loopy, a floating window (Denext multi-window), the
-    shell-as-harness.
+  - Done (phase 2b): voice — `lib/voice/` (settings, routing, TTS queue with
+    barge-in, push-to-talk controller, alerts, model download, FFI binding),
+    `desktop/voice.ts` (rullama-audio-ffi over `Deno.dlopen`, the Whisper model
+    via `curl` in a hidden PTY, Deepgram / ElevenLabs), the mic / Summarize /
+    Stop buttons and the review box on Loopy, Settings → Voice.
+  - Voice, open: bundle `librullama_audio_ffi` per architecture in the app
+    (Denext's packager has no option for extra files yet: see
+    docs/denext-speech-recognition-proposal.md, "Related gap"); until then it is
+    installed into the app-support folder by `deno task audio:lib`. The OS
+    recognizer (`SFSpeechRecognizer`) waits on the Denext proposal in the same
+    doc. ElevenLabs text to speech needs `output_format` sent as a query
+    parameter in `@rullama/provider-speech` (it is ignored today, so the reply
+    is mp3, which the library cannot play); Deepgram Aura is used instead. The
+    cloud engines are implemented but off (`CLOUD_KEYS_UNAVAILABLE` in
+    lib/voice/engines.ts): Denext's `secureStore` makes the packager bake
+    `--allow-run=security` and `--allow-sys`. Fix in Denext (no CLI fallback
+    under the pinned runtime), or keep the key out of the page as Denext's Loopy
+    branch does (`feat/loopy-voice-tools`: the secure store handed to the voice
+    backend alone), then turn them on with `secureStore` and the two
+    `netConnect` hosts. OpenAI Realtime (that branch's Loopy voice) can be one
+    more optional cloud engine behind the same adapters.
+  - Voice, Denext: Qutty stays on Denext 4.12. With 4.13 (runtime pinned to
+    3.0.0-denext.12), node-pty's addon loads as `null` in the packaged app
+    (`require("…/pty.node")` returns null), so no terminal starts ("could not
+    start the shell"); 4.12's runtime is fine. Report to Denext. 4.13's
+    `microphone` capability would replace the hand-written
+    `NSMicrophoneUsageDescription` step in scripts/package-macos.ts (keep it
+    when regenerating the script); the entitlement is already
+    `desktop.macos.entitlements`. A packaged-build check of the voice path:
+    `QUTTY_VOICE_SELFTEST=<wav>` (desktop/voice.ts) logs the library, fetches
+    the model, transcribes and plays the file; run it under a temporary `HOME`
+    so the installed app's folder is untouched. Streaming transcripts (partials)
+    and a wake word are possible with the same library.
   - Done (phase 2c): the shared Docker sandbox (see below).
+  - Next: the `@rullama/inference` brain adapter (`InferenceBrainOptions` is the
+    typed TODO), dragging Loopy, a floating window (Denext multi-window), the
+    shell-as-harness.
   - Open: Codex hooks (Codex has Claude-style lifecycle hooks behind
     `features.hooks`); for now Codex gets messages through `read_messages`.
     `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could cut it.

@@ -9,6 +9,8 @@
  * @module
  */
 
+import type { PttKey } from "../voice/settings.ts";
+
 /** A command a shortcut maps to. */
 export type KeyCommand =
   | { kind: "newTerminal" }
@@ -125,4 +127,47 @@ export function shortcutLabel(keys: string, platform: KeyPlatform): string {
     );
   }
   return parts.map((p) => p === "Mod" ? "Ctrl" : p).join("+");
+}
+
+/** The `KeyboardEvent.code` of each push-to-talk choice's key. */
+const PTT_CODES: Record<Exclude<PttKey, "off">, string> = {
+  "Mod+Shift+M": "KeyM",
+  "Mod+Shift+K": "KeyK",
+  "Mod+Shift+Space": "Space",
+};
+
+/**
+ * Whether push-to-talk `key` can be used on `platform`: never a key the terminal receives. Every
+ * choice is Mod+Shift+<key>, the app's shortcut space (like Mod+Shift+L), and none collides with
+ * {@linkcode commandForKey}. Ctrl+Shift+Space reaches a terminal as NUL off macOS, so Space is
+ * macOS only (⌘ never reaches the terminal there).
+ */
+export function pttAvailable(key: PttKey, platform: KeyPlatform): boolean {
+  if (key === "off") return false;
+  return key !== "Mod+Shift+Space" || platform === "mac";
+}
+
+/** Whether a keydown is the push-to-talk shortcut `key` (held: a repeat is still it). */
+export function isPushToTalk(
+  e: KeyLike,
+  key: PttKey,
+  platform: KeyPlatform,
+): boolean {
+  if (!pttAvailable(key, platform)) return false;
+  return hasMod(e, platform) && e.shiftKey &&
+    e.code === PTT_CODES[key as Exclude<PttKey, "off">];
+}
+
+/**
+ * Whether a keyup ends a push-to-talk hold of `key`: its own key, Shift or the primary modifier
+ * let go.
+ */
+export function isPushToTalkRelease(
+  e: { key: string; code: string },
+  key: PttKey,
+  platform: KeyPlatform,
+): boolean {
+  if (!pttAvailable(key, platform)) return false;
+  return e.code === PTT_CODES[key as Exclude<PttKey, "off">] ||
+    e.key === "Shift" || isModifierRelease(e, platform);
 }

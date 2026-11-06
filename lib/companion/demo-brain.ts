@@ -101,6 +101,11 @@ export class DemoBrain implements BrainAdapter {
         }, ${t.status}.`
         : `There is no tile ${n[1]}; I see ${tiles.length}.`;
     }
+    if (lower.includes("summarize the window")) {
+      return `${tiles.length} tile${tiles.length === 1 ? "" : "s"}: ${
+        tiles.map((t) => `${t.name} is ${t.status}`).join(", ")
+      }.`;
+    }
     if (/\b(open|new|spawn)\b.*\btile\b/.test(lower)) {
       const r = await this.#world.control({ kind: "spawn" });
       return r.ok ? "I opened a new tile." : `I couldn't: ${r.error}`;

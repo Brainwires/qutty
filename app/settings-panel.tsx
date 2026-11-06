@@ -40,6 +40,9 @@ import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
 import type { SandboxSettings } from "../lib/sandbox/settings.ts";
 import { SandboxSettingsSection } from "./sandbox-settings.tsx";
+import { VoiceSettingsSection } from "./companion/voice-settings.tsx";
+import type { VoiceSettings } from "../lib/voice/settings.ts";
+import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 
 export interface SettingsPanelProps {
@@ -59,6 +62,10 @@ export interface SettingsPanelProps {
   onCompanion(patch: Partial<CompanionSettings>): void;
   /** Settings → Sandbox. */
   onSandbox(patch: Partial<SandboxSettings>): void;
+  /** Settings → Voice. */
+  onVoice(patch: Partial<VoiceSettings>): void;
+  /** The voice layer (its engines' status, the model download, cloud keys). */
+  voice: VoiceApi | null;
   /** For Agent integration (the section is left out without one) and the companion's status. */
   backend: PtyBackend | null;
   onClose(): void;
@@ -339,6 +346,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onChange={props.onCompanion}
         />,
         "companion-section",
+      )}
+
+      {section(
+        "voice",
+        "Voice",
+        <VoiceSettingsSection
+          settings={settings.voice}
+          platform={props.platform}
+          voice={props.voice}
+          onChange={props.onVoice}
+        />,
+        "voice-section",
       )}
 
       {section(

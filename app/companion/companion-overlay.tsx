@@ -16,10 +16,17 @@
 // The bubble never takes the keyboard by itself (a question can arrive mid-typing); after a
 // button or the close, the keyboard goes back to the focused tile. Escape in the chat box closes
 // it the same way.
+//
+// Voice (app/use-voice.ts): a mic button beside Loopy (hold to talk; a short click keeps listening
+// until the next click), a Summarize button ("what's going on in the window?") and, while an
+// answer is read aloud, a stop button. With review on, a transcript waits in the chat box with
+// Send / Edit / Cancel before it goes to the companion (or, in dictate mode, the focused tile).
+// Loopy shows the voice turn as the example does: it listens (the head glows), thinks while the
+// transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync).
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
-import { Loopy } from "./loopy.tsx";
+import { Loopy, type LoopyProps } from "./loopy.tsx";
 import { SpeechBubble } from "./speech-bubble.tsx";
 import {
   type CompanionEvent,
@@ -46,6 +53,9 @@ import type {
 } from "../../lib/companion/protocol.ts";
 import type { AskRequest } from "../../lib/hub/protocol.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
+import type { VoiceApi } from "../use-voice.ts";
+import type { VoicePhase } from "../../lib/voice/controller.ts";
+import { TALK_STEP_MS, talkStep } from "../../lib/companion/lip-sync.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -55,7 +65,18 @@ export interface CompanionOverlayProps {
   reducedMotion: boolean;
   /** Give the keyboard back to the focused tile. */
   onRefocus(): void;
+  /** The voice layer (absent: no mic or summary buttons). */
+  voice?: VoiceApi;
+  /** The hold-to-talk key's label (`⌘⇧M`), or `""` when it is off. */
+  pttLabel?: string;
 }
+
+/** What the voice note says in each phase (the error and notes bring their own text). */
+const PHASE_NOTE: Partial<Record<VoicePhase, string>> = {
+  starting: "Starting the microphone…",
+  listening: "Listening…",
+  transcribing: "Transcribing…",
+};
 
 /** What the status dot says. */
 const STATE_LABEL: Record<CompanionStatus["state"], string> = {
@@ -177,6 +198,85 @@ function useCompanionFeed(
   return { status, notes, answer };
 }
 
+/** A transcript waiting for review in the chat box. */
+interface Review {
+  transcript: string;
+  target: "companion" | "dictate";
+  onSend(text: string): void;
+  onCancel(): void;
+}
+
+/** A transcript under review: Send, Edit (the line becomes editable), Cancel. */
+function ReviewBox(props: { review: Review }) {
+  const { review } = props;
+  const [draft, setDraft] = useState(review.transcript);
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+  const send = () => {
+    const text = draft.trim();
+    if (text) review.onSend(text);
+    else review.onCancel();
+  };
+  return (
+    <form
+      class="companion-chat voice-review"
+      data-testid="voice-review"
+      data-target={review.target}
+      data-loopy-hit=""
+      onSubmit={(e) => {
+        e.preventDefault();
+        send();
+      }}
+    >
+      <span class="voice-review-to">
+        {review.target === "dictate"
+          ? "Type into the focused tile"
+          : "Send to Loopy"}
+      </span>
+      <input
+        ref={inputRef}
+        type="text"
+        class="companion-chat-input"
+        data-testid="voice-review-text"
+        aria-label="What you said"
+        readOnly={!editing}
+        value={draft}
+        maxLength={4000}
+        spellcheck={false}
+        autocomplete="off"
+        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          e.stopPropagation();
+          review.onCancel();
+        }}
+      />
+      <div class="voice-review-actions">
+        <button type="submit" data-testid="voice-review-send">Send</button>
+        <button
+          type="button"
+          data-testid="voice-review-edit"
+          disabled={editing}
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          data-testid="voice-review-cancel"
+          onClick={review.onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** The chat box: one line to the companion; Escape closes it. */
 function ChatBox(props: {
   brain: boolean;
@@ -248,6 +348,32 @@ function loopyMood(
   return state === "think" ? "thinking" : undefined;
 }
 
+/** What Loopy does in the voice turn: listens, thinks while transcribing, or speaks. */
+function loopyVoice(
+  phase: VoicePhase,
+  speaking: boolean,
+): LoopyProps["voice"] {
+  if (phase === "starting" || phase === "listening") return "listening";
+  if (phase === "transcribing") return "thinking";
+  return speaking ? "speaking" : undefined;
+}
+
+/**
+ * Loopy's mouth step while something is said: the talking pattern, a step every
+ * {@linkcode TALK_STEP_MS}; with reduced motion a steady open mouth. Closed (0) otherwise.
+ */
+function useTalkStep(speaking: boolean, reducedMotion: boolean): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!speaking || reducedMotion) return;
+    setTick(0);
+    const timer = setInterval(() => setTick((t) => t + 1), TALK_STEP_MS);
+    return () => clearInterval(timer);
+  }, [speaking, reducedMotion]);
+  if (!speaking) return 0;
+  return reducedMotion ? 2 : talkStep(tick);
+}
+
 /** Loopy, its bubble and its chat box, in a corner of the tile area. */
 export function CompanionOverlay(props: CompanionOverlayProps) {
   const { backend } = props;
@@ -293,6 +419,31 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     props.onRefocus();
   };
 
+  const voice = props.voice;
+  const voicePhase = voice?.state.phase ?? "idle";
+  const loopyVoiceTurn = loopyVoice(voicePhase, voice?.speaking === true);
+  const talk = useTalkStep(
+    loopyVoiceTurn === "speaking",
+    props.reducedMotion,
+  );
+  const voiceNote = voice
+    ? voice.state.message || PHASE_NOTE[voicePhase] || ""
+    : "";
+  const review: Review | undefined = voice && voicePhase === "review"
+    ? {
+      transcript: voice.state.transcript,
+      target: voice.state.target,
+      onSend: (text) => {
+        voice.send(text);
+        props.onRefocus();
+      },
+      onCancel: () => {
+        voice.cancel();
+        props.onRefocus();
+      },
+    }
+    : undefined;
+
   const status = feed.status;
   const statusLabel = status
     ? `${status.adapter}: ${
@@ -307,6 +458,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       data-corner={props.corner}
       data-loopy-state={model.loopy.state}
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
+      data-voice={voicePhase}
+      data-speaking={voice?.speaking ? "true" : "false"}
     >
       <div class="bubble-slot">
         {current && (
@@ -320,18 +473,35 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           />
         )}
       </div>
-      {chatOpen && (
-        <ChatBox
-          brain={props.brain}
-          onSend={(text) => void backend.companionSend(text).catch(() => {})}
-          onClose={closeChat}
-        />
+      {review
+        ? <ReviewBox key={review.transcript} review={review} />
+        : chatOpen && (
+          <ChatBox
+            brain={props.brain}
+            onSend={(text) => {
+              voice?.stopSpeaking();
+              void backend.companionSend(text).catch(() => {});
+            }}
+            onClose={closeChat}
+          />
+        )}
+      {voiceNote && (
+        <p
+          class="voice-note"
+          data-testid="voice-note"
+          data-phase={voicePhase}
+          role="status"
+        >
+          {voiceNote}
+        </p>
       )}
       <div class="stage">
         <div class="squash" ref={squashRef} data-loopy-hit="">
           <Loopy
             state={model.loopy.state}
             mood={loopyMood(current, model.loopy.state)}
+            voice={loopyVoiceTurn}
+            level={talk}
           />
           <button
             type="button"
@@ -345,6 +515,15 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             onClick={poke}
           />
         </div>
+        {voice && (
+          <VoiceButtons
+            voice={voice}
+            pttLabel={props.pttLabel ?? ""}
+            onDone={() => {
+              if (!chatOpen) props.onRefocus();
+            }}
+          />
+        )}
         {status && (
           <span
             class="companion-status"
@@ -356,6 +535,91 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/** The mic (hold to talk; a short click latches), Summarize, and Stop while speaking. */
+function VoiceButtons(props: {
+  voice: VoiceApi;
+  pttLabel: string;
+  /** A voice button was used: give the keyboard back. */
+  onDone(): void;
+}) {
+  const { voice } = props;
+  const downAt = useRef<number | undefined>(undefined);
+  const phase = voice.state.phase;
+  const listening = phase === "listening" || phase === "starting";
+  const micTitle = listening
+    ? voice.state.latched
+      ? "Listening: click to stop"
+      : "Listening: let go to stop"
+    : `Hold to talk${
+      props.pttLabel ? ` (or hold ${props.pttLabel})` : ""
+    }; click to keep listening`;
+  const up = () => {
+    if (downAt.current === undefined) return;
+    const held = Date.now() - downAt.current;
+    downAt.current = undefined;
+    voice.release(held);
+    props.onDone();
+  };
+  return (
+    <div class="voice-buttons" data-loopy-hit="">
+      <button
+        type="button"
+        class="voice-mic"
+        data-testid="loopy-mic"
+        data-phase={phase}
+        data-latched={voice.state.latched ? "true" : "false"}
+        aria-pressed={listening}
+        aria-label={micTitle}
+        title={micTitle}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          downAt.current = Date.now();
+          voice.press();
+        }}
+        onPointerUp={up}
+        onPointerLeave={up}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" />
+          <path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2.5" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="voice-summarize"
+        data-testid="loopy-summarize"
+        aria-label="Summarize the window"
+        title="Summarize the window (or say “what's going on?”)"
+        onClick={() => {
+          voice.summarize();
+          props.onDone();
+        }}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 4h10M3 8h10M3 12h6" />
+        </svg>
+      </button>
+      {voice.speaking && (
+        <button
+          type="button"
+          class="voice-stop"
+          data-testid="loopy-stop-speaking"
+          aria-label="Stop speaking"
+          title="Stop speaking"
+          onClick={() => {
+            voice.stopSpeaking();
+            props.onDone();
+          }}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="4" y="4" width="8" height="8" rx="1.5" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
