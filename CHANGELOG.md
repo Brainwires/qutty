@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The Homebrew cask now follows releases on its own: brainwires/homebrew-tap
+  checks hourly for a new Qutty release and updates itself, so the release
+  workflow no longer needs a token for it.
+
 ## 0.3.0 — agent hub, companion, voice, SSH, sandbox
 
 Version 0.2.0 was tagged but never published; everything it held ships here.
