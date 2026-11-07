@@ -602,6 +602,7 @@ export function Workspace() {
             backend={manager.backend}
             corner={settings.companion.corner}
             brain={settings.companion.brain}
+            lively={settings.companion.lively}
             reducedMotion={reducedMotion}
             onRefocus={refocus}
             voice={voice}

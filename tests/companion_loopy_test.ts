@@ -394,6 +394,7 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
     corner: "bottom-right",
     brain: true,
     model: "",
+    lively: true,
   });
   assertEquals(
     sanitizeCompanion({
@@ -401,11 +402,24 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
       corner: "top-left",
       brain: false,
       model: "haiku",
+      lively: false,
     }),
-    { mode: "off", corner: "top-left", brain: false, model: "haiku" },
+    {
+      mode: "off",
+      corner: "top-left",
+      brain: false,
+      model: "haiku",
+      lively: false,
+    },
   );
   assertEquals(
-    sanitizeCompanion({ mode: "zen", corner: 3, brain: "yes", model: "gpt" }),
+    sanitizeCompanion({
+      mode: "zen",
+      corner: 3,
+      brain: "yes",
+      model: "gpt",
+      lively: "very",
+    }),
     DEFAULT_COMPANION,
   );
   assertEquals(effectiveMode("floating"), "window");

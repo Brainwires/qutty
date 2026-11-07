@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Loopy is lively. While it has nothing to say, it makes small faces now and
+  then (a glance aside, a look up, a raised brow, a little smile, a head tilt, a
+  double blink, a soft "hm"), its eyes follow the pointer anywhere in the
+  window, and it gets excited when the pointer comes near or circles it (at most
+  every 20 seconds, never over a question, a reply or a voice turn). Resting the
+  pointer on its face delights it. Reduced motion keeps only blinks and glances,
+  and the excitement without the hop. Settings → Companion → Lively turns it
+  off.
 - An Ollama helper. When Ollama is installed, the `+` menu gets an Ollama
   section: the harness × model pairs you launched recently, and "Ollama
   models…", a dialog to pick a terminal harness (Claude Code, Codex, OpenCode,
