@@ -3142,6 +3142,14 @@ kbd {
 .companion-overlay .companion-chat {
   pointer-events: auto;
 }
+/* Dragged to another corner (app/companion/use-loopy-drag.ts): it follows the pointer, then snaps.
+   A touch on the bead drags it rather than panning. */
+.companion-overlay .poke {
+  touch-action: none;
+}
+.companion-overlay[data-dragging] .poke {
+  cursor: grabbing;
+}
 /* The bubble stays over the extras that rise beside Loopy's head. */
 .companion-overlay .bubble-slot {
   position: relative;

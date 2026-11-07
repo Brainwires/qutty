@@ -13,6 +13,10 @@
 // beside it shows the brain's status. Everything else in the overlay lets clicks through to the
 // tiles underneath (`pointer-events: none` but on Loopy, the bubble and the chat box).
 //
+// Dragging Loopy (app/companion/use-loopy-drag.ts) moves it to another corner: past a few pixels a
+// press is a drag, not a click; on release it snaps to the nearest corner, which is saved as
+// Settings → Companion → Corner (`onCorner`).
+//
 // The bubble never takes the keyboard by itself (a question can arrive mid-typing); after a
 // button or the close, the keyboard goes back to the focused tile. Escape in the chat box closes
 // it the same way.
@@ -65,6 +69,7 @@ import {
   talkStep,
 } from "../../lib/companion/lip-sync.ts";
 import { useLoopyLife } from "./use-loopy-life.ts";
+import { useLoopyDrag } from "./use-loopy-drag.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -76,6 +81,8 @@ export interface CompanionOverlayProps {
   lively?: boolean;
   /** Give the keyboard back to the focused tile. */
   onRefocus(): void;
+  /** Loopy was dragged to `corner` (saved as Settings → Companion → Corner). */
+  onCorner?(corner: CompanionCorner): void;
   /** The voice layer (absent: no mic or summary buttons). */
   voice?: VoiceApi;
   /** The hold-to-talk key's label (`⌘⇧M`), or `""` when it is off. */
@@ -392,7 +399,14 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   // Bubbles finished here: a late snapshot or update must not bring them back.
   const closedRef = useRef(new Set<string>());
   const squashRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const pokeRef = useRef<HTMLButtonElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const drag = useLoopyDrag({
+    target: pokeRef,
+    overlay: overlayRef,
+    onDrop: (corner) => props.onCorner?.(corner),
+  });
   const feed = useCompanionFeed(backend, dispatch, closedRef.current);
   useTimedMoves(model.loopy, dispatch);
   useEffect(() => dispatch({ type: "show" }), []);
@@ -422,6 +436,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     if (!chatOpen) props.onRefocus();
   };
   const poke = () => {
+    if (drag.consumeClick()) return;
     if (!props.reducedMotion) squash(squashRef.current);
     setChatOpen((open) => !open);
   };
@@ -461,6 +476,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     message: current !== undefined,
     voice: loopyVoiceTurn !== undefined,
     busy: thinking,
+    dragging: drag.dragging,
     stage: squashRef,
     reducedMotion: props.reducedMotion,
     dispatch,
@@ -475,9 +491,11 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
 
   return (
     <div
+      ref={overlayRef}
       class="companion-overlay"
       data-testid="companion-overlay"
       data-corner={props.corner}
+      data-dragging={drag.dragging ? "true" : undefined}
       data-loopy-state={model.loopy.state}
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
       data-voice={voicePhase}
@@ -531,6 +549,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             expression={life.expression}
           />
           <button
+            ref={pokeRef}
             type="button"
             class="poke"
             data-testid="loopy-poke"
@@ -538,7 +557,9 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
               ? "Close the chat with Loopy"
               : "Talk to Loopy"}
             aria-expanded={chatOpen}
-            title={chatOpen ? "Close the chat" : "Talk to Loopy"}
+            title={chatOpen
+              ? "Close the chat (drag to move Loopy)"
+              : "Talk to Loopy (drag to move it)"}
             onClick={poke}
           />
         </div>
