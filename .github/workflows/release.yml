@@ -28,7 +28,7 @@ jobs:
     # Tests, build, signing and notarization; a hang fails here, not at GitHub's 6 h limit.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -110,7 +110,7 @@ jobs:
           cp "dist/Qutty.dmg" "release/Qutty-${VERSION}-${ARCH}.dmg"
           (cd release && shasum -a 256 "Qutty-${VERSION}-${ARCH}.dmg" > "Qutty-${VERSION}-${ARCH}.dmg.sha256")
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: qutty-${{ matrix.arch }}
           path: release/
@@ -128,8 +128,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
