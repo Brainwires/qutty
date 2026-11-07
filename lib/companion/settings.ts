@@ -1,6 +1,7 @@
 /**
  * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): where
- * Loopy is drawn, which corner, whether its brain may run, and the brain's model.
+ * Loopy is drawn, which corner, whether its brain may run, the brain's model, and whether Loopy
+ * is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts).
  *
  * Client-safe and pure.
  *
@@ -31,6 +32,8 @@ export interface CompanionSettings {
   /** Whether the brain (headless Claude Code) may run; Loopy still shows messages without it. */
   brain: boolean;
   model: BrainModel;
+  /** Idle micro-expressions, eyes that follow the pointer, and excitement when it comes near. */
+  lively: boolean;
 }
 
 export const DEFAULT_COMPANION: CompanionSettings = {
@@ -38,6 +41,7 @@ export const DEFAULT_COMPANION: CompanionSettings = {
   corner: "bottom-right",
   brain: true,
   model: "",
+  lively: true,
 };
 
 /**
@@ -58,6 +62,7 @@ export function sanitizeCompanion(
     out.corner = r.corner as CompanionCorner;
   }
   if (typeof r.brain === "boolean") out.brain = r.brain;
+  if (typeof r.lively === "boolean") out.lively = r.lively;
   if (COMPANION_MODELS.includes(r.model as BrainModel)) {
     out.model = r.model as BrainModel;
   }

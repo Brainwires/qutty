@@ -2975,6 +2975,102 @@ kbd {
   transition: filter 400ms ease-out;
 }
 
+/* ---- Lively (Settings → Companion; app/companion/use-loopy-life.ts): the pupils follow the
+   pointer, and the neutral face's micro-expressions (`data-expr`). Only transforms of the face's
+   parts, so the shapes stay the example's. The gaze offsets are in drawing units, set on the
+   avatar's holder by the pointer loop (which eases them itself); only the neutral face's dot
+   pupils follow them, and not while thinking (the eyes look up then). The micro-expressions use
+   the separate `translate`, `scale` and `rotate` properties, eased here. */
+.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-state="think"]) .loopy-eyes circle:nth-of-type(1) {
+  transform: translate(var(--loopy-gaze-lx, 0px), var(--loopy-gaze-ly, 0px));
+}
+.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-state="think"]) .loopy-eyes circle:nth-of-type(2) {
+  transform: translate(var(--loopy-gaze-rx, 0px), var(--loopy-gaze-ry, 0px));
+}
+.companion-overlay .loopy[data-lively] .loopy-eyes circle,
+.companion-overlay .loopy[data-lively] .loopy-brows path {
+  transition: translate 260ms ease-out;
+}
+.companion-overlay .loopy[data-lively][data-mood="neutral"] .loopy-mouth {
+  transform-box: view-box;
+  transform-origin: 80px 88px;
+  transition: scale 320ms ease-out;
+}
+.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-voice]) .loopy-head {
+  transform-box: view-box;
+  transform-origin: 80px 105px;
+  transition: rotate 450ms ease-in-out;
+}
+/* A glance aside (each pupil to the same side, inside its eye white). */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-left"] .loopy-eyes circle:nth-of-type(1) {
+  translate: -3.4px 0;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-left"] .loopy-eyes circle:nth-of-type(2) {
+  translate: -1.4px 0;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-right"] .loopy-eyes circle:nth-of-type(1) {
+  translate: 1.4px 0;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-right"] .loopy-eyes circle:nth-of-type(2) {
+  translate: 3.4px 0;
+}
+/* A thoughtful look up and aside, the brows lifting. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-eyes circle:nth-of-type(1) {
+  translate: -0.6px -5px;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-eyes circle:nth-of-type(2) {
+  translate: 3px -5px;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-brows path {
+  translate: 0 -1.5px;
+}
+/* A slow brow raise, the right one higher. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="brow-raise"] .loopy-brows path {
+  translate: 0 -1px;
+  transition-duration: 600ms;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="brow-raise"] .loopy-brows path:nth-child(2) {
+  translate: 0 -3.2px;
+}
+/* A small smile: the mouth a little wider and deeper. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="smile"] .loopy-mouth {
+  scale: 1.15 1.5;
+}
+/* A curious tilt of the head. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="tilt"] .loopy-head {
+  rotate: 8deg;
+}
+/* A quick double blink. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="double-blink"] .loopy-eyes {
+  animation: loopy-double-blink 600ms ease-in-out;
+}
+@keyframes loopy-double-blink {
+  0%,
+  40%,
+  60%,
+  100% {
+    transform: none;
+  }
+  20%,
+  80% {
+    transform: scaleY(0.1);
+  }
+}
+/* A soft "hm": the mouth pressed small and flat, a brow down a touch. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="hm"] .loopy-mouth {
+  scale: 0.55 0.3;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="hm"] .loopy-brows path:nth-child(1) {
+  translate: 0 1.2px;
+}
+/* Delighted, while the pointer is over the face: a big smile, the brows up. */
+.companion-overlay .loopy[data-mood="neutral"][data-expr="delighted"] .loopy-mouth {
+  scale: 1.25 1.9;
+}
+.companion-overlay .loopy[data-mood="neutral"][data-expr="delighted"] .loopy-brows path {
+  translate: 0 -2.4px;
+}
+
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the
    bubble on top, Loopy below it on the left). Clicks pass through it except on Loopy, the bubble
    and the chat box. */

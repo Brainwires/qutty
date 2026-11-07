@@ -3,7 +3,9 @@
 // overlay; the chat box and a streamed reply; agents' `ask_user` questions in the bubble, answered
 // by its buttons; `qutty-hook say` with a `--wait` answer; an agent's message to the companion; a
 // tile the companion spawns, and its activity in Settings; the settings (corner, Off → the ask
-// card returns, brain off); reduced motion. Also takes the screenshot the PR shows.
+// card returns, brain off); reduced motion; Lively (the eyes on the pointer, excitement near it,
+// never over a question, still with reduced motion, off in Settings). Also takes the screenshots
+// the PRs show.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
@@ -91,6 +93,95 @@ async function companionSettings(app: App): Promise<void> {
     2000,
     "the section",
   );
+}
+
+/** Loopy's face for the Lively checks: mood, expression, pupils' offsets (px), centre, gaze. */
+function face(app: App) {
+  return app.eval((s: string) => {
+    const svg = document.querySelector<SVGSVGElement>(`${s} svg.loopy`)!;
+    const mid = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    };
+    const whites = [...svg.querySelectorAll(".loopy-eye-white")].map(mid);
+    const pupils = [...svg.querySelectorAll(".loopy-eyes circle")].map(mid);
+    const holder = svg.parentElement!;
+    return {
+      mood: svg.getAttribute("data-mood"),
+      expr: svg.getAttribute("data-expr"),
+      lively: svg.hasAttribute("data-lively"),
+      /** Each pupil's centre from its eye white's, across (px). */
+      pupils: pupils.map((p, i) => p.x - whites[i].x),
+      centre: mid(svg.querySelector(".loopy-bead")!),
+      /** The gaze offsets the pointer loop set ("0" at rest, "" when none). */
+      gaze: ["lx", "ly", "rx", "ry"].map((k) => {
+        const v = holder.style.getPropertyValue(`--loopy-gaze-${k}`);
+        return v && Math.abs(parseFloat(v)) < 0.05 ? "0" : v;
+      }),
+    };
+  }, OVERLAY);
+}
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Start recording Loopy's moods and moves (`reset`), or read what was recorded: each mood
+ * (`data-mood`) and move (`data-state`) Loopy took since.
+ */
+function record(app: App, reset = true): Promise<string[]> {
+  return app.eval(
+    (s: string, fresh: boolean) => {
+      const w = globalThis as {
+        __loopyLife?: string[];
+        __loopyObs?: MutationObserver;
+      };
+      if (fresh) {
+        w.__loopyObs?.disconnect();
+        const seen: string[] = [];
+        w.__loopyLife = seen;
+        const svg = document.querySelector(`${s} svg.loopy`)!;
+        w.__loopyObs = new MutationObserver((list) => {
+          for (const m of list) {
+            const v = (m.target as Element).getAttribute(m.attributeName!);
+            if (v) seen.push(v);
+          }
+        });
+        w.__loopyObs.observe(svg, {
+          attributes: true,
+          attributeFilter: ["data-mood", "data-state"],
+        });
+      }
+      return [...(w.__loopyLife ?? [])];
+    },
+    OVERLAY,
+    reset,
+  );
+}
+
+/** Bring the pointer slowly from the left to just beside Loopy, and move it about there. */
+async function approach(app: App): Promise<void> {
+  const c = (await face(app)).centre;
+  for (let i = 0; i <= 12; i++) {
+    await app.page.mouse.move(c.x - 420 + i * 25, c.y - 10);
+    await pause(25);
+  }
+  for (let i = 0; i < 8; i++) {
+    await app.page.mouse.move(c.x - 120 + (i % 2) * 8, c.y - 10 - i * 2);
+    await pause(30);
+  }
+}
+
+/** A close-up of Loopy, as loopy-alive-<name>.png in SHOT_DIR (and `LOOPY_SHOT_DIR` when set). */
+async function shot(app: App, name: string): Promise<void> {
+  const c = (await face(app)).centre;
+  const png = await app.page.screenshot({
+    format: "png",
+    clip: { x: c.x - 80, y: c.y - 85, width: 160, height: 150, scale: 3 },
+  });
+  await Deno.mkdir(SHOT_DIR, { recursive: true });
+  await Deno.writeFile(join(SHOT_DIR, `loopy-alive-${name}.png`), png);
+  const dir = Deno.env.get("LOOPY_SHOT_DIR");
+  if (dir) await Deno.writeFile(join(dir, `loopy-alive-${name}.png`), png);
 }
 
 suite("companion", (test) => {
@@ -399,6 +490,7 @@ suite("companion", (test) => {
       corner: "top-left",
       brain: false,
       model: "",
+      lively: true,
     });
     assertEquals(await app.exists(OVERLAY), false);
   });
@@ -610,4 +702,178 @@ suite("companion", (test) => {
     );
     assertEquals(bubbleAnim, "0.001s");
   }, { reducedMotion: true });
+
+  // --- Lively: the eyes on the pointer, excitement near it (app/companion/use-loopy-life.ts)
+
+  test(
+    "lively: the eyes follow the pointer left and right, and drift back once it rests",
+    async (app) => {
+      await landed(app);
+      const start = await face(app);
+      assertEquals(start.lively, true, "Lively by default");
+      // Far from Loopy (no excitement): top left, then top right.
+      await app.page.mouse.move(10, 40, { steps: 6 });
+      const left = await waitFor(
+        async () => {
+          const f = await face(app);
+          return f.pupils.every((x) => x < -3) ? f : null;
+        },
+        2000,
+        "both pupils to the left",
+      );
+      assertEquals(left.mood, "neutral");
+      await shot(app, "left");
+      // Loopy sits at the right edge: up and to its right, still far (no excitement).
+      await app.page.mouse.move(1395, left.centre.y - 360, { steps: 6 });
+      await waitFor(
+        async () => (await face(app)).pupils.every((x) => x > 1.5),
+        2000,
+        "both pupils to the right",
+      );
+      await shot(app, "right");
+      // The pointer rests: the eyes stay on it a while, then drift back to the face's own place.
+      await pause(700);
+      assert(
+        (await face(app)).pupils.every((x) => x > 1.5),
+        "still watching",
+      );
+      const back = await waitFor(
+        async () => {
+          const f = await face(app);
+          return f.gaze.every((g) => g === "0") ? f : null;
+        },
+        4000,
+        "the eyes back at rest",
+      );
+      assertEquals(back.mood, "neutral", "far away: no excitement");
+    },
+    { width: 1400, height: 900 },
+  );
+
+  test("lively: the pointer near Loopy excites it once, with a hop; then a cooldown; over the face, delight", async (app) => {
+    await landed(app);
+    await record(app);
+    await approach(app);
+    await waitFor(
+      async () => (await face(app)).mood === "excited",
+      2000,
+      "the excited face",
+    );
+    await shot(app, "excited");
+    await waitFor(
+      async () => (await record(app, false)).includes("celebrate"),
+      2000,
+      "the hop",
+    );
+    await waitFor(
+      async () => (await face(app)).mood === "neutral",
+      4000,
+      "calm again",
+    );
+    // Away and back within the cooldown: no excitement this time.
+    const c = (await face(app)).centre;
+    await app.page.mouse.move(c.x - 600, c.y - 500, { steps: 10 });
+    await pause(400);
+    await record(app);
+    await approach(app);
+    await pause(1200);
+    assertEquals(
+      (await record(app, false)).filter((m) => m === "excited"),
+      [],
+      "not again so soon",
+    );
+    // Resting over the face: delighted (a variation of the neutral face).
+    await app.page.mouse.move(c.x + 3, c.y + 2, { steps: 3 });
+    await waitFor(
+      async () => {
+        const f = await face(app);
+        return f.expr === "delighted" && f.mood === "neutral";
+      },
+      2000,
+      "delighted under the pointer",
+    );
+  });
+
+  test("lively: an ask_user question's attention face is never replaced", async (app) => {
+    const claude = await launchAgent(app, "claude");
+    await app.typeInTerminal(claude, "/ask Ship it?\n");
+    await waitBubble(app, (b) => b.mood === "attention", "the question");
+    await waitFor(
+      async () =>
+        (await face(app)).mood === "attention" &&
+        (await app.attr(OVERLAY, "data-loopy-state")) === "point",
+      3000,
+      "the attention face, pointing at the question",
+    );
+    await record(app);
+    await approach(app);
+    const c = (await face(app)).centre;
+    // Fast, close by, and over the face.
+    await app.page.mouse.move(c.x - 250, c.y - 60, { steps: 2 });
+    await app.page.mouse.move(c.x + 5, c.y, { steps: 2 });
+    await pause(1200);
+    const f = await face(app);
+    assertEquals(f.mood, "attention");
+    assertEquals(f.expr, null, "no micro-expression over a question");
+    assertEquals(await record(app, false), [], "nothing changed Loopy");
+    assertEquals(await app.attr(OVERLAY, "data-loopy-state"), "point");
+  });
+
+  test(
+    "lively, reduced motion: the eyes jump to the pointer; excitement is a still face, no hop",
+    async (app) => {
+      await landed(app);
+      await app.page.mouse.move(10, 40, { steps: 2 });
+      await waitFor(
+        async () => (await face(app)).pupils.every((x) => x < -3),
+        1000,
+        "both pupils to the left",
+      );
+      await record(app);
+      await approach(app);
+      await waitFor(
+        async () => (await face(app)).mood === "excited",
+        2000,
+        "the excited face",
+      );
+      assertEquals(
+        (await record(app, false)).includes("celebrate"),
+        false,
+        "no hop",
+      );
+      await waitFor(
+        async () => (await face(app)).mood === "neutral",
+        4000,
+        "calm again",
+      );
+    },
+    { reducedMotion: true },
+  );
+
+  test("lively off (Settings → Companion): today's Loopy, eyes still and no excitement", async (app) => {
+    await companionSettings(app);
+    await app.click("[data-testid=setting-companion-lively]");
+    await app.closeSettings();
+    assertEquals((await app.settings()).companion.lively, false);
+    await landed(app);
+    const before = await face(app);
+    assertEquals(before.lively, false);
+    await app.page.mouse.move(10, 40, { steps: 4 });
+    await pause(400);
+    await app.page.mouse.move(1390, 40, { steps: 4 });
+    await pause(400);
+    const after = await face(app);
+    for (const i of [0, 1]) {
+      assert(
+        Math.abs(after.pupils[i] - before.pupils[i]) < 0.6,
+        `pupil ${i} stayed: ${before.pupils} → ${after.pupils}`,
+      );
+    }
+    assertEquals(after.gaze, ["", "", "", ""], "no gaze set");
+    await record(app);
+    await approach(app);
+    await pause(800);
+    assertEquals(await record(app, false), [], "no excitement");
+    assertEquals(after.expr, null);
+  });
 });

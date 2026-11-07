@@ -23,6 +23,9 @@
 // Send / Edit / Cancel before it goes to the companion (or, in dictate mode, the focused tile).
 // Loopy shows the voice turn as the example does: it listens (the head glows), thinks while the
 // transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync).
+//
+// Lively (app/companion/use-loopy-life.ts): with nothing on screen, Loopy makes small faces now
+// and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
@@ -56,6 +59,7 @@ import type { PtyBackend } from "../../lib/pty-client.ts";
 import type { VoiceApi } from "../use-voice.ts";
 import type { VoicePhase } from "../../lib/voice/controller.ts";
 import { TALK_STEP_MS, talkStep } from "../../lib/companion/lip-sync.ts";
+import { useLoopyLife } from "./use-loopy-life.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -63,6 +67,8 @@ export interface CompanionOverlayProps {
   /** Whether the brain may run (else the chat box says how to turn it on). */
   brain: boolean;
   reducedMotion: boolean;
+  /** Settings → Companion → Lively: idle expressions, eyes on the pointer (app/companion/use-loopy-life.ts). */
+  lively?: boolean;
   /** Give the keyboard back to the focused tile. */
   onRefocus(): void;
   /** The voice layer (absent: no mic or summary buttons). */
@@ -444,6 +450,17 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     }
     : undefined;
 
+  const life = useLoopyLife({
+    lively: props.lively !== false,
+    state: loopyState,
+    message: current !== undefined,
+    voice: loopyVoiceTurn !== undefined,
+    busy: thinking,
+    stage: squashRef,
+    reducedMotion: props.reducedMotion,
+    dispatch,
+  });
+
   const status = feed.status;
   const statusLabel = status
     ? `${status.adapter}: ${
@@ -499,9 +516,12 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         <div class="squash" ref={squashRef} data-loopy-hit="">
           <Loopy
             state={model.loopy.state}
-            mood={loopyMood(current, model.loopy.state)}
+            mood={loopyMood(current, model.loopy.state) ??
+              (life.excited && !loopyVoiceTurn ? "excited" : undefined)}
             voice={loopyVoiceTurn}
             level={talk}
+            lively={props.lively !== false}
+            expression={life.expression}
           />
           <button
             type="button"

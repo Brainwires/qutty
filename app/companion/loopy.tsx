@@ -3,7 +3,9 @@
 // each mood's extras around it (?, z's, hearts, !, steam, a tear…). The wire body is gone; the
 // head is drawn 2 times the size it had on the clip, by cropping the drawing to the head
 // (`LOOPY_VIEWBOX`) and scaling it (`LOOPY_SCALE`), so every shape is the example's. Hand-written
-// SVG, no assets. Every move is CSS keyed off `data-state` (public/styles.css), on `.loopy-face`.
+// SVG, no assets. Every move is CSS keyed off `data-state` (public/styles.css), on `.loopy-face`;
+// the idle life (Lively: micro-expressions, the eyes on the pointer) off `data-expr` and the
+// `--loopy-gaze-*` offsets, as transforms of the face's parts.
 //
 // Pure: no hooks, no timers — app/companion/companion-overlay.tsx owns the state machine and the
 // squash on poke.
@@ -18,6 +20,7 @@ import type {
   LoopyState,
 } from "../../lib/companion/loopy-machine.ts";
 import { LEVEL_STEPS, mouthShape } from "../../lib/companion/lip-sync.ts";
+import type { MicroExpression } from "../../lib/companion/loopy-life.ts";
 
 /** One face: the brows, the eyes' shape and pupils, the mouth, and any extras. */
 interface Face {
@@ -272,6 +275,17 @@ export interface LoopyProps {
    * while listening the microphone's (the pulse).
    */
   readonly level?: number;
+  /**
+   * Lively (`data-lively`): the pupils follow the pointer (the `--loopy-gaze-*` offsets the overlay
+   * sets) and the face eases between its micro-expressions.
+   */
+  readonly lively?: boolean;
+  /**
+   * A micro-expression on the neutral face (`data-expr`; lib/companion/loopy-life.ts), or
+   * `delighted` while the pointer is over it. Only transforms of the face's parts: the shapes stay
+   * the example's.
+   */
+  readonly expression?: MicroExpression | "delighted";
 }
 
 /** The mouth to draw: the lip-sync shape while speaking, else the mood's. */
@@ -299,7 +313,8 @@ const [VB_X, VB_Y, VB_W, VB_H] = LOOPY_VIEWBOX;
 
 /** Loopy's face: the steel bead head of the example's paper clip, without the wire. */
 export function Loopy(
-  { state, label = "Loopy", mood, voice, level = 0 }: LoopyProps,
+  { state, label = "Loopy", mood, voice, level = 0, lively, expression }:
+    LoopyProps,
 ) {
   const current = mood ?? "neutral";
   const face = FACES[current];
@@ -311,6 +326,8 @@ export function Loopy(
       data-state={state}
       data-mood={current}
       data-voice={voice}
+      data-lively={lively ? "" : undefined}
+      data-expr={expression}
       style={{ "--loopy-listen": listen }}
       viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
       width={String(VB_W * LOOPY_SCALE)}

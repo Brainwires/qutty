@@ -1,8 +1,9 @@
 // Settings → Companion: where Loopy is drawn (in the window; floating comes with Denext
-// multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner,
-// whether its brain (headless Claude Code) may run and with which model, the brain's status, and
-// "Companion activity": the companion's privileged actions from the audit log, newest first
-// (the full log is companion-audit.jsonl in the app-support folder).
+// multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner, whether
+// it is lively (idle expressions, eyes that follow the pointer), whether its brain (headless Claude
+// Code) may run and with which model, the brain's status, and "Companion activity": the
+// companion's privileged actions from the audit log, newest first (the full log is
+// companion-audit.jsonl in the app-support folder).
 
 import { useEffect, useState } from "denext";
 import {
@@ -125,6 +126,19 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
             <option value={c} key={c}>{c.replace("-", " ")}</option>
           ))}
         </select>
+      </label>
+      <label class="field field-check">
+        <input
+          type="checkbox"
+          data-testid="setting-companion-lively"
+          checked={settings.lively}
+          disabled={!shown}
+          onChange={(e) =>
+            onChange({ lively: (e.target as HTMLInputElement).checked })}
+        />
+        <span class="field-label">
+          Lively (idle expressions and eyes follow the pointer)
+        </span>
       </label>
       <label class="field field-check">
         <input
