@@ -36,6 +36,11 @@
   `whoami`, `list_peers` and the tile badge's tooltip. A new session replaces
   it. Hermes Agent and OpenClaw tiles are now named by their harness when the
   agent was started by hand.
+- The switcher bar keeps the focused terminal's chip in view when focusing it
+  reorders the bar (recently-used order), most visibly with Reduce Motion on,
+  and chips no longer stay shifted out of place after several quick reorders.
+- The agent hub could freeze the app (seen on Linux) when one agent's connection
+  closed just as another one arrived.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 
