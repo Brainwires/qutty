@@ -21,6 +21,12 @@ export interface TileInfo {
   name: string;
   /** The agent harness in the tile (`claude`, `codex`, …), once it is known. */
   harness?: string;
+  /**
+   * The harness's session id (`session_id` in Claude Code's and Codex's hooks), once a hook sent
+   * one. A `SessionStart` replaces it (the harness restarted, or `/clear`), and so does any hook
+   * with another id.
+   */
+  session?: string;
   /** The local model it runs on, when started through `ollama launch` (`qwen3.8:27b-mlx`). */
   model?: string;
   /** The tile's title as the page shows it. */
@@ -166,6 +172,13 @@ export interface IntegrationStatus {
   installed: boolean;
   /** Some of our entries are present, or one with our name that we did not write. */
   note?: string;
+  /**
+   * Codex only, when installed and `codex` is on this machine: whether the installed Codex
+   * trusts Qutty's hooks (asked once per start and after an Install, lib/hub/codex-trust.ts).
+   */
+  trust?: "trusted" | "untrusted";
+  /** Why the entries do not work as installed (shown with a Re-trust button). */
+  warning?: string;
   /** What Install writes (and Uninstall removes). */
   changes: IntegrationChange[];
 }

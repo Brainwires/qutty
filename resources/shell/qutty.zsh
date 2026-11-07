@@ -18,8 +18,13 @@
 # explanation on the terminal and the command on stdout) and sets BUFFER to the command, instead
 # of accepting the line. Recent commands come from preexec / precmd hooks (the last 10).
 #
+# New hub messages are announced above the prompt (`📬 2 new messages — , inbox`) when their
+# count rose since the last check: `qutty-agent --unread` asks the tile's socket, at most every
+# QUTTY_AGENT_NOTIFY_EVERY seconds (default 5; 0: every prompt; off: never), silently skipped when
+# the hub does not answer within a second.
+#
 # Settings (environment): QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude |
-# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use).
+# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY.
 
 [[ -o interactive ]] || return 0
 [[ -n ${QUTTY_SOCK-}${QUTTY_HUB-} ]] || return 0
@@ -34,6 +39,25 @@ typeset -g __qutty_agent=${QUTTY_AGENT_BIN:-${${(%):-%x}:A:h:h}/bin/qutty-agent}
 # Recent commands: "<exit>\t<folder>\t<line>", oldest first.
 typeset -ga __qutty_history
 typeset -g __qutty_cmd="" __qutty_cmd_dir=""
+# The unread count at the last check, and when (in $SECONDS) that was.
+typeset -gi __qutty_unread=0 __qutty_unread_at=-1000
+
+# Announce new hub messages when their count rose (at most every QUTTY_AGENT_NOTIFY_EVERY s).
+__qutty_notify() {
+  emulate -L zsh
+  local every=${QUTTY_AGENT_NOTIFY_EVERY-5} n s=s
+  [[ $every == off ]] && return 0
+  [[ $every == <-> ]] || every=5
+  (( SECONDS - __qutty_unread_at >= every )) || return 0
+  __qutty_unread_at=$SECONDS
+  n=$("$__qutty_agent" --unread 2>/dev/null) || return 0
+  [[ $n == <-> ]] || return 0
+  if (( n > __qutty_unread )); then
+    (( n == 1 )) && s=""
+    print -r -- $'\e[2m'"📬 $n new message$s — $QUTTY_AGENT_PREFIX inbox"$'\e[0m'
+  fi
+  __qutty_unread=$n
+}
 
 __qutty_preexec() {
   __qutty_cmd=${1//$'\n'/ }
@@ -48,6 +72,7 @@ __qutty_precmd() {
     (( ${#__qutty_history} > 10 )) && shift __qutty_history
     __qutty_cmd=""
   fi
+  __qutty_notify
   return $exit_status
 }
 
@@ -72,6 +97,8 @@ __qutty_accept_line() {
   emulate -L zsh
   local line=$BUFFER request=${BUFFER#"$prefix "} proposal
   print -rs -- "$line"
+  # `, inbox` reads them all: a message after it is new again.
+  [[ ${request// /} == inbox ]] && __qutty_unread=0
   # Move below the typed line (it stays on screen) and let the agent print there.
   zle -I
   print

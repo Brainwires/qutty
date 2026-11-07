@@ -46,6 +46,7 @@ import {
   turnBubble,
 } from "../lib/companion/bubbles.ts";
 import {
+  brainChoice,
   DEFAULT_COMPANION,
   effectiveMode,
   sanitizeCompanion,
@@ -393,7 +394,9 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
     mode: "window",
     corner: "bottom-right",
     brain: true,
+    engine: "claude",
     model: "",
+    ollamaModel: "",
     lively: true,
   });
   assertEquals(
@@ -401,16 +404,37 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
       mode: "off",
       corner: "top-left",
       brain: false,
+      engine: "ollama",
       model: "haiku",
+      ollamaModel: "qwen3.8:27b-mlx",
       lively: false,
     }),
     {
       mode: "off",
       corner: "top-left",
       brain: false,
+      engine: "ollama",
       model: "haiku",
+      ollamaModel: "qwen3.8:27b-mlx",
       lively: false,
     },
+  );
+  // The brain the hub is configured with: Claude Code's alias, or the Ollama model.
+  assertEquals(brainChoice({ ...DEFAULT_COMPANION, model: "haiku" }), {
+    engine: "claude",
+    model: "haiku",
+  });
+  assertEquals(
+    brainChoice({
+      ...DEFAULT_COMPANION,
+      engine: "ollama",
+      ollamaModel: "user/m:tag",
+    }),
+    { engine: "ollama", model: "user/m:tag" },
+  );
+  assertEquals(
+    sanitizeCompanion({ engine: "api", ollamaModel: "bad name; rm" }),
+    DEFAULT_COMPANION,
   );
   assertEquals(
     sanitizeCompanion({

@@ -624,6 +624,8 @@ export function Workspace() {
             lively={settings.companion.lively}
             reducedMotion={reducedMotion}
             onRefocus={refocus}
+            onCorner={(corner) =>
+              run({ type: "setCompanion", patch: { corner } })}
             voice={voice}
             pttLabel={pttAvailable(settings.voice.pttKey, platform)
               ? shortcutLabel(settings.voice.pttKey, platform)

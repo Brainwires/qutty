@@ -10,7 +10,7 @@
 import {
   type McpHandler,
   McpToolRegistry,
-  type RequestContext,
+  RequestContext,
 } from "@rullama/mcp-server";
 import type { CallToolResult } from "@rullama/mcp-client";
 import {
@@ -24,6 +24,7 @@ import {
 import { type HubCore, HubError } from "./core.ts";
 import { MAX_WAIT_MS } from "./mailbox.ts";
 import { MAX_READ_LINES } from "./mirror.ts";
+import type { CompanionTools } from "../companion/inference-brain.ts";
 
 /** The server name agents see (`mcp__qutty__…` in Claude Code). */
 const SERVER_NAME = "qutty";
@@ -528,11 +529,47 @@ export function createHubHandler(
   };
 }
 
-/** The harness an MCP client name stands for (`claude-code` → `claude`), if it is a known one. */
+/**
+ * The hub's tools for an in-process brain (lib/companion/inference-brain.ts), called as the
+ * companion through `handler`: the same permission check and audit log as a call over the
+ * companion socket.
+ */
+export function companionToolbox(handler: McpHandler): CompanionTools {
+  return {
+    list: () => handler.listTools(),
+    async call(name, args, signal) {
+      const ctx = new RequestContext(null);
+      ctx.connection = {
+        id: "companion-in-process",
+        transport: "in-process",
+        identity: { role: "companion" } satisfies HubIdentity,
+      };
+      ctx.signal = signal;
+      try {
+        const r = await handler.callTool(name, args, ctx);
+        return { text: textOf(r), isError: r.isError === true };
+      } catch (e) {
+        return {
+          text: e instanceof Error ? e.message : String(e),
+          isError: true,
+        };
+      }
+    },
+  };
+}
+
+/**
+ * The harness an MCP client name stands for (`claude-code` → `claude`), if it is a known one.
+ * Checked against the installed clients (2026-11): Hermes Agent 0.23 says `hermes-agent`
+ * (`hermes mcp test`), OpenClaw 2026.11 `openclaw-bundle-mcp` (its agent session's MCP runtime,
+ * which `openclaw mcp probe` uses too).
+ */
 export function harnessOfClient(name: string): string | undefined {
   const n = name.toLowerCase();
   if (n.startsWith("claude")) return "claude";
   if (n.includes("codex")) return "codex";
+  if (n.startsWith("hermes")) return "hermes";
+  if (n.startsWith("openclaw")) return "openclaw";
   if (n.includes("gemini")) return "gemini";
   if (n.includes("opencode")) return "opencode";
   return undefined;

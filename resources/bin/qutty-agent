@@ -10,6 +10,13 @@
 # stdin (optional): recent commands, one per line, "<exit status>\t<folder>\t<command line>".
 # Words the hub answers itself: help, inbox, say <text>, to <tile> <text>, reset.
 #
+# Ctrl-C while the model thinks: the request carries an id, and a second connection sends
+# {"qutty":"agent-cancel","id":...}, so the hub stops the model call (and keeps it out of the
+# conversation). Exit status 130.
+#
+# qutty-agent --unread: print how many hub messages wait for this tile (one number), for the
+# plugins' prompt hook; quick (a 1 s timeout), silent with status 1 when the hub is not there.
+#
 # In the shared Docker sandbox the hub is reached over TCP ($QUTTY_HUB, host:port), the tile's
 # token ($QUTTY_TILE_TOKEN) sent as the first line.
 if [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ]; then
@@ -17,6 +24,34 @@ if [ -n "${QUTTY_SOCK:-}" ] && [ -S "$QUTTY_SOCK" ]; then
 elif [ -z "${QUTTY_HUB:-}" ] || [ -z "${QUTTY_TILE_TOKEN:-}" ]; then
   echo "qutty-agent: not in a Qutty tile (no QUTTY_SOCK)" >&2
   exit 2
+fi
+
+# Send line $2 to the hub, print every line back until it closes (or $1 seconds pass).
+send_hub() {
+  if [ -n "${QUTTY_HUB:-}" ]; then
+    local host="${QUTTY_HUB%:*}" port="${QUTTY_HUB##*:}" reply_line
+    if exec 3<>"/dev/tcp/$host/$port"; then
+      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$2" >&3
+      while IFS= read -r -t "$1" reply_line <&3; do printf '%s\n' "$reply_line"; done
+      [ -z "$reply_line" ] || printf '%s\n' "$reply_line"
+      exec 3>&-
+    elif command -v nc >/dev/null 2>&1; then
+      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$2" | nc -w "$1" "$host" "$port"
+    fi
+  elif command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+    printf '%s\n' "$2" | nc -w "$1" -U "$QUTTY_SOCK"
+  elif command -v socat >/dev/null 2>&1; then
+    printf '%s\n' "$2" | socat -t "$1" - "UNIX-CONNECT:$QUTTY_SOCK"
+  else
+    echo "qutty-agent: needs nc with -U (BSD netcat) or socat" >&2
+  fi
+} 2>/dev/null
+
+if [ "${1:-}" = "--unread" ]; then
+  count="$(send_hub 1 '{"qutty":"unread"}')"
+  case "$count" in '' | *[!0-9]*) exit 1 ;; esac
+  printf '%s\n' "$count"
+  exit 0
 fi
 
 shell_name="sh"
@@ -57,30 +92,13 @@ if [ ! -t 0 ]; then
   done
 fi
 
-line="{\"qutty\":\"agent\",\"text\":$(json_str "$request"),\"cwd\":$(json_str "$PWD")"
+# This request's id, for Ctrl-C to cancel it by.
+request_id="$$-$RANDOM$RANDOM"
+
+line="{\"qutty\":\"agent\",\"id\":\"$request_id\",\"text\":$(json_str "$request"),\"cwd\":$(json_str "$PWD")"
 line="$line,\"shell\":$(json_str "$shell_name"),\"os\":$(json_str "$(uname -s 2>/dev/null)")"
 line="$line,\"brain\":$(json_str "${QUTTY_AGENT_BRAIN:-auto}"),\"model\":$(json_str "${QUTTY_AGENT_MODEL:-}")"
 line="$line,\"history\":[$history_json]}"
-
-# Send the line, print every line back until the hub closes.
-ask_hub() {
-  if [ -n "${QUTTY_HUB:-}" ]; then
-    local host="${QUTTY_HUB%:*}" port="${QUTTY_HUB##*:}"
-    if exec 3<>"/dev/tcp/$host/$port"; then
-      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$1" >&3
-      cat <&3
-      exec 3>&-
-    elif command -v nc >/dev/null 2>&1; then
-      printf '%s\n%s\n' "$QUTTY_TILE_TOKEN" "$1" | nc -w "$WAIT" "$host" "$port"
-    fi
-  elif command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
-    printf '%s\n' "$1" | nc -w "$WAIT" -U "$QUTTY_SOCK"
-  elif command -v socat >/dev/null 2>&1; then
-    printf '%s\n' "$1" | socat -t "$WAIT" - "UNIX-CONNECT:$QUTTY_SOCK"
-  else
-    echo "qutty-agent: needs nc with -U (BSD netcat) or socat" >&2
-  fi
-} 2>/dev/null
 
 # The hub percent-encodes %, \ and control characters: printf %b reads %XX as \xXX.
 # (The replacement comes from a variable: bash 5.2 treats a literal backslash there as a quote.)
@@ -97,6 +115,16 @@ else
   dim="" warn="" err="" off=""
   clear_status() { :; }
 fi
+
+# Ctrl-C: tell the hub on a second connection (the first one's nc got the signal too).
+cancel() {
+  trap - INT
+  send_hub 2 "{\"qutty\":\"agent-cancel\",\"id\":\"$request_id\"}" >/dev/null
+  clear_status
+  printf '%squtty: cancelled%s\n' "$err" "$off" >&2
+  exit 130
+}
+trap cancel INT
 
 command_text=""
 failed=""
@@ -119,7 +147,7 @@ while IFS= read -r reply; do
       failed=1 ;;
     end) got_end=1; break ;;
   esac
-done < <(ask_hub "$line")
+done < <(send_hub "$WAIT" "$line")
 clear_status
 if [ -z "$got_end" ]; then
   printf '%squtty: no answer from the hub%s\n' "$err" "$off" >&2

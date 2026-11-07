@@ -4,7 +4,7 @@
 // the answer it got) and queued, and Settings → Agent integration showing what Install changes
 // and toggling it.
 
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertMatch } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
@@ -64,6 +64,14 @@ suite("agent hub", (test) => {
       count: null,
     });
     assertEquals(await badge(app, shell), null, "a shell has no badge");
+    // The session id its SessionStart hook sent, in the badge's tooltip.
+    assertMatch(
+      (await app.attr(badgeSel(claude), "data-session")) ?? "",
+      /^demo-session-demo-\d+$/,
+    );
+    assert(
+      (await app.attr(badgeSel(claude), "title"))?.includes("session demo-ses"),
+    );
 
     await app.typeInTerminal(claude, "hello\n");
     await waitBadge(app, claude, "data-status", "busy");

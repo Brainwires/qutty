@@ -11,6 +11,7 @@ import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TerminalProfile } from "../lib/ssh-ui.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import {
+  brainChoice,
   type CompanionSettings,
   effectiveMode,
 } from "../lib/companion/settings.ts";
@@ -59,12 +60,13 @@ export function useCompanion(opts: UseCompanionOptions): void {
   const backend: PtyBackend | undefined = opts.manager?.backend;
 
   // The brain runs only while the companion is shown and its brain is on.
-  const { brain, model, mode } = opts.settings;
+  const { brain, mode } = opts.settings;
+  const { engine, model } = brainChoice(opts.settings);
   const enabled = brain && effectiveMode(mode) !== "off";
   useEffect(() => {
     if (!backend) return;
-    void backend.companionConfigure(enabled, model).catch(() => {});
-  }, [backend, enabled, model]);
+    void backend.companionConfigure(enabled, model, engine).catch(() => {});
+  }, [backend, enabled, model, engine]);
 
   useEffect(() => {
     if (!backend) return;

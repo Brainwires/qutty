@@ -20,7 +20,9 @@
 //
 // Settings → Agent integration runs the real installer (lib/hub/integration.ts) over an in-memory
 // home folder (`/Users/demo`) that starts with small agent configs of its own, so Install and
-// Uninstall show and do exactly what the desktop app would.
+// Uninstall show and do exactly what the desktop app would. With `codexUntrusted` (the page's
+// `?codexTrust=untrusted`), the installed Codex integration reports Codex's hooks as untrusted
+// (the warning and Re-trust), until it is installed again (Re-trust).
 //
 // Client-safe: only the hub modules without Deno or npm dependencies are imported.
 
@@ -32,6 +34,8 @@ import {
   uninstallIntegration,
 } from "./hub/integration.ts";
 import { hubPaths } from "./hub/launch.ts";
+import { codexTrustWarning } from "./hub/codex-trust.ts";
+import { CODEX_HOOK_EVENTS } from "./hub/hooks.ts";
 import type {
   AskRequest,
   HubSnapshot,
@@ -103,9 +107,13 @@ function memoryFs(files: Map<string, string>): ConfigFs {
 
 /**
  * A new demo hub. `emit` delivers its events to the page; the demo backend's terminals call the
- * tile half (`add`, `remove`, `setStatus`, `ask`, `send`, `take`).
+ * tile half (`add`, `remove`, `setStatus`, `ask`, `send`, `take`). `codexUntrusted`: fake a Codex
+ * that does not trust Qutty's installed hooks, until Re-trust.
  */
-export function createDemoHub(emit: DemoHubEmit) {
+export function createDemoHub(
+  emit: DemoHubEmit,
+  opts: { codexUntrusted?: boolean } = {},
+) {
   let pendingTiles: ReturnType<typeof setTimeout> | undefined;
   const snapshot = (): HubSnapshot => ({
     running: true,
@@ -187,7 +195,20 @@ export function createDemoHub(emit: DemoHubEmit) {
   const fs = memoryFs(demoConfigFiles());
   const paths = hubPaths(DEMO_HOME);
   const files = integrationFiles(DEMO_HOME, paths);
-  const status = () => integrationStatus(fs, files, paths);
+  let codexTrusted = !opts.codexUntrusted;
+  const status = async () => {
+    const rows = await integrationStatus(fs, files, paths);
+    const codex = rows.find((r) => r.target === "codex");
+    if (codex?.installed && !codexTrusted) {
+      codex.trust = "untrusted";
+      codex.warning = codexTrustWarning({
+        trusted: false,
+        untrusted: [...CODEX_HOOK_EVENTS],
+        hashChanged: false,
+      });
+    }
+    return rows;
+  };
 
   /** Close question `id` (answered, or its tile went away) without replying. */
   const close = (id: string) => {
@@ -221,6 +242,9 @@ export function createDemoHub(emit: DemoHubEmit) {
     async integrationInstall(
       target: IntegrationTarget,
     ): Promise<IntegrationStatus[]> {
+      // Installing the installed Codex block again is Re-trust.
+      const before = (await status()).find((r) => r.target === target);
+      if (target === "codex" && before?.installed) codexTrusted = true;
       await installIntegration(fs, files, paths, target);
       return await status();
     },
@@ -235,12 +259,15 @@ export function createDemoHub(emit: DemoHubEmit) {
 
     /** Register terminal `id` (an agent tool with its `harness`); returns its hub name. */
     add(id: string, harness?: string, sandbox = false, model?: string): string {
-      return registry.add({
+      const name = registry.add({
         id,
         ...(harness ? { harness } : {}),
         ...(model ? { model } : {}),
         ...(sandbox ? { sandbox } : {}),
       }).name;
+      // A demo agent's SessionStart hook would send its session id.
+      if (harness) registry.setSession(id, `demo-session-${id}`);
+      return name;
     },
     /** Terminal `id` ended: its tile, mailbox and open questions go. */
     remove(id: string): void {
@@ -324,7 +351,13 @@ export function createDemoHub(emit: DemoHubEmit) {
         }),
       send: (text: string, via: "chat" | "voice" = "chat") =>
         Promise.resolve({ turn: runtime.userSays(text, via) }),
-      configure(enabled: boolean, _model: string) {
+      configure(enabled: boolean, model: string, engine = "claude") {
+        // The demo brain answers either way; the label says which one Settings picked.
+        runtime.setAdapter(
+          engine === "ollama"
+            ? `Demo brain (Ollama ${model || "?"})`
+            : "Demo brain",
+        );
         runtime.setEnabled(enabled);
         return Promise.resolve(runtime.status());
       },

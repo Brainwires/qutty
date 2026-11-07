@@ -489,7 +489,9 @@ suite("companion", (test) => {
       mode: "off",
       corner: "top-left",
       brain: false,
+      engine: "claude",
       model: "",
+      ollamaModel: "",
       lively: true,
     });
     assertEquals(await app.exists(OVERLAY), false);

@@ -446,9 +446,42 @@ Deno.test("MCP handler: the client name from initialize sets the harness", async
   assertEquals(core.registry.get("pty-3")?.name, "claude-2");
   assertEquals(harnessOfClient("codex-mcp-client"), "codex");
   assertEquals(harnessOfClient("my-client"), undefined);
+  // The names the installed clients send (`hermes mcp test`, `openclaw mcp probe`, 2026-11).
+  assertEquals(harnessOfClient("hermes-agent"), "hermes");
+  assertEquals(harnessOfClient("openclaw-bundle-mcp"), "openclaw");
 });
 
 // --- hooks ---------------------------------------------------------------------------------------
+
+Deno.test("hooks: the session id is recorded, shown to peers, and replaced by a new session", async () => {
+  const { core } = hubWithTiles();
+  const tools = buildToolRegistry(core);
+  const h = createHubHandler(core, tools);
+  core.hook("pty-1", "SessionStart", {
+    session_id: "abc-1",
+    source: "startup",
+  });
+  assertEquals(core.registry.get("pty-1")?.session, "abc-1");
+  // Any later hook with another id (a resumed session) replaces it; one without leaves it.
+  core.hook("pty-1", "UserPromptSubmit", { session_id: "abc-2" });
+  assertEquals(core.registry.get("pty-1")?.session, "abc-2");
+  core.hook("pty-1", "Stop", {});
+  assertEquals(core.registry.get("pty-1")?.session, "abc-2");
+  const who = await h.callTool("whoami", {}, ctxFor(tile("pty-1")));
+  assertEquals(JSON.parse(resultText(who)).session, "abc-2");
+  const peers = await h.callTool("list_peers", {}, ctxFor(tile("pty-2")));
+  assertEquals(
+    JSON.parse(resultText(peers)).tiles.find((t: { id: string }) =>
+      t.id === "pty-1"
+    ).session,
+    "abc-2",
+  );
+  // The harness restarted: a SessionStart without an id clears it; a malformed id is ignored.
+  core.hook("pty-1", "SessionStart", { source: "startup" });
+  assertEquals(core.registry.get("pty-1")?.session, undefined);
+  core.hook("pty-1", "PostToolUse", { session_id: "bad id; rm -rf" });
+  assertEquals(core.registry.get("pty-1")?.session, undefined);
+});
 
 Deno.test("hooks: SessionStart registers the harness and introduces the tile", () => {
   const env = new FakeEnv();

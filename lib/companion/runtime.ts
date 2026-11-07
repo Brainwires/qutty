@@ -71,6 +71,7 @@ interface Turn {
 export class CompanionRuntime {
   #opts: CompanionRuntimeOptions;
   #enabled: boolean;
+  #adapter: string;
   #brain: BrainAdapter | undefined;
   #state: BrainState = "stopped";
   #detail: string | undefined;
@@ -84,6 +85,7 @@ export class CompanionRuntime {
   constructor(opts: CompanionRuntimeOptions) {
     this.#opts = opts;
     this.#enabled = opts.enabled ?? true;
+    this.#adapter = opts.adapter;
   }
 
   status(): CompanionStatus {
@@ -91,8 +93,15 @@ export class CompanionRuntime {
       enabled: this.#enabled,
       state: this.#state,
       ...(this.#detail ? { detail: this.#detail } : {}),
-      adapter: this.#opts.adapter,
+      adapter: this.#adapter,
     };
+  }
+
+  /** The adapter's name changed (Settings picked another brain). */
+  setAdapter(label: string): void {
+    if (label === this.#adapter) return;
+    this.#adapter = label;
+    this.#emit({ kind: "status", status: this.status() });
   }
 
   /** Follow every update (besides `emit`): voice output, tests. Returns the unsubscribe. */

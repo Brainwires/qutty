@@ -3,7 +3,9 @@
 // in the agent's user-scope config. One row per agent: installed or not, any note (a partial
 // install, an entry named `qutty` that Qutty did not write), exactly what Install writes (each
 // file and the text it adds), and Install / Uninstall. Errors from the installer (an unreadable
-// file, a foreign entry) are shown as they come.
+// file, a foreign entry) are shown as they come. When the installed Codex does not trust Qutty's
+// hooks (it skips them; asked once per start, lib/hub/codex-trust.ts), the Codex row shows why,
+// with Re-trust (Install again: it rewrites the trust entries, and Codex is asked again).
 //
 // The backend does the work (desktop/hub.ts over lib/hub/integration.ts; the demo runs the same
 // installer over an in-memory home, lib/hub-demo.ts). The status is read when the panel mounts.
@@ -75,6 +77,7 @@ export function AgentIntegration(props: AgentIntegrationProps) {
           data-testid="integration-row"
           data-target={row.target}
           data-installed={row.installed ? "true" : "false"}
+          data-trust={row.trust ?? ""}
         >
           <div class="integration-head">
             <span class="integration-label">{row.label}</span>
@@ -115,6 +118,26 @@ export function AgentIntegration(props: AgentIntegrationProps) {
             >
               {row.note}
             </p>
+          )}
+          {row.warning && (
+            <div
+              class="integration-warning"
+              role="alert"
+              data-testid="integration-warning"
+            >
+              <p>{row.warning}</p>
+              {row.installed && (
+                <button
+                  type="button"
+                  class="btn-primary"
+                  data-testid="integration-retrust"
+                  disabled={busy !== null}
+                  onClick={() => void change(row.target, true)}
+                >
+                  Re-trust
+                </button>
+              )}
+            </div>
           )}
           <span class="field-hint">
             {row.installed ? "Installed entries:" : "Install adds:"}

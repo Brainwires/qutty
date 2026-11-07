@@ -353,6 +353,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <CompanionSettingsSection
           settings={settings.companion}
           backend={props.backend}
+          {...(props.ollama ? { ollama: props.ollama.status } : {})}
           onChange={props.onCompanion}
         />,
         "companion-section",

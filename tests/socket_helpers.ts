@@ -6,6 +6,7 @@ import type { McpClient } from "@rullama/mcp-client";
 import { type HubEvent, HubService, prepareSocketDir } from "../desktop/hub.ts";
 import { setPtyTaps } from "../desktop/pty.ts";
 import type { ShellBrainDeps } from "../desktop/shell-agent.ts";
+import type { ListedCodexHook } from "../lib/hub/codex-trust.ts";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 export const MCP_SHIM = `${ROOT}resources/bin/qutty-mcp`;
@@ -39,12 +40,14 @@ export interface Fixture {
 
 /**
  * A hub in a private /tmp folder (no tiles yet). `write` types into a tile (default: nowhere);
- * `shellBrains`: the shell agent's model backends (default: the real ones).
+ * `shellBrains`: the shell agent's model backends (default: the real ones); `codexHooks`:
+ * Codex's `hooks/list` (default: the real `codex`, run over the temp home).
  */
 export async function fixture(
   opts: {
     write?: (id: string, text: string) => Promise<void>;
     shellBrains?: ShellBrainDeps;
+    codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
   } = {},
 ): Promise<Fixture> {
   // /tmp, not $TMPDIR: macOS's is long, and sun_path holds 104 bytes.
@@ -58,6 +61,7 @@ export async function fixture(
     emit: (event, data) => events.push({ event, data }),
     write: opts.write ?? (() => Promise.resolve()),
     ...(opts.shellBrains ? { shellBrains: opts.shellBrains } : {}),
+    ...(opts.codexHooks ? { codexHooks: opts.codexHooks } : {}),
   });
   return {
     hub,

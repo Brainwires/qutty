@@ -66,6 +66,7 @@ import type {
   CompanionUpdate,
   SayEvent,
 } from "./companion/protocol.ts";
+import type { BrainEngine } from "./companion/settings.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 
@@ -254,8 +255,15 @@ export interface PtyBackend {
     text: string,
     via?: "chat" | "voice",
   ): Promise<{ turn: number }>;
-  /** Settings → Companion: whether the brain may run, and its model (`""`: the default). */
-  companionConfigure(enabled: boolean, model: string): Promise<CompanionStatus>;
+  /**
+   * Settings → Companion: whether the brain may run, which one (default Claude Code), and its
+   * model (`""`: the default).
+   */
+  companionConfigure(
+    enabled: boolean,
+    model: string,
+    engine?: BrainEngine,
+  ): Promise<CompanionStatus>;
   /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */
   companionSayDone(id: string, action: string | null): Promise<boolean>;
   /** The page carried out (or could not carry out) a companion command. */
@@ -621,8 +629,8 @@ export function createDesktopBackend(
     async companionSend(text, via = "chat") {
       return await hub.companionSend({ text, via });
     },
-    async companionConfigure(enabled, model) {
-      return await hub.companionConfigure({ enabled, model });
+    async companionConfigure(enabled, model, engine = "claude") {
+      return await hub.companionConfigure({ enabled, model, engine });
     },
     async companionSayDone(id, action) {
       return await hub.companionSayDone({ id, action });
@@ -1175,7 +1183,7 @@ export function createDemoBackend(): PtyBackend {
     companion: hubCompanion.emit,
     say: hubSays.emit,
     control: hubControls.emit,
-  });
+  }, { codexUntrusted: pageParam("codexTrust") === "untrusted" });
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
@@ -1300,8 +1308,8 @@ export function createDemoBackend(): PtyBackend {
     integrationUninstall: (target) => hub.integrationUninstall(target),
     companionStatus: () => hub.companion.status(),
     companionSend: (text, via) => hub.companion.send(text, via),
-    companionConfigure: (enabled, model) =>
-      hub.companion.configure(enabled, model),
+    companionConfigure: (enabled, model, engine) =>
+      hub.companion.configure(enabled, model, engine),
     companionSayDone: (id, action) => hub.companion.sayDone(id, action),
     hubControlDone: (requestId, result) =>
       hub.companion.controlDone(requestId, result),
@@ -1314,6 +1322,15 @@ export function createDemoBackend(): PtyBackend {
 // ---------------------------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------------------------
+
+/** The page's query parameter `name` (`null`: absent, or no location). */
+function pageParam(name: string): string | null {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? "").get(name);
+  } catch {
+    return null;
+  }
+}
 
 /** Whether this page runs inside the Deno Desktop window (the runtime-injected marker). */
 export function isDesktop(): boolean {

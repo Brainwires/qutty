@@ -77,6 +77,16 @@ export type ControlResult =
   | { ok: true; tileId?: string }
   | { ok: false; error: string };
 
+/** A hook input's `session_id` when it is a plausible id (a uuid, in both harnesses). */
+function sessionIdOf(
+  input: Record<string, unknown>,
+): string | undefined {
+  const v = input.session_id;
+  return typeof v === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(v)
+    ? v
+    : undefined;
+}
+
 /** A user-facing failure (bad target, bad name, …): becomes an `isError` tool result. */
 export class HubError extends Error {
   override name = "HubError";
@@ -366,6 +376,11 @@ export class HubCore {
     if (harness) this.registry.setHarness(tileId, harness);
     if (typeof input.cwd === "string" && input.cwd.startsWith("/")) {
       this.registry.setMeta(tileId, { cwd: input.cwd });
+    }
+    // A new session (the harness restarted, `/clear`) replaces the id, or clears one it lacks.
+    const session = sessionIdOf(input);
+    if (event === "SessionStart" || session) {
+      this.registry.setSession(tileId, session);
     }
     const take = () => this.mailboxes.take(tileId, "delivered");
     switch (event) {

@@ -11,7 +11,9 @@
 //   moves and until the eyes have drifted back, then stops;
 // - a timer chain for the micro-expressions, and the excitement's timer, all cleared on unmount.
 //
-// The window hidden, or in the background for a while (BLUR_SLEEP_MS), puts it all to sleep.
+// The window hidden, or in the background for a while (BLUR_SLEEP_MS), puts it all to sleep. While
+// Loopy is dragged (app/companion/use-loopy-drag.ts) it is not free (`mayLiven`): the pointer on
+// its face brings no delight and no excitement, and the eyes just keep looking at the pointer.
 
 import { useEffect, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
@@ -150,8 +152,9 @@ export function useLoopyLife(opts: LoopyLifeOptions): LoopyLife {
   const live = useRef({ free, reducedMotion, dispatch: opts.dispatch });
   live.current = { free, reducedMotion, dispatch: opts.dispatch };
 
-  // Something to say, a voice turn or thinking ends the excitement at once.
-  const interrupted = opts.message || opts.voice || opts.busy;
+  // Something to say, a voice turn, thinking or a drag ends the excitement at once.
+  const interrupted = opts.message || opts.voice || opts.busy ||
+    opts.dragging === true;
   useEffect(() => {
     if (interrupted) setExcited(false);
   }, [interrupted]);

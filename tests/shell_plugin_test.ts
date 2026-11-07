@@ -3,7 +3,9 @@
 // model's command into the edit buffer without running it (Enter then runs it), the explanation
 // prints above the prompt, the commands run since are the next request's context, and ordinary
 // lines (`,foo` with no space, commands containing commas) run as always. qutty-agent goes
-// through the real tile socket (`nc -U`).
+// through the real tile socket (`nc -U`). New hub messages are announced at the prompt when their
+// count rose, and Ctrl-C while the model thinks cancels the request in the hub (the model call
+// sees its signal abort, and the request stays out of the conversation).
 //
 // zsh tests are skipped where there is no zsh (Linux CI); bash is tested with whatever bash
 // there is: bash 4+ puts the command into READLINE_LINE, macOS's bash 3.2 into the history
@@ -35,13 +37,30 @@ function bashMajor(): number {
 }
 const BASH_MAJOR = bashMajor();
 
-/** The fake model: always proposes `cmd`, and records every prompt. */
+/**
+ * The fake model: always proposes `cmd`, and records every prompt. With `hold` set it answers
+ * nothing until its signal aborts (then `aborted` is set).
+ */
 class ScriptedBrain implements ShellBrain {
   readonly label = "Scripted";
   prompts: string[] = [];
+  hold = false;
+  aborted = false;
   constructor(public cmd: string) {}
-  complete(_system: string, prompt: string): Promise<string> {
+  complete(
+    _system: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     this.prompts.push(prompt);
+    if (this.hold) {
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          this.aborted = true;
+          reject(new Error("aborted"));
+        });
+      });
+    }
     return Promise.resolve(
       `Prints a marker (fake model).\n\`\`\`sh\n${this.cmd}\n\`\`\``,
     );
@@ -60,10 +79,14 @@ interface Shell {
   since(from: number): string;
 }
 
-/** A hub with a fake model, and a tile running `argv` (rc files in a temp folder). */
+/**
+ * A hub with a fake model, and a tile running `argv` (rc files in a temp folder; `rc`: more
+ * lines before the plugin is sourced).
+ */
 async function withShell(
   kind: "zsh" | "bash",
   fn: (s: Shell) => Promise<void>,
+  rcLines: string[] = [],
 ): Promise<void> {
   const ran = marker("RANOK");
   const brain = new ScriptedBrain(ran.cmd);
@@ -90,6 +113,7 @@ async function withShell(
           "unsetopt PROMPT_SP",
           "PROMPT='P> '",
           "RPROMPT=''",
+          ...rcLines,
           `source ${plugin}`,
         ].join("\n") + "\n",
       );
@@ -101,6 +125,7 @@ async function withShell(
           `HISTFILE=${rc}/hist`,
           "PS1='P> '",
           "PROMPT_COMMAND=",
+          ...rcLines,
           `source ${plugin}`,
         ].join("\n") + "\n",
       );
@@ -242,3 +267,93 @@ Deno.test({
     });
   },
 });
+
+// ---------------------------------------------------------------------------------------------
+// New messages at the prompt, and Ctrl-C
+// ---------------------------------------------------------------------------------------------
+
+const MAIL = "\u{1F4EC}";
+
+/** A message for the tile from the companion. */
+function mail(s: Shell, text: string): void {
+  s.f.hub.core.send({ role: "companion" }, s.id, text);
+}
+
+/** Run a command at the prompt; wait for its output (and `also`, before it), then the prompt. */
+async function enter(s: Shell, also?: string): Promise<void> {
+  const m = marker("NOP");
+  const from = s.rec.text(s.id).length;
+  await s.type(`${m.cmd}\r`, m.text);
+  if (also) await s.rec.waitFor(s.id, also, 15_000, from);
+}
+
+/** New messages are announced once, when their count rose; `, inbox` reads them. */
+async function announcesNewMessages(s: Shell): Promise<void> {
+  let from = s.rec.text(s.id).length;
+  await enter(s);
+  assertEquals(s.since(from).includes(MAIL), false, "nothing waits yet");
+  mail(s, "tests pass");
+  from = s.rec.text(s.id).length;
+  await enter(s, `${MAIL} 1 new message \u2014 , inbox`);
+  from = s.rec.text(s.id).length;
+  await enter(s);
+  assertEquals(s.since(from).includes(MAIL), false, "announced once");
+  mail(s, "two");
+  mail(s, "three");
+  await enter(s, `${MAIL} 3 new messages \u2014 , inbox`);
+  await s.type(", inbox\r", "three");
+  assertEquals(s.f.hub.core.mailboxes.unread(s.id), 0);
+  await s.host.write(s.id, "\x15");
+  from = s.rec.text(s.id).length;
+  await enter(s);
+  assertEquals(s.since(from).includes(MAIL), false, "read: nothing new");
+  mail(s, "again");
+  await enter(s, `${MAIL} 1 new message`);
+  assertEquals(s.brain.prompts.length, 0, "no model involved");
+}
+
+/** Ctrl-C while the model thinks: the hub aborts the call; the next request has no trace of it. */
+async function ctrlCCancels(s: Shell): Promise<void> {
+  s.brain.hold = true;
+  const from = s.rec.text(s.id).length;
+  await s.host.write(s.id, ", list files\r");
+  const deadline = Date.now() + 15_000;
+  while (s.brain.prompts.length === 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assertEquals(s.brain.prompts.length, 1, "the request reached the model");
+  await s.host.write(s.id, "\x03");
+  await s.rec.waitFor(s.id, "qutty: cancelled", 10_000, from);
+  while (!s.brain.aborted && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert(s.brain.aborted, "the model call was aborted");
+  await s.rec.waitFor(s.id, "P> ", 10_000, from + 1);
+  await new Promise((r) => setTimeout(r, 200));
+  await s.host.write(s.id, "\x15");
+  s.brain.hold = false;
+  await s.type(", next\r", "Prints a marker (fake model).");
+  const prompt = s.brain.prompts[1];
+  assertEquals(
+    prompt.includes("Earlier in this session"),
+    false,
+    "the cancelled request is not in the conversation",
+  );
+  await s.host.write(s.id, "\x15");
+}
+
+for (const kind of ["zsh", "bash"] as const) {
+  Deno.test({
+    name:
+      `${kind} plugin: new hub messages are announced at the prompt; Ctrl-C cancels a request in the hub`,
+    ignore: ignoreAll || (kind === "zsh" ? !HAS_ZSH : !BASH),
+    sanitizeResources: false,
+    sanitizeOps: false,
+    async fn() {
+      await withShell(kind, async (s) => {
+        await announcesNewMessages(s);
+        await ctrlCCancels(s);
+      }, ["export QUTTY_AGENT_NOTIFY_EVERY=0"]);
+    },
+  });
+}

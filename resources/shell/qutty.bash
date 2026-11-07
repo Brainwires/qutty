@@ -27,8 +27,13 @@
 # Recent commands come from a PROMPT_COMMAND hook (the last history entry and its exit status;
 # the last 10 are kept). It runs first and leaves $? as it found it.
 #
+# New hub messages are announced above the prompt (`📬 2 new messages — , inbox`) when their
+# count rose since the last check: `qutty-agent --unread` asks the tile's socket, at most every
+# QUTTY_AGENT_NOTIFY_EVERY seconds (default 5; 0: every prompt; off: never), silently skipped when
+# the hub does not answer within a second.
+#
 # Settings (environment): QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude |
-# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use).
+# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY.
 
 case $- in *i*) ;; *) return 0 ;; esac
 [ -n "${QUTTY_SOCK-}${QUTTY_HUB-}" ] || return 0
@@ -49,6 +54,25 @@ __qutty_history=()
 __qutty_last_hist=""
 __qutty_seen_prompt=""
 __qutty_skip_hist=""
+# The unread count at the last check, and when (in $SECONDS) that was.
+__qutty_unread=0
+__qutty_unread_at=-1000
+
+# Announce new hub messages when their count rose (at most every QUTTY_AGENT_NOTIFY_EVERY s).
+__qutty_notify() {
+  local every=${QUTTY_AGENT_NOTIFY_EVERY-5} n s=s
+  [ "$every" != off ] || return 0
+  case "$every" in '' | *[!0-9]*) every=5 ;; esac
+  [ $((SECONDS - __qutty_unread_at)) -ge "$every" ] || return 0
+  __qutty_unread_at=$SECONDS
+  n=$("$__qutty_agent" --unread 2>/dev/null) || return 0
+  case "$n" in '' | *[!0-9]*) return 0 ;; esac
+  if [ "$n" -gt "$__qutty_unread" ]; then
+    [ "$n" -ne 1 ] || s=""
+    printf '\033[2m📬 %s new message%s — %s inbox\033[0m\n' "$n" "$s" "$QUTTY_AGENT_PREFIX"
+  fi
+  __qutty_unread=$n
+}
 
 __qutty_precmd() {
   local exit_status=$? entry num="" line="" re='^ *([0-9]+)[*]? +(.*)$'
@@ -69,6 +93,7 @@ __qutty_precmd() {
   __qutty_seen_prompt=1
   __qutty_skip_hist=""
   __qutty_last_hist=$num
+  __qutty_notify
   return $exit_status
 }
 
@@ -100,6 +125,8 @@ if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
       { [ "${BASH_VERSINFO[0]}" -eq 5 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }; then
       printf '%s%s\n' "${PS1@P}" "$line"
     fi
+    # `, inbox` reads them all: a message after it is new again.
+    [ "${line#"$prefix "}" != inbox ] || __qutty_unread=0
     if proposal=$(__qutty_ask "${line#"$prefix "}"); then
       READLINE_LINE=$proposal
     fi
@@ -121,6 +148,7 @@ elif [ -n "$QUTTY_AGENT_PREFIX" ] && [ -z "${QUTTY_AGENT_PREFIX//[A-Za-z0-9_,.:@
       "$prefix "*) line=${line#"$prefix "} ;;
       *) line="$*" ;;
     esac
+    [ "$line" != inbox ] || __qutty_unread=0
     if proposal=$(__qutty_ask "$line") && [ -n "$proposal" ]; then
       history -s -- "$proposal"
       __qutty_skip_hist=1
