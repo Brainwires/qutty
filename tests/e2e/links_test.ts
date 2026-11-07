@@ -116,6 +116,13 @@ async function rightClick(app: App, pt: { x: number; y: number }) {
 async function modClick(app: App, id: string, needle: string): Promise<void> {
   const pt = await pointOf(app, id, needle);
   await app.page.keyboard.down(app.mod);
+  // Click only once the app has seen the modifier (the link is underlined): a click that beats
+  // the keydown is a plain click.
+  await waitFor(
+    async () => (await linkState(app, id))?.underline === true,
+    2000,
+    `${needle} underlined with the modifier held`,
+  );
   await app.page.mouse.click(pt.x, pt.y);
   await app.page.keyboard.up(app.mod);
 }
