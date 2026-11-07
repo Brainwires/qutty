@@ -45,6 +45,23 @@ export interface SwitcherBarProps {
   onToggleSettings(): void;
 }
 
+/** Scroll `list` so chip `el` is in view, by where the chip is laid out (its FLIP transform aside). */
+function revealChip(list: HTMLElement, el: HTMLElement, vertical: boolean) {
+  const t = getComputedStyle(el).transform;
+  const m = t && t !== "none" ? new DOMMatrixReadOnly(t) : undefined;
+  const r = el.getBoundingClientRect();
+  const box = list.getBoundingClientRect();
+  const [start, end, lo, hi] = vertical
+    ? [r.top - (m?.m42 ?? 0), r.bottom - (m?.m42 ?? 0), box.top, box.bottom]
+    : [r.left - (m?.m41 ?? 0), r.right - (m?.m41 ?? 0), box.left, box.right];
+  const by = start < lo
+    ? start - lo
+    : end > hi
+    ? Math.min(end - hi, start - lo)
+    : 0;
+  if (by !== 0) list.scrollBy(vertical ? { top: by } : { left: by });
+}
+
 export function SwitcherBar(props: SwitcherBarProps) {
   const barRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -100,7 +117,17 @@ export function SwitcherBar(props: SwitcherBarProps) {
         el.style.transform = "";
       }
     });
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      // Superseded before its frame (the order changed again): drop the inversion now, or these
+      // chips stay displaced for good and the next FLIP measures them where they are drawn.
+      for (const el of moved) el.style.transform = "";
+      requestAnimationFrame(() => {
+        for (const el of moved) {
+          if (el.style.transform === "") el.style.transition = "";
+        }
+      });
+    };
   }, [orderKey]);
 
   // Which chips are scrolled out of view → the "+N" menu.
@@ -150,11 +177,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
     };
   }, [orderKey, vertical]);
 
-  // Keep the focused chip in view.
+  // Keep the focused chip in view. Not `scrollIntoView`: a focus change that reorders the chips
+  // (MRU order) has just inverted them for FLIP, and the chip's box is still drawn where it was;
+  // scrolling to that would scroll to its old place (with Reduce Motion, for good).
   useEffect(() => {
-    if (!focusedId) return;
-    const el = chipEls.current.get(focusedId);
-    el?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const list = listRef.current;
+    const el = focusedId ? chipEls.current.get(focusedId) : undefined;
+    if (list && el) revealChip(list, el, vertical);
   }, [focusedId]);
 
   // Close menus on Escape or an outside click.
