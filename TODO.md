@@ -248,6 +248,17 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
+- [x] **Lite system monitor and hot Loopy** (`desktop/sysstats.ts`,
+      `lib/sysstats.ts`, `app/use-sysstats.ts`, `app/sys-meter.tsx`).
+  - Done: CPU (Mach `host_statistics`, `/proc/stat`), GPU (IOKit
+    `PerformanceStatistics` over FFI, `ioreg` fallback; AMD sysfs,
+    `nvidia-smi`), memory pressure; the bar meter; the hot face with hysteresis;
+    Settings → System monitor.
+  - Later: per-core bars; Windows (`GetSystemTimes`, PDH for the GPU); Intel
+    GPUs on Linux (no busy figure without `intel_gpu_top`).
+  - Switch to a Denext `system.stats` API if it lands (proposed to the Denext
+    side), and drop the FFI readers.
+
 - [x] **Ollama helper** (`desktop/ollama.ts`, `lib/ollama/`,
       `app/ollama-*.tsx`). Shipped in 0.3.1; the "Open" items below remain.
   - Done: model tracking (CLI in hidden PTYs, `show` cached by digest, no

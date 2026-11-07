@@ -49,6 +49,8 @@ import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
+import { MonitorSettingsSection } from "./monitor-settings.tsx";
+import type { MonitorSettings } from "../lib/sysstats.ts";
 
 export interface SettingsPanelProps {
   settings: Settings;
@@ -74,6 +76,8 @@ export interface SettingsPanelProps {
   onOllama(patch: Partial<OllamaSettings>): void;
   /** Settings → Links. */
   onLinks(patch: Partial<LinkSettings>): void;
+  /** Settings → System monitor. */
+  onMonitor(patch: Partial<MonitorSettings>): void;
   /** The voice layer (its engines' status, the model download, cloud keys). */
   voice: VoiceApi | null;
   /** For Agent integration (the section is left out without one) and the companion's status. */
@@ -404,6 +408,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onChange={props.onLinks}
         />,
         "links-section",
+      )}
+
+      {section(
+        "monitor",
+        "System monitor",
+        <MonitorSettingsSection
+          settings={settings.monitor}
+          lively={settings.companion.lively}
+          onChange={props.onMonitor}
+        />,
+        "monitor-section",
       )}
 
       {props.backend && section(

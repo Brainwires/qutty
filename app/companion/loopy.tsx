@@ -260,6 +260,58 @@ function Extras({ mood }: { mood: LoopyMood }) {
   }
 }
 
+// --- Qutty's own: hot ---------------------------------------------------------------------------
+// Not one of the example's 13 moods (lib/companion/loopy-machine.ts MOODS stays the example's, and
+// tests/companion_look_test.ts checks those unchanged): the face Loopy wears, while it is otherwise
+// idle, when the CPU or the GPU has been busy for a while (lib/sysstats.ts, the `hot` prop). Drawn
+// in the example's style: the same eyes, brows and ink, a flushed bead, a panting mouth with the
+// wow face's tongue, sweat drops like the sad face's tear and heat rising like the mad face's
+// steam. Its CSS is in public/styles.css, "Loopy is hot" (after the example's block).
+
+/** The hot face: worried brows, tired eyes, a panting open mouth. */
+const HOT_FACE: Face = {
+  brows: ["M60 61 Q68 57 76 55", "M84 55 Q92 57 100 61"],
+  eyeRy: 6.6,
+  pupils: { kind: "dots", dx: [0.6, -0.6], dy: 1.6, r: 3.2 },
+  mouth: "M72 87 Q80 84 88 87 Q87 97 80 97 Q73 97 72 87 Z",
+  mouthOpen: true,
+};
+
+/** The flush on the bead, under the face: the steel warming to red-orange at the rim. */
+function HotFlush() {
+  return (
+    <g class="loopy-hot-flush" aria-hidden="true">
+      <radialGradient id="loopy-flush" cx="0.5" cy="0.55" r="0.55">
+        <stop offset="0.35" stop-color="#ff9a4a" stop-opacity="0.12" />
+        <stop offset="1" stop-color="#e5401c" stop-opacity="0.62" />
+      </radialGradient>
+      <circle cx="80" cy="76" r="29" fill="url(#loopy-flush)" />
+    </g>
+  );
+}
+
+/** The hot face's extras: flushed cheeks, the tongue out, sweat drops, heat rising off the head. */
+function HotExtras() {
+  return (
+    <g class="loopy-extra loopy-hot">
+      <g class="loopy-hot-cheeks">
+        <ellipse cx="61" cy="85" rx="5" ry="3" />
+        <ellipse cx="99" cy="85" rx="5" ry="3" />
+      </g>
+      <ellipse class="loopy-tongue" cx="80" cy="94.6" rx="3.8" ry="2.3" />
+      <g class="loopy-sweat">
+        <path d="M105 55 q-3 6 0 8 q3 -2 0 -8 Z" />
+        <path d="M55 61 q-2.4 5 0 6.6 q2.4 -1.6 0 -6.6 Z" />
+      </g>
+      <g class="loopy-heat">
+        <path d="M68 44 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
+        <path d="M80 41 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
+        <path d="M92 44 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
+      </g>
+    </g>
+  );
+}
+
 /** The props of {@linkcode Loopy}. */
 export interface LoopyProps {
   /** The move on screen. */
@@ -286,6 +338,11 @@ export interface LoopyProps {
    * the example's.
    */
   readonly expression?: MicroExpression | "delighted";
+  /**
+   * Qutty's own: the machine is hot (`data-mood="hot"`). Only drawn over the neutral face: the
+   * page passes it only while Loopy is otherwise idle (lib/sysstats.ts `mayShowHot`).
+   */
+  readonly hot?: boolean;
 }
 
 /** The mouth to draw: the lip-sync shape while speaking, else the mood's. */
@@ -313,18 +370,19 @@ const [VB_X, VB_Y, VB_W, VB_H] = LOOPY_VIEWBOX;
 
 /** Loopy's face: the steel bead head of the example's paper clip, without the wire. */
 export function Loopy(
-  { state, label = "Loopy", mood, voice, level = 0, lively, expression }:
+  { state, label = "Loopy", mood, voice, level = 0, lively, expression, hot }:
     LoopyProps,
 ) {
   const current = mood ?? "neutral";
-  const face = FACES[current];
+  const isHot = hot === true && current === "neutral";
+  const face = isHot ? HOT_FACE : FACES[current];
   const mouth = mouthFor(face, voice, level);
   const listen = voice === "listening" ? Math.min(1, level / LEVEL_STEPS) : 0;
   return (
     <svg
       class="loopy"
       data-state={state}
-      data-mood={current}
+      data-mood={isHot ? "hot" : current}
       data-voice={voice}
       data-lively={lively ? "" : undefined}
       data-expr={expression}
@@ -352,6 +410,7 @@ export function Loopy(
             r="29"
             fill="url(#loopy-bead)"
           />
+          {isHot && <HotFlush />}
           <g class="loopy-brows">
             <path d={face.brows[0]} />
             <path d={face.brows[1]} />
@@ -381,7 +440,7 @@ export function Loopy(
             class={mouth.open ? "loopy-mouth is-open" : "loopy-mouth"}
             d={mouth.d}
           />
-          <Extras mood={current} />
+          {isHot ? <HotExtras /> : <Extras mood={current} />}
         </g>
         <g class="loopy-thought" aria-hidden="true">
           <circle cx="112" cy="40" r="2.6" />

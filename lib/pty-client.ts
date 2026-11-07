@@ -29,6 +29,9 @@ import type ollamaExtension from "../desktop/ollama.ts";
 import type linksExtension from "../desktop/links.ts";
 import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
 import { createDemoLinks } from "./links-demo.ts";
+import type sysstatsExtension from "../desktop/sysstats.ts";
+import type { SysSample } from "./sysstats.ts";
+import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
 import type { OllamaStatus } from "./ollama/cli.ts";
 import type {
   LibraryOrder,
@@ -195,6 +198,11 @@ export interface PtyBackend {
   linkEditors(): Promise<string[]>;
   /** Run an editor command template on a file. */
   linkEdit(request: LinkEditRequest): Promise<void>;
+
+  // --- The system monitor (desktop/sysstats.ts) ------------------------------------------------
+
+  /** CPU since the previous sample, GPU and memory pressure (%), for the meter and hot Loopy. */
+  sysSample(): Promise<SysSample>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -437,6 +445,7 @@ export function createDesktopBackend(
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const links = desktopExtension<typeof linksExtension>("links");
+  const sysstats = desktopExtension<typeof sysstatsExtension>("sysstats");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -597,6 +606,7 @@ export function createDesktopBackend(
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors({}),
     linkEdit: (request) => links.edit(request),
+    sysSample: () => sysstats.sample({}),
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);
@@ -729,6 +739,9 @@ const DEMO_HELP = [
   `  ${fg(81)}stress${RESET} [n] print n lines fast (default 2000)`,
   `  ${fg(81)}size${RESET}       print rows and columns`,
   `  ${fg(81)}links${RESET}      URLs, paths and OSC 8 links to ⌘-click`,
+  `  ${
+    fg(81)
+  }load${RESET} <cpu> [gpu]  pin the demo's CPU / GPU figures (\`load off\`)`,
   `  ${
     fg(81)
   }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
@@ -1109,6 +1122,9 @@ class DemoShell {
       case "links":
         for (const l of DEMO_LINKS) println(l);
         return;
+      case "load":
+        println(demoLoadCommand(args));
+        return;
       case "qutty-hook":
         if (args[0] !== "say") {
           println(
@@ -1326,6 +1342,7 @@ export function createDemoBackend(): PtyBackend {
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors(),
     linkEdit: (request) => links.edit(request),
+    sysSample: () => Promise.resolve(demoSample()),
     info(id) {
       return attempt(() => {
         const s = get(id);

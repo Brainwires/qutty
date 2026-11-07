@@ -70,6 +70,8 @@ import {
 } from "../../lib/companion/lip-sync.ts";
 import { useLoopyLife } from "./use-loopy-life.ts";
 import { useLoopyDrag } from "./use-loopy-drag.ts";
+import { mayLiven } from "../../lib/companion/loopy-life.ts";
+import { mayShowHot } from "../../lib/sysstats.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -87,6 +89,13 @@ export interface CompanionOverlayProps {
   voice?: VoiceApi;
   /** The hold-to-talk key's label (`⌘⇧M`), or `""` when it is off. */
   pttLabel?: string;
+  /**
+   * Qutty's own: the machine is hot (app/use-sysstats.ts, Settings → System monitor). Loopy wears
+   * its hot face only while it is otherwise idle (lib/sysstats.ts `mayShowHot`).
+   */
+  hot?: boolean;
+  /** The hot face came on (the workspace may say a line about it, rarely). */
+  onHotShown?(): void;
 }
 
 /** What the voice note says in each phase (the error and notes bring their own text). */
@@ -482,6 +491,25 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     dispatch,
   });
 
+  // Hot: only on an otherwise free face (no question, reply, thinking or voice turn).
+  const showHot = mayShowHot({
+    enabled: props.lively !== false,
+    hot: props.hot === true,
+    free: mayLiven({
+      lively: props.lively !== false,
+      state: loopyState,
+      message: current !== undefined,
+      voice: loopyVoiceTurn !== undefined,
+      busy: thinking,
+      awake: true,
+    }) && !life.excited,
+  });
+  const onHotShown = useRef(props.onHotShown);
+  onHotShown.current = props.onHotShown;
+  useEffect(() => {
+    if (showHot) onHotShown.current?.();
+  }, [showHot]);
+
   const status = feed.status;
   const statusLabel = status
     ? `${status.adapter}: ${
@@ -546,7 +574,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
               ? (voice?.level ?? 0) * LEVEL_STEPS
               : talk}
             lively={props.lively !== false}
-            expression={life.expression}
+            expression={showHot ? undefined : life.expression}
+            hot={showHot}
           />
           <button
             ref={pokeRef}

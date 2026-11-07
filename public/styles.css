@@ -392,6 +392,58 @@ kbd {
   color: var(--amber);
 }
 
+/* The system meter (app/sys-meter.tsx): "CPU ▬ 23%  GPU ▬ 61%", two mini bars. */
+.sys-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font: 10.5px/1 var(--mono);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sys-meter.is-vertical {
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+.sys-meter-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sys-meter-bar {
+  position: relative;
+  width: 28px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(var(--hi-rgb), 0.09);
+  overflow: hidden;
+}
+.sys-meter.is-vertical .sys-meter-bar {
+  width: 22px;
+}
+.sys-meter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 600ms ease-out;
+}
+.sys-meter-row[data-level="busy"] .sys-meter-bar > span {
+  background: var(--amber);
+}
+.sys-meter-row[data-level="hot"] .sys-meter-bar > span {
+  background: var(--red);
+}
+.sys-meter-value {
+  min-width: 3ch;
+  color: var(--text-2);
+}
+.app.reduced-motion .sys-meter-bar > span {
+  transition: none;
+}
+
 .chips {
   flex: 1;
   min-width: 0;
@@ -3006,6 +3058,66 @@ kbd {
   filter: drop-shadow(0 0 0.6px var(--loopy-clip))
     drop-shadow(0 0 1.6px var(--loopy-clip));
   transition: filter 400ms ease-out;
+}
+
+/* ---- Loopy is hot (Qutty's own, not one of the example's moods; app/companion/loopy.tsx HotFace,
+   lib/sysstats.ts): the CPU or the GPU has been busy a while and Loopy is otherwise idle. A red-
+   orange tint (its rim and extras), a flushed bead, cheeks, the wow face's tongue out of a panting
+   mouth, sweat drops falling like the sad face's tear, heat rising like the mad face's steam, and a
+   slow, tired sway. The reduced-motion rules above (`.loopy *`) stop every move. */
+.companion-overlay .loopy[data-mood="hot"] {
+  --loopy-clip: #ff6a2b;
+  --loopy-clip-edge: #a8360c;
+  --loopy-clip-shine: #ffd9c2;
+}
+.companion-overlay .loopy-hot-cheeks ellipse {
+  fill: #ff5a3c;
+  opacity: 0.55;
+}
+.companion-overlay .loopy .loopy-sweat path {
+  fill: #9fd4ff;
+  stroke: #3b82c4;
+  stroke-width: 0.8;
+  animation: loopy-fall 2.2s ease-in infinite;
+}
+.companion-overlay .loopy .loopy-sweat path:nth-child(2) {
+  animation-delay: 1.1s;
+}
+.companion-overlay .loopy .loopy-heat path {
+  stroke: light-dark(#e0632a, #ff8a4d);
+  stroke-width: 2.2;
+  opacity: 0.85;
+  animation: loopy-drift 1.4s ease-in-out infinite;
+}
+.companion-overlay .loopy .loopy-heat path:nth-child(2) {
+  animation-delay: 0.45s;
+}
+.companion-overlay .loopy .loopy-heat path:nth-child(3) {
+  animation-delay: 0.9s;
+}
+/* Panting: the open mouth and the tongue breathe together. */
+.companion-overlay .loopy[data-mood="hot"]:not([data-voice="speaking"]) .loopy-mouth,
+.companion-overlay .loopy[data-mood="hot"] .loopy-hot .loopy-tongue {
+  transform-box: view-box;
+  transform-origin: 80px 87px;
+  animation: loopy-pant 0.7s ease-in-out infinite;
+}
+.companion-overlay .loopy[data-mood="hot"][data-state="idle"] .loopy-face {
+  animation: loopy-hot-sway 3.2s ease-in-out infinite;
+}
+@keyframes loopy-pant {
+  50% {
+    transform: scale(1.04, 0.82);
+  }
+}
+@keyframes loopy-hot-sway {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg) translateY(0.6px);
+  }
 }
 
 /* ---- Lively (Settings → Companion; app/companion/use-loopy-life.ts): the pupils follow the

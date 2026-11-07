@@ -134,6 +134,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
+    "sysstats",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -154,6 +155,12 @@ Deno.test("desktop: the links methods go to the links extension as they are", as
     { method: "editors", args: {} },
     { method: "edit", args: { command: "zed {file}", file: "/p/a", line: 2 } },
   ]);
+});
+
+Deno.test("desktop: a system monitor sample is one call to the sysstats extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.sysSample();
+  assertEquals(bridge.calls, [{ method: "sample", args: {} }]);
 });
 
 Deno.test("desktop: spawn subscribes to data and exit before calling the extension", async () => {

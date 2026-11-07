@@ -56,6 +56,16 @@
   first (reopening the window to ask, when it is closed).
 - An agent's `ask_user` question from a tile whose window is closed waits until
   the window is reopened.
+- A lite system monitor, and Loopy gets hot. Settings → System monitor can put a
+  small CPU / GPU meter in the switcher bar ("CPU 23% · GPU 61%", off by
+  default). With Lively on, Loopy looks overheated (a flushed bead, sweat drops,
+  heat rising, a panting mouth) once the CPU or GPU has stayed at or above 85%
+  for 10 seconds, and cools down once both stay below 70% for 10 seconds
+  (thresholds in Settings). It never replaces a question, a reply, thinking or a
+  voice turn. With a spoken alert on, it says so once in a while. The figures
+  are read in the app's own process (Mach and IOKit on macOS, `/proc` on Linux)
+  every 4 seconds while something shows them, every 12 in the background and
+  never while the window is hidden; a reading takes about 0.2 ms.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 

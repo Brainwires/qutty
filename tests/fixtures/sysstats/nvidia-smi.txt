@@ -1,0 +1,3 @@
+utilization.gpu [%]
+37 %
+81 %
