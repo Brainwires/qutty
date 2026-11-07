@@ -145,6 +145,15 @@ export class Registry {
     this.#patch(id, { unread });
   }
 
+  /** The harness's session id (`undefined`: none, e.g. a new session that sent no id). */
+  setSession(id: string, session: string | undefined): void {
+    const tile = this.#tiles.get(id);
+    if (!tile || tile.session === session) return;
+    if (session === undefined) delete tile.session;
+    else tile.session = session;
+    this.#onChange();
+  }
+
   /** The page's title or a new working directory. */
   setMeta(id: string, meta: { label?: string; cwd?: string }): void {
     const patch: Partial<TileInfo> = {};

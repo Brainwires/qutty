@@ -21,6 +21,12 @@ export interface TileInfo {
   name: string;
   /** The agent harness in the tile (`claude`, `codex`, …), once it is known. */
   harness?: string;
+  /**
+   * The harness's session id (`session_id` in Claude Code's and Codex's hooks), once a hook sent
+   * one. A `SessionStart` replaces it (the harness restarted, or `/clear`), and so does any hook
+   * with another id.
+   */
+  session?: string;
   /** The local model it runs on, when started through `ollama launch` (`qwen3.8:27b-mlx`). */
   model?: string;
   /** The tile's title as the page shows it. */

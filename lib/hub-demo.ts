@@ -235,12 +235,15 @@ export function createDemoHub(emit: DemoHubEmit) {
 
     /** Register terminal `id` (an agent tool with its `harness`); returns its hub name. */
     add(id: string, harness?: string, sandbox = false, model?: string): string {
-      return registry.add({
+      const name = registry.add({
         id,
         ...(harness ? { harness } : {}),
         ...(model ? { model } : {}),
         ...(sandbox ? { sandbox } : {}),
       }).name;
+      // A demo agent's SessionStart hook would send its session id.
+      if (harness) registry.setSession(id, `demo-session-${id}`);
+      return name;
     },
     /** Terminal `id` ended: its tile, mailbox and open questions go. */
     remove(id: string): void {

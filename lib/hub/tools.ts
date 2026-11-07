@@ -528,11 +528,18 @@ export function createHubHandler(
   };
 }
 
-/** The harness an MCP client name stands for (`claude-code` → `claude`), if it is a known one. */
+/**
+ * The harness an MCP client name stands for (`claude-code` → `claude`), if it is a known one.
+ * Checked against the installed clients (2026-11): Hermes Agent 0.23 says `hermes-agent`
+ * (`hermes mcp test`), OpenClaw 2026.11 `openclaw-bundle-mcp` (its agent session's MCP runtime,
+ * which `openclaw mcp probe` uses too).
+ */
 export function harnessOfClient(name: string): string | undefined {
   const n = name.toLowerCase();
   if (n.startsWith("claude")) return "claude";
   if (n.includes("codex")) return "codex";
+  if (n.startsWith("hermes")) return "hermes";
+  if (n.startsWith("openclaw")) return "openclaw";
   if (n.includes("gemini")) return "gemini";
   if (n.includes("opencode")) return "opencode";
   return undefined;
