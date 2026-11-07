@@ -1,8 +1,10 @@
 // The shell agent's hub side (lib/hub/shell-agent.ts, desktop/shell-agent.ts) with a fake model:
 // request parsing and bounding, secret redaction, the prompt, the model reply's split into
 // explanation + command, dangerous-command flags, the conversation, the hub words (inbox, say,
-// to, reset, help), the reply lines qutty-agent decodes, the backend choice, Claude Code's
-// headless argv and result; and the rc opt-in (lib/hub/shell-integration.ts) on a temp HOME.
+// to, reset, help), the unread / agent-cancel lines and cancelling a request (aborted: it
+// rejects at once and stays out of the conversation), the reply lines qutty-agent decodes, the
+// backend choice, Claude Code's headless argv and result; and the rc opt-in
+// (lib/hub/shell-integration.ts) on a temp HOME.
 
 import {
   assert,
@@ -13,11 +15,14 @@ import {
   assertThrows,
 } from "@std/assert";
 import {
+  abortable,
   boundHistory,
   buildShellPrompt,
+  CancelledError,
   commentOut,
   dangerFlags,
   handleShellRequest,
+  parseAgentControlLine,
   parseAgentLine,
   parseModelReply,
   pctEncode,
@@ -27,6 +32,7 @@ import {
   ShellConversation,
   type ShellHubOps,
   type ShellRequest,
+  ShellRuns,
   shellSystemPrompt,
 } from "../lib/hub/shell-agent.ts";
 import {
@@ -466,6 +472,157 @@ Deno.test("handleShellRequest: hub words, errors, an empty answer", async () => 
     (await handleShellRequest(request("to x hi"), talk, throwingSend)).error,
     'no tile is called "x"',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// Unread count and cancelling
+// ---------------------------------------------------------------------------------------------
+
+Deno.test("parseAgentControlLine / the request id: unread and agent-cancel lines", () => {
+  assertEquals(parseAgentControlLine('{"qutty":"unread"}'), { kind: "unread" });
+  assertEquals(
+    parseAgentControlLine('{"qutty":"agent-cancel","id":"123-4567"}'),
+    { kind: "cancel", id: "123-4567" },
+  );
+  for (
+    const bad of [
+      '{"qutty":"agent-cancel"}',
+      '{"qutty":"agent-cancel","id":"a b"}',
+      `{"qutty":"agent-cancel","id":"${"x".repeat(65)}"}`,
+      '{"qutty":"agent"}',
+      '{"qutty":"hook"}',
+      "[1]",
+      "nope",
+    ]
+  ) {
+    assertEquals(parseAgentControlLine(bad), undefined, bad);
+  }
+  assertEquals(parseAgentLine('{"qutty":"agent","id":"9-1"}')!.id, "9-1");
+  assertFalse("id" in parseAgentLine('{"qutty":"agent","id":"a;b"}')!);
+  assertFalse("id" in parseAgentLine('{"qutty":"agent"}')!);
+});
+
+Deno.test("ShellRuns: a tile cancels only its own request; finish forgets it", () => {
+  const runs = new ShellRuns();
+  const a = runs.start("pty-1", "r1");
+  assertFalse(runs.cancel("pty-2", "r1"), "another tile's request");
+  assertFalse(runs.cancel("pty-1", "r2"));
+  assertFalse(a.aborted);
+  assert(runs.cancel("pty-1", "r1"));
+  assert(a.aborted);
+  assertEquals(runs.size, 0);
+  assertFalse(runs.cancel("pty-1", "r1"), "only once");
+  // A finished request is gone; finishing an older one keeps a newer one with the same id.
+  const b = runs.start("pty-1", "r3");
+  const c = runs.start("pty-1", "r3");
+  runs.finish("pty-1", "r3", b);
+  assertEquals(runs.size, 1);
+  runs.finish("pty-1", "r3", c);
+  assertEquals(runs.size, 0);
+});
+
+/** A model that answers only when told to, and records the signal it was given. */
+class HangingBrain implements ShellBrain {
+  readonly label = "Hanging";
+  signal: AbortSignal | undefined;
+  answer: (text: string) => void = () => {};
+  complete(_s: string, _p: string, signal?: AbortSignal): Promise<string> {
+    this.signal = signal;
+    return new Promise((r) => this.answer = r);
+  }
+}
+
+Deno.test("handleShellRequest: an aborted request rejects at once, its late answer kept out of the conversation", async () => {
+  const brain = new HangingBrain();
+  const talk = new ShellConversation();
+  talk.add({ request: "before", explanation: "", command: "ls" });
+  const controller = new AbortController();
+  const pending = handleShellRequest(
+    request("list files"),
+    talk,
+    ops(brain),
+    Date.now(),
+    controller.signal,
+  );
+  await new Promise((r) => setTimeout(r, 0));
+  assertEquals(brain.signal, controller.signal, "the backend gets the signal");
+  controller.abort();
+  const reply = await pending;
+  assertEquals([reply.ok, reply.error], [false, "cancelled"]);
+  // The model's answer arrives after the cancel: dropped.
+  brain.answer("Lists.\n```sh\nls -la\n```");
+  await new Promise((r) => setTimeout(r, 0));
+  assertEquals(talk.turns.map((t) => t.request), ["before"]);
+  assertEquals(
+    replyLines(reply),
+    ["error cancelled", "end"],
+  );
+
+  // Already aborted: no model call at all.
+  const fake = new FakeBrain("```sh\nls\n```");
+  const done = new AbortController();
+  done.abort();
+  const early = await handleShellRequest(
+    request("list"),
+    talk,
+    ops(fake),
+    Date.now(),
+    done.signal,
+  );
+  assertEquals([early.ok, early.error, fake.calls.length], [
+    false,
+    "cancelled",
+    0,
+  ]);
+  assertEquals(talk.turns.length, 1);
+});
+
+Deno.test("abortable: passes the result through; a CancelledError on abort", async () => {
+  assertEquals(await abortable(Promise.resolve(1), undefined), 1);
+  const c = new AbortController();
+  assertEquals(await abortable(Promise.resolve(2), c.signal), 2);
+  const p = abortable(new Promise<number>(() => {}), c.signal);
+  c.abort();
+  await assertRejects(() => p, CancelledError, "cancelled");
+  await assertRejects(
+    () =>
+      abortable(
+        Promise.reject(new Error("boom")),
+        new AbortController().signal,
+      ),
+    Error,
+    "boom",
+  );
+});
+
+Deno.test("Ollama: an abort rejects at once (the provider takes no signal)", async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => release = r);
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    async (req) => {
+      await req.json();
+      await held;
+      return Response.json({
+        model: "m",
+        message: { role: "assistant", content: "late" },
+        done: true,
+      });
+    },
+  );
+  try {
+    const brain = new OllamaShellBrain(
+      "m",
+      `http://127.0.0.1:${server.addr.port}`,
+    );
+    const c = new AbortController();
+    const p = brain.complete("SYS", "PROMPT", c.signal);
+    setTimeout(() => c.abort(), 50);
+    await assertRejects(() => p, CancelledError);
+  } finally {
+    release();
+    await server.shutdown();
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

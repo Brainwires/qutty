@@ -10,12 +10,21 @@
 //   app's only `net` permission, loopback to that port), used when it answers `/api/tags`.
 //
 // `auto` (the default) picks Claude Code when it is installed, else a running Ollama.
+//
+// Cancelling (Ctrl-C in `qutty-agent`, an aborted signal): Claude Code's hidden PTY is killed;
+// Ollama's request cannot be stopped (`OllamaChatProvider.chat` takes no signal), so the call
+// rejects at once and the late answer is dropped.
 
 import { ChatOptions, Message } from "@rullama/core";
 import { OllamaChatProvider } from "@rullama/provider";
 import { ensureDir, PtyHost, resolveProgram } from "./pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
-import type { BrainChoice, ShellBrain } from "../lib/hub/shell-agent.ts";
+import {
+  abortable,
+  type BrainChoice,
+  CancelledError,
+  type ShellBrain,
+} from "../lib/hub/shell-agent.ts";
 
 /** How long one model request may take. */
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -103,7 +112,12 @@ export class ClaudeShellBrain implements ShellBrain {
     this.label = `Claude Code (${opts.model})`;
   }
 
-  async complete(system: string, prompt: string): Promise<string> {
+  async complete(
+    system: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (signal?.aborted) throw new CancelledError();
     let output = "";
     let done: (exit: PtyExitEvent) => void = () => {};
     const exited = new Promise<PtyExitEvent>((r) => done = r);
@@ -126,13 +140,25 @@ export class ClaudeShellBrain implements ShellBrain {
     const timeout = new Promise<"timeout">((r) => {
       timer = setTimeout(() => r("timeout"), REQUEST_TIMEOUT_MS);
     });
+    let onAbort = () => {};
+    const aborted = new Promise<"aborted">((r) => {
+      onAbort = () => r("aborted");
+      if (signal?.aborted) onAbort();
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
     try {
-      if (await Promise.race([exited, timeout]) === "timeout") {
+      const end = await Promise.race([exited, timeout, aborted]);
+      if (end === "aborted") {
+        host.kill(id);
+        throw new CancelledError();
+      }
+      if (end === "timeout") {
         host.kill(id);
         throw new Error("Claude Code did not answer in time");
       }
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     }
     return parseClaudeResult(output);
   }
@@ -148,11 +174,19 @@ export class OllamaShellBrain implements ShellBrain {
     this.label = `Ollama (${model})`;
   }
 
-  async complete(system: string, prompt: string): Promise<string> {
-    const response = await this.#provider.chat(
-      [Message.user(prompt)],
-      undefined,
-      new ChatOptions({ temperature: 0.2, max_tokens: 1024, system }),
+  async complete(
+    system: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    // `chat` takes no signal: its fetch runs on, and its answer is dropped.
+    const response = await abortable(
+      this.#provider.chat(
+        [Message.user(prompt)],
+        undefined,
+        new ChatOptions({ temperature: 0.2, max_tokens: 1024, system }),
+      ),
+      signal,
     );
     return response.message.text() ?? "";
   }

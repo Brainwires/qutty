@@ -12,6 +12,11 @@
  * decodes. The model runs behind {@linkcode ShellBrain} (desktop/shell-agent.ts: headless
  * Claude Code, or a local Ollama through `@rullama/provider`).
  *
+ * Two small lines beside the request ({@linkcode parseAgentControlLine}): `{"qutty":"unread"}`
+ * (the plugin's prompt hook asks how many messages wait, to announce new ones) and
+ * `{"qutty":"agent-cancel","id":…}` (Ctrl-C in `qutty-agent`: the request with that id is
+ * aborted, through {@linkcode ShellRuns}, and leaves the conversation as it was).
+ *
  * What reaches the model: the request text, the recent command lines with their exit status
  * and folder, the current folder, the shell and the OS, and this conversation's earlier turns,
  * all with secrets redacted ({@linkcode redactSecrets}). No environment, no file contents, no
@@ -52,6 +57,8 @@ export interface ShellRequest {
   model: string;
   /** Recent commands, oldest first. */
   history: ShellHistoryEntry[];
+  /** The client's id for this request, to cancel it by (absent: it cannot be cancelled). */
+  id?: string;
 }
 
 export type BrainChoice = "auto" | "claude" | "ollama";
@@ -88,24 +95,31 @@ function clean(s: string): string {
   return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
 }
 
+/** `line` parsed as a JSON object, else `undefined`. */
+function jsonObject(line: string): Record<string, unknown> | undefined {
+  try {
+    const v: unknown = JSON.parse(line);
+    return typeof v === "object" && v !== null && !Array.isArray(v)
+      ? v as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A `qutty-agent` line (`{"qutty":"agent","text":…,"history":[…],…}`), validated and bounded;
  * `undefined` when the line is not one.
  */
 export function parseAgentLine(line: string): ShellRequest | undefined {
-  let v: unknown;
-  try {
-    v = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
-  const o = v as Record<string, unknown>;
-  if (o.qutty !== "agent") return undefined;
+  const o = jsonObject(line);
+  if (o?.qutty !== "agent") return undefined;
   const brain = o.brain === "claude" || o.brain === "ollama" ? o.brain : "auto";
   const model = asString(o.model, 64);
   const history = Array.isArray(o.history) ? o.history : [];
+  const id = requestId(o.id);
   return {
+    ...(id ? { id } : {}),
     text: clean(asString(o.text, SHELL_LIMITS.text)).trim(),
     cwd: clean(asString(o.cwd, SHELL_LIMITS.cwd)),
     shell: /^[a-z]{1,16}$/.test(String(o.shell)) ? String(o.shell) : "sh",
@@ -127,6 +141,65 @@ export function parseAgentLine(line: string): ShellRequest | undefined {
       }),
     ),
   };
+}
+
+/** A request id as the client makes one (`<pid>-<random>`), else `undefined`. */
+function requestId(v: unknown): string | undefined {
+  return typeof v === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(v)
+    ? v
+    : undefined;
+}
+
+/** The plugin's small lines: how many messages wait, or cancel a running request. */
+export type AgentControl = { kind: "unread" } | { kind: "cancel"; id: string };
+
+/**
+ * `{"qutty":"unread"}` or `{"qutty":"agent-cancel","id":…}`, else `undefined`. The hub answers
+ * the first with the tile's unread count (one line, a number), the second with `cancelled` or
+ * `none` (no such request running).
+ */
+export function parseAgentControlLine(line: string): AgentControl | undefined {
+  const o = jsonObject(line);
+  if (o?.qutty === "unread") return { kind: "unread" };
+  if (o?.qutty !== "agent-cancel") return undefined;
+  const id = requestId(o.id);
+  return id ? { kind: "cancel", id } : undefined;
+}
+
+/**
+ * The running requests that may be cancelled, per tile: an `AbortController` each, keyed by the
+ * tile and the client's id (a tile can cancel only its own).
+ */
+export class ShellRuns {
+  #runs = new Map<string, AbortController>();
+
+  /** A request starts: the signal its model call watches. */
+  start(tileId: string, id: string): AbortSignal {
+    const controller = new AbortController();
+    this.#runs.set(`${tileId}\n${id}`, controller);
+    return controller.signal;
+  }
+
+  /** It finished (answered, failed or cancelled): forget it, unless a newer one took its id. */
+  finish(tileId: string, id: string, signal: AbortSignal): void {
+    const key = `${tileId}\n${id}`;
+    if (this.#runs.get(key)?.signal === signal) this.#runs.delete(key);
+  }
+
+  /** Cancel tile `tileId`'s request `id`: whether one was running. */
+  cancel(tileId: string, id: string): boolean {
+    const key = `${tileId}\n${id}`;
+    const controller = this.#runs.get(key);
+    if (!controller) return false;
+    this.#runs.delete(key);
+    controller.abort(new Error("cancelled"));
+    return true;
+  }
+
+  /** How many are running (tests). */
+  get size(): number {
+    return this.#runs.size;
+  }
 }
 
 /** The last {@linkcode SHELL_LIMITS.history} entries, each command line clipped. */
@@ -432,11 +505,48 @@ export function commentOut(command: string): string {
 // Handling one request
 // ---------------------------------------------------------------------------------------------
 
-/** A model backend: one request in, the model's text out. No tools, nothing run. */
+/**
+ * A model backend: one request in, the model's text out. No tools, nothing run. When `signal`
+ * aborts, the call stops (or at least rejects at once, its late answer dropped).
+ */
 export interface ShellBrain {
   /** What the reply's footer names (`Claude Code (haiku)`, `Ollama (llama3.2)`). */
   readonly label: string;
-  complete(system: string, prompt: string): Promise<string>;
+  complete(
+    system: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
+}
+
+/** The error a cancelled request rejects with. */
+export class CancelledError extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "CancelledError";
+  }
+}
+
+/**
+ * `promise`, or a {@linkcode CancelledError} as soon as `signal` aborts (the promise's own
+ * result, arriving later, is dropped).
+ */
+export function abortable<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    promise.catch(() => {});
+    return Promise.reject(new CancelledError());
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new CancelledError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() =>
+      signal.removeEventListener("abort", onAbort)
+    );
+  });
 }
 
 /** What the plugin shows. */
@@ -472,7 +582,9 @@ const HELP = [
   "  , reset            forget this conversation",
   "  , help             this help",
   "Settings: QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude | ollama),",
-  "QUTTY_AGENT_MODEL (default: haiku for Claude Code, the first model for Ollama).",
+  "QUTTY_AGENT_MODEL (default: haiku for Claude Code, the first model for Ollama),",
+  "QUTTY_AGENT_NOTIFY_EVERY (seconds between new-message checks at the prompt, default 5;",
+  "off: never). Ctrl-C while the model thinks cancels the request.",
 ].join("\n");
 
 const ok = (
@@ -500,13 +612,16 @@ function ago(at: number, now: number): string {
 /**
  * Answer one request: a built-in word (`inbox`, `say`, `to`, `reset`, `help`), else the model.
  * The model's command is flagged ({@linkcode dangerFlags}); a blocked one lands commented out.
- * Never throws: failures come back as `{ ok: false, error }`.
+ * When `signal` aborts (Ctrl-C in `qutty-agent`), the model call is abandoned, the answer is the
+ * error `cancelled`, and nothing is added to the conversation. Never throws: failures come back
+ * as `{ ok: false, error }`.
  */
 export async function handleShellRequest(
   req: ShellRequest,
   conversation: ShellConversation,
   ops: ShellHubOps,
   now = Date.now(),
+  signal?: AbortSignal,
 ): Promise<ShellReply> {
   const [word = "", ...rest] = req.text.split(/\s+/);
   const tail = req.text.slice(word.length).trim();
@@ -543,11 +658,16 @@ export async function handleShellRequest(
       }
     }
     const text = req.text || "next";
-    const brain = await ops.brain(req.brain, req.model);
-    const raw = await brain.complete(
-      shellSystemPrompt(req.shell, req.os),
-      buildShellPrompt({ ...req, text }, conversation.turns),
+    const brain = await abortable(ops.brain(req.brain, req.model), signal);
+    const raw = await abortable(
+      brain.complete(
+        shellSystemPrompt(req.shell, req.os),
+        buildShellPrompt({ ...req, text }, conversation.turns),
+        signal,
+      ),
+      signal,
     );
+    if (signal?.aborted) throw new CancelledError();
     const parsed = parseModelReply(raw);
     if (!parsed.explanation && !parsed.command) {
       return failed(`${brain.label} gave an empty answer`);

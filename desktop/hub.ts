@@ -105,11 +105,14 @@ import {
 } from "../lib/hub/shell-scripts.ts";
 import { shellAgentPaths } from "../lib/hub/shell-integration.ts";
 import {
+  type AgentControl,
   handleShellRequest,
+  parseAgentControlLine,
   parseAgentLine,
   replyLines,
   ShellConversation,
   type ShellRequest,
+  ShellRuns,
 } from "../lib/hub/shell-agent.ts";
 import {
   chooseShellBrain,
@@ -313,9 +316,10 @@ export class HubService {
   #tcpQueue: ConnectionQueue | undefined;
   /** Sandboxed tiles' tokens → tile ids. */
   #tokens = new Map<string, string>();
-  /** The shell agent: its backends, and each tile's conversation. */
+  /** The shell agent: its backends, each tile's conversation, the requests Ctrl-C may cancel. */
   #shellBrains: ShellBrainDeps;
   #shellTalks = new Map<string, ShellConversation>();
+  #shellRuns = new ShellRuns();
   /** Codex's verdict on Qutty's installed hooks: asked once per start, again after an Install. */
   #codexHooks: () => Promise<ListedCodexHook[] | undefined>;
   #codexTrust: Promise<CodexTrustCheck | undefined> | undefined;
@@ -562,6 +566,13 @@ export class HubService {
       }));
       return { action: "close", reply: JSON.stringify(reply) };
     }
+    const control = parseAgentControlLine(line);
+    if (control) {
+      return {
+        action: "close",
+        reply: this.shellControl(identity.tileId, control),
+      };
+    }
     const agent = parseAgentLine(line);
     if (agent) {
       return {
@@ -582,17 +593,39 @@ export class HubService {
     return { action: "mcp" };
   }
 
-  /** A shell agent request from tile `tileId` (`qutty-agent`): the model, or a hub word. */
-  shellRequest(tileId: string, req: ShellRequest) {
+  /**
+   * A shell agent request from tile `tileId` (`qutty-agent`): the model, or a hub word. One
+   * with an id can be cancelled ({@linkcode shellControl}) while it runs.
+   */
+  async shellRequest(tileId: string, req: ShellRequest) {
     let talk = this.#shellTalks.get(tileId);
     if (!talk) this.#shellTalks.set(tileId, talk = new ShellConversation());
     const me: HubIdentity = { role: "tile", tileId };
-    return handleShellRequest(req, talk, {
-      inbox: () => this.core.read(me),
-      send: (to, text) => this.core.send(me, to, text).map((m) => m.to),
-      brain: (choice, model) =>
-        chooseShellBrain(this.#shellBrains, choice, model),
-    });
+    const signal = req.id ? this.#shellRuns.start(tileId, req.id) : undefined;
+    try {
+      return await handleShellRequest(
+        req,
+        talk,
+        {
+          inbox: () => this.core.read(me),
+          send: (to, text) => this.core.send(me, to, text).map((m) => m.to),
+          brain: (choice, model) =>
+            chooseShellBrain(this.#shellBrains, choice, model),
+        },
+        Date.now(),
+        signal,
+      );
+    } finally {
+      if (req.id && signal) this.#shellRuns.finish(tileId, req.id, signal);
+    }
+  }
+
+  /** The plugin's small lines: tile `tileId`'s unread count, or cancel one of its requests. */
+  shellControl(tileId: string, control: AgentControl): string {
+    if (control.kind === "unread") {
+      return String(this.core.mailboxes.unread(tileId));
+    }
+    return this.#shellRuns.cancel(tileId, control.id) ? "cancelled" : "none";
   }
 
   // --- the TCP endpoint (sandboxed tiles) ----------------------------------------------------
