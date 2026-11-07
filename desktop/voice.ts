@@ -13,7 +13,8 @@
 // - Push-to-talk: `sttStart` opens the microphone (the library's capture), `sttStop` stops it and
 //   answers with the transcript: on-device Whisper, or the audio sent to the cloud engine the user
 //   picked (Deepgram, ElevenLabs; `@rullama/provider-speech`) with the key the page read from the
-//   OS keychain. Nothing is sent anywhere else.
+//   OS keychain. Nothing is sent anywhere else. While it listens, the microphone's level goes to
+//   the page as `level` events, 20 a second at most (lib/voice/level.ts), for Loopy's pulse.
 // - Cloud speech: Deepgram Aura's WAV, played by the library (`speak` / `speakStop`).
 //
 // Nothing here may throw into the app's startup: the library and the model are found lazily.
@@ -46,6 +47,7 @@ import {
   ModelStore,
 } from "../lib/voice/model.ts";
 import type { CaptureEngine, VoiceStatus } from "../lib/voice/client.ts";
+import { LEVEL_MS, levelGate, normalizeLevel } from "../lib/voice/level.ts";
 
 /** How long a transcription may take. */
 const TRANSCRIBE_TIMEOUT_MS = 120_000;
@@ -139,9 +141,16 @@ class VoiceService {
   #libError: { reason: string; searched: string[] } | undefined;
   #capture: { engine: CaptureEngine; key?: string } | undefined;
   #speaking = 0;
+  #emitLevel: (level: number) => void;
+  #meter: ReturnType<typeof setInterval> | undefined;
 
-  constructor(appSupportDir: string, emit: (state: ModelState) => void) {
+  constructor(
+    appSupportDir: string,
+    emit: (state: ModelState) => void,
+    emitLevel: (level: number) => void,
+  ) {
     this.#appSupportDir = appSupportDir;
+    this.#emitLevel = emitLevel;
     this.model = new ModelStore({
       appSupportDir,
       files,
@@ -205,7 +214,10 @@ class VoiceService {
 
   async start(engine: CaptureEngine, key?: string): Promise<void> {
     const lib = this.lib();
-    if (this.#capture) lib.cancel();
+    if (this.#capture) {
+      this.#stopMeter();
+      lib.cancel();
+    }
     if (engine === "local") {
       const state = await this.model.check();
       if (state.state !== "ready") {
@@ -222,12 +234,34 @@ class VoiceService {
     if (lib.state() !== CaptureState.idle) lib.cancel();
     lib.startCapture();
     this.#capture = { engine, ...(key ? { key } : {}) };
+    this.#startMeter(lib);
+  }
+
+  /** The level to the page while capturing: read every {@linkcode LEVEL_MS}, sent when it moved. */
+  #startMeter(lib: AudioLib): void {
+    this.#stopMeter();
+    const changed = levelGate();
+    this.#meter = setInterval(() => {
+      const level = lib.state() === CaptureState.capturing
+        ? normalizeLevel(lib.level())
+        : 0;
+      if (changed(level)) this.#emitLevel(level);
+    }, LEVEL_MS);
+  }
+
+  /** Stop sending the level, and settle the pulse (0). */
+  #stopMeter(): void {
+    if (this.#meter === undefined) return;
+    clearInterval(this.#meter);
+    this.#meter = undefined;
+    this.#emitLevel(0);
   }
 
   async stop(): Promise<string> {
     const capture = this.#capture;
     if (!capture) throw new DesktopCapError("validation", "not listening");
     this.#capture = undefined;
+    this.#stopMeter();
     const lib = this.lib();
     if (capture.engine === "local") {
       lib.stopCapture();
@@ -260,6 +294,7 @@ class VoiceService {
 
   cancel(): void {
     this.#capture = undefined;
+    this.#stopMeter();
     this.#lib?.cancel();
   }
 
@@ -342,6 +377,7 @@ async function selfTest(voice: VoiceService, wav: string): Promise<void> {
 
 let service: VoiceService | undefined;
 let emitModel: (state: ModelState) => void = () => {};
+let emitLevel: (level: number) => void = () => {};
 
 function requireService(): VoiceService {
   if (!service) throw new DesktopCapError("unavailable", "voice is not ready");
@@ -376,10 +412,15 @@ const speakInput = objectSchema<{ text: string; key: string; model?: string }>(
 
 export default defineDesktopExtension({
   name: "voice",
-  events: ["model"],
+  events: ["model", "level"],
   setup: (host) => {
-    service = new VoiceService(host.appSupportDir, (s) => emitModel(s));
+    service = new VoiceService(
+      host.appSupportDir,
+      (s) => emitModel(s),
+      (level) => emitLevel(level),
+    );
     emitModel = (state) => host.emit("model", state);
+    emitLevel = (level) => host.emit("level", { level });
     // A check of the packaged app's voice path without the UI or the microphone (see TODO.md):
     // QUTTY_VOICE_SELFTEST=<a WAV file> logs the library, fetches the model if needed, transcribes
     // the file, and plays it once.

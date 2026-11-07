@@ -22,7 +22,8 @@
 // answer is read aloud, a stop button. With review on, a transcript waits in the chat box with
 // Send / Edit / Cancel before it goes to the companion (or, in dictate mode, the focused tile).
 // Loopy shows the voice turn as the example does: it listens (the head glows), thinks while the
-// transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync).
+// transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync). While
+// it listens, its head swells with the microphone's level (`voice.level`).
 //
 // Lively (app/companion/use-loopy-life.ts): with nothing on screen, Loopy makes small faces now
 // and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
@@ -58,7 +59,11 @@ import type { AskRequest } from "../../lib/hub/protocol.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
 import type { VoiceApi } from "../use-voice.ts";
 import type { VoicePhase } from "../../lib/voice/controller.ts";
-import { TALK_STEP_MS, talkStep } from "../../lib/companion/lip-sync.ts";
+import {
+  LEVEL_STEPS,
+  TALK_STEP_MS,
+  talkStep,
+} from "../../lib/companion/lip-sync.ts";
 import { useLoopyLife } from "./use-loopy-life.ts";
 
 export interface CompanionOverlayProps {
@@ -519,7 +524,9 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             mood={loopyMood(current, model.loopy.state) ??
               (life.excited && !loopyVoiceTurn ? "excited" : undefined)}
             voice={loopyVoiceTurn}
-            level={talk}
+            level={loopyVoiceTurn === "listening"
+              ? (voice?.level ?? 0) * LEVEL_STEPS
+              : talk}
             lively={props.lively !== false}
             expression={life.expression}
           />

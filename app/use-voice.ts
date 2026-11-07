@@ -3,6 +3,8 @@
 // key — through the speech-to-text engine picked in Settings → Voice. The transcript goes to the
 // companion (`companionSend(text, "voice")`), to the summary request, or, in dictate mode, is typed
 // into the focused tile. Talking (or pressing the mic) stops whatever is being said: barge-in.
+// While it listens, the microphone's level (0–1, about 20 times a second) is followed for Loopy's
+// pulse, and drops back to 0 when listening stops.
 //
 // In the browser demo the engines are fakes (lib/voice/client.ts `createDemoVoice`, a timed TTS),
 // which the e2e suite drives through `window.__e2eVoice` in test mode.
@@ -56,6 +58,8 @@ export interface VoiceApi {
   state: VoiceState;
   /** Something is being said. */
   speaking: boolean;
+  /** The microphone's level (0–1) while listening; 0 otherwise. */
+  level: number;
   voice: VoiceBackend | undefined;
   keys: KeyStore;
   press(): void;
@@ -75,6 +79,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   const { backend } = opts;
   const [state, setState] = useState<VoiceState>(IDLE_VOICE);
   const [speaking, setSpeaking] = useState(false);
+  const [level, setLevel] = useState(0);
 
   // The voice backend and the demo script (published for the e2e suite in test mode).
   const { voice, script } = useMemo(() => {
@@ -129,6 +134,17 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       onState: setState,
     });
   }, [voice, backend, queue]);
+
+  // The microphone's level while listening (the pulse); back to 0 once it stops.
+  const listening = state.phase === "starting" || state.phase === "listening";
+  useEffect(() => {
+    if (!voice || !listening) return;
+    const off = voice.onLevel(setLevel);
+    return () => {
+      off();
+      setLevel(0);
+    };
+  }, [voice, listening]);
 
   // Answers read aloud.
   useEffect(() => {
@@ -207,6 +223,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   return {
     state,
     speaking,
+    level: listening ? level : 0,
     voice,
     keys: keychain,
     press: () => void controller?.press(),

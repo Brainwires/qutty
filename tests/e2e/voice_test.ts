@@ -1,8 +1,8 @@
 // The voice layer against the demo backend, with fake engines (lib/voice/client.ts
 // `createDemoVoice`: scripted transcripts, no microphone; a timed TTS that records what it says):
-// the mic button's hold / latch states, the hold-to-talk key (never reaching the terminal), the
-// transcript review (Send / Edit / Cancel), dictate mode, spoken answers and barge-in, the
-// Summarize button, spoken event alerts, and Settings → Voice.
+// the mic button's hold / latch states, the listening pulse (the fake's level), the hold-to-talk
+// key (never reaching the terminal), the transcript review (Send / Edit / Cancel), dictate mode,
+// spoken answers and barge-in, the Summarize button, spoken event alerts, and Settings → Voice.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
@@ -57,6 +57,19 @@ async function center(app: App, selector: string) {
     const r = document.querySelector(s)!.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }, selector);
+}
+
+/** Loopy's listening pulse (`--loopy-listen` on the avatar, 0–1). */
+async function listenLevel(app: App): Promise<number> {
+  return Number(
+    await app.eval(
+      (s: string) =>
+        document.querySelector<SVGElement>(s)?.style.getPropertyValue(
+          "--loopy-listen",
+        ) || "0",
+      LOOPY,
+    ),
+  );
 }
 
 /** Hold the mic button for `ms`. */
@@ -137,6 +150,37 @@ suite("voice", (test) => {
       BUBBLE_TEXT,
     );
     assert(!text.includes("never mind"), text);
+  });
+
+  test("listening: Loopy's head pulses with the microphone's level, and settles once the mic is let go", async (app) => {
+    await waitFor(() => app.exists(MIC), 3000, "the mic button");
+    assertEquals(await listenLevel(app), 0, "still before listening");
+    await willHear(app, "a pulse");
+    const { x, y } = await center(app, MIC);
+    await app.page.mouse.move(x, y);
+    await app.page.mouse.down();
+    // The demo's fake level arrives about 20 times a second, and moves.
+    const seen = new Set<number>();
+    await waitFor(
+      async () => {
+        const level = await listenLevel(app);
+        if (level > 0) seen.add(level);
+        return seen.size >= 3;
+      },
+      3000,
+      "the pulse following the level",
+    );
+    assert([...seen].every((l) => l > 0 && l <= 1), String([...seen]));
+    // Held long enough to be a hold, not the short click that latches.
+    await new Promise((r) => setTimeout(r, 500));
+    await app.page.mouse.up();
+    await waitFor(() => app.exists(REVIEW), 3000, "the review box");
+    await waitFor(
+      async () => (await listenLevel(app)) === 0,
+      2000,
+      "the pulse settled",
+    );
+    assert(await app.attr(LOOPY, "data-voice") !== "listening");
   });
 
   test("a short click latches listening; the next click stops", async (app) => {
