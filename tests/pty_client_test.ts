@@ -93,11 +93,12 @@ class FakeBridge {
   hub(event: "tiles" | "ask" | "askClosed", data: unknown): void {
     for (const h of this.handlers.get(`hub:${event}`) ?? []) h(data);
   }
+  // The extension sends a terminal's events as `{ id, data }` (desktop/terminal-sessions.ts).
   data(id: string, seq: number, data: string): void {
-    this.fire("data", { id, seq, data });
+    this.fire("data", { id, data: { seq, data } });
   }
   exit(id: string, exitCode = 0, signal: number | null = null): void {
-    this.fire("exit", { id, exitCode, signal });
+    this.fire("exit", { id, data: { exitCode, signal } });
   }
 }
 
@@ -133,6 +134,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
+    "session",
   ]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");

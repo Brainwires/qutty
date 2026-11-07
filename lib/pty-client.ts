@@ -69,6 +69,13 @@ import type {
 import type { BrainEngine } from "./companion/settings.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
+import {
+  createDemoSession,
+  createDesktopSession,
+  type SessionBackend,
+  type SessionWindowDeps,
+} from "./session-client.ts";
+import { quitApp, setTitleBarStyle } from "denext/desktop/window";
 
 export type {
   SshCommand,
@@ -133,6 +140,8 @@ export interface PtyExit {
 /** A PTY backend: the desktop extension or the in-browser demo shell. */
 export interface PtyBackend {
   readonly kind: "desktop" | "demo";
+  /** The workspaces: join this window's and save it (lib/session-client.ts). */
+  readonly session: SessionBackend;
   spawn(options: PtySpawnOptions): Promise<PtySpawned>;
   /**
    * Send input. `binary` marks xterm `onBinary` data (one byte per char, e.g. legacy mouse
@@ -369,6 +378,17 @@ export class PtyEvents {
     };
   }
 
+  /**
+   * Terminal `id` was handed to this page with its replay (which holds everything so far): drop
+   * the output buffered for it from the event stream's own replay.
+   */
+  forget(id: string): void {
+    const u = this.#unclaimed.get(id);
+    if (!u) return;
+    clearTimeout(u.timer);
+    this.#unclaimed.delete(id);
+  }
+
   onExit(id: string, cb: (exit: PtyExit) => void): () => void {
     const done = this.#exited.get(id);
     if (done) {
@@ -395,7 +415,12 @@ export class PtyEvents {
 export interface DesktopBridgeDeps {
   desktopExtension: typeof desktopExtension;
   onDesktopEvent: typeof onDesktopEvent;
+  /** The window calls of the workspaces (default `denext/desktop/window`'s). */
+  window?: SessionWindowDeps;
 }
+
+/** A PTY event as the page receives it: the terminal's id and the event's own data. */
+type PtyEventOf<T extends { id: string }> = { id: string; data: Omit<T, "id"> };
 
 /**
  * A new desktop backend (the app uses the {@linkcode desktopBackend} singleton). `deps` defaults
@@ -405,6 +430,7 @@ export function createDesktopBackend(
   deps: DesktopBridgeDeps = { desktopExtension, onDesktopEvent },
 ): PtyBackend {
   const { desktopExtension, onDesktopEvent } = deps;
+  const windowDeps = deps.window ?? { quitApp, setTitleBarStyle };
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");
@@ -489,20 +515,36 @@ export function createDesktopBackend(
   const listen = () => {
     if (listening) return;
     listening = true;
-    onDesktopEvent<PtyDataEvent>("pty", "data", ({ id, seq, data }) => {
-      if (seq <= (lastSeq.get(id) ?? 0)) return;
-      lastSeq.set(id, seq);
-      events.emitData(id, data);
+    // Each terminal's events reach the window showing its workspace only, as `{ id, data }`
+    // (denext's owned resources, desktop/terminal-sessions.ts).
+    onDesktopEvent<PtyEventOf<PtyDataEvent>>("pty", "data", (e) => {
+      const { seq, data } = e.data;
+      if (seq <= (lastSeq.get(e.id) ?? 0)) return;
+      lastSeq.set(e.id, seq);
+      events.emitData(e.id, data);
     });
-    onDesktopEvent<PtyExitEvent>("pty", "exit", ({ id, exitCode, signal }) => {
+    onDesktopEvent<PtyEventOf<PtyExitEvent>>("pty", "exit", (e) => {
       // `lastSeq` is kept after the exit: a replay of the stream re-sends the dead terminal's
       // output too, and must be dropped like any other repeat (one number per terminal).
-      events.emitExit(id, { exitCode, signal });
+      events.emitExit(e.id, {
+        exitCode: e.data.exitCode,
+        signal: e.data.signal,
+      });
     });
   };
 
   return {
     kind: "desktop",
+    session: createDesktopSession({
+      desktopExtension,
+      onDesktopEvent,
+      window: windowDeps,
+      listen,
+      adopt: (id, seq) => {
+        events.forget(id);
+        lastSeq.set(id, Math.max(seq, lastSeq.get(id) ?? 0));
+      },
+    }),
     async spawn(options) {
       // Subscribe first: the shell's first output can arrive before `spawn` resolves.
       listen();
@@ -1187,15 +1229,18 @@ export function createDemoBackend(): PtyBackend {
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
+  const session = createDemoSession();
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
     hub.remove(id);
+    session.recordExit(id, e);
     events.emitExit(id, e);
   };
 
   return {
     kind: "demo",
+    session,
     spawn(options) {
       // `ssh` and the demo agent tools are programs the demo knows; anything else is the demo
       // shell under its name.
@@ -1218,7 +1263,10 @@ export function createDemoBackend(): PtyBackend {
         id,
         options.cols,
         options.rows,
-        (data) => events.emitData(id, data),
+        (data) => {
+          session.recordData(id, data);
+          events.emitData(id, data);
+        },
         (e) => setTimeout(() => end(id, e), 0),
         hub,
         {
@@ -1230,6 +1278,7 @@ export function createDemoBackend(): PtyBackend {
         },
       );
       shells.set(id, shell);
+      session.recordSpawn(id, options.cols, options.rows);
       hub.add(id, agent?.name, options.sandbox === true, launched?.model);
       // Like a real shell, output arrives after spawn resolves (and is buffered until onData).
       setTimeout(() => {
@@ -1250,10 +1299,12 @@ export function createDemoBackend(): PtyBackend {
         const s = get(id);
         s.cols = cols;
         s.rows = rows;
+        session.recordResize(id, cols, rows);
       });
     },
     kill(id) {
       if (shells.has(id)) end(id, { exitCode: 0, signal: 1 });
+      session.release(id);
       return Promise.resolve();
     },
     keyBindings() {

@@ -22,11 +22,17 @@
 // OSC 7 reports are recorded as the remote working directory, for SSH tiles only (where a file
 // dropped on the tile is uploaded to).
 //
+// Detach / reattach: a terminal's PTY outlives the page (desktop/terminal-sessions.ts). `adopt`
+// rebuilds a terminal on a PTY that already runs, from its replay (lib/workspace/replay.ts), and
+// `detachAll` (the page going away) disposes the xterm instances but leaves the PTYs running. A
+// terminal's PTY is released (`kill`) when its tile closes, also once it ended.
+//
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
 
 import { FitAddon, type ITheme, Terminal, WebglAddon } from "./xterm.ts";
 import type { PtyBackend, PtyExit, PtyProcessInfo } from "./pty-client.ts";
+import type { JoinedPty } from "./workspace/session.ts";
 import type { KeyLike } from "./workspace/keys.ts";
 import {
   compileKeyBindings,
@@ -131,6 +137,8 @@ interface Managed {
   /** The foreground process's directory, read for links (cached for a moment). */
   infoCwd: { at: number; cwd: string | undefined } | undefined;
   links: TerminalLinks | null;
+  /** Rebuilt on a running PTY: a full-screen program is nudged to redraw once it is shown. */
+  adopted: boolean;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -328,6 +336,7 @@ export class TerminalManager {
       localCwd: undefined,
       infoCwd: undefined,
       links: null,
+      adopted: false,
     };
     this.#terms.set(id, m);
     // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. An SSH tile's is remote (where
@@ -385,9 +394,64 @@ export class TerminalManager {
       if (m.term.element) m.links?.attach(m.term.element);
       this.#tryWebgl(m);
     }
+    const before = { cols: m.term.cols, rows: m.term.rows };
     this.fitNow(id);
     this.focusPending(id);
-    if (!m.ptyId && !m.spawning) void this.#spawn(m);
+    if (m.adopted) {
+      m.adopted = false;
+      this.#nudge(m, before);
+    }
+    if (!m.ptyId && !m.spawning && !m.exited) void this.#spawn(m);
+  }
+
+  /**
+   * Rebuild terminal `id` (running `profile`) on a PTY that already runs: the xterm starts at the
+   * PTY's size, redraws its replay, then follows its output (or shows how it ended). With no
+   * `pty` (it is gone) the terminal shows that it ended; a shell starts again on Enter.
+   */
+  adopt(
+    id: string,
+    profile: TerminalProfile,
+    pty: JoinedPty | undefined,
+    home?: string,
+  ): void {
+    this.create(id, profile);
+    const m = this.#terms.get(id)!;
+    m.home = home;
+    if (!pty) {
+      m.exited = true;
+      m.term.write(
+        `${DIM}[this terminal ended while its window was closed]${RESET}\r\n`,
+      );
+      return;
+    }
+    m.ptyId = pty.id;
+    m.adopted = true;
+    if (pty.cols !== m.term.cols || pty.rows !== m.term.rows) {
+      m.term.resize(Math.max(2, pty.cols), Math.max(1, pty.rows));
+    }
+    if (pty.data) m.term.write(pty.data);
+    if (pty.exit) {
+      m.exited = true;
+      m.term.write(`\r\n${DIM}${exitBanner(m.profile, pty.exit)}${RESET}\r\n`);
+      return;
+    }
+    this.#wire(m, pty.id);
+  }
+
+  /**
+   * A full-screen program (the alternate screen is up after the replay) redraws only when its
+   * size changes: when the fit kept the size, resize its PTY one row smaller and back.
+   */
+  #nudge(m: Managed, before: { cols: number; rows: number }): void {
+    if (!m.ptyId || m.exited || m.term.buffer.active.type !== "alternate") {
+      return;
+    }
+    if (m.term.cols !== before.cols || m.term.rows !== before.rows) return;
+    const { cols, rows } = m.term;
+    const pty = m.ptyId;
+    void this.#backend.resize(pty, cols, Math.max(1, rows - 1))
+      .then(() => this.#backend.resize(pty, cols, rows)).catch(() => {});
   }
 
   /** Clickable links for `m` (lib/terminal-links.ts): where its paths point, and what a click does. */
@@ -461,21 +525,7 @@ export class TerminalManager {
       m.ptyId = spawned.id;
       m.home ??= spawned.cwd;
       m.exited = false;
-      m.unsubs.push(this.#backend.onData(spawned.id, (data) => {
-        if (m.disposed) return;
-        m.term.write(data);
-        const now = Date.now();
-        if (now - m.lastActivity >= ACTIVITY_THROTTLE_MS) {
-          m.lastActivity = now;
-          this.#events.onActivity(m.id);
-        }
-      }));
-      m.unsubs.push(this.#backend.onExit(spawned.id, (exit) => {
-        if (m.disposed || m.ptyId !== spawned.id) return;
-        m.exited = true;
-        m.term.write(`\r\n${DIM}${exitBanner(m.profile, exit)}${RESET}\r\n`);
-        this.#events.onExit(m.id, exit);
-      }));
+      this.#wire(m, spawned.id);
       // The size may have changed while spawning.
       if (m.term.cols !== cols || m.term.rows !== rows) {
         void this.#backend.resize(spawned.id, m.term.cols, m.term.rows).catch(
@@ -491,6 +541,25 @@ export class TerminalManager {
     } finally {
       m.spawning = false;
     }
+  }
+
+  /** Follow PTY `ptyId`'s output and exit in terminal `m`. */
+  #wire(m: Managed, ptyId: string): void {
+    m.unsubs.push(this.#backend.onData(ptyId, (data) => {
+      if (m.disposed) return;
+      m.term.write(data);
+      const now = Date.now();
+      if (now - m.lastActivity >= ACTIVITY_THROTTLE_MS) {
+        m.lastActivity = now;
+        this.#events.onActivity(m.id);
+      }
+    }));
+    m.unsubs.push(this.#backend.onExit(ptyId, (exit) => {
+      if (m.disposed || m.ptyId !== ptyId) return;
+      m.exited = true;
+      m.term.write(`\r\n${DIM}${exitBanner(m.profile, exit)}${RESET}\r\n`);
+      this.#events.onExit(m.id, exit);
+    }));
   }
 
   /**
@@ -550,6 +619,8 @@ export class TerminalManager {
     const m = this.#terms.get(id);
     if (!m || m.disposed || m.spawning || !m.exited) return;
     for (const u of m.unsubs.splice(0)) u();
+    // The ended PTY is released (the backend keeps an ended one for a reattach until then).
+    if (m.ptyId) void this.#backend.kill(m.ptyId).catch(() => {});
     m.ptyId = null;
     m.exited = false;
     m.remoteCwd = undefined;
@@ -646,6 +717,11 @@ export class TerminalManager {
     return this.#terms.get(id)?.ptyId ?? null;
   }
 
+  /** The folder terminal `id`'s shell started in (titles are shortened against it). */
+  home(id: string): string | undefined {
+    return this.#terms.get(id)?.home;
+  }
+
   /** An SSH tile's remote working directory, from its last OSC 7 report. */
   remoteCwd(id: string): string | undefined {
     return this.#terms.get(id)?.remoteCwd;
@@ -692,8 +768,8 @@ export class TerminalManager {
     };
   }
 
-  /** Kill the PTY and dispose the xterm instance. */
-  dispose(id: string): void {
+  /** Kill (or, once it ended, release) the PTY and dispose the xterm instance. */
+  dispose(id: string, keepPty = false): void {
     const m = this.#terms.get(id);
     if (!m) return;
     m.disposed = true;
@@ -701,7 +777,7 @@ export class TerminalManager {
     if (m.fitTimer !== undefined) clearTimeout(m.fitTimer);
     for (const u of m.unsubs.splice(0)) u();
     m.links?.dispose();
-    if (m.ptyId && !m.exited) void this.#backend.kill(m.ptyId).catch(() => {});
+    if (m.ptyId && !keepPty) void this.#backend.kill(m.ptyId).catch(() => {});
     try {
       m.webgl?.dispose();
     } catch { /* ignore */ }
@@ -710,10 +786,13 @@ export class TerminalManager {
     } catch { /* ignore */ }
   }
 
-  /** Dispose everything (page unload / unmount). */
-  disposeAll(): void {
+  /**
+   * Dispose every xterm instance (the page goes away). The PTYs keep running for the next window
+   * that shows this workspace, unless `killPtys`.
+   */
+  disposeAll(killPtys = false): void {
     this.#unwatchFonts?.();
     this.#unwatchFonts = null;
-    for (const id of [...this.#terms.keys()]) this.dispose(id);
+    for (const id of [...this.#terms.keys()]) this.dispose(id, !killPtys);
   }
 }

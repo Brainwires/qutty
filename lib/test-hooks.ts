@@ -55,6 +55,7 @@ export function withBackendSpy(
 ): PtyBackend {
   return {
     kind: backend.kind,
+    session: backend.session,
     spawn: (o) => backend.spawn(o),
     write: (id, data, options) => backend.write(id, data, options),
     resize: (id, cols, rows) => {
