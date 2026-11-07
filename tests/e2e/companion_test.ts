@@ -429,7 +429,7 @@ suite("companion", (test) => {
     { width: 1280, height: 800 },
   );
 
-  test("look: Loopy's face is the example's, 2.5 times the clip's head, with its moods, rim and moves", async (app) => {
+  test("look: Loopy's face is the example's, 2 times the clip's head, with its moods, rim and moves", async (app) => {
     await landed(app);
     const snap = JSON.parse(
       await Deno.readTextFile(
@@ -537,7 +537,7 @@ suite("companion", (test) => {
       "smaller than the whole clip was (120 x 150)",
     );
     // The clip's head was 43.5 px across in its 120 x 150 window.
-    assertEquals(drawn.bead.size, 43.5 * 2.5, "the head 2.5 times the clip's");
+    assertEquals(drawn.bead.size, 43.5 * 2, "the head 2 times the clip's");
     assertEquals(drawn.wire, 0, "no wire body");
     // The poke target is the whole bead.
     const near = (a: number, b: number) => Math.abs(a - b) < 1;
@@ -589,7 +589,7 @@ suite("companion", (test) => {
       "240px",
       "13.5px",
       "14px",
-      "74px",
+      "62px",
       "-8px",
     ]);
   });
