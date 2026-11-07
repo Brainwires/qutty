@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
+
 - Loopy is lively. While it has nothing to say, it makes small faces now and
   then (a glance aside, a look up, a raised brow, a little smile, a head tilt, a
   double blink, a soft "hm"), its eyes follow the pointer anywhere in the
