@@ -13,18 +13,23 @@ export default {
         windows: "./icons/app.ico",
         linux: "./icons/app.png",
       },
-      // Detachable sessions: closing the window detaches its workspace (its terminals keep running
+      // Detachable sessions: closing a window detaches its workspace (its terminals keep running
       // in the app's process) and the app stays up with no window, in the Dock; Cmd+Q quits and
       // kills them (desktop/workspace-host.ts). Off macOS the last window's close quits
       // (desktop/session.ts).
       keepAlive: true,
+      // The workspace windows open at the last quit come back at launch, at their frames (each
+      // window's key is its workspace's id; their terminals start afresh, a quit ended them).
+      restoreWindows: true,
+      maxWindows: 16,
     },
     // The first window. There is no window background-colour option in the config schema; the
     // page's own CSS paints the dark background.
-    // Its key is its workspace's id: reopened with it, the window shows the same workspace.
+    // Its key is the first workspace's id, so its frame comes back too.
     window: { width: 1600, height: 1000, title: "Qutty", key: "main" },
-    // Reopen Closed Window (Cmd+Shift+T: the workspace detached last), in the Window menu.
-    menu: { window: { reopenClosed: true } },
+    // New Window (Cmd+N: a new workspace, its key chosen in desktop.ts), Reopen Closed Window
+    // (Cmd+Shift+T: the workspace detached last) and the open windows, as the Window menu.
+    menu: { window: { newWindow: "/", reopenClosed: true, list: true } },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned
     // runtime). The page must give itself a drag region (`makeWindowDraggable`).
     titleBar: "hiddenInset",
@@ -41,7 +46,7 @@ export default {
       extensions: [
         "./desktop/pty.ts",
         // The workspaces (desktop/workspace-host.ts) as the page sees them: join the window's
-        // workspace and reattach its terminals with their replay, save its snapshot.
+        // workspace and reattach its terminals with their replay, save its snapshot, list, end.
         "./desktop/session.ts",
         "./desktop/ssh.ts",
         "./desktop/hub.ts",

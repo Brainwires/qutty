@@ -3,7 +3,13 @@
 // is tiled or not. The chip strip scrolls on wheel and reports the chips scrolled out of view
 // in a "+N" menu. Chip moves animate with FLIP; new chips fade in.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "denext";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "denext";
 import { makeWindowDraggable } from "denext/desktop/window";
 import { type LayoutPattern, PATTERN_INFO } from "../lib/layout/mod.ts";
 import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
@@ -43,6 +49,8 @@ export interface SwitcherBarProps {
   onConnections(): void;
   onPattern(pattern: LayoutPattern): void;
   onToggleSettings(): void;
+  /** The Workspaces menu (desktop app), before the settings button. */
+  workspaces?: ReactNode;
 }
 
 /** Scroll `list` so chip `el` is in view, by where the chip is laid out (its FLIP transform aside). */
@@ -450,6 +458,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
             </div>
           )}
         </div>
+        {props.workspaces}
         <button
           type="button"
           class={`bar-btn bar-settings${props.settingsOpen ? " is-open" : ""}`}

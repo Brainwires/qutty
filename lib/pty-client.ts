@@ -75,7 +75,13 @@ import {
   type SessionBackend,
   type SessionWindowDeps,
 } from "./session-client.ts";
-import { quitApp, setTitleBarStyle } from "denext/desktop/window";
+import {
+  closeWindow,
+  openWindow,
+  quitApp,
+  setTitleBarStyle,
+  setWindowTitle,
+} from "denext/desktop/window";
 
 export type {
   SshCommand,
@@ -140,7 +146,7 @@ export interface PtyExit {
 /** A PTY backend: the desktop extension or the in-browser demo shell. */
 export interface PtyBackend {
   readonly kind: "desktop" | "demo";
-  /** The workspaces: join this window's and save it (lib/session-client.ts). */
+  /** The workspaces: join this window's, save it, list / reopen / end them (lib/session-client.ts). */
   readonly session: SessionBackend;
   spawn(options: PtySpawnOptions): Promise<PtySpawned>;
   /**
@@ -430,7 +436,8 @@ export function createDesktopBackend(
   deps: DesktopBridgeDeps = { desktopExtension, onDesktopEvent },
 ): PtyBackend {
   const { desktopExtension, onDesktopEvent } = deps;
-  const windowDeps = deps.window ?? { quitApp, setTitleBarStyle };
+  const windowDeps = deps.window ??
+    { openWindow, closeWindow, quitApp, setWindowTitle, setTitleBarStyle };
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");

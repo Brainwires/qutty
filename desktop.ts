@@ -9,18 +9,19 @@
 // of `denext.config.ts` that every export, build and `denext desktop` command rewrites: the config
 // module itself (and any plugin it imports) is never compiled into the app.
 //
-// The window is a view of a workspace (desktop/workspace-host.ts): its key is the workspace's id.
-// Here: a Dock click with no window open reopens the workspace detached last, and Cmd+Q asks first
-// when an agent is busy.
+// Windows are views of workspaces (desktop/workspace-host.ts): a window's key is its workspace's
+// id. Here: New Window (Cmd+N) opens a fresh workspace, a Dock click with no window open reopens
+// the workspace detached last (or a fresh one), and Cmd+Q asks first when an agent is busy.
 import config from "./.deno-desktop/config.json" with { type: "json" };
 import { resolveDesktopCapabilities, runDesktop } from "denext/desktop";
 import { workspaces } from "./desktop/workspace-host.ts";
-import { MAIN_WORKSPACE, workspaceWindow } from "./lib/workspace/windows.ts";
+import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 
 const app = await runDesktop({
   importMetaUrl: import.meta.url,
   ...(await resolveDesktopCapabilities(config, { base: import.meta.url })),
+  newWindow: () => workspaceWindow(newWorkspaceId(), true),
 });
 
 if (!app.sidecarChild) {
@@ -36,7 +37,7 @@ if (!app.sidecarChild) {
     }
     const last = workspaces.lastDetached();
     app.windows.open(
-      workspaceWindow(last ?? MAIN_WORKSPACE),
+      last ? workspaceWindow(last) : workspaceWindow(newWorkspaceId(), true),
     );
   });
 

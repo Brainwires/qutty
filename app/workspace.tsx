@@ -53,9 +53,11 @@ import {
   loadSettings,
   reduce,
   saveSettings,
+  SETTINGS_STORAGE_KEY,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
 import { useSession } from "./use-session.ts";
+import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { QuitDialog } from "./quit-dialog.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -368,6 +370,15 @@ function WorkspaceView() {
 
     const saved = loadSettings();
     if (saved) dispatch({ type: "hydrateSettings", settings: saved });
+    // Another window changed the settings: follow (each window keeps its own layout).
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SETTINGS_STORAGE_KEY) return;
+      const next = loadSettings();
+      if (!next) return;
+      const { layout: _layout, ...rest } = next;
+      dispatch({ type: "hydrateSettings", settings: rest });
+    };
+    globalThis.addEventListener("storage", onStorage);
 
     // `?test=1` (the e2e suite): record PTY kills and resizes and expose terminal state on
     // `window.__e2e`.
@@ -415,6 +426,7 @@ function WorkspaceView() {
     setReady(true);
     return () => {
       mq?.removeEventListener?.("change", onMq);
+      globalThis.removeEventListener("storage", onStorage);
       // The xterms go; the PTYs keep running for the next page that shows this workspace.
       manager.disposeAll();
       managerRef.current = null;
@@ -609,6 +621,13 @@ function WorkspaceView() {
         onConnections={ssh.toggleDialog}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
+        workspaces={
+          <WorkspacesMenu
+            session={session}
+            now={now}
+            newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
+          />
+        }
       />
       <div class="cluster" ref={clusterRef} data-testid="cluster">
         {manager && (
