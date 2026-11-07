@@ -577,6 +577,20 @@ kbd {
 .menu-patterns {
   min-width: 190px;
 }
+/* A link's menu in a terminal (app/link-menu.tsx), at the pointer. */
+.menu.link-menu {
+  position: fixed;
+  z-index: 900;
+  max-width: 340px;
+}
+.link-menu-title {
+  padding: 4px 8px 6px;
+  color: var(--text-3, var(--text-2));
+  font: 10.5px/1.2 var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ---- The + split button and its picker ------------------------------------------------- */
 

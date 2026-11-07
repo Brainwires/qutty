@@ -9,10 +9,13 @@
 // @ts-types="@xterm/xterm/types"
 export { Terminal } from "@xterm/xterm";
 // @ts-types="@xterm/xterm/types"
-export type { ITerminalOptions, ITheme } from "@xterm/xterm";
+export type {
+  ILink,
+  ILinkProvider,
+  ITerminalOptions,
+  ITheme,
+} from "@xterm/xterm";
 // @ts-types="@xterm/addon-fit/types"
 export { FitAddon } from "@xterm/addon-fit";
 // @ts-types="@xterm/addon-webgl/types"
 export { WebglAddon } from "@xterm/addon-webgl";
-// @ts-types="@xterm/addon-web-links/types"
-export { WebLinksAddon } from "@xterm/addon-web-links";

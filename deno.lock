@@ -50,7 +50,6 @@
     "npm:@mdx-js/mdx@3": "3.1.1",
     "npm:@tanstack/router-plugin@1.168.42": "1.168.42",
     "npm:@xterm/addon-fit@0.11.0": "0.11.0",
-    "npm:@xterm/addon-web-links@0.12.0": "0.12.0",
     "npm:@xterm/addon-webgl@0.19.0": "0.19.0",
     "npm:@xterm/headless@6.0.0": "6.0.0",
     "npm:@xterm/xterm@6.0.0": "6.0.0",
@@ -618,9 +617,6 @@
     },
     "@xterm/addon-fit@0.11.0": {
       "integrity": "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="
-    },
-    "@xterm/addon-web-links@0.12.0": {
-      "integrity": "sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw=="
     },
     "@xterm/addon-webgl@0.19.0": {
       "integrity": "sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A=="
@@ -1623,7 +1619,6 @@
       "jsr:@std/toml@^1.0.11",
       "jsr:@std/yaml@1",
       "npm:@xterm/addon-fit@0.11.0",
-      "npm:@xterm/addon-web-links@0.12.0",
       "npm:@xterm/addon-webgl@0.19.0",
       "npm:@xterm/headless@6.0.0",
       "npm:@xterm/xterm@6.0.0",

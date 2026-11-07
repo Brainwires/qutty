@@ -132,9 +132,26 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "hub",
     "sandbox",
     "ollama",
+    "links",
   ]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");
+});
+
+Deno.test("desktop: the links methods go to the links extension as they are", async () => {
+  const { bridge, backend } = setup();
+  await backend.linkResolve(undefined, ["a.ts"]);
+  await backend.linkResolve("/p", ["b.ts"]);
+  await backend.linkOpen({ kind: "reveal", path: "/p" });
+  await backend.linkEditors();
+  await backend.linkEdit({ command: "zed {file}", file: "/p/a", line: 2 });
+  assertEquals(bridge.calls, [
+    { method: "resolve", args: { paths: ["a.ts"] } },
+    { method: "resolve", args: { cwd: "/p", paths: ["b.ts"] } },
+    { method: "open", args: { kind: "reveal", path: "/p" } },
+    { method: "editors", args: {} },
+    { method: "edit", args: { command: "zed {file}", file: "/p/a", line: 2 } },
+  ]);
 });
 
 Deno.test("desktop: spawn subscribes to data and exit before calling the extension", async () => {

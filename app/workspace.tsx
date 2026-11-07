@@ -63,6 +63,8 @@ import { ConnectionsDialog } from "./connections-dialog.tsx";
 import { RemoteBrowser } from "./remote-browser.tsx";
 import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
 import { useSsh } from "./use-ssh.ts";
+import { useLinks } from "./use-links.ts";
+import { LinkMenu } from "./link-menu.tsx";
 import { useLauncher } from "./use-launcher.ts";
 import { useHub } from "./use-hub.ts";
 import { AskDialog } from "./ask-dialog.tsx";
@@ -179,6 +181,20 @@ export function Workspace() {
   });
   const sshRef = useRef(ssh);
   sshRef.current = ssh;
+
+  const links = useLinks({
+    manager: managerRef.current,
+    settings: state.settings.links,
+    platform,
+    openTile,
+    download: (id, remotePath) => void sshRef.current.download(id, remotePath),
+    refocus: () => {
+      const id = stateRef.current.focusedId;
+      if (id) managerRef.current?.focus(id);
+    },
+  });
+  const linksRef = useRef(links);
+  linksRef.current = links;
 
   const [ollamaOpen, setOllamaOpen] = useState(false);
   const ollama = useOllama(ready ? managerRef.current?.backend ?? null : null, {
@@ -321,7 +337,7 @@ export function Workspace() {
     // `?test=1` (the e2e suite): record PTY kills and resizes and expose terminal state on
     // `window.__e2e`.
     const testMode = isTestMode();
-    const spy: BackendSpy = { kills: [], resizes: [] };
+    const spy: BackendSpy = { kills: [], resizes: [], links: [] };
     const backend = testMode
       ? withBackendSpy(getPtyBackend(), spy)
       : getPtyBackend();
@@ -352,6 +368,9 @@ export function Workspace() {
       onActivity: (id) => dispatch({ type: "activity", id }),
       // The shell needs a moment to start its foreground process before `info` is meaningful.
       onSpawned: (id) => setTimeout(() => void pollTitle(id), 400),
+      onLink: (id, hit, e, how) =>
+        void linksRef.current.onLink(id, hit, e, how),
+      platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
         isPushToTalk(e, pttKeyRef.current, plat),
@@ -645,6 +664,7 @@ export function Workspace() {
           onSandbox={(patch) => run({ type: "setSandbox", patch })}
           {...(ollama.loaded ? { ollama } : {})}
           onOllama={(patch) => run({ type: "setOllama", patch })}
+          onLinks={(patch) => run({ type: "setLinks", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
         />
@@ -675,6 +695,15 @@ export function Workspace() {
           initialForm={ssh.dialog.form}
           onConnect={ssh.connect}
           onClose={ssh.closeDialog}
+        />
+      )}
+      {links.menu && (
+        <LinkMenu
+          x={links.menu.x}
+          y={links.menu.y}
+          title={links.menu.title}
+          items={links.menu.items}
+          onClose={links.closeMenu}
         />
       )}
       {manager && ssh.browseFor && (

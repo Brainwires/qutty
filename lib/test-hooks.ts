@@ -5,12 +5,16 @@
 //   straight from xterm (the DOM/WebGL renderers are not a reliable text source).
 // - `window.__e2e.kills`: every PTY id the backend was asked to kill, in order.
 // - `window.__e2e.resizes`: every PTY resize the backend was asked for, in order.
+// - `window.__e2e.links`: every link the backend was asked to open or edit, in order, and
+//   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
 
 import type { PtyBackend } from "./pty-client.ts";
+import type { LinkEditRequest, LinkOpenRequest } from "./links.ts";
 import type {
   TerminalDebugState,
   TerminalManager,
 } from "./terminal-manager.ts";
+import type { LinkHoverState } from "./terminal-links.ts";
 
 /** One `resize` call the backend received. */
 interface PtyResize {
@@ -23,11 +27,14 @@ interface PtyResize {
 export interface BackendSpy {
   kills: string[];
   resizes: PtyResize[];
+  /** `linkOpen` and `linkEdit` calls (`kind: "edit"` marks the latter). */
+  links: (LinkOpenRequest | ({ kind: "edit" } & LinkEditRequest))[];
 }
 
 /** What the e2e suite reads from `window.__e2e`. */
 interface E2eHooks extends BackendSpy {
   terminal(id: string): TerminalDebugState | null;
+  linkState(id: string): LinkHoverState | null;
 }
 
 /** Whether the page was opened in test mode (`?test=1`). */
@@ -70,6 +77,16 @@ export function withBackendSpy(
     ollamaLibrary: (q, o) => backend.ollamaLibrary(q, o),
     ollamaLibraryModel: (name) => backend.ollamaLibraryModel(name),
     ollamaOpenApp: () => backend.ollamaOpenApp(),
+    linkResolve: (cwd, paths) => backend.linkResolve(cwd, paths),
+    linkOpen: (request) => {
+      spy.links.push(request);
+      return backend.linkOpen(request);
+    },
+    linkEditors: () => backend.linkEditors(),
+    linkEdit: (request) => {
+      spy.links.push({ kind: "edit", ...request });
+      return backend.linkEdit(request);
+    },
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
     sshHosts: () => backend.sshHosts(),
@@ -110,8 +127,10 @@ export function installE2eHooks(
 ): void {
   const hooks: E2eHooks = {
     terminal: (id) => manager.debugState(id),
+    linkState: (id) => manager.linkState(id),
     kills: spy.kills,
     resizes: spy.resizes,
+    links: spy.links,
   };
   (globalThis as { __e2e?: E2eHooks }).__e2e = hooks;
 }

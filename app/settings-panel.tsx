@@ -47,6 +47,8 @@ import { VoiceSettingsSection } from "./companion/voice-settings.tsx";
 import type { VoiceSettings } from "../lib/voice/settings.ts";
 import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
+import type { LinkSettings } from "../lib/links.ts";
+import { LinksSettingsSection } from "./links-settings.tsx";
 
 export interface SettingsPanelProps {
   settings: Settings;
@@ -70,6 +72,8 @@ export interface SettingsPanelProps {
   /** Settings → Ollama: the tracking (the section is left out without it). */
   ollama?: OllamaTracking;
   onOllama(patch: Partial<OllamaSettings>): void;
+  /** Settings → Links. */
+  onLinks(patch: Partial<LinkSettings>): void;
   /** The voice layer (its engines' status, the model download, cloud keys). */
   voice: VoiceApi | null;
   /** For Agent integration (the section is left out without one) and the companion's status. */
@@ -387,6 +391,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onChange={props.onOllama}
         />,
         "ollama-section",
+      )}
+
+      {section(
+        "links",
+        "Links",
+        <LinksSettingsSection
+          settings={settings.links}
+          backend={props.backend}
+          platform={props.platform}
+          onChange={props.onLinks}
+        />,
+        "links-section",
       )}
 
       {props.backend && section(

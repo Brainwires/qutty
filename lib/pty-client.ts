@@ -26,6 +26,9 @@ import type sshExtension from "../desktop/ssh.ts";
 import type hubExtension from "../desktop/hub.ts";
 import type sandboxExtension from "../desktop/sandbox.ts";
 import type ollamaExtension from "../desktop/ollama.ts";
+import type linksExtension from "../desktop/links.ts";
+import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
+import { createDemoLinks } from "./links-demo.ts";
 import type { OllamaStatus } from "./ollama/cli.ts";
 import type {
   LibraryOrder,
@@ -168,6 +171,20 @@ export interface PtyBackend {
   ollamaLibraryModel(name: string): Promise<LibraryPageResult>;
   /** Open the Ollama app (macOS), which starts its server; false when it is not installed. */
   ollamaOpenApp(): Promise<boolean>;
+
+  // --- Clickable links (desktop/links.ts) ----------------------------------------------------
+
+  /** Which printed paths exist, resolved against `cwd` and the home folder (`null`: no). */
+  linkResolve(
+    cwd: string | undefined,
+    paths: string[],
+  ): Promise<(LinkTarget | null)[]>;
+  /** Open a URL in the browser or a file in its default app, or reveal a path. */
+  linkOpen(request: LinkOpenRequest): Promise<void>;
+  /** The editor presets (lib/links.ts) whose command is installed. */
+  linkEditors(): Promise<string[]>;
+  /** Run an editor command template on a file. */
+  linkEdit(request: LinkEditRequest): Promise<void>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
   /**
@@ -385,6 +402,7 @@ export function createDesktopBackend(
   const hub = desktopExtension<typeof hubExtension>("hub");
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
+  const links = desktopExtension<typeof linksExtension>("links");
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -524,6 +542,11 @@ export function createDesktopBackend(
       }),
     ollamaLibraryModel: (name) => ollama.libraryModel({ name }),
     ollamaOpenApp: () => ollama.openApp({}),
+    linkResolve: (cwd, paths) =>
+      links.resolve(cwd === undefined ? { paths } : { cwd, paths }),
+    linkOpen: (request) => links.open(request),
+    linkEditors: () => links.editors({}),
+    linkEdit: (request) => links.edit(request),
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);
@@ -655,6 +678,7 @@ const DEMO_HELP = [
   `  ${fg(81)}colors${RESET}     256-colour palette`,
   `  ${fg(81)}stress${RESET} [n] print n lines fast (default 2000)`,
   `  ${fg(81)}size${RESET}       print rows and columns`,
+  `  ${fg(81)}links${RESET}      URLs, paths and OSC 8 links to ⌘-click`,
   `  ${
     fg(81)
   }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
@@ -662,6 +686,28 @@ const DEMO_HELP = [
     fg(81)
   }exit${RESET}`,
   "",
+];
+
+/** An OSC 8 hyperlink: `text` linked to `uri`. */
+const osc8 = (uri: string, text: string) =>
+  `${ESC}]8;;${uri}\x07${text}${ESC}]8;;\x07`;
+
+/**
+ * `links`: one of each kind of link (lib/links.ts), the paths in lib/links-demo.ts's fake file
+ * system, and things that are not links. One per line, so the e2e suite can find them.
+ */
+const DEMO_LINKS = [
+  `url: https://deno.com/ (and https://docs.deno.com/runtime/).`,
+  `mail: mailto:demo@example.com`,
+  `osc8: ${osc8("https://github.com/Brainwires/qutty", "Qutty on GitHub")}`,
+  `osc8 file: ${osc8("file:///Users/demo/notes.md", "my notes")}`,
+  `file: ~/notes.md`,
+  `folder: ~/Downloads`,
+  `relative: Source/qutty/README.md`,
+  `error: Source/qutty/src/main.ts:42:7: error: demo`,
+  `remote: /home/demo/logs/app.log`,
+  `missing: ./missing.ts`,
+  `not links: 1.2.3 12:30 3/4`,
 ];
 
 /** A demo agent's `/help`: what it can do with the demo agent hub (lib/hub-demo.ts). */
@@ -1010,6 +1056,9 @@ class DemoShell {
       case "top":
         this.startTop();
         return;
+      case "links":
+        for (const l of DEMO_LINKS) println(l);
+        return;
       case "qutty-hook":
         if (args[0] !== "say") {
           println(
@@ -1129,6 +1178,7 @@ export function createDemoBackend(): PtyBackend {
   });
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
+  const links = createDemoLinks();
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
@@ -1213,6 +1263,10 @@ export function createDemoBackend(): PtyBackend {
     ollamaLibrary: (query, opts) => ollama.library(query, opts),
     ollamaLibraryModel: (name) => ollama.libraryModel(name),
     ollamaOpenApp: () => ollama.openApp(),
+    linkResolve: (cwd, paths) => links.resolve(cwd, paths),
+    linkOpen: (request) => links.open(request),
+    linkEditors: () => links.editors(),
+    linkEdit: (request) => links.edit(request),
     info(id) {
       return attempt(() => {
         const s = get(id);

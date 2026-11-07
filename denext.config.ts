@@ -39,6 +39,10 @@ export default {
         // The Ollama helper (`desktop/ollama.ts`): `ollama` and the library fetch (`curl`) run in
         // hidden PTYs, so it needs no `run` or `net` either.
         "./desktop/ollama.ts",
+        // Clickable links (`desktop/links.ts`): which printed paths exist, and opening URLs,
+        // files, folders and the editor, through hidden PTYs as well (Denext's `shell`
+        // capability only opens paths inside the app's own folders and needs `run`).
+        "./desktop/links.ts",
       ],
       // The microphone: push-to-talk opens it in the app's own process (the native audio
       // library's cpal capture). The capability writes the Info.plist usage text macOS shows when
