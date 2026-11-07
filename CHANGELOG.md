@@ -16,6 +16,26 @@
   Zed, Sublime Text, IntelliJ IDEA and Xcode, a custom command such as
   `hx {file}:{line}:{col}`, or `$EDITOR` in a new tile. In an SSH tile, a remote
   path offers Download instead. Right-click on a link for Open, Reveal and Copy.
+- The companion's brain can run on a local Ollama model. Settings → Companion →
+  Brain runs on: Claude Code (as before) or Ollama, with a model picked from the
+  pulled models that can call tools. It acts on tiles through the same hub tools
+  as the Claude Code brain. An API key brain is listed but not available yet.
+- Drag Loopy to move it. Drop it anywhere and it snaps to the nearest corner,
+  which becomes Settings → Companion → Corner. A click still opens the chat.
+- While you hold the mic, Loopy's head swells and glows with your voice's level.
+- Shell agent: new hub messages are announced above the prompt
+  (`📬 2 new messages — , inbox`), at most every 5 seconds
+  (`QUTTY_AGENT_NOTIFY_EVERY`, `off` to turn it off).
+- Shell agent: Ctrl-C while the model thinks cancels the request in the hub
+  (Claude Code's run is stopped; an Ollama answer is dropped), and the request
+  stays out of the conversation.
+- Agent integration: Qutty asks the installed Codex whether it trusts Qutty's
+  hooks; if not, Settings → Agent integration shows a warning with a one-click
+  Re-trust.
+- The agent hub records each agent's session id (from its hooks) and shows it in
+  `whoami`, `list_peers` and the tile badge's tooltip. A new session replaces
+  it. Hermes Agent and OpenClaw tiles are now named by their harness when the
+  agent was started by hand.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 

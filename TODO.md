@@ -89,15 +89,26 @@
   - Shell agent, open: bash 4.0–5.0 draws the request line once more than 5.1+
     may (only 5.1+ clears it before a `bind -x` command; untested there);
     macOS's bash 3.2 gets the proposal in the history, not the buffer (no
-    `READLINE_LINE`); a running request cannot be cancelled hub-side (Ctrl-C
-    stops the client, the model call finishes and is dropped); new messages are
-    not announced at the prompt (`, inbox` pulls them). Danger flags are
-    Rullama's `classifyCommand` plus four Qutty warnings it leaves out on
-    purpose (any `rm -r`/`-f`, `--force-with-lease`, `checkout`/`restore .`,
-    `chmod`/`chown -R`); those four are regexes over the command with quoted
-    data dropped, not a shell parse.
-  - Next: the `@rullama/inference` brain adapter (`InferenceBrainOptions` is the
-    typed TODO), dragging Loopy, a floating window (Denext multi-window).
+    `READLINE_LINE`); Ctrl-C cancels a request hub-side, but an Ollama request
+    runs on in Ollama (`OllamaChatProvider.chat` takes no signal; its answer is
+    dropped); the prompt's new-message check over TCP (sandbox) has no connect
+    timeout. Danger flags are Rullama's `classifyCommand` plus four Qutty
+    warnings it leaves out on purpose (any `rm -r`/`-f`, `--force-with-lease`,
+    `checkout`/`restore .`, `chmod`/`chown -R`); those four are regexes over the
+    command with quoted data dropped, not a shell parse.
+  - Done: the second brain, a local Ollama model
+    (`lib/companion/inference-brain.ts`, `runAgentLoop` over
+    `@rullama/provider`'s Chat Completions provider on Ollama's `/v1`), its
+    tools the hub's handler called in process as the companion
+    (`companionToolbox`); Settings → Companion → Brain runs on. Upstream gaps:
+    `OllamaChatProvider` (0.12.2) drops tool calls and tool results, and no
+    provider takes an `AbortSignal` (a stopped turn's request runs on and is
+    dropped). An API key brain waits on Denext: `secureStore` still bakes
+    `--allow-run=security` and `--allow-sys` (4.13.1).
+  - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
+    setting) and the mic level driving its listening pulse (`level` events from
+    desktop/voice.ts, ~20 Hz while capturing).
+  - Next: a floating window (Denext multi-window).
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP
@@ -105,12 +116,16 @@
     installed CLI with no model call; `QUTTY_LIVE_CODEX=1` runs
     `tests/hub_codex_live_test.ts`, one small real request.
   - Open: Codex's hook trust hash is its own algorithm (SHA-256 over the
-    normalized hook); if a Codex release changes it, Qutty's hooks show as
-    untrusted (Codex skips them; messages still arrive through `read_messages`),
-    and `tests/hub_codex_cli_test.ts` fails locally.
-  - Open: no session id in the registry yet (Claude Code and Codex both send
-    `session_id` with every hook). `qutty-hook` starts bash + nc per call (~0.2
-    s); a tiny relay could cut it.
+    normalized hook). Qutty asks the installed Codex (`app-server` `hooks/list`)
+    at start and after Install, and Settings shows a warning with Re-trust when
+    the hooks are untrusted; if Codex's hash itself changed, Re-trust cannot fix
+    it (Qutty must be updated, or write Codex's reported `currentHash`), and
+    `tests/hub_codex_cli_test.ts` fails locally.
+  - Done: session ids in the registry (`session_id` from the hooks; a
+    `SessionStart` replaces it), in `whoami` / `list_peers`; Hermes
+    (`hermes-agent`) and OpenClaw (`openclaw-bundle-mcp`) MCP client names.
+  - Open: `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could
+    cut it.
 
 - [x] **Sandboxed shells (Docker)**, as one shared container per window
       (Settings → Sandbox; `desktop/sandbox.ts`, `lib/sandbox/`).
