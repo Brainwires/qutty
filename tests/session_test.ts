@@ -140,7 +140,10 @@ Deno.test({
       await until("a1 released", () => workspaces.ptysOf("ws-a").length === 0);
 
       // Ending ws-b kills its shell.
-      assertEquals(workspaces.end("ws-b").length, 1);
+      const ended = session.end.handler({ id: "ws-b" }) as {
+        ended: number;
+      };
+      assertEquals(ended.ended, 1);
       await until("b killed", () => !terminalSessions().host.isRunning(b.id));
     } finally {
       await fake.quit();

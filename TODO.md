@@ -16,10 +16,10 @@
     redraw). The page saves a snapshot (tiles ↔ PTYs, layout, MRU) in the app
     and rebuilds from it (`lib/workspace/session.ts`, `app/use-session.ts`). A
     reload reattaches too. ⌘Q quits and kills everything, asking first when an
-    agent is busy.
+    agent is busy; the Workspaces menu ends a workspace for real.
   - Open: detach that survives quitting the app (a separate PTY daemon), and
     restoring the shells themselves (cwd, scrollback) at the next launch: today
-    the layout comes back with a fresh shell.
+    the windows and layouts come back with fresh shells.
   - Off macOS there is no Dock to come back through: closing the last window
     quits (through the same busy-agent question). Not tried on Linux yet.
 
@@ -247,20 +247,25 @@
     ⌘-click offers Download (see SSH) instead.
   - Maybe: a right-click menu on a link with Copy link / Open / Reveal.
 
-- [ ] **New Window.** Cmd+N opens another window, each with its own set of
+- [x] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own
       terminals, as it does today.
-  - The workspace model is in (see Detachable sessions): the app's process owns
-    the workspaces (`desktop/workspace-host.ts`), a window is a view on one, its
-    key is the workspace's id (stable across reopen and relaunch), and the
-    backend already routes each workspace's terminals, agent questions and
-    sandbox container by window. Left: Cmd+N opening a fresh workspace, a
-    "Reopen workspace" menu listing the detached ones (and ending one for real),
-    the Window menu's window list, and reopening at launch the windows open at
-    the last quit.
-  - Decided: one window per workspace (Denext keeps window keys unique).
-  - Maybe: drag a tile from one window to another to move the terminal between
-    workspaces. The PTY stays put and only its owner changes.
+  - Done (Denext 4.13): a window's key is its workspace's id. New Window (⌘N,
+    `desktop.menu.window`) opens a fresh workspace, closing a window detaches
+    it, Reopen Closed Window / the Dock / the Workspaces menu show a detached
+    one again, one window per workspace (Denext keeps keys unique), and
+    `desktop.app.restoreWindows` reopens at launch the workspace windows open at
+    the last quit (frames and layouts back, fresh shells). The sandbox container
+    is per workspace and stops when the workspace is ended (not when its window
+    closes). Agent questions go to the window of their tile; the companion talks
+    in the last-used window.
+  - Maybe: drag a tile from one window to another (the PTY only changes owner:
+    `createOwnedResources().attach` already allows it; the cross-window drag is
+    the work).
+  - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.13"): a
+    Dock click after the main window closed, the title bar of opened windows, a
+    "Reopen ▸" list in the backend's Window menu, a default size for a keyed
+    window seen for the first time.
 
 - [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).

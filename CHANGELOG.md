@@ -72,7 +72,7 @@
   now says so.
 - The agent hub could freeze the app (seen on Linux) when one agent's connection
   closed just as another one arrived.
-- Detachable sessions. Closing the window no longer closes its terminals: they
+- Detachable sessions. Closing a window no longer closes its terminals: they
   keep running, and Qutty stays in the Dock with no window open. Click the Dock
   icon (or use Window → Reopen Closed Window, ⌘⇧T) and the window comes back
   with every terminal on its own shell, redrawn from what it printed in the
@@ -110,6 +110,20 @@
   each command starts and ends and how it ended; other shell integrations that
   send OSC 133 (iTerm2's, VS Code's) work too. `QUTTY_SHELL_MARKS=off` turns
   them off.
+- New Window (⌘N). Each window is its own workspace: its terminals, switcher
+  bar, layout and Docker sandbox container. Windows remember their size and
+  place, and the windows open when you quit come back at the next launch (with
+  fresh shells; quitting ends the terminals). The Window menu lists the open
+  windows.
+- The Workspaces button in the bar lists the workspaces whose window is closed,
+  to reopen one or end it for real (its terminals are killed and its sandbox
+  container stopped), opens a new window, and ends this window's workspace.
+- Quitting (⌘Q) ends every terminal in every window. When an agent is still
+  working, Qutty asks first, in the window that shows it (or reopens that window
+  to ask).
+- With several windows, an agent's `ask_user` question shows in the window of
+  its tile (a question from a closed window's tile waits until it is reopened),
+  and the companion talks in the window you used last.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 

@@ -6,13 +6,21 @@
  * the layout, MRU order and focus it had. Pure, so it is tested without a DOM
  * (tests/workspace_session_test.ts).
  *
+ * The layout is also kept per workspace in localStorage, which outlives a quit: a workspace window
+ * the next launch reopens (`desktop.app.restoreWindows`) gets its layout back, with fresh shells.
+ *
  * @module
  */
 
 import type { LayoutOptions, LayoutPattern } from "../layout/mod.ts";
 import { SHELL_PROFILE, type TerminalProfile } from "../ssh-ui.ts";
 import type { FoldedReplay } from "./replay.ts";
-import { PATTERNS, type TerminalEntry, type WorkspaceState } from "./store.ts";
+import {
+  PATTERNS,
+  type SettingsStorage,
+  type TerminalEntry,
+  type WorkspaceState,
+} from "./store.ts";
 
 /** One tile's terminal: its PTY now (`null` while none runs), what it runs, its home folder. */
 export interface TileSnapshot {
@@ -227,4 +235,50 @@ export function planRestore(
     previousPattern: snap?.previousPattern ?? null,
     tiles,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The layout per workspace, across launches
+// ---------------------------------------------------------------------------------------------
+
+/** The localStorage key of workspace `id`'s layout. */
+export function workspaceLayoutKey(id: string): string {
+  return `qutty.workspace.${id}.v1`;
+}
+
+/** What is kept of a workspace across launches. */
+export interface StoredWorkspaceLayout {
+  layout: Partial<LayoutOptions>;
+  previousPattern: LayoutPattern | null;
+}
+
+/** Workspace `id`'s layout from an earlier launch, or `null`. */
+export function loadWorkspaceLayout(
+  id: string,
+  storage: SettingsStorage | null | undefined,
+): StoredWorkspaceLayout | null {
+  try {
+    const raw = storage?.getItem(workspaceLayoutKey(id));
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    if (!isObject(v) || !isObject(v.layout)) return null;
+    return {
+      layout: v.layout as Partial<LayoutOptions>,
+      previousPattern: PATTERNS.includes(v.previousPattern as LayoutPattern)
+        ? v.previousPattern as LayoutPattern
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Keep workspace `id`'s layout for the next launch (failures are swallowed). */
+export function saveWorkspaceLayout(
+  id: string,
+  value: StoredWorkspaceLayout,
+  storage: SettingsStorage | null | undefined,
+): void {
+  try {
+    storage?.setItem(workspaceLayoutKey(id), JSON.stringify(value));
+  } catch { /* private mode, quota */ }
 }

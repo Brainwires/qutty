@@ -1,17 +1,20 @@
 // The page's side of detachable sessions: folding a terminal's replay (lib/workspace/replay.ts),
 // the workspace snapshot and the plan that rebuilds it (lib/workspace/session.ts), the store's
-// `restore`, the bounded replay ring with a real shell
+// `restore`, the per-workspace layout across launches, the bounded replay ring with a real shell
 // (desktop/terminal-sessions.ts), and the desktop client's join (lib/session-client.ts).
 
 import { assert, assertEquals } from "@std/assert";
 import { foldReplay } from "../lib/workspace/replay.ts";
 import {
   type JoinedPty,
+  loadWorkspaceLayout,
   planRestore,
+  saveWorkspaceLayout,
   snapshotOf,
+  workspaceLayoutKey,
 } from "../lib/workspace/session.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
-import { workspaceWindow } from "../lib/workspace/windows.ts";
+import { newWorkspaceId, workspaceWindow } from "../lib/workspace/windows.ts";
 import { createDesktopSession } from "../lib/session-client.ts";
 import { PtyHost } from "../desktop/pty.ts";
 import { TerminalSessions } from "../desktop/terminal-sessions.ts";
@@ -166,12 +169,37 @@ Deno.test("session: nothing saved and no PTY is a new workspace; junk is ignored
   assertEquals(p2.tiles.map((t) => t.id), ["t2", "t3"]);
 });
 
-Deno.test("windows: a workspace's window is keyed by its id, its frame restored", () => {
+Deno.test("session: the layout per workspace survives a launch", () => {
+  const store = new Map<string, string>();
+  const storage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+  };
+  assertEquals(loadWorkspaceLayout("ws-1", storage), null);
+  saveWorkspaceLayout("ws-1", {
+    layout: { pattern: "rows" },
+    previousPattern: "grid",
+  }, storage);
+  assert(store.has(workspaceLayoutKey("ws-1")));
+  assertEquals(loadWorkspaceLayout("ws-1", storage), {
+    layout: { pattern: "rows" },
+    previousPattern: "grid",
+  });
+  store.set(workspaceLayoutKey("ws-2"), "{not json");
+  assertEquals(loadWorkspaceLayout("ws-2", storage), null);
+  assertEquals(loadWorkspaceLayout("ws-1", undefined), null);
+});
+
+Deno.test("windows: workspace ids are valid window keys; a known one restores its frame", () => {
+  const id = newWorkspaceId(() => new Uint8Array([0, 15, 160, 255]));
+  assertEquals(id, "ws-000fa0ff");
+  assert(/^[A-Za-z0-9._:-]{1,64}$/.test(newWorkspaceId()));
   assertEquals(workspaceWindow("ws-1"), {
     url: "/",
     key: "ws-1",
     title: "Qutty",
   });
+  assertEquals(workspaceWindow("ws-1", true).width, 1400);
 });
 
 Deno.test({
@@ -241,7 +269,10 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
       return () => {};
     }) as never,
     window: {
+      openWindow: (o) => (calls.push(`open:${o.key}`), Promise.resolve()),
+      closeWindow: () => (calls.push("close"), Promise.resolve()),
       quitApp: () => (calls.push("quit"), Promise.resolve(true)),
+      setWindowTitle: (t) => (calls.push(`title:${t}`), Promise.resolve()),
       setTitleBarStyle: () => Promise.resolve(true),
     },
     listen: () => calls.push("listen"),
@@ -253,9 +284,11 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
     "listen",
     "session.join",
     "adopt:pty-7@41",
+    "title:Qutty — Workspace 2",
   ]);
+  await session.reopen("ws-9");
   await session.answerQuit(true);
-  assertEquals(calls.slice(-2), ["session.answerQuit", "quit"]);
+  assertEquals(calls.slice(-3), ["open:ws-9", "session.answerQuit", "quit"]);
   // An old quit question replayed by the event stream is not asked again.
   const asked: unknown[] = [];
   session.onQuit((r) => asked.push(r));
