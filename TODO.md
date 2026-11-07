@@ -32,7 +32,8 @@
     the last pick is remembered and Settings has "+ opens". User-defined entries
     are still open.
 
-- [ ] **Companion + agent hub** (plan: phases 1–4).
+- [x] **Companion + agent hub** (plan: phases 1–4). Shipped in 0.3.0 (Codex and
+      the shell agent in 0.3.1); the "open" and "Next" items below remain.
   - Done (phase 1): `desktop/hub.ts` — a unix socket + MCP server per terminal
     (`/tmp/qutty-<uid>/<pid>/<ptyId>.sock`, bound through libc), registry,
     mailboxes, headless screen mirror, `ask_user` (a simple dialog for now),
@@ -143,10 +144,11 @@
     recreates the container on Restart (packages installed with apt go; `$HOME`
     stays). Network off also cuts the sandbox off from the hub.
 
-- [ ] **SSH sessions and a connection manager.** Run the system `ssh` in a PTY,
-      the same way shells run today. Never implement the protocol, and never
-      store passwords. Keys, ssh-agent, the keychain, jump hosts, known_hosts
-      and hardware keys all come for free from OpenSSH.
+- [x] **SSH sessions and a connection manager.** Shipped in 0.3.0; the "Still
+      open" items at the end remain. Run the system `ssh` in a PTY, the same way
+      shells run today. Never implement the protocol, and never store passwords.
+      Keys, ssh-agent, the keychain, jump hosts, known_hosts and hardware keys
+      all come for free from OpenSSH.
   - **Profiles are SSH config.** The manager lists the `Host` entries in
     `~/.ssh/config`, so it's populated on first launch. Hosts saved in Qutty go
     to `~/.ssh/qutty.conf`, pulled into the main config with an `Include` line,
@@ -183,11 +185,12 @@
     per-host port-forward panel (`ssh -O forward` / `-O cancel` on the control
     socket, live).
   - Status: the backend and the UI are in (manager dialog, SSH tiles with tint /
-    Disconnected / Reconnect, drop-to-upload, Download… picker, progress). Still
-    open: SSH hosts in the `+` picker (no picker yet), "Connect in split" (the
-    layout has no splits), choosing a download folder, auto-label + "Save this
-    host" for `ssh` typed in a plain shell (needs the foreground process's argv,
-    which `info()` does not report), the port-forward panel and cluster ssh.
+    Disconnected / Reconnect, drop-to-upload, Download… picker, progress), and
+    SSH hosts in the `+` picker (with the shell picker). Still open: "Connect in
+    split" (the layout has no splits), choosing a download folder, auto-label +
+    "Save this host" for `ssh` typed in a plain shell (needs the foreground
+    process's argv, which `info()` does not report), the port-forward panel and
+    cluster ssh.
 
 - [x] **Clickable links: URLs and local paths.** ⌘-click (Ctrl-click elsewhere)
       opens what's under the pointer. It's underlined on hover with the modifier
@@ -242,27 +245,28 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
-- [ ] **Ollama helper** (`desktop/ollama.ts`, `lib/ollama/`,
-      `app/ollama-*.tsx`).
+- [x] **Ollama helper** (`desktop/ollama.ts`, `lib/ollama/`,
+      `app/ollama-*.tsx`). Shipped in 0.3.1; the "Open" items below remain.
   - Done: model tracking (CLI in hidden PTYs, `show` cached by digest, no
     `ollama list` while the server is down), the `+` menu section and dialog
     (harness × model, recent pairs, no-tools warning), Pull a model…, the
     ollama.com library (search, Applications per model, Pull & launch, "new"
     badge), Settings → Ollama, "+ opens" a pair, hub wiring per harness
     (`lib/hub/wiring.ts`), Hermes in Agent integration.
-  - Hooks for mid-turn delivery beyond Claude Code and Codex: OpenCode and
+  - Open: hooks for mid-turn delivery beyond Claude Code and Codex: OpenCode and
     OpenClaw only have JS/TS plugin hooks (a small plugin that calls
     `qutty-hook` would do), Hermes's shell hooks take another input and ask for
     consent, Qwen Code and Kimi have Claude-style hooks but no per-session way
     to add them. Until then their messages arrive through `read_messages`.
-  - Verify the wiring of the harnesses not installed here (Qwen Code, Copilot
-    CLI, Kimi, DeepSeek Harness), and find routes for Droid, Cline, OMP, Muse
-    and Pool (config files only).
-  - OpenClaw's first `ollama launch` runs its onboarding, which writes the
+  - Open: verify the wiring of the harnesses not installed here (Qwen Code,
+    Copilot CLI, Kimi, DeepSeek Harness), and find routes for Droid, Cline, OMP,
+    Muse and Pool (config files only).
+  - Open: OpenClaw's first `ollama launch` runs its onboarding, which writes the
     config; the hub wiring needs that config, so it applies from the second
     launch on.
-  - The library is read from ollama.com's HTML (it has no search API): if the
-    markup changes, the parser returns less, never junk. Watch the fixtures.
+  - Open (watch): the library is read from ollama.com's HTML (it has no search
+    API): if the markup changes, the parser returns less, never junk. Watch the
+    fixtures.
 
 ## Pending
 
@@ -276,7 +280,13 @@
 - [x] v0.2.0: tagged, never published (its release run hit runner issues).
 - [x] v0.3.0: SSH, shell picker, scaled tiles, Homebrew, agent hub, companion,
       voice, shared sandbox.
-- [ ] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
-      overflow: +N appears…" in tests/e2e/bar_test.ts fails about half the time
-      with a bare assertion. CI runs with animations on, where it passes. Find
-      the timing assumption.
+- [x] v0.3.1: Codex, Ollama helper, more harnesses, shell agent, lively Loopy.
+- [x] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
+      overflow: +N appears…" in tests/e2e/bar_test.ts failed about half the
+      time. Not a test timing issue but two bar bugs: the focused chip was
+      scrolled to its FLIP-inverted (old) place, and a FLIP superseded before
+      its frame left chips displaced for good (app/switcher-bar.tsx).
+- [x] CI hangs (two jobs ran into GitHub's 6 h limit on the 0.3.1 PR): the hub's
+      poll loop handed a closed fd's revents to a new connection under the same
+      number (a blocking `read` on Linux), and the e2e harness waited on a
+      stalled page without a bound. Fixed; every CI job has `timeout-minutes`.
