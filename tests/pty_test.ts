@@ -13,8 +13,8 @@ import ext, {
   PtyHost,
   resolveProgram,
 } from "../desktop/pty.ts";
-import type { DesktopCapCtx } from "denext/desktop";
 import { withEnv } from "./pty_helpers.ts";
+import { ctxOf, fakeExtensionHost } from "./session_helpers.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
 
@@ -263,23 +263,22 @@ Deno.test(
   "extension handlers: validated input, spawn/write/info/kill through the module",
   opts,
   async () => {
-    const events: { event: string; data: unknown }[] = [];
-    const ctx: DesktopCapCtx = {
-      emit: (event, data) => {
-        assert(
-          ext.events.includes(event as "data" | "exit"),
-          `undeclared event ${event}`,
-        );
-        events.push({ event, data });
-      },
+    // The extension emits through its host (to the window that owns each terminal).
+    const fake = fakeExtensionHost([{
+      id: "main",
+      kind: "main",
+      key: "ws-ext",
+    }]);
+    ext.setup(fake.host);
+    for (const e of fake.events) {
+      assert(
+        ext.events.includes(e.event as "data" | "exit"),
+        `undeclared event ${e.event}`,
+      );
+    }
+    const ctx = {
+      ...ctxOf("main"),
       appSupportDir: await Deno.makeTempDir({ prefix: "pty-test-" }),
-      os: Deno.build.os as "darwin" | "linux",
-      windowId: "main",
-      signal: new AbortController().signal,
-      runOnMainThread: () => Promise.reject(new Error("unused")),
-      pickedPath: () => {
-        throw new Error("unused");
-      },
     };
     const m = ext.methods;
 
@@ -304,14 +303,12 @@ Deno.test(
       cwd: "/tmp",
       shell: "/bin/sh",
     }, ctx);
-    const text = () =>
-      events.filter((e) =>
-        e.event === "data" && (e.data as PtyDataEvent).id === spawned.id
-      )
-        .map((e) => (e.data as PtyDataEvent).data).join("");
-    await m.write.handler({ id: spawned.id, data: "echo via-ext-$((1+1))\r" });
+    await m.write.handler(
+      { id: spawned.id, data: "echo via-ext-$((1+1))\r" },
+      ctx,
+    );
     const deadline = Date.now() + 10_000;
-    while (!text().includes("via-ext-2")) {
+    while (!fake.text(spawned.id, "main").includes("via-ext-2")) {
       if (Date.now() > deadline) {
         throw new Error(
           "no output through the extension",
@@ -319,26 +316,22 @@ Deno.test(
       }
       await new Promise((r) => setTimeout(r, 20));
     }
-    m.resize.handler({ id: spawned.id, cols: 90, rows: 20 });
-    const info = await m.info.handler({ id: spawned.id });
+    m.resize.handler({ id: spawned.id, cols: 90, rows: 20 }, ctx);
+    const info = await m.info.handler({ id: spawned.id }, ctx);
     assertEquals(info.pid, spawned.pid);
 
-    // A page reload of the owning window kills its terminals.
-    await ext.onPageLoad("main");
-    while (
-      !events.some((e) =>
-        e.event === "exit" && (e.data as PtyExitEvent).id === spawned.id
-      )
-    ) {
+    // Closing the tile kills the terminal; its exit reaches the window, then it is forgotten.
+    m.kill.handler({ id: spawned.id }, ctx);
+    while (!fake.exited(spawned.id, "main")) {
       if (Date.now() > deadline + 5_000) {
         throw new Error(
-          "no exit after onPageLoad",
+          "no exit after kill",
         );
       }
       await new Promise((r) => setTimeout(r, 20));
     }
     await assertRejects(
-      async () => await m.write.handler({ id: spawned.id, data: "x" }),
+      async () => await m.write.handler({ id: spawned.id, data: "x" }, ctx),
       Error,
       "no such terminal",
     );

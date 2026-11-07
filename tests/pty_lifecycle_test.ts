@@ -1,6 +1,7 @@
 // Lifecycle tests for the PTY host (desktop/pty.ts) against real shells: kill escalation, exit
 // codes and signals, not_found handling, cwd/process tracking, the environment, spawn fallbacks,
-// zsh, onPageLoad per window, and the synchronous teardown. Run: deno test -A tests/
+// zsh, and the synchronous teardown. (The extension, its windows and workspaces:
+// tests/session_test.ts.) Run: deno test -A tests/
 //
 // Sanitizers stay on except where noted (each `sanitizeOps: false` says why).
 
@@ -12,12 +13,8 @@ import {
   assertRejects,
   assertThrows,
 } from "@std/assert";
-import { type DesktopCapCtx, DesktopCapError } from "denext/desktop";
-import ext, {
-  type PtyDataEvent,
-  type PtyExitEvent,
-  PtyHost,
-} from "../desktop/pty.ts";
+import { DesktopCapError } from "denext/desktop";
+import { type PtyExitEvent, PtyHost } from "../desktop/pty.ts";
 import {
   HAS_SH,
   HAS_ZSH,
@@ -473,108 +470,5 @@ Deno.test({
       }, 10_000);
     }
     await host.dispose(); // nothing left: returns at once
-  },
-});
-
-// ---------------------------------------------------------------------------------------------
-// The extension: handlers, onPageLoad per window
-// ---------------------------------------------------------------------------------------------
-
-function ctxFor(
-  windowId: string | undefined,
-  events: { event: string; data: unknown }[],
-): DesktopCapCtx {
-  return {
-    emit: (event, data) => {
-      assert(
-        ext.events.includes(event as "data" | "exit"),
-        `undeclared event ${event}`,
-      );
-      events.push({ event, data });
-    },
-    appSupportDir: "",
-    os: Deno.build.os as "darwin" | "linux",
-    windowId,
-    signal: new AbortController().signal,
-    runOnMainThread: () => Promise.reject(new Error("unused")),
-    pickedPath: () => {
-      throw new Error("unused");
-    },
-  } as DesktopCapCtx;
-}
-
-async function untilEvent(
-  events: { event: string; data: unknown }[],
-  pred: (e: { event: string; data: unknown }) => boolean,
-  what: string,
-  ms = 10_000,
-): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!events.some(pred)) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}
-
-const exitOfId = (id: string) => (e: { event: string; data: unknown }) =>
-  e.event === "exit" && (e.data as PtyExitEvent).id === id;
-
-Deno.test({
-  name: "extension: onPageLoad kills only the reloading window's terminals",
-  ignore,
-  fn: async () => {
-    const events: { event: string; data: unknown }[] = [];
-    const m = ext.methods;
-    const spawn = (win: string | undefined) =>
-      m.spawn.handler(
-        { cols: 80, rows: 24, shell: SH, cwd: "/tmp" },
-        ctxFor(win, events),
-      );
-    const w1a = await spawn("w1");
-    const w1b = await spawn("w1");
-    const w2 = await spawn("w2");
-    const main = await spawn(undefined); // no window id = the main window
-    try {
-      await ext.onPageLoad("w1");
-      await untilEvent(events, exitOfId(w1a.id), "w1a exit");
-      await untilEvent(events, exitOfId(w1b.id), "w1b exit");
-      // w2 and main survive and still answer.
-      for (const t of [w2, main]) {
-        const mk = marker(`alive${t.id}`);
-        await m.write.handler({ id: t.id, data: `${mk.cmd}\r` });
-        await untilEvent(
-          events,
-          (e) =>
-            e.event === "data" &&
-            (e.data as PtyDataEvent).data.includes(mk.text),
-          `${t.id} alive`,
-        );
-      }
-      assert(!events.some(exitOfId(w2.id)) && !events.some(exitOfId(main.id)));
-      // A window that owns nothing: nothing happens.
-      await ext.onPageLoad("w-unknown");
-      // onPageLoad() without an id means the main window.
-      await ext.onPageLoad();
-      await untilEvent(events, exitOfId(main.id), "main exit");
-      assert(!events.some(exitOfId(w2.id)));
-    } finally {
-      await ext.onPageLoad("w2");
-      await untilEvent(events, exitOfId(w2.id), "w2 exit");
-    }
-    await assertRejects(
-      () => m.write.handler({ id: w2.id, data: "x" }),
-      DesktopCapError,
-      "no such terminal",
-    );
-    await assertRejects(
-      () => m.info.handler({ id: w2.id }),
-      DesktopCapError,
-      "no such terminal",
-    );
-    assertThrows(
-      () => m.resize.handler({ id: w2.id, cols: 80, rows: 24 }),
-      DesktopCapError,
-    );
-    m.kill.handler({ id: w2.id }); // no-op
   },
 });
