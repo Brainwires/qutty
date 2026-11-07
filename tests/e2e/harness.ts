@@ -119,6 +119,29 @@ async function serve(dir: string): Promise<Server> {
 // Polling
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * `p`, or a rejection naming `what` after `ms` (not scaled): a page that stops answering (its
+ * renderer stalled, its frames stopped) fails the step that waited on it instead of hanging the
+ * suite until CI kills the job. `p` keeps running; its late result is dropped.
+ */
+function bounded<T>(
+  p: Promise<T>,
+  ms: number,
+  what: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hung = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${what}: no answer after ${ms}ms (hung)`)),
+      ms,
+    );
+  });
+  return Promise.race([p, hung]).finally(() => clearTimeout(timer));
+}
+
+/** How long one page call (an eval, a click, a navigation) may take (scaled). */
+const CALL_MS = 20_000 * TIMEOUT_SCALE;
+
 /** Poll `cond` until it returns a truthy value (which is returned); no fixed sleeps. */
 export async function waitFor<T>(
   cond: () => T | Promise<T>,
@@ -129,8 +152,14 @@ export async function waitFor<T>(
   const deadline = Date.now() + timeout;
   let last: unknown;
   for (;;) {
+    // One check that never answers fails the wait (with a second's grace past its deadline).
+    const check = bounded(
+      Promise.resolve().then(cond),
+      Math.max(0, deadline - Date.now()) + 1000,
+      `waiting for ${what}: a check`,
+    );
     try {
-      const v = await cond();
+      const v = await check;
       if (v) return v as NonNullable<T>;
       last = v;
     } catch (e) {
@@ -307,10 +336,14 @@ export class App {
 
   // deno-lint-ignore no-explicit-any
   eval<T>(fn: (...args: any[]) => T, ...args: unknown[]): Promise<Awaited<T>> {
-    // deno-lint-ignore no-explicit-any
-    return this.page.evaluate(fn as any, { args: args as any }) as Promise<
-      Awaited<T>
-    >;
+    return bounded(
+      // deno-lint-ignore no-explicit-any
+      this.page.evaluate(fn as any, { args: args as any }) as Promise<
+        Awaited<T>
+      >,
+      CALL_MS,
+      `page eval \`${String(fn).replace(/\s+/g, " ").slice(0, 80)}\``,
+    );
   }
 
   /** Fail the case on any console error or uncaught page error. */
@@ -425,10 +458,11 @@ export class App {
 
   /** Wait until no tile is entering/leaving and every shown tile's rect is still for 3 frames. */
   async settle(timeout = 4000): Promise<void> {
+    let last = "";
     await waitFor(
-      () =>
-        this.eval(() =>
-          new Promise<boolean>((resolve) => {
+      async () =>
+        (last = await this.eval(() =>
+          new Promise<string>((resolve) => {
             const sample = () =>
               [...document.querySelectorAll<HTMLElement>("[data-testid=tile]")]
                 .map((el) => {
@@ -459,17 +493,30 @@ export class App {
               );
             const first = sample();
             let frames = 0;
+            // No frame for a second: the page is not rendering (rAF never fires), say so.
+            const stalled = setTimeout(
+              () => resolve("no animation frame"),
+              1000,
+            );
+            const done = (why: string) => {
+              clearTimeout(stalled);
+              resolve(why);
+            };
             const tick = () => {
-              if (busy() || sample() !== first) return resolve(false);
-              if (++frames >= 3) return resolve(true);
+              if (busy() || sample() !== first) return done("moving");
+              if (++frames >= 3) return done("settled");
               requestAnimationFrame(tick);
             };
             requestAnimationFrame(tick);
           })
-        ),
+        )) === "settled",
       timeout,
       "tiles to settle",
-    );
+    ).catch((e) => {
+      throw new Error(
+        last ? `${e.message} (the page said: ${last})` : e.message,
+      );
+    });
   }
 
   /** Settled rects of the shown tiles, relative to the cluster, keyed by id. */
@@ -652,8 +699,11 @@ export class App {
                 behavior: "instant",
               });
               const a = el.getBoundingClientRect();
+              // No frame for a second (the page is not rendering): not clickable yet.
+              const stalled = setTimeout(() => resolve(null), 1000);
               requestAnimationFrame(() =>
                 requestAnimationFrame(() => {
+                  clearTimeout(stalled);
                   const b = el.getBoundingClientRect();
                   const still = Math.abs(a.x - b.x) < 0.5 &&
                     Math.abs(a.y - b.y) < 0.5 &&
@@ -945,6 +995,16 @@ export class App {
 
 export type CaseFn = (app: App) => Promise<void>;
 
+/** How long one case may run, start to finish (scaled): a hang fails it, the suite goes on. */
+const CASE_MS = 180_000 * TIMEOUT_SCALE;
+
+/** Close a browser that may not answer any more (bounded; a failure is only logged). */
+async function closeBrowser(browser: Browser): Promise<void> {
+  await bounded(browser.close(), CALL_MS, "closing Chromium").catch((e) =>
+    console.error(`e2e: ${e instanceof Error ? e.message : e}`)
+  );
+}
+
 interface Case {
   name: string;
   fn: CaseFn;
@@ -974,7 +1034,6 @@ export function suite(
       const server = await serve(dir);
       let browser: Browser | undefined;
       try {
-        browser = await launch({ headless: true, args: [MOTION_FLAG] });
         for (const c of cases) {
           await t.step({
             name: c.name,
@@ -982,20 +1041,49 @@ export function suite(
             sanitizeOps: false,
             sanitizeResources: false,
             fn: async () => {
-              const page = await browser!.newPage();
-              const app = new App(page, server.origin, c.opts);
+              browser ??= await bounded(
+                launch({ headless: true, args: [MOTION_FLAG] }),
+                CALL_MS,
+                "launching Chromium",
+              );
+              let page: Page | undefined;
+              let ok = false;
               try {
-                await app.boot();
-                await c.fn(app);
+                page = await bounded(
+                  browser.newPage(),
+                  CALL_MS,
+                  "opening a page",
+                );
+                const app = new App(page, server.origin, c.opts);
+                await bounded(
+                  (async () => {
+                    await app.boot();
+                    await c.fn(app);
+                  })(),
+                  CASE_MS,
+                  `case "${c.name}"`,
+                );
                 app.assertNoErrors();
+                ok = true;
               } finally {
-                await page.close().catch(() => {});
+                const closed = page !== undefined && await bounded(
+                  page.close(),
+                  CALL_MS,
+                  "closing the page",
+                ).then(() => true, () => false);
+                // After a failure (a stalled page) the next page could land in the same stuck
+                // renderer: start the next case in a fresh browser.
+                if (!ok || !closed) {
+                  const old = browser;
+                  browser = undefined;
+                  await closeBrowser(old);
+                }
               }
             },
           });
         }
       } finally {
-        await browser?.close().catch(() => {});
+        if (browser) await closeBrowser(browser);
         await server.close();
       }
     },
