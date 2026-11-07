@@ -2158,7 +2158,7 @@ kbd {
    Loopy is the face of Denext's examples/companion Loopy (public/styles.css on
    feat/loopy-voice-tools: the crossed-triangle wire with a steel bead head and 13 moods; same
    author, MIT) on its own: the bead head, its faces and the moods' extras, without the wire body,
-   drawn 2.5 times the size it had there (app/companion/loopy.tsx crops and scales the drawing).
+   drawn 2 times the size it had there (app/companion/loopy.tsx crops and scales the drawing).
    The speech bubble and every rule of the face (the bead, eyes, brows, mouth, extras, blink, the
    voice turn) are copied from the example with the same shapes and keyframes: only scoped under
    .companion-overlay (selectors) and prefixed (keyframe names and custom properties, which are
@@ -2222,7 +2222,7 @@ kbd {
   content: "";
   position: absolute;
   bottom: -8px;
-  left: 74px;
+  left: 62px;
   width: 14px;
   height: 14px;
   background: var(--loopy-bubble);
@@ -2306,7 +2306,7 @@ kbd {
   position: relative;
   display: flex;
   justify-content: flex-start;
-  padding-left: 36px;
+  padding-left: 29px;
   cursor: grab;
 }
 
@@ -2334,11 +2334,11 @@ kbd {
 
 /* ---------------------------------------------------------------- Loopy */
 
-/* The face avatar: the 62 x 74 crop at 1.875 px a unit (the bead 108.75 px across). */
+/* The face avatar: the 62 x 74 crop at 1.5 px a unit (the bead 87 px across). */
 .companion-overlay .loopy {
   display: block;
-  width: 116.25px;
-  height: 138.75px;
+  width: 93px;
+  height: 111px;
   overflow: visible;
 }
 
@@ -3226,7 +3226,7 @@ kbd {
   justify-content: flex-end;
   gap: 5px;
   /* Clear of the extras beside the head (the zaps, a heart). */
-  margin: 0 0 12px 24px;
+  margin: 0 0 12px 19px;
   pointer-events: auto;
 }
 .companion-overlay .voice-buttons button {

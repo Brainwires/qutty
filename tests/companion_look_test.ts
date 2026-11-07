@@ -367,10 +367,10 @@ Deno.test("Loopy's look: the face in every mood and voice turn, the tints, the f
   assertEquals(await avatar(), snap.avatar, "the avatar's crop and size");
 });
 
-Deno.test("Loopy's look: the avatar is the head alone, 2.5 times the clip's, smaller than the clip was", async () => {
+Deno.test("Loopy's look: the avatar is the head alone, 2 times the clip's, smaller than the clip was", async () => {
   const [, , w, h] = LOOPY_VIEWBOX;
-  // The bead (r 29) at the clip's 0.75 px a unit was 43.5 px across; now 2.5 times that.
-  assertEquals(58 * LOOPY_SCALE, 43.5 * 2.5);
+  // The bead (r 29) at the clip's 0.75 px a unit was 43.5 px across; now 2 times that.
+  assertEquals(58 * LOOPY_SCALE, 43.5 * 2);
   // Smaller than the whole clip was in its window (120 x 150).
   assert(w * LOOPY_SCALE < 120 && h * LOOPY_SCALE < 150);
   const html = await render(Loopy, { mood: "love" });

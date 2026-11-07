@@ -1,7 +1,7 @@
 // Loopy, drawn: the face of Denext's crossed-triangle paper clip on its own. A polished steel bead
 // is the head, with the face on it: two big eyes under expressive brows and a small mouth, and
 // each mood's extras around it (?, z's, hearts, !, steam, a tear…). The wire body is gone; the
-// head is drawn 2.5 times the size it had on the clip, by cropping the drawing to the head
+// head is drawn 2 times the size it had on the clip, by cropping the drawing to the head
 // (`LOOPY_VIEWBOX`) and scaling it (`LOOPY_SCALE`), so every shape is the example's. Hand-written
 // SVG, no assets. Every move is CSS keyed off `data-state` (public/styles.css), on `.loopy-face`.
 //
@@ -289,11 +289,11 @@ function mouthFor(face: Face, voice: LoopyProps["voice"], step: number) {
 export const LOOPY_VIEWBOX = [49, 33, 62, 74] as const;
 
 /**
- * CSS px per unit of the drawing: the head 2.5 times the size it had on the example's crossed-
+ * CSS px per unit of the drawing: the head 2 times the size it had on the example's crossed-
  * triangle Loopy in its 120 x 150 desktop window (0.75 px per unit there, a 43.5 px bead; here
- * 108.75 px).
+ * 87 px).
  */
-export const LOOPY_SCALE = 0.75 * 2.5;
+export const LOOPY_SCALE = 0.75 * 2;
 
 const [VB_X, VB_Y, VB_W, VB_H] = LOOPY_VIEWBOX;
 
