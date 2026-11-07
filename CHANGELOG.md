@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The switcher bar keeps the focused terminal's chip in view when focusing it
+  reorders the bar (recently-used order), most visibly with Reduce Motion on,
+  and chips no longer stay shifted out of place after several quick reorders.
+- The agent hub could freeze the app (seen on Linux) when one agent's connection
+  closed just as another one arrived.
+
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 
 - Loopy is lively. While it has nothing to say, it makes small faces now and
