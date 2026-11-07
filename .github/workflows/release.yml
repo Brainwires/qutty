@@ -121,7 +121,8 @@ jobs:
   release:
     name: Publish GitHub release
     needs: build
-    runs-on: ubuntu-latest
+    # The self-hosted Linux runner RUNNER_LINUX_X64 names, else ubuntu-latest (tag pushes only).
+    runs-on: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     permissions:
       contents: write
     steps:

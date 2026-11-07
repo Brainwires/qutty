@@ -50,7 +50,8 @@ jobs:
             arch: arm64
           - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
             arch: x86_64
-          - runner: ubuntu-24.04
+          # The self-hosted Linux runner RUNNER_LINUX_X64 names, else ubuntu-24.04 (always the image on a pull_request).
+          - runner: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-24.04"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-24.04'))) }}
             arch: linux-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
