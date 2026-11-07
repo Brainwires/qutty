@@ -25,6 +25,8 @@ jobs:
           - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
             arch: x86_64
     runs-on: ${{ matrix.runner }}
+    # Tests, build, signing and notarization; a hang fails here, not at GitHub's 6 h limit.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: denoland/setup-deno@v2
@@ -122,6 +124,7 @@ jobs:
     name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
