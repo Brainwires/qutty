@@ -174,7 +174,7 @@
     host" for `ssh` typed in a plain shell (needs the foreground process's argv,
     which `info()` does not report), the port-forward panel and cluster ssh.
 
-- [ ] **Clickable links: URLs and local paths.** ⌘-click (Ctrl-click elsewhere)
+- [x] **Clickable links: URLs and local paths.** ⌘-click (Ctrl-click elsewhere)
       opens what's under the pointer. It's underlined on hover with the modifier
       held, as other terminals do. A plain click still goes to the terminal
       (mouse reporting, selection).

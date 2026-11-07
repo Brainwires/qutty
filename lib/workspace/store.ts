@@ -47,6 +47,7 @@ import {
   sanitizeVoice,
   type VoiceSettings,
 } from "../voice/settings.ts";
+import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -80,6 +81,7 @@ export type SettingsSection =
   | "voice"
   | "sandbox"
   | "ollama"
+  | "links"
   | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -90,6 +92,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "voice",
   "sandbox",
   "ollama",
+  "links",
   "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
@@ -151,6 +154,8 @@ export interface Settings extends FontSettings {
   sandbox: SandboxSettings;
   /** Settings → Ollama (default and recent harness × model pairs; lib/ollama/settings.ts). */
   ollama: OllamaSettings;
+  /** Settings → Links (what opens a file printed with a line; lib/links.ts). */
+  links: LinkSettings;
 }
 
 /** The whole workspace. */
@@ -212,6 +217,7 @@ export type WorkspaceAction =
   | { type: "setVoice"; patch: Partial<VoiceSettings> }
   | { type: "setSandbox"; patch: Partial<SandboxSettings> }
   | { type: "setOllama"; patch: Partial<OllamaSettings> }
+  | { type: "setLinks"; patch: Partial<LinkSettings> }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -234,6 +240,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voice: { ...DEFAULT_VOICE },
   sandbox: { ...DEFAULT_SANDBOX },
   ollama: { ...DEFAULT_OLLAMA, recents: [] },
+  links: { ...DEFAULT_LINKS },
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -259,6 +266,7 @@ function cloneSettings(s: Settings): Settings {
     companion: { ...s.companion },
     voice: { ...s.voice },
     sandbox: { ...s.sandbox },
+    links: { ...s.links },
     ollama: {
       ...s.ollama,
       recents: s.ollama.recents.map((p) => ({ ...p })),
@@ -371,6 +379,7 @@ export function sanitizeSettings(
     out.sandbox = sanitizeSandbox(r.sandbox, out.sandbox);
   }
   if (r.ollama !== undefined) out.ollama = sanitizeOllama(r.ollama, out.ollama);
+  if (r.links !== undefined) out.links = sanitizeLinks(r.links, out.links);
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
   }
@@ -664,6 +673,14 @@ export function reduce(
         return state;
       }
       return { ...state, settings: { ...state.settings, ollama } };
+    }
+    case "setLinks": {
+      const links = sanitizeLinks(action.patch, state.settings.links);
+      const before = state.settings.links;
+      if (links.editor === before.editor && links.command === before.command) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, links } };
     }
     case "launched": {
       if (!isEntryId(action.entryId)) return state;

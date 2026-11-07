@@ -25,13 +25,7 @@
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
 
-import {
-  FitAddon,
-  type ITheme,
-  Terminal,
-  WebglAddon,
-  WebLinksAddon,
-} from "./xterm.ts";
+import { FitAddon, type ITheme, Terminal, WebglAddon } from "./xterm.ts";
 import type { PtyBackend, PtyExit, PtyProcessInfo } from "./pty-client.ts";
 import type { KeyLike } from "./workspace/keys.ts";
 import {
@@ -54,6 +48,12 @@ import {
   type TerminalProfile,
   trustedRemoteCwd,
 } from "./ssh-ui.ts";
+import { parseOsc7 } from "./osc7.ts";
+import {
+  type LinkHit,
+  type LinkHoverState,
+  TerminalLinks,
+} from "./terminal-links.ts";
 
 /** The line written into a terminal whose program could not be started. */
 function spawnFailure(profile: TerminalProfile, why: string): string {
@@ -86,9 +86,20 @@ export interface TerminalManagerEvents {
   isWorkspaceShortcut(e: KeyLike): boolean;
   /** A spawn failed (the message is already on screen). */
   onSpawnError?(id: string, error: unknown): void;
+  /** A link was ⌘-clicked (`open`) or right-clicked (`menu`) in terminal `id`. */
+  onLink?(
+    id: string,
+    hit: LinkHit,
+    event: MouseEvent,
+    how: "open" | "menu",
+  ): void;
+  /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
+  platform?: "mac" | "other";
 }
 
 const ACTIVITY_THROTTLE_MS = 300;
+/** How long a tile's directory, read for its links, is reused. */
+const LINK_CWD_TTL_MS = 1000;
 const FIT_DEBOUNCE_MS = 90;
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
@@ -115,6 +126,11 @@ interface Managed {
   profile: TerminalProfile;
   /** SSH tiles: the remote working directory from the last OSC 7 report. */
   remoteCwd: string | undefined;
+  /** Local tiles: the directory from the last OSC 7 report (when `info` has none). */
+  localCwd: string | undefined;
+  /** The foreground process's directory, read for links (cached for a moment). */
+  infoCwd: { at: number; cwd: string | undefined } | undefined;
+  links: TerminalLinks | null;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -291,16 +307,6 @@ export class TerminalManager {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    try {
-      term.loadAddon(
-        new WebLinksAddon((event, uri) => {
-          // Open links in the OS browser only with the modifier held, like most terminals.
-          if (event.metaKey || event.ctrlKey) {
-            globalThis.open(uri, "_blank", "noopener");
-          }
-        }),
-      );
-    } catch { /* links are a nicety */ }
     const m: Managed = {
       id,
       term,
@@ -319,14 +325,22 @@ export class TerminalManager {
       fontStale: false,
       profile,
       remoteCwd: undefined,
+      localCwd: undefined,
+      infoCwd: undefined,
+      links: null,
     };
     this.#terms.set(id, m);
-    // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. Kept for SSH tiles only.
+    // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. An SSH tile's is remote (where
+    // a dropped file is uploaded to); a local tile's resolves the relative paths it prints.
     term.parser.registerOscHandler(7, (data) => {
       const cwd = trustedRemoteCwd(m.profile, data);
       if (cwd !== undefined) m.remoteCwd = cwd;
+      else if (m.profile.kind !== "ssh") m.localCwd = parseOsc7(data)?.path;
       return true;
     });
+    try {
+      m.links = this.#links(m);
+    } catch { /* links are a nicety: the terminal works without them */ }
 
     term.attachCustomKeyEventHandler((e) => {
       // Workspace shortcuts bubble to the window listener; xterm must not swallow them.
@@ -368,11 +382,42 @@ export class TerminalManager {
     m.host = host;
     if (!m.term.element) {
       m.term.open(host);
+      if (m.term.element) m.links?.attach(m.term.element);
       this.#tryWebgl(m);
     }
     this.fitNow(id);
     this.focusPending(id);
     if (!m.ptyId && !m.spawning) void this.#spawn(m);
+  }
+
+  /** Clickable links for `m` (lib/terminal-links.ts): where its paths point, and what a click does. */
+  #links(m: Managed): TerminalLinks {
+    return new TerminalLinks(m.term, {
+      platform: this.#events.platform ?? "mac",
+      context: () =>
+        m.profile.kind === "ssh"
+          ? { remote: true, cwd: m.remoteCwd }
+          : { remote: false, cwd: () => this.#linkCwd(m) },
+      resolve: (cwd, paths) => this.#backend.linkResolve(cwd, paths),
+      activate: (hit, e) => this.#events.onLink?.(m.id, hit, e, "open"),
+      menu: (hit, e) => this.#events.onLink?.(m.id, hit, e, "menu"),
+    });
+  }
+
+  /** A local tile's directory: its foreground process's, else OSC 7's, else where it started. */
+  async #linkCwd(m: Managed): Promise<string | undefined> {
+    const now = Date.now();
+    if (!m.infoCwd || now - m.infoCwd.at > LINK_CWD_TTL_MS) {
+      let cwd: string | undefined;
+      if (m.ptyId && !m.exited) {
+        cwd = await this.#backend.info(m.ptyId).then(
+          (i) => i.cwd,
+          () => undefined,
+        );
+      }
+      m.infoCwd = { at: now, cwd };
+    }
+    return m.infoCwd.cwd ?? m.localCwd ?? m.home;
   }
 
   #tryWebgl(m: Managed): void {
@@ -619,6 +664,11 @@ export class TerminalManager {
     }
   }
 
+  /** Test-only: the link under terminal `id`'s pointer (`null` when unknown). */
+  linkState(id: string): LinkHoverState | null {
+    return this.#terms.get(id)?.links?.state() ?? null;
+  }
+
   /** Test-only: the buffer text, grid size and PTY id of `id` (`null` when unknown). */
   debugState(id: string): TerminalDebugState | null {
     const m = this.#terms.get(id);
@@ -650,6 +700,7 @@ export class TerminalManager {
     this.#terms.delete(id);
     if (m.fitTimer !== undefined) clearTimeout(m.fitTimer);
     for (const u of m.unsubs.splice(0)) u();
+    m.links?.dispose();
     if (m.ptyId && !m.exited) void this.#backend.kill(m.ptyId).catch(() => {});
     try {
       m.webgl?.dispose();

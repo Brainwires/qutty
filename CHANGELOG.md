@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Clickable links. ⌘-click (Ctrl-click on Linux) opens what is under the
+  pointer, which is underlined only while the modifier is held; a plain click
+  still selects text or goes to the program. URLs (`http`, `https`, `file`,
+  `mailto`, trailing punctuation trimmed) and OSC 8 hyperlinks
+  (`ls
+  --hyperlink`, gcc, delta, Claude Code) open in the browser. Paths that
+  exist (`/…`, `~/…`, `./src/x.ts`, `src/x.ts`, resolved against the tile's
+  current folder) open in their default app, and folders are revealed in Finder
+  (the file manager on Linux). A file printed with a line (`src/x.ts:42:7`,
+  `x.ts(42,7)`, `at fn (x.js:42:7)`, Python's `File "x.py", line 42`) opens in
+  the editor picked in Settings → Links: the first installed of VS Code, Cursor,
+  Zed, Sublime Text, IntelliJ IDEA and Xcode, a custom command such as
+  `hx {file}:{line}:{col}`, or `$EDITOR` in a new tile. In an SSH tile, a remote
+  path offers Download instead. Right-click on a link for Open, Reveal and Copy.
+
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 
 - Loopy is lively. While it has nothing to say, it makes small faces now and

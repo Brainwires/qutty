@@ -271,6 +271,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     "voice",
     "sandbox",
     "ollama",
+    "links",
     "integration",
   ]);
 
@@ -379,4 +380,31 @@ Deno.test("settings: inactive tiles default to resize, sanitise, reduce and pers
     settings: loadSettings(storage)!,
   });
   assertEquals(back.settings.inactiveTiles, "scale");
+});
+
+Deno.test("settings: links default to auto, sanitise, reduce and persist", () => {
+  assertEquals(DEFAULT_SETTINGS.links, { editor: "auto", command: "" });
+  assertEquals(
+    sanitizeSettings({ links: { editor: "bogus", command: "zed {file}" } })
+      .links,
+    { editor: "auto", command: "zed {file}" },
+  );
+  let s = initialState();
+  s = reduce(s, { type: "setLinks", patch: { editor: "zed" } });
+  assertEquals(s.settings.links.editor, "zed");
+  assertStrictEquals(
+    reduce(s, { type: "setLinks", patch: { editor: "zed" } }),
+    s,
+  );
+  s = reduce(s, {
+    type: "setLinks",
+    patch: { editor: "custom", command: "hx {file}" },
+  });
+  const { storage } = memoryStorage();
+  assert(saveSettings(s.settings, storage));
+  const back = reduce(initialState(), {
+    type: "hydrateSettings",
+    settings: loadSettings(storage)!,
+  });
+  assertEquals(back.settings.links, { editor: "custom", command: "hx {file}" });
 });
