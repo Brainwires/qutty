@@ -25,7 +25,7 @@ jobs:
     # A hang fails in minutes, not at GitHub's 6 h job limit.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -57,7 +57,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -72,7 +72,7 @@ jobs:
     runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -82,7 +82,7 @@ jobs:
           E2E_TIMEOUT_SCALE: "3"
       - name: Upload screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots
           path: tests/e2e/__screenshots__/
