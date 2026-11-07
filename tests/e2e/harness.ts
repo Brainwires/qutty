@@ -1077,11 +1077,26 @@ export function suite(
               let page: Page | undefined;
               let ok = false;
               try {
+                // A page that never opens is the browser's stall, not the app's: once, the case
+                // gets a fresh browser instead (a second stall fails it).
                 page = await bounded(
                   browser.newPage(),
                   CALL_MS,
                   "opening a page",
-                );
+                ).catch(async (e) => {
+                  console.error(
+                    `e2e: ${e.message}; retrying in a fresh browser`,
+                  );
+                  const old = browser!;
+                  browser = undefined;
+                  await closeBrowser(old);
+                  browser = await launchBrowser();
+                  return bounded(
+                    browser.newPage(),
+                    CALL_MS,
+                    "opening a page (in a fresh browser)",
+                  );
+                });
                 const app = new App(page, server.origin, c.opts);
                 await bounded(
                   (async () => {
