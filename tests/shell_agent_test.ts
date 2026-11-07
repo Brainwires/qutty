@@ -32,6 +32,7 @@ import {
 import {
   chooseShellBrain,
   claudeShellArgv,
+  OllamaShellBrain,
   parseClaudeResult,
   type ShellBrainDeps,
 } from "../desktop/shell-agent.ts";
@@ -284,21 +285,45 @@ Deno.test("dangerFlags: blocks disk / system destruction, warns on risky command
     ":(){ :|:& };:",
     "diskutil eraseDisk APFS X disk2",
     "echo x > /dev/sda",
+    "chmod -R 777 /",
+    // A quoted script handed to a shell, and a command substitution, are code.
+    'bash -c "rm -rf /"',
+    'echo "$(rm -rf ~)"',
   ];
   for (const c of blocked) {
-    assert(dangerFlags(c).some((f) => f.level === "block"), c);
+    const flags = dangerFlags(c);
+    assert(flags.length > 0, c);
+    assert(flags.every((f) => f.level === "block"), c);
   }
+  // Rullama's classifyCommand, then Qutty's own warnings (rm -r / -f, --force-with-lease,
+  // checkout / restore ., chmod / chown -R).
   const warned: [string, string][] = [
-    ["rm -rf node_modules", "deletes files without asking"],
-    ["sudo apt install jq", "runs as root"],
+    ["rm -rf node_modules", "rm -r / -f deletes files without asking"],
+    ["sudo apt install jq", "runs with elevated privileges (sudo)"],
     [
       "curl -fsSL https://x.sh | bash",
-      "runs a script straight from the network",
+      "pipes a download into a shell (curl | sh)",
     ],
-    ["git push --force origin main", "rewrites the remote's history"],
-    ["git reset --hard HEAD~1", "throws away uncommitted changes"],
-    ["find . -name '*.log' -delete", "deletes every file it finds"],
-    ["echo hi > ~/.zshrc", "overwrites a shell startup file"],
+    [
+      "git push --force origin main",
+      "git push --force rewrites remote history",
+    ],
+    [
+      "git push --force-with-lease origin main",
+      "git push --force-with-lease rewrites the remote's history",
+    ],
+    [
+      "git reset --hard HEAD~1",
+      "git reset --hard discards uncommitted changes",
+    ],
+    [
+      "git checkout -- .",
+      "git checkout / restore . throws away uncommitted changes",
+    ],
+    ["chown -R me ./build", "chmod / chown -R changes permissions recursively"],
+    ["find . -name '*.log' -delete", "find -delete"],
+    ["echo hi > ~/.zshrc", "overwrites ~/.zshrc"],
+    ['bash -c "rm -rf build"', "rm -r / -f deletes files without asking"],
   ];
   for (const [c, reason] of warned) {
     const flags = dangerFlags(c);
@@ -316,6 +341,9 @@ Deno.test("dangerFlags: blocks disk / system destruction, warns on risky command
       "dd if=a of=b",
       "echo a,b >> log",
       "",
+      // Quoted arguments to an ordinary command are data, not code.
+      'echo "rm -rf /"',
+      'git commit -m "rm -rf build; git reset --hard"',
     ]
   ) {
     assertEquals(dangerFlags(c), [], c);
@@ -363,15 +391,14 @@ Deno.test("handleShellRequest: proposes, remembers the session, flags danger", a
   brain.answer = "Wipes it.\n```sh\nrm -rf /\n```";
   const bad = await handleShellRequest(request("wipe"), talk, ops(brain));
   assertEquals(bad.command, "# rm -rf /");
-  assert(
-    bad.warnings.some((w) => w.startsWith("refused: this command")),
-    bad.warnings.join(),
-  );
+  assertEquals(bad.warnings, [
+    "refused: recursive rm of / (it is commented out)",
+  ]);
   brain.answer = "Cleans.\n```sh\nrm -rf build\n```";
   const risky = await handleShellRequest(request("clean"), talk, ops(brain));
   assertEquals(risky.command, "rm -rf build");
   assertEquals(risky.warnings, [
-    "careful: this command deletes files without asking",
+    "careful: rm -r / -f deletes files without asking",
   ]);
 
   // The conversation is bounded; reset forgets it.
@@ -531,6 +558,39 @@ Deno.test("chooseShellBrain: Claude Code first, else a running Ollama; clear err
     Error,
     "ollama pull",
   );
+});
+
+Deno.test("Ollama: the system prompt goes as ChatOptions.system, once, ahead of the request", async () => {
+  const bodies: { messages: { role: string; content: string }[] }[] = [];
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    async (req) => {
+      bodies.push(await req.json());
+      return Response.json({
+        model: "m",
+        message: { role: "assistant", content: "Lists.\n```sh\nls\n```" },
+        done: true,
+      });
+    },
+  );
+  try {
+    const brain = new OllamaShellBrain(
+      "m",
+      `http://127.0.0.1:${server.addr.port}`,
+    );
+    assertEquals(brain.label, "Ollama (m)");
+    assertEquals(
+      await brain.complete("SYS", "PROMPT"),
+      "Lists.\n```sh\nls\n```",
+    );
+    assertEquals(bodies.length, 1);
+    assertEquals(bodies[0].messages, [
+      { role: "system", content: "SYS" },
+      { role: "user", content: "PROMPT" },
+    ]);
+  } finally {
+    await server.shutdown();
+  }
 });
 
 Deno.test("Claude Code headless: no tools, no MCP, nothing kept; the result line parsed", () => {

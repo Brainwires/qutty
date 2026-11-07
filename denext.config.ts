@@ -41,10 +41,14 @@ export default {
         "./desktop/ollama.ts",
       ],
       // The microphone: push-to-talk opens it in the app's own process (the native audio
-      // library's cpal capture), not through the page, so Denext's `microphone` capability (4.13,
-      // whose pinned runtime 3.0.0-denext.12 breaks node-pty's addon in the packaged app: TODO.md)
-      // is not used. The entitlement is `desktop.macos.entitlements` below; the Info.plist usage
-      // text is written by scripts/package-macos.ts (MICROPHONE_USAGE).
+      // library's cpal capture). The capability writes the Info.plist usage text macOS shows when
+      // it asks (once), and gives a signed (hardened runtime) build the
+      // `com.apple.security.device.audio-input` entitlement it needs to open the microphone. (It
+      // also lets the page's own getUserMedia ask, which Qutty does not use.)
+      microphone: {
+        usageDescription:
+          "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile.",
+      },
       // Not yet: `secureStore: true` for cloud voice keys (Deepgram, ElevenLabs). Denext's packager
       // then bakes `--allow-run=security` and `--allow-sys`, which the app must not have, so the
       // cloud engines are off (lib/voice/engines.ts CLOUD_KEYS_UNAVAILABLE; TODO.md).
@@ -68,10 +72,5 @@ export default {
     // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either. (With the
     // cloud voices on: `netConnect: ["api.deepgram.com", "api.elevenlabs.io"]`.)
     extraPermissions: { ffi: ["*"], netConnect: ["127.0.0.1:11434"] },
-    // A signed (hardened runtime) build may open the microphone only with this entitlement; macOS
-    // then asks the user once, with the Info.plist text.
-    macos: {
-      entitlements: { "com.apple.security.device.audio-input": true },
-    },
   },
 } satisfies DenextConfig;

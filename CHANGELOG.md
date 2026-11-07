@@ -70,6 +70,20 @@
   trust in `~/.codex/config.toml`, still in one marked block that Uninstall
   removes byte for byte. A block from an older Qutty shows as out of date, and
   Install refreshes it.
+- Built on Denext 4.13.1 (was 4.12), whose desktop runtime starts shells in the
+  packaged app again (denext#134). The microphone's permission text and the
+  signed build's audio-input entitlement now come from Denext's `microphone`
+  capability instead of a step of Qutty's own in the macOS packaging script.
+  `QUTTY_PTY_SELFTEST=1` checks a packaged app's terminal path without the
+  window: it starts the login shell, has it answer, and exits.
+- Rullama updates: `@rullama/mcp-server` 0.12.4 (the hub's MCP tool hints are
+  registered with each tool), `@rullama/provider` 0.12.2 (the shell agent's
+  Ollama gets its instructions as the system prompt) and
+  `@rullama/tool-builtins` 0.12.2. The shell agent's danger check now parses the
+  command the way the shell does, so a quoted argument such as
+  `git commit -m "rm -rf build"` is no longer flagged, while
+  `bash -c "rm -rf /"` and `$(…)` are checked as code. A refused command's line
+  names every reason.
 
 ## 0.3.0 — agent hub, companion, voice, SSH, sandbox
 

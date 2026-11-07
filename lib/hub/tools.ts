@@ -162,18 +162,9 @@ export const TOOL_HINTS: Readonly<Record<string, ToolHints>> = {
   close_tile: TYPES,
 };
 
-/** `McpToolRegistry`, listing each tool with its {@linkcode TOOL_HINTS}. */
-class HintedToolRegistry extends McpToolRegistry {
-  override listTools(): ReturnType<McpToolRegistry["listTools"]> {
-    return super.listTools().map((t) =>
-      TOOL_HINTS[t.name] ? { ...t, annotations: { ...TOOL_HINTS[t.name] } } : t
-    );
-  }
-}
-
-/** Build the tool registry for `core`. */
+/** Build the tool registry for `core`; each tool is listed with its {@linkcode TOOL_HINTS}. */
 export function buildToolRegistry(core: HubCore): McpToolRegistry {
-  const reg = new HintedToolRegistry();
+  const reg = new McpToolRegistry();
   const add = (
     name: string,
     description: string,
@@ -184,14 +175,20 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
       ctx: RequestContext,
     ) => unknown,
   ) =>
-    reg.register(name, description, schema, async (args, ctx) => {
-      try {
-        return ok(await run(args, identityOf(ctx), ctx));
-      } catch (e) {
-        if (e instanceof HubError) return fail(e.message);
-        throw e;
-      }
-    });
+    reg.register(
+      name,
+      description,
+      schema,
+      async (args, ctx) => {
+        try {
+          return ok(await run(args, identityOf(ctx), ctx));
+        } catch (e) {
+          if (e instanceof HubError) return fail(e.message);
+          throw e;
+        }
+      },
+      TOOL_HINTS[name] ? { annotations: { ...TOOL_HINTS[name] } } : {},
+    );
 
   add(
     "whoami",

@@ -67,18 +67,16 @@
     backend alone), then turn them on with `secureStore` and the two
     `netConnect` hosts. OpenAI Realtime (that branch's Loopy voice) can be one
     more optional cloud engine behind the same adapters.
-  - Voice, Denext: Qutty stays on Denext 4.12. With 4.13 (runtime pinned to
-    3.0.0-denext.12), node-pty's addon loads as `null` in the packaged app
-    (`require("…/pty.node")` returns null), so no terminal starts ("could not
-    start the shell"); 4.12's runtime is fine. Report to Denext. 4.13's
-    `microphone` capability would replace the hand-written
-    `NSMicrophoneUsageDescription` step in scripts/package-macos.ts (keep it
-    when regenerating the script); the entitlement is already
-    `desktop.macos.entitlements`. A packaged-build check of the voice path:
-    `QUTTY_VOICE_SELFTEST=<wav>` (desktop/voice.ts) logs the library, fetches
-    the model, transcribes and plays the file; run it under a temporary `HOME`
-    so the installed app's folder is untouched. Streaming transcripts (partials)
-    and a wake word are possible with the same library.
+  - Voice, Denext: the microphone's Info.plist text and audio-input entitlement
+    come from Denext's `microphone` capability (denext.config.ts).
+    Packaged-build checks without the UI, each under a temporary `HOME` so the
+    installed app's folder is untouched: `QUTTY_VOICE_SELFTEST=<wav>`
+    (desktop/voice.ts) logs the library, fetches the model, transcribes and
+    plays the file; `QUTTY_PTY_SELFTEST=1` (desktop/pty.ts) loads node-pty's
+    addon, starts the login shell as a tile does, has it answer, and exits (the
+    check for denext#134, where a runtime's node-pty substitute had no native
+    addon). Streaming transcripts (partials) and a wake word are possible with
+    the same library.
   - Done (phase 2c): the shared Docker sandbox (see below).
   - Done (phase 3): the shell is the harness —
     `resources/shell/qutty.{zsh,bash}` (a `,` line goes to the model, the
@@ -93,9 +91,11 @@
     macOS's bash 3.2 gets the proposal in the history, not the buffer (no
     `READLINE_LINE`); a running request cannot be cancelled hub-side (Ctrl-C
     stops the client, the model call finishes and is dropped); new messages are
-    not announced at the prompt (`, inbox` pulls them). Upstream: Rullama's
-    `BashTool` denylist is five exact substrings (Qutty adds its own patterns),
-    and `OllamaChatProvider` ignores `ChatOptions.system`.
+    not announced at the prompt (`, inbox` pulls them). Danger flags are
+    Rullama's `classifyCommand` plus four Qutty warnings it leaves out on
+    purpose (any `rm -r`/`-f`, `--force-with-lease`, `checkout`/`restore .`,
+    `chmod`/`chown -R`); those four are regexes over the command with quoted
+    data dropped, not a shell parse.
   - Next: the `@rullama/inference` brain adapter (`InferenceBrainOptions` is the
     typed TODO), dragging Loopy, a floating window (Denext multi-window).
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
@@ -121,12 +121,12 @@
     libc like the unix sockets (no `net` permission); native Linux Docker gets
     `--add-host=host.docker.internal:host-gateway` and the hub also listens on
     the bridge gateway.
-  - Open: Denext 4.12 has no window-closed hook, so a second window's container
-    stops when the app quits (4.13's `onWindowClosed` can stop it earlier).
-    Native Linux: files the root user creates in a read/write project mount are
-    owned by root on the host (Docker Desktop maps them to you). Changing the
-    image or mounts recreates the container on Restart (packages installed with
-    apt go; `$HOME` stays). Network off also cuts the sandbox off from the hub.
+  - Open: a second window's container stops when the app quits (Denext 4.13's
+    `onWindowClosed`, not used yet, can stop it earlier). Native Linux: files
+    the root user creates in a read/write project mount are owned by root on the
+    host (Docker Desktop maps them to you). Changing the image or mounts
+    recreates the container on Restart (packages installed with apt go; `$HOME`
+    stays). Network off also cuts the sandbox off from the hub.
 
 - [ ] **SSH sessions and a connection manager.** Run the system `ssh` in a PTY,
       the same way shells run today. Never implement the protocol, and never
