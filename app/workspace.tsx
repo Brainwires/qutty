@@ -7,6 +7,10 @@
 // `ask_user` questions, `qutty-hook say`, the chat with its brain) in `CompanionOverlay`, its
 // settings and commands in `useCompanion`. With the companion Off, `AskDialog` asks instead.
 //
+// Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
+// terminals that kept running while no window showed it, or started with its first shell, and the
+// page saves its snapshot as it changes. Unmounting (the page going away) leaves the PTYs running.
+//
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
 // waiting for a re-render (and without an effect that would steal focus from the settings UI).
@@ -51,6 +55,8 @@ import {
   saveSettings,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
+import { useSession } from "./use-session.ts";
+import { QuitDialog } from "./quit-dialog.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
 import { SettingsPanel } from "./settings-panel.tsx";
@@ -87,7 +93,22 @@ import {
 const TITLE_POLL_MS = 2000;
 const AGE_TICK_MS = 10_000;
 
+/**
+ * The workspace island. In test mode (`?test=1`) `window.__e2eRemount()` mounts it afresh: the
+ * e2e suite's stand-in for closing the window and opening it again (the PTYs stay up).
+ */
 export function Workspace() {
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    if (!isTestMode()) return;
+    const g = globalThis as { __e2eRemount?: () => void };
+    g.__e2eRemount = () => setGeneration((n) => n + 1);
+    return () => void delete g.__e2eRemount;
+  }, []);
+  return <WorkspaceView key={generation} />;
+}
+
+function WorkspaceView() {
   const [state, dispatch] = useReducer(reduce, undefined, () => initialState());
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -250,6 +271,20 @@ export function Workspace() {
     managerRef.current?.focus(id);
   }, [run]);
 
+  const session = useSession({
+    manager: ready ? managerRef.current : null,
+    state,
+    seqRef,
+    dispatch,
+    focus: (id) => managerRef.current?.focus(id),
+    // A new workspace starts with the default shell on the host, whatever plain `+` opens.
+    fresh: () => {
+      if (stateRef.current.terminals.length === 0) {
+        openTile({ kind: "shell", sandbox: false });
+      }
+    },
+  });
+
   useCompanion({
     manager: managerRef.current,
     settings: state.settings.companion,
@@ -380,6 +415,7 @@ export function Workspace() {
     setReady(true);
     return () => {
       mq?.removeEventListener?.("change", onMq);
+      // The xterms go; the PTYs keep running for the next page that shows this workspace.
       manager.disposeAll();
       managerRef.current = null;
     };
@@ -411,14 +447,6 @@ export function Workspace() {
     applyChromeTheme(document.documentElement, theme);
     if (ready) managerRef.current?.setTheme(theme.terminal);
   }, [ready, themeId]);
-
-  // The first terminal, once the manager exists.
-  useEffect(() => {
-    // Always the default shell on the host, whatever plain `+` is set to open.
-    if (
-      ready && stateRef.current.terminals.length === 0 && seqRef.current === 0
-    ) openTile({ kind: "shell", sandbox: false });
-  }, [ready, openTile]);
 
   useSandboxSettings(
     ready ? managerRef.current?.backend ?? null : null,
@@ -632,7 +660,7 @@ export function Workspace() {
               : ""}
           />
         )}
-        {ready && state.terminals.length === 0 && (
+        {ready && session.booted && state.terminals.length === 0 && (
           <div class="empty" data-testid="empty">
             <p>No terminals open.</p>
             <button
@@ -689,6 +717,15 @@ export function Workspace() {
       )}
       {manager && effectiveMode(settings.companion.mode) === "off" && (
         <AskDialog backend={manager.backend} onDone={refocus} />
+      )}
+      {session.quit && (
+        <QuitDialog
+          request={session.quit}
+          onAnswer={(quit) => {
+            session.answerQuit(quit);
+            if (!quit) refocus();
+          }}
+        />
       )}
       {manager && ssh.dialog && (
         <ConnectionsDialog
