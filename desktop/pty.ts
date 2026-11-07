@@ -1294,10 +1294,69 @@ export async function writeTerminal(id: string, data: string): Promise<void> {
   await requireHost().write(id, data);
 }
 
+/** How long the PTY self-test waits for the shell to answer. */
+const SELFTEST_TIMEOUT_MS = 20_000;
+
+/**
+ * `QUTTY_PTY_SELFTEST=1`: a check of the packaged app's terminal path without the UI. It loads
+ * node-pty's native addon, starts the default login shell through a {@linkcode PtyHost} (as a
+ * tile does), waits for its prompt, has it compute `$((6*7))`, logs `pty self-test: OK` and exits
+ * the app (1 on failure). Run it under a temporary `HOME` so the user's own app folder and shell
+ * history are untouched.
+ */
+async function ptySelfTest(appSupportDir: string | undefined): Promise<void> {
+  const log = (m: string) => console.error(`pty self-test: ${m}`);
+  const { native } = await loadNodePty();
+  log(`node-pty native addon: ${Object.keys(native).sort().join(", ")}`);
+  let output = "";
+  let exited: PtyExitEvent | undefined;
+  const pty = new PtyHost((event, data) => {
+    if (event === "data") output += (data as PtyDataEvent).data;
+    else exited = data as PtyExitEvent;
+  });
+  const started = await pty.spawn({ cols: 80, rows: 24 }, {
+    appSupportDir,
+    owner: "selftest",
+  });
+  log(`spawned ${started.shell} (pid ${started.pid}) in ${started.cwd}`);
+  const deadline = Date.now() + SELFTEST_TIMEOUT_MS;
+  const until = async (done: () => boolean, what: string) => {
+    while (!done()) {
+      if (exited) {
+        throw new Error(`the shell exited: ${JSON.stringify(exited)}`);
+      }
+      if (Date.now() > deadline) throw new Error(`no ${what} in time`);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  };
+  await until(() => output.length > 0, "prompt");
+  await new Promise((r) => setTimeout(r, 300));
+  log(`prompt ${JSON.stringify(output.slice(-120))}`);
+  // The answer, not the echo of the line typed, proves the shell ran it.
+  await pty.write(started.id, "echo QUTTY_PTY_$((6*7))\r");
+  await until(() => output.includes("QUTTY_PTY_42"), "answer");
+  log("shell answered QUTTY_PTY_42");
+  pty.killAllNow();
+  log("OK");
+}
+
 export default defineDesktopExtension({
   name: "pty",
   events: ["data", "exit"],
   perWindow: true,
+  setup: (h) => {
+    if (Deno.env.get("QUTTY_PTY_SELFTEST") !== "1") return;
+    // Once the app is up (the window, and the app-support folder the runtime creates), as a
+    // tile's shell would start.
+    setTimeout(() =>
+      ptySelfTest(h.appSupportDir || undefined).then(
+        () => Deno.exit(0),
+        (e) => {
+          console.error(`pty self-test: FAILED: ${e?.message ?? e}`);
+          Deno.exit(1);
+        },
+      ), 4000);
+  },
   onPageLoad: (windowId?: string) => {
     host?.killOwnedBy(windowId ?? "main");
   },

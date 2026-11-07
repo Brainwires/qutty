@@ -20,7 +20,10 @@
  * @module
  */
 
-import { BashTool, SECRET_ENV_PATTERN } from "@rullama/tool-builtins/bash";
+import {
+  classifyCommand,
+  SECRET_ENV_PATTERN,
+} from "@rullama/tool-builtins/bash";
 
 // ---------------------------------------------------------------------------------------------
 // The request
@@ -354,76 +357,50 @@ export interface DangerFlag {
   reason: string;
 }
 
-/** Patterns that destroy the system or a disk: the command lands commented out. */
-const BLOCK_PATTERNS: [RegExp, string][] = [
+/**
+ * Qutty's own warnings, for what Rullama's `classifyCommand` leaves `ok` on purpose (it flags
+ * only the commands that destroy a disk, the system or history): Qutty also warns on any
+ * `rm -r` / `rm -f`, `git push --force-with-lease`, `git checkout .` / `git restore .`, and a
+ * recursive `chmod` / `chown` anywhere, since the user runs the command with one key.
+ */
+const QUTTY_WARN_PATTERNS: [RegExp, string][] = [
   [
-    /\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rR][A-Za-z]*\s+(?:-[A-Za-z-]+\s+)*(?:--\s+)?(?:\/|\/\*|~\/?|\$HOME\/?|"\$HOME"\/?)(?:\s|$|;|&|\|)/,
-    "deletes your whole disk or home folder",
-  ],
-  [/\bmkfs(?:\.\w+)?\b/, "formats a disk"],
-  [
-    /\bdd\b[^|;&]*\bof=\/dev\/(?!null\b|zero\b|stdout\b|stderr\b)/,
-    "overwrites a disk device",
-  ],
-  [
-    />\s*\/dev\/(?:sd[a-z]|nvme|disk\d|rdisk\d|hd[a-z])/,
-    "overwrites a disk device",
-  ],
-  [/:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, "is a fork bomb"],
-  [
-    /\bdiskutil\s+(?:zeroDisk|eraseDisk|eraseVolume|secureErase|partitionDisk)\b/i,
-    "erases a disk",
+    /\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rRf]/,
+    "rm -r / -f deletes files without asking",
   ],
   [
-    /\bchmod\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*R[A-Za-z]*\s+[0-7]*7[0-7]*\s+\/(?:\s|$)/,
-    "changes permissions on the whole disk",
+    /\bgit\s+push\b[^;&|]*\s--force-with-lease\b/,
+    "git push --force-with-lease rewrites the remote's history",
+  ],
+  [
+    /\bgit\s+(?:checkout|restore)\s+(?:--\s+)?\.(?:\s|$)/,
+    "git checkout / restore . throws away uncommitted changes",
+  ],
+  [
+    /\b(?:chmod|chown)\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*R\b/,
+    "chmod / chown -R changes permissions recursively",
   ],
 ];
 
-/** Patterns worth a warning: the command lands as proposed, with the warning above it. */
-const WARN_PATTERNS: [RegExp, string][] = [
-  [/\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rRf]/, "deletes files without asking"],
-  [/\bsudo\b|\bdoas\b/, "runs as root"],
-  [
-    /\b(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b/,
-    "runs a script straight from the network",
-  ],
-  [
-    /\bgit\s+push\b[^;&|]*(?:\s--force\b|\s-f\b|\s--force-with-lease\b)/,
-    "rewrites the remote's history",
-  ],
-  [/\bgit\s+reset\s+--hard\b/, "throws away uncommitted changes"],
-  [/\bgit\s+clean\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*f/, "deletes untracked files"],
-  [
-    /\bgit\s+checkout\s+(?:--\s+)?\.(?:\s|$)|\bgit\s+restore\s+(?:--\s+)?\.(?:\s|$)/,
-    "throws away uncommitted changes",
-  ],
-  [
-    /\bfind\b[^;&|]*\s-delete\b|\bxargs\s+(?:-[A-Za-z0-9]+\s+)*rm\b/,
-    "deletes every file it finds",
-  ],
-  [
-    /\b(?:shutdown|reboot|halt|poweroff)\b/,
-    "shuts down or restarts the machine",
-  ],
-  [/\bkill(?:all)?\s+-(?:9|KILL)\s+-1\b/, "kills every process you own"],
-  [
-    /\bchmod\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*R\b|\bchown\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*R\b/,
-    "changes permissions recursively",
-  ],
-  [
-    /\bdrop\s+(?:table|database|schema)\b|\btruncate\s+table\b/i,
-    "deletes database data",
-  ],
-  [/\bcrontab\s+-r\b/, "removes your crontab"],
-  [
-    /(?:^|[^>&0-9])>\s*(?:~\/)?\.(?:zshrc|bashrc|bash_profile|profile|zprofile)\b/,
-    "overwrites a shell startup file",
-  ],
-  [/\bhistory\s+-c\b/, "clears your shell history"],
-];
+/** A shell (`sh -c`, `bash -lc`, …), `eval`, or a command substitution: quoted text is code. */
+const RUNS_QUOTED_CODE = /\b(?:ba|z|da|k)?sh\s+-[A-Za-z]*c\b|\beval\b|\$\(|`/;
 
-/** Flags for a proposed command: Rullama `BashTool`'s denylist, then Qutty's own patterns. */
+/**
+ * The text Qutty's own patterns look at: as `classifyCommand` does, quoted text handed to an
+ * ordinary command is data (`git commit -m "rm -rf x"` is fine), so quoted spans are dropped,
+ * unless the command hands quoted text to a shell, `eval` or a substitution.
+ */
+function codeText(command: string): string {
+  if (RUNS_QUOTED_CODE.test(command)) return command;
+  return command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''");
+}
+
+/**
+ * Flags for a proposed command: Rullama's `classifyCommand` (a shell-aware parse: `block` for
+ * what destroys a disk, the system or the home folder, `warn` for what is risky), then
+ * {@linkcode QUTTY_WARN_PATTERNS}. A blocked command's reasons are all `block` flags: the
+ * classification does not say which of them is only warn-level, and the whole command is refused.
+ */
 export function dangerFlags(command: string): DangerFlag[] {
   if (!command.trim()) return [];
   const flags: DangerFlag[] = [];
@@ -433,16 +410,15 @@ export function dangerFlags(command: string): DangerFlag[] {
     seen.add(reason);
     flags.push({ level, reason });
   };
-  try {
-    BashTool.validateCommand(command);
-  } catch (e) {
-    add("block", e instanceof Error ? e.message : String(e));
+  const { verdict, reasons } = classifyCommand(command);
+  for (const reason of reasons) {
+    add(verdict === "block" ? "block" : "warn", reason);
   }
-  for (const [re, reason] of BLOCK_PATTERNS) {
-    if (re.test(command)) add("block", reason);
-  }
-  for (const [re, reason] of WARN_PATTERNS) {
-    if (re.test(command)) add("warn", reason);
+  // A refused command needs no further warnings.
+  if (verdict === "block") return flags;
+  const text = codeText(command);
+  for (const [re, reason] of QUTTY_WARN_PATTERNS) {
+    if (re.test(text)) add("warn", reason);
   }
   return flags;
 }
@@ -578,16 +554,16 @@ export async function handleShellRequest(
     }
     conversation.add({ request: text, ...parsed });
     const flags = dangerFlags(parsed.command);
-    const blocked = flags.some((f) => f.level === "block");
-    const warnings = flags.map((f) =>
-      f.level === "block"
-        ? `refused: this command ${f.reason}; it is commented out`
-        : `careful: this command ${f.reason}`
+    const blocks = flags.filter((f) => f.level === "block").map((f) =>
+      f.reason
     );
+    const warnings = blocks.length > 0
+      ? [`refused: ${blocks.join("; ")} (it is commented out)`]
+      : flags.map((f) => `careful: ${f.reason}`);
     return ok(
       parsed.explanation,
-      blocked ? commentOut(parsed.command) : parsed.command,
-      [...new Set(warnings)],
+      blocks.length > 0 ? commentOut(parsed.command) : parsed.command,
+      warnings,
     );
   } catch (e) {
     return failed(e instanceof Error ? e.message : String(e));

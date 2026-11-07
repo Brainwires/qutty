@@ -21,18 +21,20 @@
         "./desktop/ssh.ts",
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",
-        "./desktop/voice.ts"
-      ]
+        "./desktop/voice.ts",
+        "./desktop/ollama.ts"
+      ],
+      "microphone": {
+        "usageDescription": "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile."
+      }
     },
     "extraPermissions": {
       "ffi": [
         "*"
+      ],
+      "netConnect": [
+        "127.0.0.1:11434"
       ]
-    },
-    "macos": {
-      "entitlements": {
-        "com.apple.security.device.audio-input": true
-      }
     }
   }
 }

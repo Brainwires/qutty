@@ -149,11 +149,10 @@ export class OllamaShellBrain implements ShellBrain {
   }
 
   async complete(system: string, prompt: string): Promise<string> {
-    // The provider leaves `ChatOptions.system` out of Ollama's request: send it as a message.
     const response = await this.#provider.chat(
-      [Message.system(system), Message.user(prompt)],
+      [Message.user(prompt)],
       undefined,
-      new ChatOptions({ temperature: 0.2, max_tokens: 1024 }),
+      new ChatOptions({ temperature: 0.2, max_tokens: 1024, system }),
     );
     return response.message.text() ?? "";
   }

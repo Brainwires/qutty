@@ -2,17 +2,17 @@
   "//": "Denext comes from JSR. To dogfood a local checkout instead, add \"links\": [\"../denext\"].",
   "version": "0.3.0",
   "tasks": {
-    "dev": "deno run -A jsr:@denext/denext@^4.12.0/cli dev .",
-    "build": "deno run -A jsr:@denext/denext@^4.12.0/cli build .",
-    "start": "deno run --allow-net --allow-read --allow-env --allow-write=.denext jsr:@denext/denext@^4.12.0/cli start .",
+    "dev": "deno run -A jsr:@denext/denext@^4.13.1/cli dev .",
+    "build": "deno run -A jsr:@denext/denext@^4.13.1/cli build .",
+    "start": "deno run --allow-net --allow-read --allow-env --allow-write=.denext jsr:@denext/denext@^4.13.1/cli start .",
     "test": "deno test -A --ignore=tests/e2e tests/ lib/",
     "test:e2e": "deno test -A tests/e2e/",
     "check": "deno check desktop.ts desktop/ lib/ app/ tests/",
-    "export": "deno run -A jsr:@denext/denext@^4.12.0/cli export .",
-    "desktop": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop run .",
-    "desktop:dev": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop dev .",
-    "desktop:scripts": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop package --regenerate-scripts .",
-    "desktop:package": "deno run -A jsr:@denext/denext@^4.12.0/cli desktop package .",
+    "export": "deno run -A jsr:@denext/denext@^4.13.1/cli export .",
+    "desktop": "deno run -A jsr:@denext/denext@^4.13.1/cli desktop run .",
+    "desktop:dev": "deno run -A jsr:@denext/denext@^4.13.1/cli desktop dev .",
+    "desktop:scripts": "deno run -A jsr:@denext/denext@^4.13.1/cli desktop package --regenerate-scripts .",
+    "desktop:package": "deno run -A jsr:@denext/denext@^4.13.1/cli desktop package .",
     "desktop:package:linux": "deno run -A scripts/package-linux.ts",
     "desktop:package:windows": "deno run -A scripts/package-windows.ts",
     "install": "sh scripts/install-macos.sh",
@@ -40,19 +40,19 @@
   },
   "imports": {
     "@std/toml": "jsr:@std/toml@^1.0.11",
-    "denext": "jsr:@denext/denext@^4.12.0",
-    "denext/jsx-runtime": "jsr:@denext/denext@^4.12.0/jsx-runtime",
-    "denext/jsx-dev-runtime": "jsr:@denext/denext@^4.12.0/jsx-dev-runtime",
-    "denext/server": "jsr:@denext/denext@^4.12.0/server",
-    "denext/client": "jsr:@denext/denext@^4.12.0/client",
-    "denext/auth": "jsr:@denext/denext@^4.12.0/auth",
-    "denext/testing": "jsr:@denext/denext@^4.12.0/testing",
-    "denext/deploy": "jsr:@denext/denext@^4.12.0/deploy",
-    "denext/desktop": "jsr:@denext/denext@^4.12.0/desktop",
-    "denext/desktop/client": "jsr:@denext/denext@^4.12.0/desktop/client",
-    "denext/desktop/window": "jsr:@denext/denext@^4.12.0/desktop/window",
-    "denext/desktop/app": "jsr:@denext/denext@^4.12.0/desktop/app",
-    "denext/mobile": "jsr:@denext/denext@^4.12.0/mobile",
+    "denext": "jsr:@denext/denext@^4.13.1",
+    "denext/jsx-runtime": "jsr:@denext/denext@^4.13.1/jsx-runtime",
+    "denext/jsx-dev-runtime": "jsr:@denext/denext@^4.13.1/jsx-dev-runtime",
+    "denext/server": "jsr:@denext/denext@^4.13.1/server",
+    "denext/client": "jsr:@denext/denext@^4.13.1/client",
+    "denext/auth": "jsr:@denext/denext@^4.13.1/auth",
+    "denext/testing": "jsr:@denext/denext@^4.13.1/testing",
+    "denext/deploy": "jsr:@denext/denext@^4.13.1/deploy",
+    "denext/desktop": "jsr:@denext/denext@^4.13.1/desktop",
+    "denext/desktop/client": "jsr:@denext/denext@^4.13.1/desktop/client",
+    "denext/desktop/window": "jsr:@denext/denext@^4.13.1/desktop/window",
+    "denext/desktop/app": "jsr:@denext/denext@^4.13.1/desktop/app",
+    "denext/mobile": "jsr:@denext/denext@^4.13.1/mobile",
     "@astral/astral": "jsr:@astral/astral@~0.5.3",
     "@std/assert": "jsr:@std/assert@^1.0.0",
     "@std/http": "jsr:@std/http@^1.0.0",
@@ -66,11 +66,11 @@
     "@std/path/posix": "jsr:@std/path@^1.0.0/posix",
     "node-pty": "npm:node-pty@1.1.0",
     "@xterm/headless": "npm:@xterm/headless@6.0.0",
-    "@rullama/mcp-server": "jsr:@rullama/mcp-server@^0.12.3",
+    "@rullama/mcp-server": "jsr:@rullama/mcp-server@^0.12.4",
     "@rullama/mcp-client": "jsr:@rullama/mcp-client@^0.12.3",
     "@rullama/core": "jsr:@rullama/core@^0.12.1",
-    "@rullama/provider": "jsr:@rullama/provider@^0.12.1",
-    "@rullama/tool-builtins/bash": "jsr:@rullama/tool-builtins@^0.12.1/bash",
+    "@rullama/provider": "jsr:@rullama/provider@^0.12.2",
+    "@rullama/tool-builtins/bash": "jsr:@rullama/tool-builtins@^0.12.2/bash",
     "@rullama/provider-speech/deepgram": "jsr:@rullama/provider-speech@^0.12.1/deepgram",
     "@rullama/provider-speech/elevenlabs": "jsr:@rullama/provider-speech@^0.12.1/elevenlabs",
     "@xterm/xterm": "./vendor/xterm/xterm.mjs",
@@ -84,7 +84,7 @@
   },
   "lint": {
     "plugins": [
-      "jsr:@denext/denext@^4.12.0/lint-plugin"
+      "jsr:@denext/denext@^4.13.1/lint-plugin"
     ],
     "exclude": [
       "vendor/"
@@ -131,5 +131,8 @@
       "jsr:@rullama/provider-speech",
       "jsr:@rullama/tool-builtins"
     ]
+  },
+  "supplyChain": {
+    "jailScripts": { "packages": { "node-pty": { "net": ["nodejs.org"] } } }
   }
 }
