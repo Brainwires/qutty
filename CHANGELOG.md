@@ -41,6 +41,17 @@
   and chips no longer stay shifted out of place after several quick reorders.
 - The agent hub could freeze the app (seen on Linux) when one agent's connection
   closed just as another one arrived.
+- Detachable sessions. Closing the window no longer closes its terminals: they
+  keep running, and Qutty stays in the Dock with no window open. Click the Dock
+  icon (or use Window → Reopen Closed Window, ⌘⇧T) and the window comes back
+  with every terminal on its own shell, redrawn from what it printed in the
+  meantime (the last megabyte of each), with the same tile layout, focus and
+  order. A page reload does the same instead of killing the terminals. Off
+  macOS, closing the last window quits.
+- Quitting (⌘Q) ends every terminal. When an agent is still working, Qutty asks
+  first (reopening the window to ask, when it is closed).
+- An agent's `ask_user` question from a tile whose window is closed waits until
+  the window is reopened.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 
