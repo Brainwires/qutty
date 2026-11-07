@@ -184,6 +184,8 @@ suite("links", (test) => {
     await new Promise((r) => setTimeout(r, 300));
     assertEquals(await linkCalls(app), [], "a plain click opens nothing");
 
+    // The plain click's mousedown drops xterm's current link; hover again to find it.
+    await hover(app, id, "https://deno.com/", "https://deno.com/");
     await modClick(app, id, "https://deno.com/");
     await hover(
       app,
