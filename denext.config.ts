@@ -13,10 +13,18 @@ export default {
         windows: "./icons/app.ico",
         linux: "./icons/app.png",
       },
+      // Detachable sessions: closing the window detaches its workspace (its terminals keep running
+      // in the app's process) and the app stays up with no window, in the Dock; Cmd+Q quits and
+      // kills them (desktop/workspace-host.ts). Off macOS the last window's close quits
+      // (desktop/session.ts).
+      keepAlive: true,
     },
     // The first window. There is no window background-colour option in the config schema; the
     // page's own CSS paints the dark background.
-    window: { width: 1600, height: 1000, title: "Qutty" },
+    // Its key is its workspace's id: reopened with it, the window shows the same workspace.
+    window: { width: 1600, height: 1000, title: "Qutty", key: "main" },
+    // Reopen Closed Window (Cmd+Shift+T: the workspace detached last), in the Window menu.
+    menu: { window: { reopenClosed: true } },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned
     // runtime). The page must give itself a drag region (`makeWindowDraggable`).
     titleBar: "hiddenInset",
@@ -32,6 +40,9 @@ export default {
       // layer (lib/voice/).
       extensions: [
         "./desktop/pty.ts",
+        // The workspaces (desktop/workspace-host.ts) as the page sees them: join the window's
+        // workspace and reattach its terminals with their replay, save its snapshot.
+        "./desktop/session.ts",
         "./desktop/ssh.ts",
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",

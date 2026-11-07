@@ -28,12 +28,18 @@ interface Extension {
 /** The extension's declared shape: name, events, method names, `perWindow`, our vendor tag. */
 export function assertExtensionShape(
   ext: Extension,
-  expected: { name: string; events: string[]; methods: string[] },
+  expected: {
+    name: string;
+    events: string[];
+    methods: string[];
+    /** Whether `onPageLoad` runs for every window (default `true`). */
+    perWindow?: boolean;
+  },
 ): void {
   assertEquals(ext.name, expected.name);
   assertEquals([...(ext.events ?? [])].sort(), [...expected.events].sort());
   assertEquals(Object.keys(ext.methods).sort(), [...expected.methods].sort());
-  assertEquals(ext.perWindow, true);
+  assertEquals(ext.perWindow === true, expected.perWindow ?? true);
   for (const m of Object.values(ext.methods)) {
     assertEquals(m.input["~standard"].version, 1);
     assertEquals(m.input["~standard"].vendor, "qutty");

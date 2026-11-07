@@ -33,6 +33,7 @@ Deno.test("schema: declared events and methods", () => {
   assertExtensionShape(ext, {
     name: "pty",
     events: ["data", "exit"],
+    perWindow: false,
     methods: [
       "info",
       "keyBindings",

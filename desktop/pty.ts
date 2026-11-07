@@ -27,11 +27,22 @@
 // per-terminal `seq` because the desktop event stream is at-least-once (a reconnect replays its
 // buffer); the client drops repeats.
 //
-// Lifetime: a page reload/navigation of the window that spawned a terminal kills it
-// (`onPageLoad`), and process unload kills every terminal. A hard exit also closes every master
-// fd, which makes the kernel hang up the shells.
+// Lifetime (detachable sessions): a terminal belongs to a workspace (desktop/workspace-host.ts),
+// not to a window. Its events go to the window showing that workspace only, through denext's
+// `createOwnedResources` (`onOwnerClosed: "detach"`): closing the window detaches the terminal,
+// which keeps running, and its output keeps filling a per-terminal replay ring buffer
+// (`REPLAY_BYTES`); the window that shows the workspace next attaches it (desktop/session.ts) and
+// redraws it from the replay. A page reload attaches it again the same way. The app's quit
+// (Cmd+Q) disposes every terminal, and process unload kills what is left. A hard exit also closes
+// every master fd, which makes the kernel hang up the shells.
 
-import { defineDesktopExtension, DesktopCapError } from "denext/desktop";
+import {
+  defineDesktopExtension,
+  DesktopCapError,
+  type DesktopExtensionHost,
+} from "denext/desktop";
+import { workspaces } from "./workspace-host.ts";
+import { TerminalSessions } from "./terminal-sessions.ts";
 import {
   dim,
   emptyInput,
@@ -784,8 +795,13 @@ function tap<T>(name: string, fn: () => T): T | undefined {
 export interface PtySpawnOptions {
   /** Where to copy spawn-helper when the package's copy cannot be executed. */
   appSupportDir?: string;
-  /** The window that owns the terminal (killed when that window's page reloads). */
+  /** Who owns the terminal: the workspace (the extension's host), or a window / a helper's name. */
   owner?: string;
+  /**
+   * Called with the new terminal's id once it exists, before any of its output can be emitted
+   * (the extension registers it for routing and replay there).
+   */
+  onCreated?: (id: string) => void;
 }
 
 /** Every live PTY, the coalescing, and the I/O loops. */
@@ -964,6 +980,7 @@ export class PtyHost {
       finalized: false,
     };
     this.#terms.set(id, term);
+    if (opts.onCreated) opts.onCreated(id);
     void this.#readLoop(term);
     if (earlyExit) this.#onExit(term, earlyExit);
     return { id, pid: forked.pid, shell: file, cwd };
@@ -1029,6 +1046,12 @@ export class PtyHost {
     const cwd = (fg > 0 ? await processCwd(fg) : undefined) ??
       await processCwd(t.pid);
     return { id, pid: t.pid, process, ...(cwd ? { cwd } : {}) };
+  }
+
+  /** Whether terminal `id` is still running (not ended, not unknown). */
+  isRunning(id: string): boolean {
+    const t = this.#terms.get(id);
+    return t !== undefined && !t.finalized;
   }
 
   /** Kill the terminals a window owns (its page reloaded or navigated away). */
@@ -1238,24 +1261,30 @@ async function processCwd(pid: number): Promise<string | undefined> {
 // The extension
 // ---------------------------------------------------------------------------------------------
 
-let host: PtyHost | undefined;
+const SESSIONS = Symbol.for("qutty.terminalSessions");
 
-function getHost(emit: PtyEmit): PtyHost {
-  if (!host) {
-    host = new PtyHost(emit, { tapped: true });
-    globalThis.addEventListener("unload", () => host?.killAllNow());
-  } else {
-    host.setEmit(emit);
+/**
+ * The app's terminals (made on first use; the extension's `setup` connects them). On `globalThis`,
+ * like the workspace registry, so desktop.ts (the detach self-test) reaches the same one.
+ */
+export function terminalSessions(): TerminalSessions {
+  const g = globalThis as Record<symbol, TerminalSessions | undefined>;
+  let s = g[SESSIONS];
+  if (!s) {
+    s = g[SESSIONS] = new TerminalSessions({
+      workspaces,
+      host: (emit) => new PtyHost(emit, { tapped: true }),
+    });
+    const host = s.host;
+    globalThis.addEventListener("unload", () => host.killAllNow());
   }
-  return host;
+  return s;
 }
 
-function requireHost(): PtyHost {
-  if (!host) {
-    throw new DesktopCapError("not_found", "no such terminal", { status: 404 });
-  }
-  return host;
-}
+/** The calling window (`"main"` for a page that cannot say). */
+const callerOf = (ctx: { windowId?: string }) => ({
+  id: ctx.windowId ?? "main",
+});
 
 /** Ask the {@linkcode SandboxProvider} for a sandboxed terminal's command (a clear error otherwise). */
 async function prepareSandbox(
@@ -1291,7 +1320,7 @@ async function prepareSandbox(
 
 /** Type into one of the app's terminals (the agent hub's `write_tile`). */
 export async function writeTerminal(id: string, data: string): Promise<void> {
-  await requireHost().write(id, data);
+  await terminalSessions().host.write(id, data);
 }
 
 /** How long the PTY self-test waits for the shell to answer. */
@@ -1343,8 +1372,10 @@ async function ptySelfTest(appSupportDir: string | undefined): Promise<void> {
 export default defineDesktopExtension({
   name: "pty",
   events: ["data", "exit"],
-  perWindow: true,
-  setup: (h) => {
+  setup: (h: DesktopExtensionHost) => {
+    terminalSessions().connect(h);
+    // (`QUTTY_PTY_SELFTEST=detach`, the detach / reattach check, runs from desktop.ts: it needs
+    // the app's windows.)
     if (Deno.env.get("QUTTY_PTY_SELFTEST") !== "1") return;
     // Once the app is up (the window, and the app-support folder the runtime creates), as a
     // tile's shell would start.
@@ -1357,52 +1388,60 @@ export default defineDesktopExtension({
         },
       ), 4000);
   },
-  onPageLoad: (windowId?: string) => {
-    host?.killOwnedBy(windowId ?? "main");
-  },
+  // No `onPageLoad` kill: a reloaded page attaches its workspace's terminals again
+  // (desktop/session.ts), as a reopened window does.
   methods: {
     spawn: {
       input: spawnInput,
       handler: async (args: unknown, ctx): Promise<PtySpawnResult> => {
-        const h = getHost((event, data) => ctx.emit(event, data));
-        return await h.spawn(args as PtySpawnArgs, {
-          appSupportDir: ctx.appSupportDir || undefined,
-          owner: ctx.windowId ?? "main",
-        });
+        return await terminalSessions().spawn(
+          args as PtySpawnArgs,
+          callerOf(ctx),
+          ctx.appSupportDir || undefined,
+        );
       },
     },
     write: {
       input: writeInput,
-      handler: async (args: unknown): Promise<void> => {
+      handler: async (args: unknown, ctx): Promise<void> => {
         const { id, data, binary } = args as {
           id: string;
           data: string;
           binary?: boolean;
         };
-        await requireHost().write(id, data, binary === true);
+        await terminalSessions().write(
+          id,
+          data,
+          binary === true,
+          callerOf(ctx),
+        );
       },
     },
     resize: {
       input: resizeInput,
-      handler: (args: unknown): void => {
+      handler: (args: unknown, ctx): void => {
         const { id, cols, rows } = args as {
           id: string;
           cols: number;
           rows: number;
         };
-        requireHost().resize(id, cols, rows);
+        terminalSessions().resize(id, cols, rows, callerOf(ctx));
       },
     },
     kill: {
       input: idInput,
-      handler: (args: unknown): void => {
-        requireHost().kill((args as { id: string }).id);
+      // The tile closed: the terminal is killed (if it still runs) and forgotten.
+      handler: (args: unknown, ctx): void => {
+        terminalSessions().kill((args as { id: string }).id, callerOf(ctx));
       },
     },
     info: {
       input: idInput,
-      handler: async (args: unknown): Promise<PtyInfo> => {
-        return await requireHost().info((args as { id: string }).id);
+      handler: async (args: unknown, ctx): Promise<PtyInfo> => {
+        return await terminalSessions().info(
+          (args as { id: string }).id,
+          callerOf(ctx),
+        );
       },
     },
     // What the `+` picker offers: installed shells and agent tools (lib/launcher.ts).

@@ -7,17 +7,25 @@
         "macos": "./icons/app.icns",
         "windows": "./icons/app.ico",
         "linux": "./icons/app.png"
-      }
+      },
+      "keepAlive": true
     },
     "window": {
       "width": 1600,
       "height": 1000,
-      "title": "Qutty"
+      "title": "Qutty",
+      "key": "main"
+    },
+    "menu": {
+      "window": {
+        "reopenClosed": true
+      }
     },
     "titleBar": "hiddenInset",
     "capabilities": {
       "extensions": [
         "./desktop/pty.ts",
+        "./desktop/session.ts",
         "./desktop/ssh.ts",
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",
