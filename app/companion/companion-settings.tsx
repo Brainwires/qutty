@@ -1,7 +1,9 @@
 // Settings → Companion: where Loopy is drawn (in the window; floating comes with Denext
 // multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner, whether
-// it is lively (idle expressions, eyes that follow the pointer), whether its brain (headless Claude
-// Code) may run and with which model, the brain's status, and "Companion activity": the
+// it is lively (idle expressions, eyes that follow the pointer), whether its brain may run, which
+// brain (headless Claude Code with its model, or a local Ollama model that can call tools, from the
+// Ollama helper's tracked models; an API key brain is listed but off: see BrainEngine) and the
+// brain's status, and "Companion activity": the
 // companion's privileged actions from the audit log, newest first (the full log is
 // companion-audit.jsonl in the app-support folder).
 
@@ -14,17 +16,27 @@ import {
   type CompanionStatus,
 } from "../../lib/companion/protocol.ts";
 import {
+  BRAIN_ENGINES,
+  type BrainEngine,
   type BrainModel,
   COMPANION_MODELS,
   type CompanionSettings,
 } from "../../lib/companion/settings.ts";
+import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
 
 export interface CompanionSettingsProps {
   settings: CompanionSettings;
   backend: PtyBackend | null;
+  /** The Ollama helper's status (its pulled models), when Ollama is installed. */
+  ollama?: OllamaStatus;
   onChange(patch: Partial<CompanionSettings>): void;
 }
+
+const ENGINE_LABEL: Record<BrainEngine, string> = {
+  claude: "Claude Code",
+  ollama: "Ollama",
+};
 
 const MODE_LABEL: Record<CompanionMode, string> = {
   window: "In window",
@@ -149,33 +161,22 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
           onChange={(e) =>
             onChange({ brain: (e.target as HTMLInputElement).checked })}
         />
-        <span class="field-label">Brain (Claude Code, your own login)</span>
+        <span class="field-label">Brain</span>
       </label>
-      <label class="field">
-        <span class="field-label">Model</span>
-        <select
-          class="field-select"
-          data-testid="setting-companion-model"
-          value={settings.model}
-          disabled={!shown || !settings.brain}
-          onChange={(e) =>
-            onChange({
-              model: (e.target as HTMLSelectElement).value as BrainModel,
-            })}
-        >
-          {COMPANION_MODELS.map((m) => (
-            <option value={m} key={m || "default"}>{MODEL_LABEL[m]}</option>
-          ))}
-        </select>
-        <span class="field-hint" data-testid="companion-brain-status">
-          {status
-            ? `${status.adapter}: ${status.enabled ? status.state : "off"}${
-              status.detail ? ` (${status.detail})` : ""
-            }`
-            : "Status unknown"}. It starts on first use and acts on tiles
-          through the agent hub.
-        </span>
-      </label>
+      <BrainChoice
+        settings={settings}
+        disabled={!shown || !settings.brain}
+        {...(props.ollama ? { ollama: props.ollama } : {})}
+        onChange={onChange}
+      />
+      <span class="field-hint" data-testid="companion-brain-status">
+        {status
+          ? `${status.adapter}: ${status.enabled ? status.state : "off"}${
+            status.detail ? ` (${status.detail})` : ""
+          }`
+          : "Status unknown"}. It starts on first use and acts on tiles through
+        the agent hub.
+      </span>
       <div class="field">
         <span class="field-label">Companion activity</span>
         {activity.length === 0
@@ -202,5 +203,122 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
           )}
       </div>
     </div>
+  );
+}
+
+/** The brain (Claude Code with its model, or an Ollama model that can call tools). */
+function BrainChoice(props: {
+  settings: CompanionSettings;
+  disabled: boolean;
+  ollama?: OllamaStatus;
+  onChange(patch: Partial<CompanionSettings>): void;
+}) {
+  const { settings, disabled, onChange } = props;
+  const toolModels = (props.ollama?.models ?? []).filter((m) =>
+    hasTools(m) === true
+  );
+  // A saved model that is gone (or not read yet) stays listed, so the choice is not lost.
+  const listed = toolModels.map((m) => m.name);
+  if (settings.ollamaModel && !listed.includes(settings.ollamaModel)) {
+    listed.push(settings.ollamaModel);
+  }
+  return (
+    <>
+      <div class="field">
+        <span class="field-label">Brain runs on</span>
+        <div class="segmented" role="radiogroup" aria-label="Brain runs on">
+          {BRAIN_ENGINES.map((e) => (
+            <button
+              type="button"
+              key={e}
+              role="radio"
+              aria-checked={e === settings.engine}
+              class={e === settings.engine ? "is-active" : ""}
+              data-testid="setting-companion-engine"
+              data-value={e}
+              disabled={disabled}
+              onClick={() =>
+                onChange(
+                  e === "ollama" && !settings.ollamaModel && toolModels[0]
+                    ? { engine: e, ollamaModel: toolModels[0].name }
+                    : { engine: e },
+                )}
+            >
+              {ENGINE_LABEL[e]}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={false}
+            data-testid="setting-companion-engine"
+            data-value="api"
+            disabled
+            title="Needs Denext's secure store without --allow-run / --allow-sys (not yet)"
+          >
+            API key
+          </button>
+        </div>
+        <span class="field-hint">
+          {settings.engine === "claude"
+            ? "Headless Claude Code with your own login."
+            : "A local Ollama model on this computer; it calls the hub's tools itself."}
+          {" "}
+          No API key brain yet: a key needs Denext's secure store, which would
+          give the app more permissions than it has.
+        </span>
+      </div>
+      {settings.engine === "claude"
+        ? (
+          <label class="field">
+            <span class="field-label">Model</span>
+            <select
+              class="field-select"
+              data-testid="setting-companion-model"
+              value={settings.model}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({
+                  model: (e.target as HTMLSelectElement).value as BrainModel,
+                })}
+            >
+              {COMPANION_MODELS.map((m) => (
+                <option value={m} key={m || "default"}>{MODEL_LABEL[m]}</option>
+              ))}
+            </select>
+          </label>
+        )
+        : (
+          <label class="field">
+            <span class="field-label">Ollama model</span>
+            <select
+              class="field-select"
+              data-testid="setting-companion-ollama-model"
+              value={settings.ollamaModel}
+              disabled={disabled || listed.length === 0}
+              onChange={(e) =>
+                onChange({
+                  ollamaModel: (e.target as HTMLSelectElement).value,
+                })}
+            >
+              {!settings.ollamaModel && (
+                <option value="">
+                  Choose a model
+                </option>
+              )}
+              {listed.map((m) => <option value={m} key={m}>{m}</option>)}
+            </select>
+            <span class="field-hint" data-testid="companion-ollama-hint">
+              {!props.ollama?.installed
+                ? "Ollama is not installed (Settings → Ollama)."
+                : !props.ollama.serverUp
+                ? "The Ollama server is not running."
+                : toolModels.length === 0
+                ? "No pulled model can call tools (the Ollama library's Tools filter lists some)."
+                : "Only the pulled models that can call tools are listed."}
+            </span>
+          </label>
+        )}
+    </>
   );
 }

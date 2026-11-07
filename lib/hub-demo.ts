@@ -351,7 +351,13 @@ export function createDemoHub(
         }),
       send: (text: string, via: "chat" | "voice" = "chat") =>
         Promise.resolve({ turn: runtime.userSays(text, via) }),
-      configure(enabled: boolean, _model: string) {
+      configure(enabled: boolean, model: string, engine = "claude") {
+        // The demo brain answers either way; the label says which one Settings picked.
+        runtime.setAdapter(
+          engine === "ollama"
+            ? `Demo brain (Ollama ${model || "?"})`
+            : "Demo brain",
+        );
         runtime.setEnabled(enabled);
         return Promise.resolve(runtime.status());
       },

@@ -109,8 +109,8 @@ export function withBackendSpy(
     integrationUninstall: (target) => backend.integrationUninstall(target),
     companionStatus: () => backend.companionStatus(),
     companionSend: (text, via) => backend.companionSend(text, via),
-    companionConfigure: (enabled, model) =>
-      backend.companionConfigure(enabled, model),
+    companionConfigure: (enabled, model, engine) =>
+      backend.companionConfigure(enabled, model, engine),
     companionSayDone: (id, action) => backend.companionSayDone(id, action),
     hubControlDone: (requestId, result) =>
       backend.hubControlDone(requestId, result),

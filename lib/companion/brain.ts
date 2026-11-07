@@ -10,7 +10,8 @@
  * only runs a model session.
  *
  * Pure: the process half is desktop/companion-brain.ts. Fixtures recorded from Claude Code
- * 2.1.319 are in tests/fixtures/companion/.
+ * 2.1.319 are in tests/fixtures/companion/. The second adapter (a local Ollama model through
+ * `@rullama/inference`) is lib/companion/inference-brain.ts.
  *
  * @module
  */
@@ -60,24 +61,6 @@ export interface BrainAdapter {
   send(text: string): Promise<void>;
   /** End the session (no `exited` is reported for it). */
   stop(): void;
-}
-
-/**
- * The second adapter's boundary: `@rullama/inference`'s `runAgentLoop` over a
- * `@rullama/provider` (Ollama locally, or an API key), with the hub's tools bridged as the loop's
- * tools. Not built yet (no API key handling in this phase); an implementation fills this in and
- * returns a {@linkcode BrainAdapter}.
- *
- * TODO(companion): implement with `runAgentLoop` once a provider is chosen in Settings.
- */
-// fallow-ignore-next-line unused-type
-export interface InferenceBrainOptions {
-  provider: "ollama" | "anthropic";
-  model: string;
-  /** Ollama's base URL (default `http://127.0.0.1:11434`). */
-  baseUrl?: string;
-  /** The system prompt ({@linkcode COMPANION_SYSTEM_PROMPT}). */
-  systemPrompt: string;
 }
 
 // ---------------------------------------------------------------------------------------------

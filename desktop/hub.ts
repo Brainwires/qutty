@@ -70,11 +70,23 @@ import {
   unlinkPath,
 } from "./hub-socket.ts";
 import { HubCore } from "../lib/hub/core.ts";
-import { CompanionHost, removeCompanionDir } from "./companion.ts";
+import {
+  type BrainConfig,
+  CompanionHost,
+  removeCompanionDir,
+} from "./companion.ts";
 import type { BrainAdapter } from "../lib/companion/brain.ts";
+import {
+  type BrainEngine,
+  isOllamaModelName,
+} from "../lib/companion/settings.ts";
 import type { AuditEntry, CompanionStatus } from "../lib/companion/protocol.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
-import { buildToolRegistry, createHubHandler } from "../lib/hub/tools.ts";
+import {
+  buildToolRegistry,
+  companionToolbox,
+  createHubHandler,
+} from "../lib/hub/tools.ts";
 import {
   claudeHooksSettings,
   claudeMcpConfig,
@@ -284,7 +296,7 @@ export interface HubServiceOptions {
   /** Where the companion's audit log goes (none: kept in memory only). */
   appSupportDir?: string;
   /** Another companion brain (tests). Default: Claude Code. */
-  createBrain?: (cfg: { mcpConfig: string; model?: string }) => BrainAdapter;
+  createBrain?: (cfg: BrainConfig) => BrainAdapter;
   /** The shell agent's model backends (tests). Default: Claude Code, else a local Ollama. */
   shellBrains?: ShellBrainDeps;
   /**
@@ -346,6 +358,9 @@ export class HubService {
       changed: () => this.#queueTiles(),
       companionMail: () => this.companion.runtime.mailArrived(),
     });
+    const handler = createHubHandler(this.core, buildToolRegistry(this.core), {
+      audit: (call) => this.companion.record(call),
+    });
     this.companion = new CompanionHost({
       core: this.core,
       socketDir: this.socketDir,
@@ -353,6 +368,8 @@ export class HubService {
       quttyDir: this.paths.dir,
       ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
       ...(opts.createBrain ? { createBrain: opts.createBrain } : {}),
+      // An in-process brain calls the tools through the same handler as the sockets.
+      tools: () => companionToolbox(handler),
       emit: (event, data) => this.#emit(event, data),
       listen: (path) => {
         this.#companionListener = FdUnixListener.listen(
@@ -362,12 +379,7 @@ export class HubService {
         );
       },
     });
-    const tools = buildToolRegistry(this.core);
-    this.#server = new McpServer(
-      createHubHandler(this.core, tools, {
-        audit: (call) => this.companion.record(call),
-      }),
-    );
+    this.#server = new McpServer(handler);
     void this.refreshIntegration();
   }
 
@@ -900,16 +912,26 @@ const sendInput = objectSchema<{ text: string; via: "chat" | "voice" }>(
   }),
 );
 
-const configureInput = objectSchema<{ enabled: boolean; model: string }>(
+const configureInput = objectSchema<
+  { enabled: boolean; model: string; engine: BrainEngine }
+>(
   (v, issues) => {
     if (typeof v.enabled !== "boolean") {
       issues.push({ message: "enabled must be a boolean", path: ["enabled"] });
     }
     const model = typeof v.model === "string" ? v.model : "";
-    if (!/^[A-Za-z0-9._:-]{0,64}$/.test(model)) {
+    if (!isOllamaModelName(model)) {
       issues.push({ message: "model must be a model name", path: ["model"] });
     }
-    return { enabled: v.enabled === true, model };
+    const engine = v.engine === undefined ? "claude" : v.engine;
+    if (engine !== "claude" && engine !== "ollama") {
+      issues.push({ message: "engine is claude or ollama", path: ["engine"] });
+    }
+    return {
+      enabled: v.enabled === true,
+      model,
+      engine: engine === "ollama" ? "ollama" : "claude",
+    };
   },
 );
 
@@ -970,12 +992,16 @@ export default defineDesktopExtension({
         return { turn: requireService().companion.runtime.userSays(text, via) };
       },
     },
-    /** Settings → Companion: whether the brain may run, and its model. */
+    /** Settings → Companion: whether the brain may run, which one, and its model. */
     companionConfigure: {
       input: configureInput,
       handler: (args: unknown): CompanionStatus => {
-        const { enabled, model } = args as { enabled: boolean; model: string };
-        return requireService().companion.configure(enabled, model);
+        const { enabled, model, engine } = args as {
+          enabled: boolean;
+          model: string;
+          engine: BrainEngine;
+        };
+        return requireService().companion.configure(enabled, model, engine);
       },
     },
     /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */

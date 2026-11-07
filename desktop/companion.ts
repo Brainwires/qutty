@@ -8,7 +8,9 @@
 //   cannot list it. Isolation in Qutty is cooperative (every tile is the same macOS user); this
 //   keeps an agent from stumbling onto the companion's socket.
 // - Brain: lib/companion/runtime.ts over an adapter (default: desktop/companion-brain.ts, Claude
-//   Code with an MCP config pointing at that socket through the `qutty-mcp` shim).
+//   Code with an MCP config pointing at that socket through the `qutty-mcp` shim; or a local
+//   Ollama model through `@rullama/inference`, calling the hub's tools in process as the
+//   companion: lib/companion/inference-brain.ts).
 // - Audit: every companion-only call (and every refused one) appended as a JSON line to
 //   `companion-audit.jsonl` in the app-support folder, and shown in Settings.
 // - Page round trips: a `say` waiting for its button, and a `control` command (spawn / close /
@@ -16,7 +18,7 @@
 
 import { ensureDir, writeFileAtomic } from "./pty.ts";
 import { chmodPath, removeDir, unlinkPath } from "./hub-socket.ts";
-import { ClaudeCodeBrain } from "./companion-brain.ts";
+import { ClaudeCodeBrain, ollamaCompanionBrain } from "./companion-brain.ts";
 import {
   type AuditEntry,
   AuditLog,
@@ -27,6 +29,8 @@ import {
   companionMcpConfig,
 } from "../lib/companion/brain.ts";
 import { CompanionRuntime } from "../lib/companion/runtime.ts";
+import type { CompanionTools } from "../lib/companion/inference-brain.ts";
+import type { BrainEngine } from "../lib/companion/settings.ts";
 import type {
   CompanionStatus,
   CompanionUpdate,
@@ -123,8 +127,24 @@ export interface CompanionHostOptions {
   emit: CompanionEmit;
   /** Start listening on the companion socket (desktop/hub.ts serves it as the companion). */
   listen(path: string): void;
-  /** Another brain (tests). Default: Claude Code. */
-  createBrain?: (cfg: { mcpConfig: string; model?: string }) => BrainAdapter;
+  /** The hub's tools as the companion, for an in-process brain (Ollama). */
+  tools?: () => CompanionTools;
+  /** Another brain (tests). Default: Claude Code, or Ollama when Settings picks it. */
+  createBrain?: (cfg: BrainConfig) => BrainAdapter;
+}
+
+/** What a new brain session is made from. */
+export interface BrainConfig {
+  mcpConfig: string;
+  model?: string;
+  engine?: BrainEngine;
+}
+
+/** The label Settings shows for a brain choice. */
+function adapterLabel(engine: BrainEngine, model: string | undefined): string {
+  return engine === "ollama"
+    ? `Ollama (${model ?? "no model"})`
+    : "Claude Code";
 }
 
 /** The companion's runtime, identity, audit log and page round trips. */
@@ -139,6 +159,7 @@ export class CompanionHost {
   #controls = new Replies<ControlResult>();
   #nextControl = 0;
   #model: string | undefined;
+  #engine: BrainEngine = "claude";
 
   constructor(opts: CompanionHostOptions) {
     this.#opts = opts;
@@ -153,13 +174,21 @@ export class CompanionHost {
       (entry) => this.#send({ kind: "activity", entry }),
     );
     const createBrain = opts.createBrain ??
-      ((cfg) =>
-        new ClaudeCodeBrain({
+      ((cfg) => {
+        if (cfg.engine === "ollama") {
+          if (!opts.tools) throw new Error("the hub's tools are not available");
+          if (!cfg.model) {
+            throw new Error("no Ollama model is chosen (Settings → Companion)");
+          }
+          return ollamaCompanionBrain(cfg.model, opts.tools());
+        }
+        return new ClaudeCodeBrain({
           mcpConfig: cfg.mcpConfig,
           cwd: `${opts.quttyDir}/companion`,
           ...(cfg.model ? { model: cfg.model } : {}),
           ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
-        }));
+        });
+      });
     this.runtime = new CompanionRuntime({
       mailbox: opts.core.mailboxes,
       adapter: "Claude Code",
@@ -167,6 +196,7 @@ export class CompanionHost {
       createBrain: () =>
         createBrain({
           mcpConfig: this.mcpConfig,
+          engine: this.#engine,
           ...(this.#model ? { model: this.#model } : {}),
         }),
       emit: (update) => this.#send(update),
@@ -222,11 +252,20 @@ export class CompanionHost {
     return { status: this.runtime.status(), activity: this.audit.recent() };
   }
 
-  /** The page's settings: whether the brain may run, and its model ("" = the user's default). */
-  configure(enabled: boolean, model: string): CompanionStatus {
+  /**
+   * The page's settings: whether the brain may run, which one, and its model ("" = the
+   * engine's default).
+   */
+  configure(
+    enabled: boolean,
+    model: string,
+    engine: BrainEngine = "claude",
+  ): CompanionStatus {
     const next = model || undefined;
-    if (next !== this.#model) {
+    if (next !== this.#model || engine !== this.#engine) {
       this.#model = next;
+      this.#engine = engine;
+      this.runtime.setAdapter(adapterLabel(engine, next));
       this.runtime.restart();
     }
     this.runtime.setEnabled(enabled);

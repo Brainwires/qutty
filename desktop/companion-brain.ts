@@ -10,9 +10,22 @@
 // --allowedTools mcp__qutty --no-session-persistence --append-system-prompt <role>`, its stdin a
 // pipe from the terminal. Each user turn is one JSON line written to the PTY; each output line is
 // one event. One session lives across turns until it exits or is stopped.
+//
+// The second brain, a local Ollama model (`ollamaCompanionBrain`): lib/companion/inference-brain.ts
+// over `@rullama/provider`'s OpenAI-compatible provider pointed at Ollama's `/v1` endpoint on
+// 127.0.0.1:11434 (the app's one `netConnect` permission). Not `OllamaChatProvider`: in
+// @rullama/provider 0.12.2 it sends no tool results back and reads no tool calls from the reply,
+// so a model could never use a tool through it (an upstream gap); the Chat Completions provider
+// does the whole tool round trip, and Ollama serves that API itself.
 
+import { OpenAiChatProvider } from "@rullama/provider";
 import { PtyHost, resolveProgram } from "./pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
+import { detectOllama, OLLAMA_URL } from "./shell-agent.ts";
+import {
+  type CompanionTools,
+  InferenceBrain,
+} from "../lib/companion/inference-brain.ts";
 import {
   type BrainAdapter,
   type BrainSink,
@@ -144,4 +157,42 @@ export class ClaudeCodeBrain implements BrainAdapter {
       ? `${last.slice(0, 200)} (${how})`
       : `Claude Code ended (${how})`;
   }
+}
+
+/** Whether Ollama lists `model` (a name without a tag is `:latest`). */
+export function ollamaHasModel(
+  models: readonly string[],
+  model: string,
+): boolean {
+  return models.includes(model) ||
+    (!model.includes(":") && models.includes(`${model}:latest`));
+}
+
+/** The companion on a local Ollama model, with the hub's tools as `tools`. */
+export function ollamaCompanionBrain(
+  model: string,
+  tools: CompanionTools,
+  baseUrl = OLLAMA_URL,
+): BrainAdapter {
+  return new InferenceBrain({
+    label: `Ollama (${model})`,
+    provider: new OpenAiChatProvider(
+      "ollama", // Ollama ignores the key (the provider sends it as a bearer token)
+      model,
+      `${baseUrl}/v1/chat/completions`,
+      "ollama",
+    ),
+    tools,
+    async check() {
+      const models = await detectOllama(baseUrl);
+      if (models === undefined) {
+        throw new Error(`no Ollama answers at ${baseUrl}`);
+      }
+      if (!ollamaHasModel(models, model)) {
+        throw new Error(
+          `Ollama has no model "${model}" (ollama pull ${model})`,
+        );
+      }
+    },
+  });
 }

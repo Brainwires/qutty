@@ -13,12 +13,16 @@
     "jsr:@deno/cache-dir@0.22.2": "0.22.2",
     "jsr:@deno/graph@0.86": "0.86.9",
     "jsr:@luca/esbuild-deno-loader@0.11": "0.11.1",
+    "jsr:@rullama/agent@~0.12.1": "0.12.1",
     "jsr:@rullama/core@~0.12.1": "0.12.1",
+    "jsr:@rullama/inference@~0.12.1": "0.12.1",
     "jsr:@rullama/mcp-client@~0.12.3": "0.12.3",
     "jsr:@rullama/mcp-server@~0.12.4": "0.12.4",
+    "jsr:@rullama/permission@~0.12.1": "0.12.1",
     "jsr:@rullama/provider-speech@~0.12.1": "0.12.1",
     "jsr:@rullama/provider@~0.12.2": "0.12.2",
     "jsr:@rullama/tool-builtins@~0.12.2": "0.12.2",
+    "jsr:@rullama/tool-runtime@~0.12.1": "0.12.1",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/async@1": "1.5.1",
     "jsr:@std/async@^1.5.1": "1.5.1",
@@ -139,10 +143,24 @@
         "jsr:@std/path@^1.0.6"
       ]
     },
+    "@rullama/agent@0.12.1": {
+      "integrity": "f44d783328ea57552be544a106abd685b88246458cf27cfd938c4c21e018d464",
+      "dependencies": [
+        "jsr:@rullama/core"
+      ]
+    },
     "@rullama/core@0.12.1": {
       "integrity": "8521a61ba5fd4622943862dee6f7b40985d60c71dfb47bce43f059349d67dfd9",
       "dependencies": [
         "jsr:@std/path@1"
+      ]
+    },
+    "@rullama/inference@0.12.1": {
+      "integrity": "c8bba12fa6c60c932be31b3a0dc9980a2cc0ce26155ffd157cae8eb5d436323b",
+      "dependencies": [
+        "jsr:@rullama/agent",
+        "jsr:@rullama/core",
+        "jsr:@rullama/tool-runtime"
       ]
     },
     "@rullama/mcp-client@0.12.3": {
@@ -152,6 +170,12 @@
       "integrity": "a60ac2cb3bd3431217f6ca6d6d8854330d2f88ca80b2c1d575d31356b907b8e2",
       "dependencies": [
         "jsr:@rullama/mcp-client"
+      ]
+    },
+    "@rullama/permission@0.12.1": {
+      "integrity": "ac13940f474c1ce3040786203b293dc3420b264d691ad64af209b1b47baf314a",
+      "dependencies": [
+        "jsr:@std/path@1"
       ]
     },
     "@rullama/provider@0.12.2": {
@@ -170,6 +194,14 @@
       "integrity": "91a0b584cbdfff7d9a9c0327758afd8c59f40f9ee8a5d766b119f884cbdd3fab",
       "dependencies": [
         "jsr:@rullama/core"
+      ]
+    },
+    "@rullama/tool-runtime@0.12.1": {
+      "integrity": "6b4060beb70540dd74af8a3ababb75e632e84ea30c75d57714f03bbe7345d80d",
+      "dependencies": [
+        "jsr:@rullama/core",
+        "jsr:@rullama/permission",
+        "jsr:@std/path@1"
       ]
     },
     "@std/assert@1.0.19": {
@@ -1602,7 +1634,9 @@
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
       "jsr:@denext/denext@^4.13.1",
+      "jsr:@rullama/agent@~0.12.1",
       "jsr:@rullama/core@~0.12.1",
+      "jsr:@rullama/inference@~0.12.1",
       "jsr:@rullama/mcp-client@~0.12.3",
       "jsr:@rullama/mcp-server@~0.12.4",
       "jsr:@rullama/provider-speech@~0.12.1",
