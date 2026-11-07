@@ -16,6 +16,10 @@
   Zed, Sublime Text, IntelliJ IDEA and Xcode, a custom command such as
   `hx {file}:{line}:{col}`, or `$EDITOR` in a new tile. In an SSH tile, a remote
   path offers Download instead. Right-click on a link for Open, Reveal and Copy.
+- Links: when a tile resizes under a still pointer (it grows into place, the
+  window changes size), holding ⌘ (Ctrl on Linux) underlines the link under the
+  pointer again, and ⌘-click opens it. Before, the link stayed dead until the
+  mouse moved.
 - The companion's brain can run on a local Ollama model. Settings → Companion →
   Brain runs on: Claude Code (as before) or Ollama, with a model picked from the
   pulled models that can call tools. It acts on tiles through the same hub tools

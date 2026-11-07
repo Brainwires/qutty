@@ -1,7 +1,8 @@
 // lib/terminal-links.ts against a fake xterm.js terminal (a buffer of plain rows, the link
 // provider list, `options`): the OSC 8 handler and its wrapped provider (decorations follow the
 // modifier, activation needs it, only the URL schemes Qutty opens), and the text provider (local
-// paths only when they exist, remote paths in an SSH tile, wrapped rows, the existence cache).
+// paths only when they exist, remote paths in an SSH tile, wrapped rows, the existence cache),
+// and the modifier-click / modifier-press after xterm forgot the link under a still pointer.
 
 import { assertEquals } from "@std/assert";
 import {
@@ -49,7 +50,12 @@ function fakeTerm(rows: string[], oscLinks: ILink[] = []) {
         },
       },
     },
-    _core: { _linkProviderService: { linkProviders: providers } },
+    _core: {
+      _linkProviderService: { linkProviders: providers },
+      linkifier: undefined as
+        | { _lastBufferCell?: unknown; _handleMouseMove(e: MouseEvent): void }
+        | undefined,
+    },
   };
   return { term: term as unknown as Terminal, raw: term, providers };
 }
@@ -199,5 +205,150 @@ Deno.test("text links: an SSH tile's paths are remote, resolved against OSC 7, u
     { kind: "url", url: "https://a.example/", osc8: false },
   ]);
   assertEquals(asked, [], "no local existence check");
+  links.dispose();
+});
+
+// ---------------------------------------------------------------------------------------------
+// After xterm forgot the link under a still pointer (a resize: e.g. a tile growing into place)
+// ---------------------------------------------------------------------------------------------
+
+/** A fake attached terminal: 30×3 cells of 10×10 px at the viewport's origin. */
+function attached(rows: string[], oscLinks: ILink[] = []) {
+  const fake = fakeTerm(rows, oscLinks);
+  const element = new EventTarget() as EventTarget & {
+    querySelector(sel: string): unknown;
+  };
+  element.querySelector = (sel) =>
+    sel === ".xterm-screen"
+      ? {
+        getBoundingClientRect: () => ({
+          left: 0,
+          top: 0,
+          width: 300,
+          height: 30,
+        }),
+      }
+      : null;
+  Object.assign(fake.raw, { cols: 30, rows: 3, element });
+  Object.assign(fake.raw.buffer.active, { viewportY: 0 });
+  const { h, opened } = host();
+  const links = new TerminalLinks(fake.term, h);
+  links.attach(element as unknown as HTMLElement);
+  return { ...fake, element, links, opened, h };
+}
+
+/** A mouse event at the middle of cell (`x`, `y`), 1-based. */
+function at(type: string, x: number, y: number, meta: boolean): MouseEvent {
+  const e = new Event(type);
+  for (
+    const [k, v] of Object.entries({
+      clientX: (x - 1) * 10 + 5,
+      clientY: (y - 1) * 10 + 5,
+      button: 0,
+      metaKey: meta,
+      ctrlKey: false,
+    })
+  ) Object.defineProperty(e, k, { value: v });
+  return e as MouseEvent;
+}
+
+function key(type: string, meta: boolean): void {
+  const e = new Event(type);
+  Object.defineProperty(e, "metaKey", { value: meta });
+  Object.defineProperty(e, "ctrlKey", { value: false });
+  globalThis.dispatchEvent(e);
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+Deno.test("modifier-click with no link from xterm: opens the link under the pointer", async () => {
+  const { element, links, opened } = attached(["see https://deno.com/ now"]);
+  element.dispatchEvent(at("mousedown", 8, 1, true));
+  element.dispatchEvent(at("mouseup", 8, 1, true));
+  await settle();
+  assertEquals(opened, [{
+    kind: "url",
+    url: "https://deno.com/",
+    osc8: false,
+  }]);
+  // Not over a link, released on another cell, or a plain click: nothing.
+  for (
+    const [down, up] of [
+      [at("mousedown", 2, 1, true), at("mouseup", 2, 1, true)],
+      [at("mousedown", 8, 1, true), at("mouseup", 9, 2, true)],
+      [at("mousedown", 8, 1, false), at("mouseup", 8, 1, false)],
+    ]
+  ) {
+    element.dispatchEvent(down);
+    element.dispatchEvent(up);
+  }
+  await settle();
+  assertEquals(opened.length, 1);
+  links.dispose();
+});
+
+Deno.test("modifier-click with no link from xterm: OSC 8 first, and never twice", async () => {
+  const osc: ILink = {
+    range: { start: { x: 1, y: 1 }, end: { x: 3, y: 1 } },
+    text: "https://osc.example/",
+    activate: (e, t) => handler().activate(e, t),
+  };
+  const { element, links, opened, raw } = attached(["abc https://deno.com/"], [
+    osc,
+  ]);
+  const handler = () => raw.options.linkHandler!;
+  element.dispatchEvent(at("mousedown", 2, 1, true));
+  element.dispatchEvent(at("mouseup", 2, 1, true));
+  await settle();
+  assertEquals(opened, [{
+    kind: "url",
+    url: "https://osc.example/",
+    osc8: true,
+  }]);
+  // xterm found the link after all and opened it on this mouseup: not again.
+  element.dispatchEvent(at("mousedown", 8, 1, true));
+  const up = at("mouseup", 8, 1, true);
+  handler().activate(up, "https://xterm.example/");
+  element.dispatchEvent(up);
+  await settle();
+  assertEquals(opened.map((o) => o.kind === "url" && o.url), [
+    "https://osc.example/",
+    "https://xterm.example/",
+  ]);
+  links.dispose();
+});
+
+Deno.test("modifier-click on the link xterm has: left to xterm", async () => {
+  const { element, links, opened, providers } = attached([
+    "see https://deno.com/ now",
+  ]);
+  const [link] = (await provide(providers[1], 1))!;
+  link.hover!(at("mousemove", 8, 1, false), link.text);
+  element.dispatchEvent(at("mousedown", 8, 1, true));
+  element.dispatchEvent(at("mouseup", 8, 1, true));
+  await settle();
+  assertEquals(opened, []);
+  links.dispose();
+});
+
+Deno.test("modifier press with a still pointer and no link: xterm looks again", () => {
+  const { element, links, raw } = attached(["see https://deno.com/ now"]);
+  const moves: MouseEvent[] = [];
+  const linkifier = {
+    _lastBufferCell: { x: 8, y: 1 } as unknown,
+    _handleMouseMove: (e: MouseEvent) => moves.push(e),
+  };
+  raw._core.linkifier = linkifier;
+  const move = at("mousemove", 8, 1, false);
+  element.dispatchEvent(move);
+  key("keydown", true);
+  key("keyup", false);
+  assertEquals(moves, [move]);
+  assertEquals(linkifier._lastBufferCell, undefined);
+  // Pointer gone: nothing to look at.
+  element.dispatchEvent(new Event("mouseleave"));
+  key("keydown", true);
+  key("keyup", false);
+  assertEquals(moves.length, 1);
   links.dispose();
 });
