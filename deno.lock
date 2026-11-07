@@ -18,6 +18,8 @@
     "jsr:@rullama/mcp-client@~0.12.3": "0.12.3",
     "jsr:@rullama/mcp-server@~0.12.3": "0.12.3",
     "jsr:@rullama/provider-speech@~0.12.1": "0.12.1",
+    "jsr:@rullama/provider@~0.12.1": "0.12.1",
+    "jsr:@rullama/tool-builtins@~0.12.1": "0.12.1",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/async@1": "1.5.1",
     "jsr:@std/async@^1.5.1": "1.5.1",
@@ -174,8 +176,20 @@
         "jsr:@rullama/mcp-client"
       ]
     },
+    "@rullama/provider@0.12.1": {
+      "integrity": "5c30f8b3fa3f50edc8f2215208225c2ec58f67659795e18ff707b4bd76a99deb",
+      "dependencies": [
+        "jsr:@rullama/core"
+      ]
+    },
     "@rullama/provider-speech@0.12.1": {
       "integrity": "b3853e6afb165ccde08efc6853f41e73427530fd4b0f86c61eaf131985761860",
+      "dependencies": [
+        "jsr:@rullama/core"
+      ]
+    },
+    "@rullama/tool-builtins@0.12.1": {
+      "integrity": "5856b66c94fe990ce0b81e54285c6aba4e58e7434c964ae64df4a34226dea0f0",
       "dependencies": [
         "jsr:@rullama/core"
       ]
@@ -1642,9 +1656,12 @@
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
       "jsr:@denext/denext@^4.12.0",
+      "jsr:@rullama/core@~0.12.1",
       "jsr:@rullama/mcp-client@~0.12.3",
       "jsr:@rullama/mcp-server@~0.12.3",
       "jsr:@rullama/provider-speech@~0.12.1",
+      "jsr:@rullama/provider@~0.12.1",
+      "jsr:@rullama/tool-builtins@~0.12.1",
       "jsr:@std/assert@1",
       "jsr:@std/async@1",
       "jsr:@std/encoding@1",

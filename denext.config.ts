@@ -62,10 +62,12 @@ export default {
     //   the PTY path.
     //   The voice extension loads rullama-hardware's audio library (`librullama_audio_ffi`) from
     //   the app-support folder the same way.
-    //   No `run`, `write`, `net` or `sys` is needed.
+    //   No `run`, `write` or `sys` is needed.
+    // - netConnect, loopback only: the shell agent's optional local model (desktop/shell-agent.ts),
+    //   Ollama's API on 127.0.0.1:11434 through `@rullama/provider`. Nothing else is reachable.
     // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either. (With the
     // cloud voices on: `netConnect: ["api.deepgram.com", "api.elevenlabs.io"]`.)
-    extraPermissions: { ffi: ["*"] },
+    extraPermissions: { ffi: ["*"], netConnect: ["127.0.0.1:11434"] },
     // A signed (hardened runtime) build may open the microphone only with this entitlement; macOS
     // then asks the user once, with the Info.plist text.
     macos: {

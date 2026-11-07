@@ -33,7 +33,21 @@
   still needs no network or process permission. The library pages are cached for
   three hours. Background checks skip `ollama list` while the server is down, so
   Qutty never starts Ollama behind your back.
-
+- The shell is the harness: in a Qutty tile, type `,` and a request at your own
+  zsh or bash prompt (`, list the five biggest files here`) and press Enter. The
+  model's explanation prints above the prompt and its proposed command lands in
+  your edit buffer; nothing runs until you press Enter on it. `, next` continues
+  (the session is the conversation: your recent commands, their exit status and
+  folder are the context, with secrets redacted), and `, inbox`, `, say <text>`
+  and `, to <tile> <text>` use the agent hub's messages. Obviously destructive
+  proposals are flagged, and ones that would wipe a disk or your home folder
+  land commented out. The model is headless Claude Code (`haiku` by default, no
+  tools) or, without it, a local Ollama; `QUTTY_AGENT_PREFIX`,
+  `QUTTY_AGENT_BRAIN` and `QUTTY_AGENT_MODEL` change the prefix and model. Turn
+  it on in Settings → Agent integration (one marked line in `~/.zshrc` /
+  `~/.bashrc`, removed by Uninstall). The shell agent's Ollama brain talks to
+  Ollama's API on 127.0.0.1:11434 directly, the app's one network permission
+  (loopback, that port only).
 - The Homebrew cask now follows releases on its own: brainwires/homebrew-tap
   checks hourly for a new Qutty release and updates itself, so the release
   workflow no longer needs a token for it.

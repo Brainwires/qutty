@@ -44,6 +44,12 @@ import {
   tomlInline,
   tomlString,
 } from "./launch.ts";
+import {
+  installShellRc,
+  isShellTarget,
+  shellRcStatus,
+  uninstallShellRc,
+} from "./shell-integration.ts";
 
 /** The file operations the installer needs. */
 export interface ConfigFs {
@@ -614,6 +620,7 @@ export async function integrationStatus(
       tilde(files, files.hermesConfig),
       paths,
     ),
+    ...await shellRcStatus(fs, files.home, paths),
   ];
 }
 
@@ -659,6 +666,9 @@ export async function installIntegration(
   paths: HubPaths,
   target: IntegrationTarget,
 ): Promise<void> {
+  if (isShellTarget(target)) {
+    return await installShellRc(fs, files.home, paths, target);
+  }
   if (target === "hermes") {
     // Its marker line records what Uninstall must undo: no state file entry.
     return await editFile(
@@ -693,6 +703,9 @@ export async function uninstallIntegration(
   paths: HubPaths,
   target: IntegrationTarget,
 ): Promise<void> {
+  if (isShellTarget(target)) {
+    return await uninstallShellRc(fs, files.home, paths, target);
+  }
   if (target === "hermes") {
     return await editFile(
       fs,

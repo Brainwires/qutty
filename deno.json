@@ -68,6 +68,9 @@
     "@xterm/headless": "npm:@xterm/headless@6.0.0",
     "@rullama/mcp-server": "jsr:@rullama/mcp-server@^0.12.3",
     "@rullama/mcp-client": "jsr:@rullama/mcp-client@^0.12.3",
+    "@rullama/core": "jsr:@rullama/core@^0.12.1",
+    "@rullama/provider": "jsr:@rullama/provider@^0.12.1",
+    "@rullama/tool-builtins/bash": "jsr:@rullama/tool-builtins@^0.12.1/bash",
     "@rullama/provider-speech/deepgram": "jsr:@rullama/provider-speech@^0.12.1/deepgram",
     "@rullama/provider-speech/elevenlabs": "jsr:@rullama/provider-speech@^0.12.1/elevenlabs",
     "@xterm/xterm": "./vendor/xterm/xterm.mjs",
@@ -121,9 +124,12 @@
       "jsr:@denext/react-router",
       "jsr:@denext/swc",
       "jsr:@denext/tanstack-start",
+      "jsr:@rullama/core",
       "jsr:@rullama/mcp-client",
       "jsr:@rullama/mcp-server",
-      "jsr:@rullama/provider-speech"
+      "jsr:@rullama/provider",
+      "jsr:@rullama/provider-speech",
+      "jsr:@rullama/tool-builtins"
     ]
   }
 }

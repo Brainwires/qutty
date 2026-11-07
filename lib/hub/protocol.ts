@@ -144,8 +144,11 @@ export interface HubSnapshot {
   tiles: TileInfo[];
 }
 
-/** Which agent configs the integration panel manages. */
-export type IntegrationTarget = "claude" | "codex" | "hermes";
+/** Which agent configs the integration panel manages (and the shell agent's rc opt-ins). */
+export type IntegrationTarget = "claude" | "codex" | "hermes" | ShellTarget;
+
+/** The shells whose rc file can load the shell agent's plugin (lib/hub/shell-integration.ts). */
+export type ShellTarget = "zsh" | "bash";
 
 /** One file the integration installer would change, and how. */
 export interface IntegrationChange {
