@@ -30,7 +30,8 @@
         "./desktop/hub.ts",
         "./desktop/sandbox.ts",
         "./desktop/voice.ts",
-        "./desktop/ollama.ts"
+        "./desktop/ollama.ts",
+        "./desktop/links.ts"
       ],
       "microphone": {
         "usageDescription": "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile."
