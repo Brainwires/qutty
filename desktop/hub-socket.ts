@@ -32,6 +32,7 @@ const SOCK_STREAM = 1;
 const SOL_SOCKET = IS_DARWIN ? 0xffff : 1;
 const SO_NOSIGPIPE = 0x1022;
 const MSG_NOSIGNAL = IS_DARWIN ? 0 : 0x4000;
+const MSG_DONTWAIT = IS_DARWIN ? 0x80 : 0x40;
 const SHUT_RDWR = 2;
 const POLLIN = 0x1;
 const POLLERR = 0x8;
@@ -49,6 +50,7 @@ const SYMBOLS = {
   listen: { parameters: ["i32", "i32"], result: "i32" },
   accept: { parameters: ["i32", "pointer", "pointer"], result: "i32" },
   read: { parameters: ["i32", "buffer", "usize"], result: "isize" },
+  recv: { parameters: ["i32", "buffer", "usize", "i32"], result: "isize" },
   send: {
     parameters: ["i32", "buffer", "usize", "i32"],
     result: "isize",
@@ -69,6 +71,12 @@ const SYMBOLS = {
     result: "i32",
     nonblocking: true,
   },
+  /** `poll` on the calling thread, for a zero-timeout check. */
+  pollNow: {
+    name: "poll",
+    parameters: ["buffer", "u32", "i32"],
+    result: "i32",
+  },
   getsockname: { parameters: ["i32", "buffer", "buffer"], result: "i32" },
   getuid: { parameters: [], result: "u32" },
   pipe: { parameters: ["buffer"], result: "i32" },
@@ -83,6 +91,16 @@ function libc() {
 
 const encoder = new TextEncoder();
 const cstr = (s: string) => encoder.encode(`${s}\0`);
+
+/** Whether `fd` is readable right now (a zero-timeout `poll`, on this thread). */
+function readableNow(fd: number): boolean {
+  const buf = new Uint8Array(8);
+  const view = new DataView(buf.buffer);
+  view.setInt32(0, fd, true);
+  view.setInt16(4, POLLIN, true);
+  return libc().pollNow(buf, 1, 0) > 0 &&
+    (view.getInt16(6, true) & POLLIN) !== 0;
+}
 
 /** The real user id (`Deno.uid()` needs `--allow-sys`, which the app does not have). */
 export function getuid(): number {
@@ -144,7 +162,10 @@ const POLL_MS = 100;
 export class FdReactor {
   #watch = new Map<number, (revents: number) => void>();
   #closeAfterPoll: number[] = [];
+  /** A `poll` is in flight (a new fd needs a poke to be polled at once). */
   #polling = false;
+  /** A round is in progress (polling, or handing out its revents): its fds must stay open. */
+  #inRound = false;
   #running = false;
   #wake: { read: number; write: number } | null | undefined;
 
@@ -175,10 +196,10 @@ export class FdReactor {
     this.#watch.delete(fd);
   }
 
-  /** Stop watching `fd` and close it (after the poll in flight, so the fd is never reused under it). */
+  /** Stop watching `fd` and close it (after the round in flight, so the fd is never reused under it). */
   close(fd: number): void {
     this.#watch.delete(fd);
-    if (this.#polling) this.#closeAfterPoll.push(fd);
+    if (this.#inRound) this.#closeAfterPoll.push(fd);
     else libc().close(fd);
   }
 
@@ -192,40 +213,60 @@ export class FdReactor {
     try {
       while (this.#watch.size > 0) {
         const wake = this.#wakePipe();
-        const fds = [...this.#watch.keys(), ...(wake ? [wake.read] : [])];
+        // The watchers this round polls for: its revents go to these and no others.
+        const round = [...this.#watch];
+        const fds = [...round.map(([fd]) => fd), ...(wake ? [wake.read] : [])];
         const buf = new Uint8Array(8 * fds.length);
         const view = new DataView(buf.buffer);
         fds.forEach((fd, i) => {
           view.setInt32(i * 8, fd, true);
           view.setInt16(i * 8 + 4, POLLIN, true);
         });
-        this.#polling = true;
-        let r: number;
+        // Closes wait until the round's revents are handed out, not just until the poll returns:
+        // an fd closed before then could come back from an `accept` in the same round under its
+        // old number, and get the old file's revents (a POLLIN on a socket with nothing to read).
+        this.#inRound = true;
         try {
-          r = await c.poll(buf, fds.length, POLL_MS);
+          this.#polling = true;
+          let r: number;
+          try {
+            r = await c.poll(buf, fds.length, POLL_MS);
+          } finally {
+            this.#polling = false;
+          }
+          if (r > 0) this.#dispatch(round, view, wake?.read);
         } finally {
-          this.#polling = false;
+          this.#inRound = false;
           for (const fd of this.#closeAfterPoll.splice(0)) c.close(fd);
         }
-        if (r <= 0) continue;
-        fds.forEach((fd, i) => {
-          const revents = view.getInt16(i * 8 + 6, true);
-          if (revents === 0) return;
-          if (fd === wake?.read) {
-            libc().read(fd, new Uint8Array(64), 64n); // drain the pokes
-            return;
-          }
-          const cb = this.#watch.get(fd);
-          if (!cb) return;
-          try {
-            cb(revents);
-          } catch (e) {
-            console.error("hub: socket handler failed", e);
-          }
-        });
       }
     } finally {
       this.#running = false;
+    }
+  }
+
+  /** Hand one poll round's revents to the watchers it polled for (still watching, same callback). */
+  #dispatch(
+    round: [number, (revents: number) => void][],
+    view: DataView,
+    wakeFd: number | undefined,
+  ): void {
+    const n = round.length + (wakeFd === undefined ? 0 : 1);
+    for (let i = 0; i < n; i++) {
+      const revents = view.getInt16(i * 8 + 6, true);
+      if (revents === 0) continue;
+      if (i === round.length) {
+        libc().read(wakeFd!, new Uint8Array(64), 64n); // drain the pokes
+        continue;
+      }
+      const [fd, cb] = round[i];
+      // Unwatched, or watched anew (a new connection on a reused fd number) since the poll began.
+      if (this.#watch.get(fd) !== cb) continue;
+      try {
+        cb(revents);
+      } catch (e) {
+        console.error("hub: socket handler failed", e);
+      }
     }
   }
 }
@@ -272,7 +313,10 @@ export class FdConnection implements ByteStreamEndpoint {
     if (this.#ended) return;
     const buf = new Uint8Array(READ_CHUNK);
     if (revents & POLLIN) {
-      const n = Number(libc().read(this.fd, buf, BigInt(buf.length)));
+      // Never blocks the event loop, whatever the revents said.
+      const n = Number(
+        libc().recv(this.fd, buf, BigInt(buf.length), MSG_DONTWAIT),
+      );
       if (n > 0) {
         this.#controller.enqueue(buf.slice(0, n));
         return;
@@ -335,7 +379,8 @@ function acceptOn(
 ): void {
   const c = libc();
   reactor.watch(fd, () => {
-    if (closed()) return;
+    // `accept` blocks on a socket with nothing pending: check first, it runs on the event loop.
+    if (closed() || !readableNow(fd)) return;
     const conn = c.accept(fd, null, null);
     if (conn < 0) return; // EAGAIN / ECONNABORTED: the client gave up
     try {
