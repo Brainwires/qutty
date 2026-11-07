@@ -1,8 +1,10 @@
 // The installed Codex CLI reads Qutty's configuration the way Qutty means it, with no model
 // request and no login: `codex mcp get qutty` shows the server with its env_vars, and the app
 // server's `hooks/list` reports each of Qutty's hooks as trusted, both for the `+` picker's `-c`
-// overrides and for the block Settings → Agent integration installs. Everything runs in a
-// temporary CODEX_HOME / HOME. Skipped where `codex` is not installed (CI).
+// overrides and for the block Settings → Agent integration installs; the app's own self-check
+// (desktop/codex-trust.ts: `hooks/list` through a hidden PTY) agrees, and notices a broken trust
+// entry. Everything runs in a temporary CODEX_HOME / HOME. Skipped where `codex` is not
+// installed (CI).
 
 import { assertEquals } from "@std/assert";
 import {
@@ -17,6 +19,9 @@ import {
 } from "../lib/hub/launch.ts";
 import { CODEX_HOOK_EVENTS } from "../lib/hub/hooks.ts";
 import { denoConfigFs } from "./hub_helpers.ts";
+import { listCodexHooks } from "../desktop/codex-trust.ts";
+import { resolveProgram } from "../desktop/pty.ts";
+import { codexTrustCheck } from "../lib/hub/codex-trust.ts";
 
 function hasCodex(): boolean {
   try {
@@ -155,6 +160,52 @@ Deno.test({
       );
       await uninstallIntegration(denoConfigFs, files, paths, "codex");
       assertEquals(await Deno.readTextFile(files.codexConfig), mine);
+    } finally {
+      await Deno.remove(home, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "codex CLI: the app's self-check (hooks/list in a hidden PTY) sees trusted hooks, then a broken trust entry",
+  ignore,
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const home = await Deno.makeTempDir({ prefix: "qutty-codex-trust" });
+    try {
+      const paths = hubPaths(home);
+      const files = integrationFiles(home, paths);
+      await installIntegration(denoConfigFs, files, paths, "codex");
+      const codex = (await resolveProgram("codex"))!;
+      const ask = async () => {
+        const hooks = await listCodexHooks({
+          codex,
+          codexHome: `${home}/.codex`,
+          home,
+        });
+        return hooks && codexTrustCheck(hooks, paths);
+      };
+      assertEquals(await ask(), {
+        trusted: true,
+        untrusted: [],
+        hashChanged: false,
+      });
+      // A trust entry that no longer matches: Codex skips that hook, and the check says so.
+      const text = await Deno.readTextFile(files.codexConfig);
+      await Deno.writeTextFile(
+        files.codexConfig,
+        text.replace(
+          /trusted_hash = "sha256:[0-9a-f]+"/,
+          'trusted_hash = "sha256:00"',
+        ),
+      );
+      assertEquals(await ask(), {
+        trusted: false,
+        untrusted: [CODEX_HOOK_EVENTS[0]],
+        hashChanged: false,
+      });
     } finally {
       await Deno.remove(home, { recursive: true });
     }

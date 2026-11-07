@@ -45,10 +45,18 @@ import {
 import { emptyInput, objectSchema, str } from "./schema.ts";
 import {
   ensureDir,
+  resolveProgram,
   setPtyTaps,
   writeFileAtomic,
   writeTerminal,
 } from "./pty.ts";
+import { listCodexHooks } from "./codex-trust.ts";
+import {
+  type CodexTrustCheck,
+  codexTrustCheck,
+  codexTrustWarning,
+  type ListedCodexHook,
+} from "../lib/hub/codex-trust.ts";
 import {
   ConnectionQueue,
   FdConnection,
@@ -276,6 +284,11 @@ export interface HubServiceOptions {
   createBrain?: (cfg: { mcpConfig: string; model?: string }) => BrainAdapter;
   /** The shell agent's model backends (tests). Default: Claude Code, else a local Ollama. */
   shellBrains?: ShellBrainDeps;
+  /**
+   * Codex's `hooks/list` for the installed integration (tests). Default: the installed `codex`
+   * (`undefined`: none, or no answer).
+   */
+  codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
 }
 
 /** The hub: sockets, MCP sessions, mirrors and the {@linkcode HubCore}. */
@@ -303,6 +316,9 @@ export class HubService {
   /** The shell agent: its backends, and each tile's conversation. */
   #shellBrains: ShellBrainDeps;
   #shellTalks = new Map<string, ShellConversation>();
+  /** Codex's verdict on Qutty's installed hooks: asked once per start, again after an Install. */
+  #codexHooks: () => Promise<ListedCodexHook[] | undefined>;
+  #codexTrust: Promise<CodexTrustCheck | undefined> | undefined;
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -314,6 +330,8 @@ export class HubService {
       cwd: `${this.paths.dir}/shell-agent`,
       ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
     });
+    this.#codexHooks = opts.codexHooks ??
+      (() => this.#installedCodexHooks(opts.appSupportDir));
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
       mirror: (id) => this.#mirrors.get(id),
@@ -649,19 +667,51 @@ export class HubService {
       claude: status.find((s) => s.target === "claude")?.installed ?? false,
       codex: status.find((s) => s.target === "codex")?.installed ?? false,
     };
+    const codex = status.find((s) => s.target === "codex");
+    if (!codex?.installed) {
+      this.#codexTrust = undefined;
+      return status;
+    }
+    const check = await (this.#codexTrust ??= this.#codexHooks().then(
+      (hooks) => hooks && codexTrustCheck(hooks, this.paths),
+      () => undefined,
+    ));
+    if (check) {
+      codex.trust = check.trusted ? "trusted" : "untrusted";
+      const warning = codexTrustWarning(check);
+      if (warning) codex.warning = warning;
+    }
     return status;
+  }
+
+  /** `hooks/list` from the installed `codex`, over the config Install edits. */
+  async #installedCodexHooks(
+    appSupportDir: string | undefined,
+  ): Promise<ListedCodexHook[] | undefined> {
+    const codex = await resolveProgram("codex");
+    if (!codex) return undefined;
+    const config = this.files.codexConfig;
+    return await listCodexHooks({
+      codex,
+      codexHome: config.slice(0, config.lastIndexOf("/")),
+      home: this.files.home,
+      ...(appSupportDir ? { appSupportDir } : {}),
+    });
   }
 
   async refreshIntegration(): Promise<void> {
     await this.integration().catch(() => {});
   }
 
+  /** Install (or, for Codex, Re-trust: the same rewrite of its block); asks Codex again. */
   async install(target: IntegrationTarget): Promise<IntegrationStatus[]> {
+    if (target === "codex") this.#codexTrust = undefined;
     await installIntegration(this.#fs, this.files, this.paths, target);
     return await this.integration();
   }
 
   async uninstall(target: IntegrationTarget): Promise<IntegrationStatus[]> {
+    if (target === "codex") this.#codexTrust = undefined;
     await uninstallIntegration(this.#fs, this.files, this.paths, target);
     return await this.integration();
   }

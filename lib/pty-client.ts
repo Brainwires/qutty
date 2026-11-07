@@ -1175,7 +1175,7 @@ export function createDemoBackend(): PtyBackend {
     companion: hubCompanion.emit,
     say: hubSays.emit,
     control: hubControls.emit,
-  });
+  }, { codexUntrusted: pageParam("codexTrust") === "untrusted" });
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
@@ -1314,6 +1314,15 @@ export function createDemoBackend(): PtyBackend {
 // ---------------------------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------------------------
+
+/** The page's query parameter `name` (`null`: absent, or no location). */
+function pageParam(name: string): string | null {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? "").get(name);
+  } catch {
+    return null;
+  }
+}
 
 /** Whether this page runs inside the Deno Desktop window (the runtime-injected marker). */
 export function isDesktop(): boolean {

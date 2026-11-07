@@ -172,6 +172,13 @@ export interface IntegrationStatus {
   installed: boolean;
   /** Some of our entries are present, or one with our name that we did not write. */
   note?: string;
+  /**
+   * Codex only, when installed and `codex` is on this machine: whether the installed Codex
+   * trusts Qutty's hooks (asked once per start and after an Install, lib/hub/codex-trust.ts).
+   */
+  trust?: "trusted" | "untrusted";
+  /** Why the entries do not work as installed (shown with a Re-trust button). */
+  warning?: string;
   /** What Install writes (and Uninstall removes). */
   changes: IntegrationChange[];
 }

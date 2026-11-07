@@ -1,4 +1,5 @@
-// The settings popover (open/close, live sliders) and persistence across reloads.
+// The settings popover (open/close, live sliders) and persistence across reloads; Settings →
+// Agent integration's Codex trust warning and Re-trust (the demo's `?codexTrust=untrusted`).
 
 import { assert, assertEquals } from "@std/assert";
 import { DEFAULT_LAYOUT_OPTIONS } from "../../lib/layout/mod.ts";
@@ -239,4 +240,45 @@ suite("settings", (test) => {
     await app.reload();
     assertEquals(await app.pattern(), DEFAULT_SETTINGS.layout.pattern);
   });
+
+  // ---- Agent integration: Codex's hook trust ------------------------------------------------
+
+  test(
+    "integration: an untrusted Codex install shows a warning; Re-trust clears it",
+    async (app) => {
+      const row = '[data-testid=integration-row][data-target="codex"]';
+      await app.openSettings();
+      await app.click(
+        '[data-testid=section-toggle][data-section="integration"]',
+      );
+      await waitFor(() => app.exists(row), 3000, "the rows");
+      assertEquals(
+        await app.exists(`${row} [data-testid=integration-warning]`),
+        false,
+        "not installed: no warning",
+      );
+      await app.click(`${row} [data-testid=integration-install]`);
+      await waitFor(
+        () => app.exists(`${row} [data-testid=integration-warning]`),
+        3000,
+        "the trust warning",
+      );
+      assertEquals(await app.attr(row, "data-trust"), "untrusted");
+      const text = await app.eval(
+        (s: string) => document.querySelector(s)?.textContent ?? "",
+        `${row} [data-testid=integration-warning]`,
+      );
+      assert(text.includes("trusts none of"), text);
+      await app.click(`${row} [data-testid=integration-retrust]`);
+      await waitFor(
+        async () =>
+          !(await app.exists(`${row} [data-testid=integration-warning]`)),
+        3000,
+        "the warning gone",
+      );
+      assertEquals(await app.attr(row, "data-installed"), "true");
+      assertEquals(await app.exists("[data-testid=integration-error]"), false);
+    },
+    { query: "codexTrust=untrusted" },
+  );
 });
