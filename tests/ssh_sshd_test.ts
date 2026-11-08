@@ -2,7 +2,8 @@
 // loopback port, a generated key, a temporary home. It connects a tile through the new program
 // spawn (ssh with the shared-connection options), runs a command, then uploads, lists and
 // downloads through the control socket (the key is taken away first, so only the socket can
-// have authenticated), checks the no-overwrite naming and the error paths, and a tmux-on-connect
+// have authenticated), checks the no-overwrite naming and the error paths, adds a -L port forward
+// to the live master (`ssh -O forward`), connects through it and cancels it, and a tmux-on-connect
 // tile. Skipped when Docker is not available. Run: deno test -A tests/
 //
 // The sanitizers are off, as in the other PTY tests: libc stays open, and ssh's persisted master
@@ -56,8 +57,17 @@ const SETUP = [
   `printf hello > "/home/${USER}/in dir/greet.txt"`,
   `chmod 700 /home/${USER}/.ssh && chmod 600 /home/${USER}/.ssh/authorized_keys`,
   `chown -R ${USER}:${USER} /home/${USER}`,
-  "exec /usr/sbin/sshd -D -e",
+  // Alpine's sshd_config says `AllowTcpForwarding no`; the forward step needs it.
+  "exec /usr/sbin/sshd -D -e -o AllowTcpForwarding=yes",
 ].join(" && ");
+
+/** A loopback port nothing listens on (right now). */
+function freePort(): number {
+  const l = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = (l.addr as Deno.NetAddr).port;
+  l.close();
+  return port;
+}
 
 async function waitForSshd(port: number, ms = 120_000): Promise<void> {
   const deadline = Date.now() + ms;
@@ -320,7 +330,57 @@ Deno.test({
           await lone.dispose();
         }
 
-        // 6. tmux on connect: saved in qutty.conf for the same alias, the tile lands in tmux.
+        // 6. A -L forward added to the live master through its control socket (no key: only the
+        // master can carry it), used, then cancelled. It points at the container's own sshd, so
+        // what comes through is an SSH banner.
+        const status = await service!.forwards(target);
+        assertEquals(status, { master: true, active: [] });
+        const fwd = {
+          kind: "local" as const,
+          bind: "127.0.0.1",
+          port: freePort(),
+          host: "127.0.0.1",
+          hostPort: 22,
+        };
+        const added = await service!.addForward({ target, forward: fwd });
+        assertEquals(added, { master: true, active: [fwd] });
+        assertEquals((await service!.forwards(target)).active, [fwd]);
+        await waitForSshd(fwd.port, 15_000);
+        // A port that is taken: ssh's own error comes back.
+        const taken = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+        try {
+          await assertRejects(
+            () =>
+              service!.addForward({
+                target,
+                forward: { ...fwd, port: (taken.addr as Deno.NetAddr).port },
+              }),
+            Error,
+            "forward",
+          );
+        } finally {
+          taken.close();
+        }
+        assertEquals((await service!.forwards(target)).active, [fwd]);
+        const cancelled = await service!.cancelForward({
+          target,
+          forward: fwd,
+        });
+        assertEquals(cancelled, { master: true, active: [] });
+        await assertRejects(() =>
+          Deno.connect({ hostname: "127.0.0.1", port: fwd.port })
+        );
+        // No master for a target nobody connected to: not running, and adding is refused.
+        const other = { host: "127.0.0.1", port: 1 };
+        assertEquals(await service!.forwards(other), {
+          master: false,
+          active: [],
+        });
+        await assertRejects(() =>
+          service!.addForward({ target: other, forward: fwd })
+        );
+
+        // 7. tmux on connect: saved in qutty.conf for the same alias, the tile lands in tmux.
         await service!.saveHost({ alias: ALIAS, tmux: true });
         const tmuxCmd = await service!.command(target);
         assertEquals(tmuxCmd.args.slice(-5), [

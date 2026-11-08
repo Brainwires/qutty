@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Broadcast input (cluster ssh). Turn it on with the bar's broadcast button or
+  ⌘⇧I (Ctrl+Shift+I on Linux), then check the tiles to type into in their
+  headers. What you type or paste in a checked tile goes to every checked tile;
+  other tiles get their own keys only. Checked tiles wear a thick amber border
+  and a striped header, and a banner says "Broadcasting to 4 tiles" (and warns
+  when a checked tile is not an SSH tile) until you press Stop or ⌘⇧I again.
+  Escape still goes to the terminal. Only your typing and pastes are repeated: a
+  terminal's answers to queries, focus and mouse reports stay in their own tile.
+  A paste with a line break, or longer than 256 characters, asks first: Paste to
+  all, This tile only, or Cancel. The mode is never saved.
+- Port forwards on a live SSH connection. "Forwards…" in an SSH tile's header
+  (and "Port forwards…" in the connection manager) adds local (`-L`), remote
+  (`-R`) and dynamic (`-D`) forwards to the tile's shared connection with
+  `ssh -O forward`, and stops them with `ssh -O cancel`, without reconnecting.
+  The panel lists the forwards added on that connection, the ones the host's ssh
+  config opens with every connection, and favourites, which Qutty hosts keep in
+  their `# qutty:` metadata in `~/.ssh/qutty.conf` (never as `LocalForward`
+  lines). Ports and hosts are checked strictly, and ssh's own errors are shown.
 - Clickable links. ⌘-click (Ctrl-click on Linux) opens what is under the
   pointer, which is underlined only while the modifier is held; a plain click
   still selects text or goes to the program. URLs (`http`, `https`, `file`,

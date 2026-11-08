@@ -4,7 +4,8 @@
 // pane shows the selected host and its actions. Qutty hosts (qutty.conf) can be edited,
 // renamed and deleted here; hosts from the user's own config are read-only and can be
 // duplicated into Qutty hosts. Text that matches nothing but reads as `user@host:port` offers
-// a quick connect.
+// a quick connect. "Port forwards…" opens the host's forward panel (app/forwards-panel.tsx) in
+// the pane, for the connection a tile to it has open.
 //
 // Passwords never pass through here: ssh asks for them in the tile's terminal.
 //
@@ -37,6 +38,7 @@ import type { SshRecent } from "../lib/ssh-command.ts";
 import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
 import { isTintId, TINT_IDS } from "../lib/workspace/themes.ts";
 import { Modal } from "./modal.tsx";
+import { ForwardsPanel } from "./forwards-panel.tsx";
 
 /** What to connect to, as the workspace opens it. */
 export interface ConnectRequest {
@@ -60,7 +62,8 @@ export interface ConnectionsDialogProps {
 type Pane =
   | { mode: "view" }
   | { mode: "form"; form: HostForm; previousAlias?: string; errors: FormErrors }
-  | { mode: "confirmDelete"; host: SshHost };
+  | { mode: "confirmDelete"; host: SshHost }
+  | { mode: "forwards"; item: ConnectionItem };
 
 const errorText = (err: unknown) =>
   err instanceof Error ? err.message : String(err);
@@ -300,9 +303,37 @@ export function ConnectionsDialog(props: ConnectionsDialogProps) {
               onCancel={backToView}
             />
           )}
+          {pane.mode === "forwards" && (
+            <div
+              class="conn-forwards"
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.stopPropagation();
+                backToView();
+              }}
+            >
+              <div class="host-detail-head">
+                <button
+                  type="button"
+                  class="btn-quiet"
+                  data-testid="conn-forwards-back"
+                  onClick={backToView}
+                >
+                  ← Back
+                </button>
+                <h3>{pane.item.label}</h3>
+              </div>
+              <ForwardsPanel
+                backend={backend}
+                target={pane.item.target}
+                label={pane.item.label}
+              />
+            </div>
+          )}
           {pane.mode === "view" && current && (
             <HostDetail
               item={current}
+              onForwards={() => setPane({ mode: "forwards", item: current })}
               onConnect={() => connect(requestFor(current))}
               onEdit={(h) => startEdit(formFromHost(h), h.alias)}
               onDelete={(h) => setPane({ mode: "confirmDelete", host: h })}
@@ -385,6 +416,7 @@ function Fact(
 interface HostDetailProps {
   item: ConnectionItem;
   onConnect(): void;
+  onForwards(): void;
   onEdit(host: SshHost): void;
   onDelete(host: SshHost): void;
   onDuplicate(host: SshHost): void;
@@ -441,6 +473,14 @@ function HostDetail(props: HostDetailProps) {
           onClick={props.onConnect}
         >
           Connect
+        </button>
+        <button
+          type="button"
+          class="btn-quiet"
+          data-testid="host-forwards"
+          onClick={props.onForwards}
+        >
+          Port forwards…
         </button>
         {h?.editable && (
           <button

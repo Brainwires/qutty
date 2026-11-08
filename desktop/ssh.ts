@@ -2,6 +2,8 @@
 // terminal: the host list (OpenSSH config + ~/.ssh/qutty.conf), the recents, the ssh argv a tile
 // is spawned with, and the scp/sftp transfers that ride the shared connection. The page reaches
 // it through `lib/pty-client.ts` (`desktopExtension("ssh")` + `onDesktopEvent("ssh", "transfer")`).
+// Port forwards are added to and removed from a tile's live connection with `ssh -O forward` /
+// `-O cancel` on its control socket, in a hidden PTY like the transfers (lib/ssh-forward.ts).
 //
 // Nothing here speaks SSH: the system `ssh`, `scp` and `sftp` do, and every prompt (password,
 // 2FA, host key) appears in the tile, where the user answers it.
@@ -51,6 +53,7 @@ import {
   isSafeUser,
   loadSshHosts,
   quttyConfPath,
+  setHostForwards,
   type SshHost,
   type SshHostInput,
   type SshTarget,
@@ -60,8 +63,18 @@ import {
   userConfigPath,
 } from "../lib/ssh-config.ts";
 import {
+  addForward,
+  favoriteText,
+  forwardProblem,
+  removeForward,
+  type SshForward,
+} from "../lib/ssh-forward.ts";
+import {
+  controlArgv,
+  type ControlOp,
   controlPathFor,
   lastErrorLine,
+  masterRunning,
   parseScpProgress,
   parseSftpListing,
   pushRecent,
@@ -119,6 +132,27 @@ export interface SshListArgs {
   target: SshTarget;
   /** The remote folder (default `~`). */
   path?: string;
+}
+
+/** `sshForwardAdd` / `sshForwardCancel` arguments. */
+export interface SshForwardArgs {
+  target: SshTarget;
+  forward: SshForward;
+}
+
+/** `sshSaveForwards` arguments: a Qutty host's favourite forwards (replacing the old ones). */
+export interface SshSaveForwardsArgs {
+  alias: string;
+  forwards: SshForward[];
+}
+
+/**
+ * A connection's forwards: whether its master is up (`ssh -O check`), and the forwards added on
+ * it from the panel. ssh cannot list forwards, so those are what Qutty added and ssh accepted.
+ */
+export interface SshForwardStatus {
+  master: boolean;
+  active: SshForward[];
 }
 
 /** A started transfer. */
@@ -322,6 +356,52 @@ const listInput = objectSchema<SshListArgs>((v, issues) => ({
   path: configValue(v, "path", issues),
 }));
 
+const MAX_FAVORITE_FORWARDS = 32;
+
+/** `v[key]`: a forward, every field checked (lib/ssh-forward.ts `forwardProblem`). */
+function forwardAt(
+  value: unknown,
+  path: (string | number)[],
+  issues: Issue[],
+): SshForward {
+  const problem = forwardProblem(value);
+  if (problem) {
+    issues.push({ message: `forward: ${problem}`, path });
+    return { kind: "dynamic", port: 1 };
+  }
+  const f = value as SshForward;
+  return f.kind === "dynamic"
+    ? { kind: f.kind, ...(f.bind ? { bind: f.bind } : {}), port: f.port }
+    : {
+      kind: f.kind,
+      ...(f.bind ? { bind: f.bind } : {}),
+      port: f.port,
+      host: f.host,
+      hostPort: f.hostPort,
+    };
+}
+
+const forwardInput = objectSchema<SshForwardArgs>((v, issues) => ({
+  target: target(v, issues),
+  forward: forwardAt(v.forward, ["forward"], issues),
+}));
+
+const saveForwardsInput = objectSchema<SshSaveForwardsArgs>((v, issues) => {
+  const list = Array.isArray(v.forwards) ? v.forwards : undefined;
+  if (!list || list.length > MAX_FAVORITE_FORWARDS) {
+    issues.push({
+      message: `forwards must be a list of at most ${MAX_FAVORITE_FORWARDS}`,
+      path: ["forwards"],
+    });
+  }
+  return {
+    alias: alias(v, "alias", issues),
+    forwards: (list ?? []).slice(0, MAX_FAVORITE_FORWARDS).map((f, i) =>
+      forwardAt(f, ["forwards", i], issues)
+    ),
+  };
+});
+
 const transferIdInput = objectSchema<{ transferId: string }>((v, issues) => ({
   transferId: str(v, "transferId", issues, 64),
 }));
@@ -363,11 +443,12 @@ interface Transfer {
   cancelled: boolean;
 }
 
-interface Listing {
+/** A hidden-PTY run whose whole output is wanted at its exit (an sftp listing, an `ssh -O`). */
+interface Capture {
   ptyId: string;
   text: string;
-  resolve: (listing: SshListing) => void;
-  reject: (err: Error) => void;
+  max: number;
+  resolve: (result: { exitCode: number | null; text: string }) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -376,6 +457,9 @@ const MAX_TRANSFER_TEXT = 32 * 1024;
 /** Output kept for a listing (a big folder). */
 const MAX_LISTING_TEXT = 8 * 1024 * 1024;
 const LIST_TIMEOUT_MS = 45_000;
+/** An `ssh -O` answers at once from the local socket (a forward is set up by the master). */
+const CONTROL_TIMEOUT_MS = 20_000;
+const MAX_CONTROL_TEXT = 16 * 1024;
 /** How many files an upload's folder walk counts before giving up on a total. */
 const MAX_COUNTED_FILES = 5000;
 const RECENTS_FILE = "ssh-recents.json";
@@ -391,7 +475,9 @@ export class SshService {
   #emit: SshEmit;
   readonly #pty: PtyHost;
   readonly #transfers = new Map<string, Transfer>();
-  readonly #byPty = new Map<string, Transfer | Listing>();
+  readonly #byPty = new Map<string, Transfer | Capture>();
+  /** The forwards added through the panel, per connection (`targetLabel`), while its master lives. */
+  readonly #forwards = new Map<string, SshForward[]>();
   #nextId = 0;
 
   constructor(opts: SshServiceOptions) {
@@ -638,24 +724,140 @@ export class SshService {
   /** List a remote folder through `sftp -b -` on the shared connection. */
   async list(req: SshListArgs, owner = "main"): Promise<SshListing> {
     const args = sftpArgv(req.target, this.#conn);
-    const spawned = await this.#spawn("sftp", args, owner);
-    const listing = await new Promise<SshListing>((resolve, reject) => {
+    const r = await this.#capture("sftp", args, owner, {
+      timeoutMs: LIST_TIMEOUT_MS,
+      max: MAX_LISTING_TEXT,
+      what: "the listing",
+      stdin: sftpListBatch(req.path ?? "~"),
+    });
+    const listing = parseSftpListing(r.text);
+    if (r.exitCode === 0 && listing) return listing;
+    throw new DesktopCapError(
+      "ssh_failed",
+      lastErrorLine(r.text) || "sftp failed",
+    );
+  }
+
+  /**
+   * Run `program` in a hidden PTY and answer its exit code and output (bounded to `max`, the
+   * end kept). `stdin` is typed into it once it runs. Killed, and rejected, after `timeoutMs`.
+   */
+  async #capture(
+    program: string,
+    args: string[],
+    owner: string,
+    o: { timeoutMs: number; max: number; what: string; stdin?: string },
+  ): Promise<{ exitCode: number | null; text: string }> {
+    const spawned = await this.#spawn(program, args, owner);
+    return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        this.#byPty.delete(spawned.id);
         this.#pty.kill(spawned.id);
-        reject(new DesktopCapError("timeout", "the listing took too long"));
-      }, LIST_TIMEOUT_MS);
+        reject(new DesktopCapError("timeout", `${o.what} took too long`));
+      }, o.timeoutMs);
       this.#byPty.set(spawned.id, {
         ptyId: spawned.id,
         text: "",
+        max: o.max,
         resolve,
-        reject,
         timer,
       });
-      this.#pty.write(spawned.id, sftpListBatch(req.path ?? "~")).catch(
-        () => {},
-      );
+      if (o.stdin !== undefined) {
+        this.#pty.write(spawned.id, o.stdin).catch(() => {});
+      }
     });
-    return listing;
+  }
+
+  // --- port forwards (ssh -O on the control socket) ------------------------------------------
+
+  /** Send a control command to `target`'s master; its exit code and output. */
+  #control(target: SshTarget, cmd: ControlOp, owner: string) {
+    return this.#capture("ssh", controlArgv(target, this.#conn, cmd), owner, {
+      timeoutMs: CONTROL_TIMEOUT_MS,
+      max: MAX_CONTROL_TEXT,
+      what: "ssh -O",
+    });
+  }
+
+  /**
+   * Whether `target`'s shared connection is up, and the forwards added on it from the panel.
+   * When the master is gone, so are its forwards: the list is cleared.
+   */
+  async forwards(target: SshTarget, owner = "main"): Promise<SshForwardStatus> {
+    const key = targetLabel(target);
+    const r = await this.#control(target, { op: "check" }, owner);
+    const master = masterRunning(r.exitCode, r.text);
+    if (!master) this.#forwards.delete(key);
+    return { master, active: [...(this.#forwards.get(key) ?? [])] };
+  }
+
+  /** Add a forward to the running master (`ssh -O forward`); ssh's error when it refuses. */
+  async addForward(
+    req: SshForwardArgs,
+    owner = "main",
+  ): Promise<SshForwardStatus> {
+    const key = targetLabel(req.target);
+    const r = await this.#control(
+      req.target,
+      { op: "forward", forward: req.forward },
+      owner,
+    );
+    if (r.exitCode !== 0) {
+      throw new DesktopCapError(
+        "ssh_failed",
+        lastErrorLine(r.text) || `ssh exited with status ${r.exitCode}`,
+      );
+    }
+    this.#forwards.set(
+      key,
+      addForward(this.#forwards.get(key) ?? [], req.forward),
+    );
+    return { master: true, active: [...this.#forwards.get(key)!] };
+  }
+
+  /** Stop a forward (`ssh -O cancel`). One ssh no longer knows is dropped from the list too. */
+  async cancelForward(
+    req: SshForwardArgs,
+    owner = "main",
+  ): Promise<SshForwardStatus> {
+    const key = targetLabel(req.target);
+    const r = await this.#control(
+      req.target,
+      { op: "cancel", forward: req.forward },
+      owner,
+    );
+    const left = removeForward(this.#forwards.get(key) ?? [], req.forward);
+    this.#forwards.set(key, left);
+    if (r.exitCode !== 0) {
+      const status = await this.forwards(req.target, owner);
+      if (status.master) {
+        throw new DesktopCapError(
+          "ssh_failed",
+          lastErrorLine(r.text) || `ssh exited with status ${r.exitCode}`,
+        );
+      }
+      return status;
+    }
+    return { master: true, active: left };
+  }
+
+  /** Save a Qutty host's favourite forwards in its `# qutty:` metadata (qutty.conf only). */
+  async saveForwards(req: SshSaveForwardsArgs): Promise<SshHost> {
+    const path = quttyConfPath(this.#home);
+    const text = await readTextOrUndefined(path);
+    if (text === undefined) throw notFound("Qutty host");
+    const next = setHostForwards(
+      text,
+      req.alias,
+      req.forwards.map(favoriteText),
+    );
+    if (next === text && !(await this.#findHost(req.alias, true))) {
+      throw notFound("Qutty host");
+    }
+    if (next !== text) write(path, encode(next), 0o600);
+    const saved = await this.#findHost(req.alias, true);
+    if (!saved) throw notFound("Qutty host");
+    return saved;
   }
 
   async #spawn(program: string, args: string[], owner: string) {
@@ -676,23 +878,16 @@ export class SshService {
     if ("resolve" in target) {
       if (event === "data") {
         target.text = (target.text + (data as PtyDataEvent).data).slice(
-          -MAX_LISTING_TEXT,
+          -target.max,
         );
         return;
       }
       this.#byPty.delete(data.id);
       clearTimeout(target.timer);
-      const listing = parseSftpListing(target.text);
-      if ((data as PtyExitEvent).exitCode === 0 && listing) {
-        target.resolve(listing);
-      } else {
-        target.reject(
-          new DesktopCapError(
-            "ssh_failed",
-            lastErrorLine(target.text) || "sftp failed",
-          ),
-        );
-      }
+      target.resolve({
+        exitCode: (data as PtyExitEvent).exitCode,
+        text: target.text,
+      });
       return;
     }
     if (event === "data") {
@@ -897,6 +1092,38 @@ export default defineDesktopExtension({
       handler: (args: unknown, ctx): void => {
         getService(ctx).cancel((args as { transferId: string }).transferId);
       },
+    },
+    sshForwards: {
+      input: targetInput,
+      timeoutMs: CONTROL_TIMEOUT_MS + 5_000,
+      handler: (args: unknown, ctx): Promise<SshForwardStatus> =>
+        getService(ctx).forwards(
+          (args as { target: SshTarget }).target,
+          ctx.windowId ?? "main",
+        ),
+    },
+    sshForwardAdd: {
+      input: forwardInput,
+      timeoutMs: CONTROL_TIMEOUT_MS + 5_000,
+      handler: (args: unknown, ctx): Promise<SshForwardStatus> =>
+        getService(ctx).addForward(
+          args as SshForwardArgs,
+          ctx.windowId ?? "main",
+        ),
+    },
+    sshForwardCancel: {
+      input: forwardInput,
+      timeoutMs: 2 * CONTROL_TIMEOUT_MS + 5_000,
+      handler: (args: unknown, ctx): Promise<SshForwardStatus> =>
+        getService(ctx).cancelForward(
+          args as SshForwardArgs,
+          ctx.windowId ?? "main",
+        ),
+    },
+    sshSaveForwards: {
+      input: saveForwardsInput,
+      handler: (args: unknown, ctx): Promise<SshHost> =>
+        getService(ctx).saveForwards(args as SshSaveForwardsArgs),
     },
   },
 });

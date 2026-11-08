@@ -1888,6 +1888,249 @@ kbd {
   box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
 }
 
+/* ---- Broadcast input (cluster ssh) ------------------------------------------------------ */
+
+/* Loud on purpose: a tile that repeats your typing must never be mistaken for a quiet one. */
+.bar-broadcast.is-on {
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  color: var(--amber);
+}
+.bar-broadcast-count {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--amber);
+  color: var(--ink);
+  font: 600 10px/1 var(--sans);
+}
+.tile.is-broadcast,
+.tile.is-broadcast.is-focused,
+.tile.is-broadcast.has-tint {
+  border: 2px solid var(--amber);
+}
+.tile.is-broadcast.is-focused {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--amber) 28%, transparent),
+    0 12px 36px rgba(var(--shadow-rgb), calc(0.4 * var(--shadow-a)));
+}
+.tile.is-broadcast .tile-head {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--amber) 16%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+}
+.tile-bcast {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px 1px 3px;
+  border-radius: 4px;
+  border: 1px dashed var(--line-2);
+  color: var(--text-3);
+  font: 600 9px/1 var(--sans);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.tile-bcast input {
+  margin: 0;
+  accent-color: var(--amber);
+}
+.tile-bcast.is-checked {
+  border: 1px solid var(--amber);
+  background: var(--amber);
+  color: var(--ink);
+}
+.bcast-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 600;
+  max-width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--amber) 60%, transparent);
+  background: rgba(var(--panel-rgb), 0.97);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--amber) 16%, transparent),
+    0 14px 36px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
+  animation: pop 160ms var(--ease);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.bcast-banner.is-live {
+  border-color: var(--amber);
+  background:
+    linear-gradient(color-mix(in srgb, var(--amber) 14%, transparent),
+    color-mix(in srgb, var(--amber) 14%, transparent)),
+    rgba(var(--panel-rgb), 0.97);
+}
+.bcast-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.bcast-banner.is-live .bcast-dot {
+  background: var(--amber);
+  animation: bcast-pulse 1.2s ease-in-out infinite;
+}
+@keyframes bcast-pulse {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--amber) 0%, transparent);
+    opacity: 0.55;
+  }
+}
+.app.reduced-motion .bcast-banner.is-live .bcast-dot {
+  animation: none;
+}
+.bcast-text {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bcast-banner.is-live > .bcast-text {
+  color: var(--amber);
+  font-weight: 600;
+}
+.bcast-warn {
+  color: var(--red);
+  font-size: 11.5px;
+}
+.bcast-paste {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bcast-banner .btn-primary,
+.bcast-banner .btn-quiet {
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+.bcast-stop kbd {
+  margin-left: 4px;
+}
+
+/* ---- Port forwards ---------------------------------------------------------------------- */
+
+.modal.forwards-dialog {
+  width: min(560px, 100%);
+  max-height: min(600px, 100%);
+}
+.forwards-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 16px 16px;
+}
+.forwards .theme-group-label {
+  margin-top: 14px;
+}
+.forwards-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+.forwards-status .btn-quiet {
+  margin-left: auto;
+  padding: 4px 9px;
+}
+.forwards-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.forwards-dot.is-up {
+  background: var(--accent);
+}
+.forwards .form-error {
+  margin: 10px 0 0;
+}
+.forwards-empty {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.forwards-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.forwards-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.forwards-row .mono {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 11.5px;
+}
+.forwards-row .btn-quiet {
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.forwards-row .strip-x {
+  margin-left: 0;
+}
+.forwards-row.is-readonly .mono {
+  color: var(--text-2);
+}
+.forwards-row .field-hint {
+  margin: 0;
+}
+.forwards-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.forwards-kinds .btn-quiet {
+  padding: 4px 9px;
+}
+.forwards-kinds .btn-quiet.is-active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+}
+.forwards-spec {
+  display: flex;
+  gap: 6px;
+}
+.forwards-spec .text-input {
+  flex: 1;
+}
+.forwards-add .form-check {
+  margin-top: 8px;
+  color: var(--text-2);
+}
+.forwards-add .field-hint {
+  margin: 8px 0 0;
+}
+.conn-forwards .host-detail-head .btn-quiet {
+  padding: 4px 9px;
+}
+
 /* ---- Download picker ------------------------------------------------------------------- */
 
 .remote-path {

@@ -189,16 +189,21 @@
   - **Auto-label.** When `info()` shows `ssh` as the foreground process in an
     ordinary shell tile, label the tile with the host and offer "Save this
     host".
-  - Maybe: broadcast typing to several selected SSH tiles (cluster ssh), and a
-    per-host port-forward panel (`ssh -O forward` / `-O cancel` on the control
-    socket, live).
+  - Done: broadcast typing to several selected tiles (cluster ssh: ⌘⇧I or the
+    bar button, a checkbox per tile, only the user's keys and pastes are
+    repeated, big pastes confirmed), and a per-host port-forward panel
+    (`ssh -O forward` / `-O cancel` on the control socket, live; favourites in
+    the `# qutty:` metadata). ssh has no control command that lists forwards, so
+    the panel shows the ones Qutty added (and the config's own) rather than
+    every forward on the master.
   - Status: the backend and the UI are in (manager dialog, SSH tiles with tint /
-    Disconnected / Reconnect, drop-to-upload, Download… picker, progress), and
-    SSH hosts in the `+` picker (with the shell picker). Still open: "Connect in
-    split" (the layout has no splits), choosing a download folder, auto-label +
-    "Save this host" for `ssh` typed in a plain shell (needs the foreground
-    process's argv, which `info()` does not report), the port-forward panel and
-    cluster ssh.
+    Disconnected / Reconnect, drop-to-upload, Download… picker, progress,
+    broadcast input, port forwards), and SSH hosts in the `+` picker (with the
+    shell picker). Still open: "Connect in split" (the layout has no splits),
+    choosing a download folder, auto-label + "Save this host" for `ssh` typed in
+    a plain shell (needs the foreground process's argv, which `info()` does not
+    report), and favourite forwards for hosts from the user's own config (they
+    would need a Qutty host block).
 
 - [x] **Clickable links: URLs and local paths.** ⌘-click (Ctrl-click elsewhere)
       opens what's under the pointer. It's underlined on hover with the modifier

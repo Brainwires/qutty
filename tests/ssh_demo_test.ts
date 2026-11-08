@@ -215,3 +215,47 @@ Deno.test("demo ssh: transfers tick to done; cancel ends one with an error", asy
     time.restore();
   }
 });
+
+Deno.test("demo ssh: port forwards need a connection; favourites are Qutty-host only", async () => {
+  const b = createDemoBackend();
+  const target = { alias: "prod-api" };
+  const L = {
+    kind: "local" as const,
+    port: 8080,
+    host: "localhost",
+    hostPort: 80,
+  };
+  assertEquals(await b.sshForwards(target), { master: false, active: [] });
+  await assertRejects(
+    () => b.sshForwardAdd({ target, forward: L }),
+    Error,
+    "Control socket",
+  );
+  await b.sshCommand(target);
+  assertEquals((await b.sshForwards(target)).master, true);
+  assertEquals((await b.sshForwardAdd({ target, forward: L })).active, [L]);
+  assertEquals((await b.sshForwardAdd({ target, forward: L })).active, [L]);
+  await assertRejects(
+    () => b.sshForwardAdd({ target, forward: { ...L, port: 80 } }),
+    Error,
+    "Permission denied",
+  );
+  assertEquals((await b.sshForwardCancel({ target, forward: L })).active, []);
+  // The demo's Qutty host has a favourite; saving replaces them; a host-form save keeps them.
+  const host = (await b.sshHosts()).hosts.find((h) => h.alias === "prod-api")!;
+  assertEquals(host.forwards, ["L 8080:localhost:80"]);
+  const saved = await b.sshSaveForwards({
+    alias: "prod-api",
+    forwards: [L, { kind: "dynamic", port: 1080 }],
+  });
+  assertEquals(saved.forwards, ["L 8080:localhost:80", "D 1080"]);
+  const edited = await b.sshSaveHost({ alias: "prod-api", hostName: "x" });
+  assertEquals(edited.forwards, ["L 8080:localhost:80", "D 1080"]);
+  assertEquals(
+    (await b.sshSaveForwards({ alias: "prod-api", forwards: [] })).forwards,
+    undefined,
+  );
+  await assertRejects(() =>
+    b.sshSaveForwards({ alias: "web-1", forwards: [L] })
+  );
+});

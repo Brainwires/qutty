@@ -19,8 +19,12 @@ Deno.test("ssh schema: declared events and methods", () => {
       "sshCommand",
       "sshDeleteHost",
       "sshDownload",
+      "sshForwardAdd",
+      "sshForwardCancel",
+      "sshForwards",
       "sshHosts",
       "sshList",
+      "sshSaveForwards",
       "sshSaveHost",
       "sshUpload",
     ],
@@ -192,4 +196,54 @@ Deno.test("ssh schema: sshList", () => {
   });
   bad("sshList", { ...ALIAS, path: "" }, ["path"]);
   bad("sshList", { ...ALIAS, path: "a\nb" }, ["path"]);
+});
+
+Deno.test("ssh schema: port forwards (strict, no option injection)", () => {
+  const L = { kind: "local", port: 8080, host: "localhost", hostPort: 80 };
+  for (const name of ["sshForwardAdd", "sshForwardCancel"] as const) {
+    assertEquals(ok(name, { ...ALIAS, forward: L }), { ...ALIAS, forward: L });
+    // Unknown fields are dropped; a dynamic forward has no destination.
+    assertEquals(
+      ok(name, {
+        ...ALIAS,
+        forward: { kind: "dynamic", port: 1080, bind: "127.0.0.1", x: 1 },
+      }),
+      { ...ALIAS, forward: { kind: "dynamic", bind: "127.0.0.1", port: 1080 } },
+    );
+    bad(name, { ...ALIAS }, ["forward"]);
+    bad(name, { forward: L }, ["target"]);
+    bad(name, { ...ALIAS, forward: { ...L, kind: "unix" } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, port: 0 } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, port: 65536 } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, port: "8080" } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, hostPort: 1.5 } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, host: "-oProxyCommand=x" } }, [
+      "forward",
+    ]);
+    bad(name, { ...ALIAS, forward: { ...L, host: "a b" } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, bind: "-g" } }, ["forward"]);
+    bad(name, { ...ALIAS, forward: { ...L, host: undefined } }, ["forward"]);
+    bad(name, {
+      ...ALIAS,
+      forward: { kind: "dynamic", port: 1080, host: "x", hostPort: 1 },
+    }, ["forward"]);
+    bad(name, { target: { alias: "-x" }, forward: L }, ["alias"]);
+  }
+  assertEquals(ok("sshForwards", ALIAS), ALIAS);
+  assertEquals(
+    ok("sshSaveForwards", { alias: "web", forwards: [L] }),
+    { alias: "web", forwards: [L] },
+  );
+  assertEquals(ok("sshSaveForwards", { alias: "web", forwards: [] }), {
+    alias: "web",
+    forwards: [],
+  });
+  bad("sshSaveForwards", { alias: "web" }, ["forwards"]);
+  bad("sshSaveForwards", { alias: "web", forwards: [{ kind: "local" }] }, [
+    "forwards",
+  ]);
+  bad("sshSaveForwards", { alias: "web", forwards: Array(33).fill(L) }, [
+    "forwards",
+  ]);
+  bad("sshSaveForwards", { alias: "-x", forwards: [] }, ["alias"]);
 });

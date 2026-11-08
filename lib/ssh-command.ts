@@ -13,6 +13,7 @@ import {
   targetLabel,
   targetProblem,
 } from "./ssh-config.ts";
+import { forwardArgs, type SshForward } from "./ssh-forward.ts";
 
 // ---------------------------------------------------------------------------------------------
 // ControlPath
@@ -120,6 +121,44 @@ export function sshArgv(
   if (remote.length > 0) args.push("-t");
   args.push("--", destination(target), ...remote);
   return args;
+}
+
+// ---------------------------------------------------------------------------------------------
+// ssh -O (the control socket: port forwards)
+// ---------------------------------------------------------------------------------------------
+
+/** A control command: is the master up, add a forward to it, or remove one. */
+export type ControlOp =
+  | { op: "check" }
+  | { op: "forward" | "cancel"; forward: SshForward };
+
+/**
+ * The argv (after `ssh`) that sends a control command to the master of `target`'s shared
+ * connection: the same ControlPath (and port, and config file) as the tile, so `%C` names the
+ * same socket; `ControlMaster no` + `BatchMode yes`, so it never connects or prompts by itself.
+ * The forward is checked field by field before it is written as one argument after its flag,
+ * and the destination comes after `--`.
+ */
+export function controlArgv(
+  target: SshTarget,
+  opts: SshConnectionOptions,
+  cmd: ControlOp,
+): string[] {
+  assertTarget(target);
+  return [
+    ...sharedArgs(opts, "no"),
+    ...portArgs(target, "-p"),
+    "-O",
+    cmd.op,
+    ...(cmd.op === "check" ? [] : forwardArgs(cmd.forward)),
+    "--",
+    destination(target),
+  ];
+}
+
+/** Whether `ssh -O check` said the master is up (`Master running (pid=…)`). */
+export function masterRunning(exitCode: number | null, text: string): boolean {
+  return exitCode === 0 && /Master running/.test(text);
 }
 
 // ---------------------------------------------------------------------------------------------

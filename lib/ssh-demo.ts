@@ -7,8 +7,11 @@
 import type {
   SshCommand,
   SshDownloadArgs,
+  SshForwardArgs,
+  SshForwardStatus,
   SshHostsResult,
   SshListArgs,
+  SshSaveForwardsArgs,
   SshTransferEvent,
   SshTransferStarted,
   SshUploadArgs,
@@ -27,6 +30,12 @@ import {
   type SshListing,
   type SshRecent,
 } from "./ssh-command.ts";
+import {
+  addForward,
+  favoriteText,
+  removeForward,
+  type SshForward,
+} from "./ssh-forward.ts";
 
 const USER_CONFIG = "/Users/demo/.ssh/config";
 const QUTTY_CONF = "/Users/demo/.ssh/qutty.conf";
@@ -64,6 +73,7 @@ function demoHosts(): SshHost[] {
       tags: ["prod"],
       favorite: true,
       tmux: true,
+      forwards: ["L 8080:localhost:80"],
       source: QUTTY_CONF,
       editable: true,
     },
@@ -113,6 +123,12 @@ export function createDemoSsh(emit: (event: SshTransferEvent) => void) {
   >();
 
   const find = (alias: string) => hosts.find((h) => h.aliases.includes(alias));
+  /** The connections that were opened (their "master" is up), with the forwards added on them. */
+  const masters = new Map<string, SshForward[]>();
+  const status = (label: string): SshForwardStatus => {
+    const active = masters.get(label);
+    return { master: active !== undefined, active: [...(active ?? [])] };
+  };
 
   /** A transfer that advances 20% every 150 ms per file, then reports done. */
   const start = (
@@ -166,6 +182,8 @@ export function createDemoSsh(emit: (event: SshTransferEvent) => void) {
       const saved: SshHost = {
         aliases: [input.alias],
         directives: previous?.directives ?? [],
+        // Like qutty.conf: the form does not edit the favourite forwards, a save keeps them.
+        ...(previous?.forwards ? { forwards: previous.forwards } : {}),
         ...fields,
         source: QUTTY_CONF,
         editable: true,
@@ -194,6 +212,7 @@ export function createDemoSsh(emit: (event: SshTransferEvent) => void) {
         return Promise.reject(err);
       }
       const label = targetLabel(target);
+      if (!masters.has(label)) masters.set(label, []);
       recents = [
         { label, target, at: Date.now() },
         ...recents.filter((r) => r.label !== label),
@@ -245,6 +264,43 @@ export function createDemoSsh(emit: (event: SshTransferEvent) => void) {
         });
       }
       return Promise.resolve();
+    },
+    sshForwards(target: SshTarget): Promise<SshForwardStatus> {
+      return Promise.resolve(status(targetLabel(target)));
+    },
+    /** Like ssh: no master, no forward; a privileged port is refused the way bind(2) would be. */
+    sshForwardAdd(args: SshForwardArgs): Promise<SshForwardStatus> {
+      const label = targetLabel(args.target);
+      const active = masters.get(label);
+      if (!active) {
+        return Promise.reject(
+          new Error("Control socket connect: No such file or directory"),
+        );
+      }
+      if (args.forward.port < 1024) {
+        return Promise.reject(
+          new Error(
+            `Port forwarding failed: bind ${args.forward.port}: Permission denied`,
+          ),
+        );
+      }
+      masters.set(label, addForward(active, args.forward));
+      return Promise.resolve(status(label));
+    },
+    sshForwardCancel(args: SshForwardArgs): Promise<SshForwardStatus> {
+      const label = targetLabel(args.target);
+      const active = masters.get(label);
+      if (active) masters.set(label, removeForward(active, args.forward));
+      return Promise.resolve(status(label));
+    },
+    sshSaveForwards(args: SshSaveForwardsArgs): Promise<SshHost> {
+      const host = find(args.alias);
+      if (!host?.editable) return Promise.reject(new Error("no such host"));
+      const forwards = args.forwards.map(favoriteText);
+      const saved: SshHost = { ...host, forwards };
+      if (forwards.length === 0) delete saved.forwards;
+      hosts = hosts.map((h) => (h === host ? saved : h));
+      return Promise.resolve(saved);
     },
     /** Stop every timer (tests). */
     dispose(): void {
