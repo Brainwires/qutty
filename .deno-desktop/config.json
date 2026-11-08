@@ -8,7 +8,9 @@
         "windows": "./icons/app.ico",
         "linux": "./icons/app.png"
       },
-      "keepAlive": true
+      "keepAlive": true,
+      "restoreWindows": true,
+      "maxWindows": 16
     },
     "window": {
       "width": 1600,
@@ -18,7 +20,9 @@
     },
     "menu": {
       "window": {
-        "reopenClosed": true
+        "newWindow": "/",
+        "reopenClosed": true,
+        "list": true
       }
     },
     "titleBar": "hiddenInset",

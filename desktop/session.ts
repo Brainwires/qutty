@@ -1,22 +1,28 @@
 // The `session` desktop extension: the page's side of the workspace model (desktop/workspace-host.ts).
 // A page joins the workspace its window shows (the window's key), gets back what it saved there
 // before (tiles, layout, MRU order) and each of its terminals with their replay
-// (desktop/terminal-sessions.ts), and saves its snapshot as it changes. The quit question ("agents
-// are busy") is answered here; desktop.ts asks it.
+// (desktop/terminal-sessions.ts), and saves its snapshot as it changes. The page's Workspaces menu
+// lists the workspaces, reopens a detached one (it opens a window with that key itself) and ends
+// one for real. The quit question ("agents are busy") is answered here; desktop.ts asks it.
 //
-// Events: `quit` (the question, to one window; desktop.ts sends it).
+// Events: `changed` (the workspace list, to every window) and `quit` (the question, to one window;
+// desktop.ts sends it).
 
 import {
   defineDesktopExtension,
   DesktopCapError,
   type DesktopExtensionHost,
 } from "denext/desktop";
-import { emptyInput, objectSchema } from "./schema.ts";
-import { type QuitRequest, workspaces } from "./workspace-host.ts";
+import { emptyInput, objectSchema, str } from "./schema.ts";
+import {
+  type QuitRequest,
+  type WorkspaceInfo,
+  workspaces,
+} from "./workspace-host.ts";
 import { terminalSessions } from "./pty.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 
-export type { PtyReplay, QuitRequest };
+export type { PtyReplay, QuitRequest, WorkspaceInfo };
 
 /** What `join` answers. */
 export interface SessionJoin {
@@ -50,6 +56,10 @@ const saveInput = objectSchema<{ snapshot: unknown }>((v, issues) => {
   return { snapshot: v.snapshot };
 });
 
+const idInput = objectSchema<{ id: string }>((v, issues) => ({
+  id: str(v, "id", issues, 64),
+}));
+
 const answerInput = objectSchema<{ quit: boolean }>((v, issues) => {
   if (typeof v.quit !== "boolean") {
     issues.push({ message: "quit must be a boolean", path: ["quit"] });
@@ -58,6 +68,9 @@ const answerInput = objectSchema<{ quit: boolean }>((v, issues) => {
 });
 
 const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
+
+/** How long the `changed` event waits to coalesce a burst of changes. */
+const CHANGED_DEBOUNCE_MS = 100;
 
 /** Whether a window still shows the app (the tray panel does not count). */
 function hasAppWindow(host: DesktopExtensionHost): boolean {
@@ -83,8 +96,18 @@ function quitWithLastWindow(host: DesktopExtensionHost): void {
 
 export default defineDesktopExtension({
   name: "session",
-  events: ["quit"],
-  setup: (host) => quitWithLastWindow(host),
+  events: ["changed", "quit"],
+  setup: (host) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    workspaces.onChanged(() => {
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        host.emit("changed", { workspaces: workspaces.list() });
+      }, CHANGED_DEBOUNCE_MS);
+    });
+    quitWithLastWindow(host);
+  },
   methods: {
     /** Show the calling window's workspace: its snapshot and its terminals, attached here. */
     join: {
@@ -115,6 +138,18 @@ export default defineDesktopExtension({
         }
         workspaces.save(id, (args as { snapshot: unknown }).snapshot);
       },
+    },
+    /** Every workspace (the page's Workspaces menu). */
+    list: {
+      input: emptyInput,
+      handler: (): WorkspaceInfo[] => workspaces.list(),
+    },
+    /** End a workspace for real: its terminals are killed and its sandbox container stopped. */
+    end: {
+      input: idInput,
+      handler: (args: unknown): { ended: number } => ({
+        ended: workspaces.end((args as { id: string }).id).length,
+      }),
     },
     /** The calling window took the focus (the companion talks to the active window). */
     focus: {
