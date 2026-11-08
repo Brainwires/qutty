@@ -389,6 +389,18 @@ Deno.test("bubbles: a user turn shows at once and streams; an agents' turn only 
 
 // --- settings -----------------------------------------------------------------------------------
 
+/** The reactions' defaults (tests/companion_reactions_test.ts checks them). */
+const REACTION_DEFAULTS = {
+  nightSleepy: true,
+  nightFrom: 0,
+  nightTo: 360,
+  celebrate: true,
+  sad: true,
+  reactMinS: 20,
+  reactAnyCommand: false,
+  reactBubble: true,
+};
+
 Deno.test("settings: the companion's fields sanitise; floating is drawn in the window; the store reduces them", () => {
   assertEquals(DEFAULT_COMPANION, {
     mode: "window",
@@ -398,6 +410,7 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
     model: "",
     ollamaModel: "",
     lively: true,
+    ...REACTION_DEFAULTS,
   });
   assertEquals(
     sanitizeCompanion({
@@ -417,6 +430,7 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
       model: "haiku",
       ollamaModel: "qwen3.8:27b-mlx",
       lively: false,
+      ...REACTION_DEFAULTS,
     },
   );
   // The brain the hub is configured with: Claude Code's alias, or the Ollama model.

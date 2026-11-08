@@ -31,6 +31,12 @@
 //
 // Lively (app/companion/use-loopy-life.ts): with nothing on screen, Loopy makes small faces now
 // and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
+//
+// Reactions (Settings → Companion → Reactions): a hop of joy or a sad face when a long job
+// finishes (app/companion/use-loopy-reaction.ts), and sleepy at night
+// (app/companion/use-loopy-sleep.ts). Which face shows when several want Loopy is one pure
+// function, lib/companion/loopy-priority.ts: a question > a message > thinking / voice > a
+// reaction > hot > excited > sleepy > the idle life.
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
@@ -72,6 +78,14 @@ import { useLoopyLife } from "./use-loopy-life.ts";
 import { useLoopyDrag } from "./use-loopy-drag.ts";
 import { mayLiven } from "../../lib/companion/loopy-life.ts";
 import { mayShowHot } from "../../lib/sysstats.ts";
+import {
+  chooseFace,
+  type FaceInputs,
+  mayStartReaction,
+} from "../../lib/companion/loopy-priority.ts";
+import type { Reaction } from "../../lib/companion/reactions.ts";
+import { useLoopySleep } from "./use-loopy-sleep.ts";
+import { useLoopyReaction } from "./use-loopy-reaction.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -96,6 +110,20 @@ export interface CompanionOverlayProps {
   hot?: boolean;
   /** The hot face came on (the workspace may say a line about it, rarely). */
   onHotShown?(): void;
+  /**
+   * Settings → Companion → Reactions: sleepy at night (its hours, minutes since midnight) and
+   * the short line beside Loopy when it reacts.
+   */
+  reactions?: {
+    readonly nightSleepy: boolean;
+    readonly nightFrom: number;
+    readonly nightTo: number;
+    readonly bubble: boolean;
+  };
+  /** The latest finished job worth a reaction (app/use-reactions.ts); a new `id` plays it. */
+  reaction?: Reaction;
+  /** A reaction played (it was not dropped for a face above it). */
+  onReactionShown?(reaction: Reaction): void;
 }
 
 /** What the voice note says in each phase (the error and notes bring their own text). */
@@ -479,31 +507,72 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     }
     : undefined;
 
-  const life = useLoopyLife({
-    lively: props.lively !== false,
+  // The faces that want Loopy, in their order (lib/companion/loopy-priority.ts).
+  const lively = props.lively !== false;
+  const base = {
+    lively,
     state: loopyState,
     message: current !== undefined,
     voice: loopyVoiceTurn !== undefined,
     busy: thinking,
+  };
+  // Hot: only on an otherwise free face (no question, reply, thinking or voice turn).
+  const hotWanted = mayShowHot({
+    enabled: lively,
+    hot: props.hot === true,
+    free: mayLiven({ ...base, awake: true }),
+  });
+  const inputs: Omit<FaceInputs, "reaction" | "excited" | "sleepy"> = {
+    message: current
+      ? (current.kind === "ask" || current.mood === "attention"
+        ? "attention"
+        : "other")
+      : null,
+    thinking: thinking || loopyState === "think",
+    voice: loopyVoiceTurn !== undefined,
+    hot: hotWanted,
+  };
+  const canReact = mayStartReaction({
+    ...inputs,
+    reaction: null,
+    excited: false,
+    sleepy: false,
+  });
+  const reaction = useLoopyReaction({
+    reaction: props.reaction,
+    canStart: canReact,
+    reducedMotion: props.reducedMotion,
+    dispatch,
+    ...(props.onReactionShown ? { onShown: props.onReactionShown } : {}),
+  });
+  const reactions = props.reactions;
+  const sleep = useLoopySleep({
+    enabled: reactions?.nightSleepy === true,
+    from: reactions?.nightFrom ?? 0,
+    to: reactions?.nightTo ?? 0,
+    // Anything above sleepy wakes it (excitement cannot start while it sleeps).
+    busy: inputs.message !== null || inputs.thinking || inputs.voice ||
+      inputs.hot || reaction !== null,
+    stage: squashRef,
+    reducedMotion: props.reducedMotion,
+  });
+
+  const life = useLoopyLife({
+    ...base,
     dragging: drag.dragging,
+    held: reaction !== null || hotWanted || sleep.asleep,
     stage: squashRef,
     reducedMotion: props.reducedMotion,
     dispatch,
   });
-
-  // Hot: only on an otherwise free face (no question, reply, thinking or voice turn).
-  const showHot = mayShowHot({
-    enabled: props.lively !== false,
-    hot: props.hot === true,
-    free: mayLiven({
-      lively: props.lively !== false,
-      state: loopyState,
-      message: current !== undefined,
-      voice: loopyVoiceTurn !== undefined,
-      busy: thinking,
-      awake: true,
-    }) && !life.excited,
+  const face = chooseFace({
+    ...inputs,
+    reaction: reaction?.kind ?? null,
+    excited: life.excited,
+    sleepy: sleep.asleep,
   });
+
+  const showHot = face.hot;
   const onHotShown = useRef(props.onHotShown);
   onHotShown.current = props.onHotShown;
   useEffect(() => {
@@ -528,6 +597,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
       data-voice={voicePhase}
       data-speaking={voice?.speaking ? "true" : "false"}
+      data-face={face.layer}
     >
       <div class="bubble-slot">
         {current && (
@@ -553,6 +623,16 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             onClose={closeChat}
           />
         )}
+      {reaction && face.layer === "reaction" && reactions?.bubble !== false && (
+        <p
+          class="loopy-reaction"
+          data-testid="loopy-reaction"
+          data-kind={reaction.kind}
+          role="status"
+        >
+          {reaction.text}
+        </p>
+      )}
       {voiceNote && (
         <p
           class="voice-note"
@@ -567,15 +647,16 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         <div class="squash" ref={squashRef} data-loopy-hit="">
           <Loopy
             state={model.loopy.state}
-            mood={loopyMood(current, model.loopy.state) ??
-              (life.excited && !loopyVoiceTurn ? "excited" : undefined)}
+            mood={loopyMood(current, model.loopy.state) ?? face.mood}
             voice={loopyVoiceTurn}
             level={loopyVoiceTurn === "listening"
               ? (voice?.level ?? 0) * LEVEL_STEPS
               : talk}
             lively={props.lively !== false}
-            expression={showHot ? undefined : life.expression}
+            expression={face.life ? life.expression : undefined}
             hot={showHot}
+            asleep={face.layer === "sleepy"}
+            stretching={sleep.stretching}
           />
           <button
             ref={pokeRef}

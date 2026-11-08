@@ -15,9 +15,12 @@ import {
 const ESC = "\x1b";
 const PROMPT = "demo:~$ ";
 
+// The shell integration marks (OSC 133, lib/shell-marks-demo.ts) are invisible too.
 // deno-lint-ignore no-control-regex
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\]133;[^\x07]*\x07/g;
 const plain = (s: string) => s.replace(ANSI, "");
+// deno-lint-ignore no-control-regex
+const MARKS = /\x1b\]133;[^\x07]*\x07/g;
 
 /** Fake time pinned to a known instant (so `date` is checkable). */
 const T0 = new Date("2026-11-03T12:34:56Z");
@@ -219,11 +222,69 @@ Deno.test(
         "cd",
         "whoami",
         "exit",
+        "job",
       ]
     ) {
       assert(new RegExp(`\\b${c}\\b`).test(out), `help mentions ${c}`);
     }
     assert(out.startsWith("Qutty demo shell"));
+    await s.be.kill(s.id);
+  }),
+);
+
+/** The OSC 133 marks in `raw`, in order. */
+const marksOf = (raw: string) => [...raw.matchAll(MARKS)].map((m) => m[0]);
+const mark = (payload: string) => `${ESC}]133;${payload}\x07`;
+
+Deno.test(
+  "demo: shell integration marks (OSC 133) around every command; job runs one for a while",
+  withTime(async (time) => {
+    const s = await session(time);
+    assertEquals(marksOf(s.raw()), [mark("A")], "the first prompt");
+    s.take();
+    await s.type("ls\r");
+    assertEquals(marksOf(s.raw()), [
+      mark("C;cmdline_url=ls"),
+      mark("D;0"),
+      mark("A"),
+    ]);
+    s.take();
+    await s.type("frobnicate\r");
+    assertEquals(marksOf(s.raw())[1], mark("D;127"));
+    s.take();
+    // An empty line runs nothing: just a new prompt.
+    await s.type("\r");
+    assertEquals(marksOf(s.raw()), [mark("A")]);
+    s.take();
+
+    // job: C with the pretend command now, D with its exit status when it ends.
+    await s.type("job 2.5 3 make all\r");
+    assertEquals(marksOf(s.raw()), [mark("C;cmdline_url=make%20all")]);
+    assertEquals(
+      s.take(),
+      "job 2.5 3 make all\r\n(demo) running make all…\r\n",
+    );
+    await s.type("ls\r"); // typing while it runs is ignored
+    await time.tickAsync(2_400);
+    assertEquals(s.take(), "");
+    await time.tickAsync(100);
+    assertEquals(marksOf(s.raw()), [mark("D;3"), mark("A")]);
+    assertEquals(s.take(), `(demo) make all: exit 3\r\n${PROMPT}`);
+
+    // Ctrl-C stops it: exit 130.
+    await s.type("job 60 0 cargo test\r");
+    s.take();
+    await s.type("\x03");
+    assertEquals(marksOf(s.raw()), [mark("D;130"), mark("A")]);
+    assertEquals(s.take(), `^C\r\n${PROMPT}`);
+
+    // A malformed job is a command that fails at once.
+    await s.type("job soon\r");
+    assertEquals(marksOf(s.raw()).slice(1), [mark("D;2"), mark("A")]);
+    assertEquals(
+      s.take(),
+      `job soon\r\nusage: job <seconds> <exit> <command…>\r\n${PROMPT}`,
+    );
     await s.be.kill(s.id);
   }),
 );
@@ -283,7 +344,10 @@ Deno.test(
     s.take();
     await s.type("clear\r");
     assertEquals(
-      s.raw().slice("clear\r\n".length, "clear\r\n".length + 11),
+      s.raw().replace(MARKS, "").slice(
+        "clear\r\n".length,
+        "clear\r\n".length + 11,
+      ),
       `${ESC}[2J${ESC}[3J${ESC}[H`,
     );
     assert(plain(s.raw()).endsWith(PROMPT));

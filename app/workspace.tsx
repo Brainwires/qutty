@@ -83,6 +83,7 @@ import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
 import { useVoice } from "./use-voice.ts";
 import { useSysStats } from "./use-sysstats.ts";
+import { useReactions } from "./use-reactions.ts";
 import { HOT_LINE, maySayHot, thresholds } from "../lib/sysstats.ts";
 import { anyAlertOn } from "../lib/voice/alerts.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
@@ -361,6 +362,19 @@ function WorkspaceView() {
     hotSaidAt.current = now;
     voice.test(HOT_LINE);
   };
+  // Loopy's reactions: a long shell command or an agent's job that finished well or failed.
+  const reactions = useReactions({
+    backend: managerRef.current?.backend ?? null,
+    companion: state.settings.companion,
+    voice: state.settings.voice,
+    speaking: voice.speaking,
+    say: voice.alert,
+    nameOf: (id) =>
+      hubTileOf(id)?.name ??
+        stateRef.current.terminals.find((t) => t.id === id)?.title ?? "a tile",
+  });
+  const commandDoneRef = useRef(reactions.onCommandDone);
+  commandDoneRef.current = reactions.onCommandDone;
   const pttKeyRef = useRef(state.settings.voice.pttKey);
   pttKeyRef.current = state.settings.voice.pttKey;
 
@@ -449,6 +463,7 @@ function WorkspaceView() {
         void linksRef.current.onLink(id, hit, e, how),
       onBroadcastPaste: (id, data, tiles) =>
         broadcastRef.current.hold(id, data, tiles),
+      onCommandDone: (id, done) => commandDoneRef.current(id, done),
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
@@ -717,6 +732,14 @@ function WorkspaceView() {
               : ""}
             hot={hotWanted && sys.hot}
             onHotShown={onHotShown}
+            reactions={{
+              nightSleepy: settings.companion.nightSleepy,
+              nightFrom: settings.companion.nightFrom,
+              nightTo: settings.companion.nightTo,
+              bubble: settings.companion.reactBubble,
+            }}
+            {...(reactions.reaction ? { reaction: reactions.reaction } : {})}
+            onReactionShown={reactions.onShown}
           />
         )}
         {broadcast.on && (

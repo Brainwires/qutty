@@ -12,8 +12,9 @@ import { createDemoHub } from "../lib/hub-demo.ts";
 import type { AskRequest, HubSnapshot } from "../lib/hub/protocol.ts";
 import { createDemoBackend, type PtyBackend } from "../lib/pty-client.ts";
 
+// The shell integration marks (OSC 133, lib/shell-marks-demo.ts) are invisible too.
 // deno-lint-ignore no-control-regex
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\]133;[^\x07]*\x07/g;
 const plain = (s: string) => s.replace(ANSI, "");
 
 /** A demo hub with its events recorded. */

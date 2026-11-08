@@ -343,6 +343,13 @@ export interface LoopyProps {
    * page passes it only while Loopy is otherwise idle (lib/sysstats.ts `mayShowHot`).
    */
   readonly hot?: boolean;
+  /**
+   * Qutty's own: Loopy sleeps at night (`data-asleep`, with the example's `sleepy` mood): its
+   * nod and z's slow down (public/styles.css, "Loopy sleeps").
+   */
+  readonly asleep?: boolean;
+  /** Qutty's own: Loopy stretches as it wakes up (`data-stretch`). */
+  readonly stretching?: boolean;
 }
 
 /** The mouth to draw: the lip-sync shape while speaking, else the mood's. */
@@ -370,8 +377,18 @@ const [VB_X, VB_Y, VB_W, VB_H] = LOOPY_VIEWBOX;
 
 /** Loopy's face: the steel bead head of the example's paper clip, without the wire. */
 export function Loopy(
-  { state, label = "Loopy", mood, voice, level = 0, lively, expression, hot }:
-    LoopyProps,
+  {
+    state,
+    label = "Loopy",
+    mood,
+    voice,
+    level = 0,
+    lively,
+    expression,
+    hot,
+    asleep,
+    stretching,
+  }: LoopyProps,
 ) {
   const current = mood ?? "neutral";
   const isHot = hot === true && current === "neutral";
@@ -386,6 +403,8 @@ export function Loopy(
       data-voice={voice}
       data-lively={lively ? "" : undefined}
       data-expr={expression}
+      data-asleep={asleep && current === "sleepy" ? "" : undefined}
+      data-stretch={stretching ? "" : undefined}
       style={{ "--loopy-listen": listen }}
       viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
       width={String(VB_W * LOOPY_SCALE)}

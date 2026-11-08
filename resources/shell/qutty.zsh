@@ -23,8 +23,14 @@
 # QUTTY_AGENT_NOTIFY_EVERY seconds (default 5; 0: every prompt; off: never), silently skipped when
 # the hub does not answer within a second.
 #
+# Shell integration marks (OSC 133, lib/shell-marks.ts): `133;C` with the command line when a
+# command starts (preexec), `133;D;<exit>` when it ends and `133;A` as the prompt starts (precmd),
+# so Qutty knows each command's exit status and how long it ran (Loopy's reactions, Settings →
+# Companion). They are invisible; QUTTY_SHELL_MARKS=off leaves them out.
+#
 # Settings (environment): QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude |
-# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY.
+# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY,
+# QUTTY_SHELL_MARKS.
 
 [[ -o interactive ]] || return 0
 [[ -n ${QUTTY_SOCK-}${QUTTY_HUB-} ]] || return 0
@@ -59,14 +65,26 @@ __qutty_notify() {
   __qutty_unread=$n
 }
 
+# An OSC 133 mark (`A`, `C;cmdline_url=…`, `D;<exit>`), unless QUTTY_SHELL_MARKS=off.
+__qutty_mark() {
+  [[ ${QUTTY_SHELL_MARKS-} == off ]] && return 0
+  print -rn -- $'\e]133;'"$1"$'\a'
+}
+
 __qutty_preexec() {
   __qutty_cmd=${1//$'\n'/ }
   __qutty_cmd=${__qutty_cmd//$'\t'/ }
   __qutty_cmd_dir=$PWD
+  # The line percent-escaped where it would end the mark (`%`, `;`), control characters dropped.
+  local line=${__qutty_cmd//\%/%25}
+  line=${line//;/%3B}
+  __qutty_mark "C;cmdline_url=${line//[[:cntrl:]]/ }"
 }
 
 __qutty_precmd() {
   local exit_status=$?
+  [[ -n $__qutty_cmd ]] && __qutty_mark "D;$exit_status"
+  __qutty_mark A
   if [[ -n $__qutty_cmd ]]; then
     __qutty_history+=("$exit_status"$'\t'"$__qutty_cmd_dir"$'\t'"$__qutty_cmd")
     (( ${#__qutty_history} > 10 )) && shift __qutty_history

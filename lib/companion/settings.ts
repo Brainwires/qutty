@@ -1,7 +1,9 @@
 /**
  * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): where
  * Loopy is drawn, which corner, whether its brain may run, which brain (Claude Code, or a local
- * Ollama model) and its model, and whether Loopy is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts).
+ * Ollama model) and its model, whether Loopy is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts),
+ * and its reactions (sleepy at night: lib/companion/sleepy.ts; celebrate and sad over finished
+ * jobs: lib/companion/reactions.ts).
  *
  * Client-safe and pure.
  *
@@ -54,7 +56,28 @@ export interface CompanionSettings {
   ollamaModel: string;
   /** Idle micro-expressions, eyes that follow the pointer, and excitement when it comes near. */
   lively: boolean;
+  /** Reactions: sleepy between `nightFrom` and `nightTo` (minutes since midnight) when idle. */
+  nightSleepy: boolean;
+  nightFrom: number;
+  nightTo: number;
+  /** Reactions: hop of joy when a long job finishes well. */
+  celebrate: boolean;
+  /** Reactions: a brief sad face when one fails. */
+  sad: boolean;
+  /** Reactions: seconds a shell command must run to count. */
+  reactMinS: number;
+  /** Reactions: every long command counts, not only build- and test-like ones. */
+  reactAnyCommand: boolean;
+  /** Reactions: a short line beside Loopy saying what finished. */
+  reactBubble: boolean;
 }
+
+/** The reactions' number ranges (Settings' fields). */
+export const REACTION_RANGES = {
+  nightFrom: { min: 0, max: 1439 },
+  nightTo: { min: 0, max: 1439 },
+  reactMinS: { min: 1, max: 3600 },
+} as const;
 
 export const DEFAULT_COMPANION: CompanionSettings = {
   mode: "window",
@@ -64,7 +87,25 @@ export const DEFAULT_COMPANION: CompanionSettings = {
   model: "",
   ollamaModel: "",
   lively: true,
+  nightSleepy: true,
+  nightFrom: 0,
+  nightTo: 6 * 60,
+  celebrate: true,
+  sad: true,
+  reactMinS: 20,
+  reactAnyCommand: false,
+  reactBubble: true,
 };
+
+const FLAGS = [
+  "brain",
+  "lively",
+  "nightSleepy",
+  "celebrate",
+  "sad",
+  "reactAnyCommand",
+  "reactBubble",
+] as const;
 
 /**
  * `raw` (from storage, or a patch) onto `base`, each field checked. `floating` is kept as
@@ -83,8 +124,17 @@ export function sanitizeCompanion(
   if (COMPANION_CORNERS.includes(r.corner as CompanionCorner)) {
     out.corner = r.corner as CompanionCorner;
   }
-  if (typeof r.brain === "boolean") out.brain = r.brain;
-  if (typeof r.lively === "boolean") out.lively = r.lively;
+  for (const key of FLAGS) {
+    const v = r[key];
+    if (typeof v === "boolean") out[key] = v;
+  }
+  for (const key of ["nightFrom", "nightTo", "reactMinS"] as const) {
+    const v = r[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      const { min, max } = REACTION_RANGES[key];
+      out[key] = Math.round(Math.min(max, Math.max(min, v)));
+    }
+  }
   if (COMPANION_MODELS.includes(r.model as BrainModel)) {
     out.model = r.model as BrainModel;
   }

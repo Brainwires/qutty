@@ -40,16 +40,23 @@ export interface LifeContext {
   readonly awake: boolean;
   /** Loopy is being dragged to another corner (lib/companion/drag.ts). */
   readonly dragging?: boolean;
+  /**
+   * A face above the idle life holds Loopy: a reaction, the hot face, or sleep
+   * (lib/companion/loopy-priority.ts). No micro-expressions and no excitement then.
+   */
+  readonly held?: boolean;
 }
 
 /**
  * Whether Loopy is free for its idle life: Lively on, the window awake, standing idle (or in the
- * middle of a blink) with nothing on screen, no voice turn, no thinking, and not being dragged
- * (the pointer is on its face then: no delight, no excitement).
+ * middle of a blink) with nothing on screen, no voice turn, no thinking, not held by a face above
+ * the idle life, and not being dragged (the pointer is on its face then: no delight, no
+ * excitement).
  */
 export function mayLiven(ctx: LifeContext): boolean {
   return ctx.lively && ctx.awake && !ctx.message && !ctx.voice && !ctx.busy &&
-    !ctx.dragging && (ctx.state === "idle" || ctx.state === "blink");
+    !ctx.dragging && !ctx.held &&
+    (ctx.state === "idle" || ctx.state === "blink");
 }
 
 /** How long the window may be in the background (blurred) before Loopy's idle life stops. */

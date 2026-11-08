@@ -46,6 +46,18 @@ export function anyAlertOn(t: AlertToggles): boolean {
   return t.alertFinished || t.alertPermission || t.alertBuildFailed;
 }
 
+/** Each tile of `next` that `prev` had too, with how it was: `[was, now]`. */
+export function* seenBefore(
+  prev: readonly TileInfo[],
+  next: readonly TileInfo[],
+): Generator<[TileInfo, TileInfo]> {
+  const before = new Map(prev.map((t) => [t.id, t]));
+  for (const tile of next) {
+    const was = before.get(tile.id);
+    if (was) yield [was, tile];
+  }
+}
+
 /**
  * The alerts between two snapshots, at most one per tile (a failed build, else a question, else
  * finished). A tile seen for the first time gives none: opening the app is not news.
@@ -55,11 +67,8 @@ export function tileAlerts(
   next: readonly TileInfo[],
   toggles: AlertToggles,
 ): VoiceAlert[] {
-  const before = new Map(prev.map((t) => [t.id, t]));
   const out: VoiceAlert[] = [];
-  for (const tile of next) {
-    const was = before.get(tile.id);
-    if (!was) continue;
+  for (const [was, tile] of seenBefore(prev, next)) {
     const name = spokenName(tile);
     if (
       toggles.alertBuildFailed && isFailureNote(tile.note) &&

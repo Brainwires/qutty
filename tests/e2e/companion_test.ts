@@ -493,6 +493,14 @@ suite("companion", (test) => {
       model: "",
       ollamaModel: "",
       lively: true,
+      nightSleepy: true,
+      nightFrom: 0,
+      nightTo: 360,
+      celebrate: true,
+      sad: true,
+      reactMinS: 20,
+      reactAnyCommand: false,
+      reactBubble: true,
     });
     assertEquals(await app.exists(OVERLAY), false);
   });

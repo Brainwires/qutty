@@ -3363,6 +3363,64 @@ kbd {
   }
 }
 
+/* ---- Loopy sleeps, wakes and reacts (Qutty's own: Settings → Companion → Reactions;
+   app/companion/use-loopy-sleep.ts, use-loopy-reaction.ts). The faces are the example's sleepy,
+   success and sad moods, untouched: asleep only slows its nod and its z's, and waking up adds a
+   stretch of the head. */
+.companion-overlay .loopy[data-asleep][data-state="idle"] .loopy-face,
+.companion-overlay .loopy[data-asleep][data-state="blink"] .loopy-face {
+  animation-duration: 6.4s;
+}
+.companion-overlay .loopy[data-asleep] .loopy-zs text {
+  animation-duration: 4.2s;
+}
+.companion-overlay .loopy[data-stretch] .loopy-head {
+  transform-box: view-box;
+  transform-origin: 80px 105px;
+  animation: loopy-stretch 900ms ease-out;
+}
+@keyframes loopy-stretch {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  35% {
+    scale: 0.92 1.14;
+  }
+  65% {
+    scale: 1.05 0.96;
+  }
+}
+/* The line beside Loopy when it reacts ("✓ shell-2: cargo test (1m 4s)"), like the voice note. */
+.companion-overlay .loopy-reaction {
+  margin: 0 0 6px 4px;
+  padding: 3px 9px;
+  max-width: 240px;
+  border-radius: 999px;
+  background: var(--loopy-bubble);
+  border: 1.5px solid var(--loopy-bubble-edge);
+  color: var(--loopy-ink);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.companion-overlay .loopy-reaction[data-kind="celebrate"] {
+  border-color: var(--accent);
+}
+.companion-overlay .loopy-reaction[data-kind="sad"] {
+  border-color: var(--red);
+}
+.companion-overlay[data-corner^="top"] .loopy-reaction {
+  margin: 6px 0 0 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-overlay .loopy[data-stretch] .loopy-head {
+    animation: none;
+  }
+}
+
 /* ---- Lively (Settings → Companion; app/companion/use-loopy-life.ts): the pupils follow the
    pointer, and the neutral face's micro-expressions (`data-expr`). Only transforms of the face's
    parts, so the shapes stay the example's. The gaze offsets are in drawing units, set on the
@@ -3641,6 +3699,15 @@ kbd {
 }
 .field-check .field-label {
   margin: 0;
+}
+/* Settings → Companion → Reactions: the night's two hours side by side. */
+.reaction-hours {
+  display: flex;
+  gap: 8px;
+}
+.reaction-hours .field {
+  flex: 1;
+  margin-bottom: 8px;
 }
 .companion-activity {
   display: flex;

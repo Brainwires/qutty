@@ -32,6 +32,7 @@ import { createDemoLinks } from "./links-demo.ts";
 import type sysstatsExtension from "../desktop/sysstats.ts";
 import type { SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
+import { demoJob, markedCommand, osc133, runMark } from "./shell-marks-demo.ts";
 import type { OllamaStatus } from "./ollama/cli.ts";
 import type {
   LibraryOrder,
@@ -774,6 +775,9 @@ const DEMO_HELP = [
   `  ${fg(81)}replies${RESET}    how many answers to queries arrived`,
   `  ${
     fg(81)
+  }job${RESET} <s> <exit> <cmd…>  pretend to run cmd for s seconds (Loopy reacts)`,
+  `  ${
+    fg(81)
   }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
   `  ${fg(81)}pwd${RESET}, ${fg(81)}cd${RESET}, ${fg(81)}whoami${RESET}, ${
     fg(81)
@@ -824,6 +828,9 @@ const DEMO_AGENT_HELP = [
   `  ${
     fg(209)
   }/fail${RESET} [what]        report a failure (set_status note "<what> failed")`,
+  `  ${
+    fg(209)
+  }/pass${RESET} [what]        report a success (set_status note "<what> passed")`,
   `  ${fg(209)}/exit${RESET}              quit`,
   `  anything else      busy for a moment, then idle; queued messages are read first`,
   "",
@@ -877,6 +884,12 @@ class DemoShell {
   topTimer: ReturnType<typeof setInterval> | undefined;
   /** A demo agent's busy → idle timer. */
   idleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A `job` running (lib/shell-marks-demo.ts): it ends on this timer. */
+  jobTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A command was marked as started (OSC 133 `C`) and not yet as ended. */
+  marked = false;
+  /** The exit status the running command will end with. */
+  status = 0;
   exited = false;
   /** Answers to `query` received (cursor position and device attributes reports). */
   replies = 0;
@@ -946,6 +959,12 @@ class DemoShell {
         : this.cwd.replace(/^~\//, "/home/demo/");
       this.out(`${ESC}]7;file://${this.remote.host}${encodeURI(dir)}\x07`);
     }
+    // Shell integration marks, like Qutty's zsh plugin: the last command's end, then the prompt
+    // (the local shell's: a fake remote one has no plugin).
+    if (!this.remote) {
+      this.markDone();
+      this.out(osc133("A"));
+    }
     const who = this.remote
       ? `${this.remote.user}@${this.remote.host}`
       : this.mode.sandbox
@@ -964,8 +983,54 @@ class DemoShell {
     return this.remote ? "ssh" : this.mode.name;
   }
 
+  /** OSC 133 `C` for a command line about to run (a local shell's, not an agent's). */
+  markRun(line: string): void {
+    if (this.mode.agent || this.remote || !line.trim()) return;
+    this.out(runMark(markedCommand(line)));
+    this.marked = true;
+    this.status = 0;
+  }
+
+  /** OSC 133 `D;<exit>` for the command marked as running, if any. */
+  markDone(): void {
+    if (!this.marked) return;
+    this.marked = false;
+    this.out(osc133(`D;${this.status}`));
+  }
+
+  /** `job <seconds> <exit> <command…>`: pretend to run a long command. */
+  startJob(args: string[]): void {
+    const job = demoJob(args);
+    if (!job) {
+      this.out("usage: job <seconds> <exit> <command…>\r\n");
+      this.status = 2;
+      return;
+    }
+    this.out(`${DIM}(demo) running ${job.command}…${RESET}\r\n`);
+    this.jobTimer = setTimeout(() => {
+      this.jobTimer = undefined;
+      if (this.exited) return;
+      this.status = job.exitCode;
+      this.out(
+        job.exitCode === 0
+          ? `${DIM}(demo) ${job.command}: done${RESET}\r\n`
+          : `${DIM}(demo) ${job.command}: exit ${job.exitCode}${RESET}\r\n`,
+      );
+      this.prompt();
+    }, job.ms);
+  }
+
   input(data: string): void {
     if (this.exited) return;
+    if (this.jobTimer) {
+      if (!data.includes("\x03")) return;
+      clearTimeout(this.jobTimer);
+      this.jobTimer = undefined;
+      this.status = 130;
+      this.out("^C\r\n");
+      this.prompt();
+      return;
+    }
     if (this.topTimer) {
       if (data.includes("q") || data.includes("\x03")) this.stopTop();
       return;
@@ -981,9 +1046,10 @@ class DemoShell {
         this.out("\r\n");
         const cmd = this.line;
         this.line = "";
+        this.markRun(cmd);
         this.run(cmd);
         if (this.exited) return;
-        if (!this.topTimer) this.prompt();
+        if (!this.topTimer && !this.jobTimer) this.prompt();
       } else if (ch === "\x7f" || ch === "\b") {
         if (this.line.length > 0) {
           this.line = [...this.line].slice(0, -1).join("");
@@ -1046,8 +1112,9 @@ class DemoShell {
       );
     } else if (cmd === "/msg") {
       println(`${DIM}(demo) usage: /msg <name> <text>${RESET}`);
-    } else if (cmd === "/fail") {
-      const note = `${rest.join(" ") || "build"} failed`;
+    } else if (cmd === "/fail" || cmd === "/pass") {
+      const what = rest.join(" ") || (cmd === "/fail" ? "build" : "tests");
+      const note = `${what} ${cmd === "/fail" ? "failed" : "passed"}`;
       clearTimeout(this.idleTimer);
       this.hub.setStatus(this.id, "idle", note);
       println(`${DIM}(demo) set_status idle, note: ${note}${RESET}`);
@@ -1171,6 +1238,8 @@ class DemoShell {
       case "replies":
         println(`replies: ${this.replies}`);
         return;
+      case "job":
+        return this.startJob(args);
       case "qutty-hook":
         if (args[0] !== "say") {
           println(
@@ -1190,6 +1259,7 @@ class DemoShell {
         return;
       default:
         println(`demo-sh: command not found: ${cmd}`);
+        this.status = 127;
     }
   }
 
@@ -1249,6 +1319,8 @@ class DemoShell {
     if (this.topTimer) clearInterval(this.topTimer);
     this.topTimer = undefined;
     clearTimeout(this.idleTimer);
+    clearTimeout(this.jobTimer);
+    this.jobTimer = undefined;
   }
 }
 

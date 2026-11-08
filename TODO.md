@@ -278,6 +278,17 @@
   - Switch to a Denext `system.stats` API if it lands (proposed to the Denext
     side), and drop the FFI readers.
 
+- [x] **Loopy's reactions** (`lib/companion/reactions.ts`, `sleepy.ts`,
+      `loopy-priority.ts`, `lib/shell-marks.ts`, `app/use-reactions.ts`,
+      `app/companion/use-loopy-sleep.ts`, `use-loopy-reaction.ts`).
+  - Done: OSC 133 marks from the zsh / bash plugins (and any shell integration
+    that sends them); celebrate / sad over long build-like commands and agents'
+    status notes, rate-limited; sleepy at night with a wake-up stretch; one
+    priority function for every face; Settings → Companion → Reactions.
+  - Later: use the marks for more (jump between prompts, select a command's
+    output, a failed-command gutter mark); bash's `C` mark through `PS0` on bash
+    ≥ 4.4 (today bash reports the line and duration with `D`); a fish plugin.
+
 - [x] **Ollama helper** (`desktop/ollama.ts`, `lib/ollama/`,
       `app/ollama-*.tsx`). Shipped in 0.3.1; the "Open" items below remain.
   - Done: model tracking (CLI in hidden PTYs, `show` cached by digest, no
