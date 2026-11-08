@@ -35,6 +35,7 @@ import {
 } from "../desktop/companion-brain.ts";
 import { CompanionHost } from "../desktop/companion.ts";
 import { hubWithTiles, waitUntil } from "./hub_helpers.ts";
+import { closedWithin, generating } from "./ollama_helpers.ts";
 
 type Reply = { text?: string; tools?: { name: string; input: unknown }[] };
 
@@ -426,38 +427,10 @@ Deno.test("Ollama brain: native /api/chat tool calls run the hub's tools; result
   }
 });
 
-/**
- * A reply still being generated: its headers go out at once, then a space every 20 ms;
- * `onClosed` runs when the client closes the connection. It gives up after 3 s (so a client
- * that never closes fails the test instead of hanging it).
- */
-function generatingForever(onClosed: () => void): Response {
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const body = new ReadableStream<Uint8Array>({
-    start(c) {
-      const began = Date.now();
-      timer = setInterval(() => {
-        if (Date.now() - began < 3000) c.enqueue(new TextEncoder().encode(" "));
-        else {
-          clearInterval(timer);
-          c.close();
-        }
-      }, 20);
-    },
-    cancel() {
-      clearInterval(timer);
-      onClosed();
-    },
-  });
-  return new Response(body, {
-    headers: { "content-type": "application/json" },
-  });
-}
-
 Deno.test("Ollama brain: stop() closes the request (Ollama stops generating); a missing model fails the start", async () => {
-  let closed: () => void = () => {};
-  const gone = new Promise<void>((r) => closed = r);
-  const ollama = fakeOllama(() => generatingForever(closed));
+  const reply = generating();
+  const gone = reply.closed;
+  const ollama = fakeOllama(() => reply.response);
   const tools = {
     list: () => [],
     call: () => Promise.reject(new Error("unused")),
@@ -469,17 +442,7 @@ Deno.test("Ollama brain: stop() closes the request (Ollama stops generating); a 
     await brain.send("hello");
     await waitUntil(() => ollama.bodies.length > 0, 2000);
     brain.stop();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      gone,
-      new Promise((_, reject) =>
-        timer = setTimeout(
-          () => reject(new Error("the request was not closed")),
-          2000,
-        )
-      ),
-    ]);
-    clearTimeout(timer);
+    await closedWithin(gone);
     await new Promise((r) => setTimeout(r, 10));
     assertEquals(turnEnd(events), undefined, "stopped on purpose: no turn end");
 
