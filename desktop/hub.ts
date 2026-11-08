@@ -69,6 +69,7 @@ import {
   removeDir,
   unlinkPath,
 } from "./hub-socket.ts";
+import { askVisibleIn, hubEventTarget, workspaces } from "./workspace-host.ts";
 import { HubCore } from "../lib/hub/core.ts";
 import {
   type BrainConfig,
@@ -828,13 +829,24 @@ async function start(host: DesktopExtensionHost): Promise<void> {
     home,
     socketDir,
     appSupportDir: host.appSupportDir,
-    emit: (event, data) => host.emit(event, data),
+    // With several windows each event goes where it belongs (desktop/workspace-host.ts).
+    emit: (event, data) => {
+      const to = hubEventTarget(workspaces, event, data);
+      if (to) host.emit(event, data, to);
+    },
   });
   await installHubFiles(hub.paths);
   service = hub;
   // The companion is optional too: without its socket the hub still serves the tiles.
   await hub.companion.start().catch((e) =>
     console.error("hub: the companion did not start", e)
+  );
+  // The quit guard asks before it kills an agent that is working (desktop.ts).
+  workspaces.setBusyProvider(() =>
+    hub.core.snapshot().tiles.filter((t) => t.status === "busy").map((t) => ({
+      ptyId: t.id,
+      name: t.name,
+    }))
   );
   setPtyTaps({
     spawning: (id, info) => hub.spawning(id, info),
@@ -959,8 +971,18 @@ export default defineDesktopExtension({
     /** The tiles and open questions (the page asks on load; then follows the events). */
     snapshot: {
       input: emptyInput,
-      handler: (): HubSnapshot & { asks: AskRequest[] } =>
-        service?.snapshot() ?? { running: false, tiles: [], asks: [] },
+      handler: (_args: unknown, ctx): HubSnapshot & { asks: AskRequest[] } => {
+        const snap = service?.snapshot() ??
+          { running: false, tiles: [], asks: [] };
+        // Only the questions of this window's tiles (and the companion's).
+        const window = ctx.windowId ?? "main";
+        return {
+          ...snap,
+          asks: snap.asks.filter((a) =>
+            askVisibleIn(workspaces, a.from, window)
+          ),
+        };
+      },
     },
     /** The user answered an `ask_user` question (or dismissed it: `action: null`). */
     answer: {

@@ -223,7 +223,15 @@ export type WorkspaceAction =
   | { type: "setFont"; patch: Partial<FontSettings> }
   | { type: "stepFontSize"; dir: 1 | -1 }
   | { type: "resetFontSize" }
-  | { type: "hydrateSettings"; settings: Partial<Settings> };
+  | { type: "hydrateSettings"; settings: Partial<Settings> }
+  | {
+    /** A workspace shown again (lib/workspace/session.ts): its tiles, order and layout. */
+    type: "restore";
+    terminals: TerminalEntry[];
+    mru: string[];
+    layout?: Partial<LayoutOptions>;
+    previousPattern: LayoutPattern | null;
+  };
 
 /** The defaults a fresh workspace starts from. */
 export const DEFAULT_SETTINGS: Settings = {
@@ -726,6 +734,24 @@ export function reduce(
         ...state,
         settings: sanitizeSettings(action.settings, state.settings),
       };
+    case "restore": {
+      const ids = new Set(action.terminals.map((t) => t.id));
+      const mru = action.mru.filter((id) => ids.has(id));
+      return {
+        ...state,
+        terminals: action.terminals.map((t) => ({ ...t })),
+        mru,
+        focusedId: mru[0] ?? null,
+        cycle: null,
+        previousPattern: action.previousPattern,
+        settings: action.layout
+          ? {
+            ...state.settings,
+            layout: sanitizeLayout(state.settings.layout, action.layout),
+          }
+          : state.settings,
+      };
+    }
     default:
       return state;
   }

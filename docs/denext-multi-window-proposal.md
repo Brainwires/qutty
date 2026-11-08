@@ -212,3 +212,106 @@ gaps 3 and 4: the reopen stack holds the keys of recently closed windows.
   by resource), or should it be a separate store?
 - Can the runtime report the space or screen for restore on all three OSes, or
   only bounds?
+
+---
+
+## After 4.13: what Qutty uses, and what is still missing
+
+Denext 4.13.0 shipped gaps 1 to 6 almost as proposed: the window lifecycle hooks
+(`onWindowOpened`, `onWindowClosed` with `appQuitting`, `onAppQuit`), the
+runtime-side quit guard (`host.onBeforeQuit`, `DesktopRuntime.onBeforeQuit`),
+window keys with remembered frames and `desktop.app.restoreWindows`,
+`desktop.app.maxWindows`, `desktop.menu.window` (New Window, Reopen Closed
+Window, the window list) and `createOwnedResources`. Qutty's detach and New
+Window are built on them (`desktop/terminal-sessions.ts`,
+`desktop/workspace-host.ts`, `desktop.ts`). What follows is what Qutty had to
+work around, smallest first. Each is generic, not terminal-specific.
+
+### 7. A Dock click after the main window closed does nothing
+
+`onDockReopen` (app-windows.ts) shows the main window, but with
+`desktop.app.keepAlive` the main window is gone for good once the user closes it
+(`mainClosed` drops it), so a Dock click with no window open does nothing. Qutty
+listens to `Deno.dock`'s `reopen` event itself in desktop.ts (an untyped runtime
+global) and opens the workspace detached last.
+
+**Proposal:** a reopen handler next to `newWindow`, used when no app window is
+open:
+
+```ts
+runDesktop({
+  // Called on a Dock click (macOS `applicationShouldHandleReopen`) with no window showing.
+  // Default when absent: reopen the most recently closed keyed window (the reopenClosed stack),
+  // else the main window's page with `desktop.window.key`.
+  onDockReopen: (ctx: { closed: readonly { key: string; url: string }[] }) =>
+    DesktopOpenWindowOptions | undefined,
+});
+```
+
+and a typed `DesktopRuntime.onDockReopen(fn)` for apps that only want to know.
+
+### 8. Opened windows do not get `desktop.titleBar`
+
+`windows.open()` / `openWindow()` have no title bar option, and a window opened
+from `desktop.ts` or a page gets the default title bar even when the main window
+is `titleBar: "hiddenInset"`. Qutty's page calls
+`setTitleBarStyle("hiddenInset")` once it loads, so a new window shows the
+default title bar for a moment first.
+
+**Proposal:** opened windows inherit `desktop.titleBar` (and the traffic-light
+position), and `DesktopOpenWindowOptions` takes `titleBar?: TitleBarStyle` to
+override it.
+
+### 9. A default size for a key seen for the first time
+
+`restoredGeometry` fills only the bounds a call leaves out from the saved frame,
+so a call that passes `width` / `height` (to give a brand-new window a sensible
+size) never gets its saved size back. Qutty passes a size only for a workspace
+it just created. The same applies to the main window: `desktop.window.width` /
+`height` always win over its saved size.
+
+**Proposal:** `defaultWidth` / `defaultHeight` on `open()` (and
+`desktop.window`), used only when the key has no saved frame.
+
+### 10. "Reopen ▸" as a list, and forgetting a closed key
+
+`desktop.menu.window.reopenClosed` is one item that pops the stack. A
+multi-document app wants the list (Safari's History → Recently Closed, Qutty's
+"Reopen workspace"): every closed keyed window with its title. And when the app
+ends what a key stood for (Qutty ends a workspace and kills its terminals), the
+key should leave that stack and `lastSession`.
+
+**Proposal:** `reopenClosed: "list"` makes it a submenu (titles from the closed
+windows), served by the backend so it works with no window open, plus
+`windows.forget(key)`.
+
+### 11. The replay drops an oversized object chunk without a trace
+
+`createOwnedResources` keeps the tail of an oversized string or byte chunk, but
+drops any other chunk bigger than `maxBytes` outright, and `attach` does not say
+anything was dropped. Qutty emits `{ seq, data }` objects, so it detects a gap
+by its own `seq` and replays only the unbroken tail (`lib/workspace/replay.ts`).
+
+**Proposal:** `attach()` reports `dropped: number` (chunks dropped since the
+resource was added), or `truncated: boolean`; optionally a
+`replay.measure(data)` / `replay.cut(data, maxBytes)` pair so an app with
+structured chunks can keep a tail too.
+
+### 12. Asking the user with no window open
+
+The quit guard can refuse, but asking "agents are busy, quit anyway?" needs a
+page. With every window closed Qutty opens the busy workspace's window to ask
+there. A small native confirm in the backend
+(`host.confirm({ message, buttons })`, over `NSAlert` / a GTK / Win32 message
+box) would let a guard ask directly. Also handy: `host.openWindow()` for
+extensions (today only `desktop.ts` can open a window, so Qutty's quit guard and
+Dock handling live there rather than in its extension).
+
+### Not a gap, but worth a line in the docs
+
+- `denext export` (static) does not rewrite `.deno-desktop/config.json`; only
+  `desktop run` / `dev`, the SPA build and packaging do. A project that commits
+  the file and changes `denext.config.ts` must run one of those (Qutty's
+  CONTRIBUTING said `export` was enough).
+- Detach that outlives the app process is still a separate design (a PTY daemon
+  the app reconnects to). Qutty's terminals survive a closed window, not a quit.

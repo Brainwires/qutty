@@ -2,18 +2,26 @@
 
 ## Later
 
-- [ ] **Detachable sessions.** Closing the window must not close the terminals.
+- [x] **Detachable sessions.** Closing the window must not close the terminals.
       Reopening the app reattaches to every running shell, with its scrollback,
       tile layout and focus order intact (like tmux/screen detach, but built
       in).
-  - The PTYs currently live in the desktop extension (`desktop/pty.ts`) inside
-    the app process, so they die with it. They need a long-lived host that
-    outlives the window: a background daemon, or keeping the app alive with no
-    window (menu-bar / Dock-only).
-  - On reattach, replay each terminal's recent output (a per-PTY ring buffer) so
-    xterm.js redraws it.
-  - Decide what quitting means (Cmd+Q) versus closing the window, and how to
-    kill a session for real.
+  - Done (Denext 4.13): the PTYs stay in the app's process, which outlives its
+    windows (`desktop.app.keepAlive`; a Dock click or Reopen Closed Window
+    brings a window back). Each terminal belongs to a workspace
+    (`desktop/workspace-host.ts`); its events go to the window showing it
+    (Denext's `createOwnedResources`, `desktop/terminal-sessions.ts`), and a 1
+    MiB replay ring per PTY redraws it on reattach (raw output, cut at a line
+    break when the ring dropped its start; a full-screen program is nudged to
+    redraw). The page saves a snapshot (tiles ↔ PTYs, layout, MRU) in the app
+    and rebuilds from it (`lib/workspace/session.ts`, `app/use-session.ts`). A
+    reload reattaches too. ⌘Q quits and kills everything, asking first when an
+    agent is busy.
+  - Open: detach that survives quitting the app (a separate PTY daemon), and
+    restoring the shells themselves (cwd, scrollback) at the next launch: today
+    the layout comes back with a fresh shell.
+  - Off macOS there is no Dock to come back through: closing the last window
+    quits (through the same busy-agent question). Not tried on Linux yet.
 
 - [x] **Shell picker on the `+` button.** A dropdown arrow attached to the side
       of `+` (a split button) chooses what the new terminal runs. Clicking `+`
@@ -223,22 +231,17 @@
 - [ ] **New Window.** Cmd+N opens another window, each with its own set of
       terminals, switcher bar and layout. A window still tiles all of its own
       terminals, as it does today.
-  - Check whether Denext's desktop runtime can open several windows from one app
-    process. If it can't, that's another Denext gap.
-  - **Combined with detach (the tricky part).** Proposed model: the long-lived
-    PTY host owns _workspaces_, each one a named group of terminals with its
-    layout, MRU order and settings. A window is just a view attached to one
-    workspace.
-    - Closing a window detaches its workspace; the terminals keep running.
-    - On launch, reattach every workspace that was open, each in its own window.
-      Cmd+N creates a new empty workspace. A "Reopen workspace" menu lists
-      detached ones.
-    - Decide: can two windows show the same workspace at once? (Simplest: no,
-      one window per workspace.)
-    - Maybe: drag a tile from one window to another to move the terminal between
-      workspaces. The PTY stays put and only its owner changes.
-  - Each window's state needs a stable workspace id, so restoring after a crash
-    or relaunch doesn't mix up which terminals go where.
+  - The workspace model is in (see Detachable sessions): the app's process owns
+    the workspaces (`desktop/workspace-host.ts`), a window is a view on one, its
+    key is the workspace's id (stable across reopen and relaunch), and the
+    backend already routes each workspace's terminals, agent questions and
+    sandbox container by window. Left: Cmd+N opening a fresh workspace, a
+    "Reopen workspace" menu listing the detached ones (and ending one for real),
+    the Window menu's window list, and reopening at launch the windows open at
+    the last quit.
+  - Decided: one window per workspace (Denext keeps window keys unique).
+  - Maybe: drag a tile from one window to another to move the terminal between
+    workspaces. The PTY stays put and only its owner changes.
 
 - [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).

@@ -33,6 +33,7 @@ import {
   sandboxCommand,
   sandboxWorkdir,
 } from "../lib/sandbox/docker.ts";
+import { workspaces } from "./workspace-host.ts";
 import {
   type DockerCli,
   type KeepaliveHandle,
@@ -211,6 +212,22 @@ export class SandboxService {
     return c;
   }
 
+  /**
+   * Workspace `id` was ended: its container is stopped (unless "keep running" is on, which keeps
+   * it beyond the app too) and its controller forgotten. Closing a window does not get here: a
+   * detached workspace keeps its container for its running tiles.
+   */
+  async release(id: string): Promise<void> {
+    const c = this.#byWindow.get(id);
+    if (!c) return;
+    this.#byWindow.delete(id);
+    const { phase } = c.status();
+    if (c.settings.keepRunning || phase !== "running" && phase !== "starting") {
+      return;
+    }
+    await c.stop();
+  }
+
   /** A sandboxed terminal's command: the window's container is started first if needed. */
   async prepare(req: SandboxRequest): Promise<SandboxCommand> {
     const ctl = this.controller(req.owner);
@@ -262,7 +279,15 @@ const configureInput = objectSchema<{ settings: SandboxSettings }>((v) => ({
   settings: sanitizeSandbox(v.settings),
 }));
 
-const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
+/**
+ * The workspace the calling window shows (desktop/workspace-host.ts): one container per
+ * workspace, so a detached workspace's sandboxed tiles keep theirs. The main window's workspace is
+ * `main`, the container name it always had.
+ */
+const windowOf = (ctx: { windowId?: string }) => {
+  const window = ctx.windowId ?? "main";
+  return workspaces.workspaceOfWindow(window) ?? window;
+};
 
 export default defineDesktopExtension({
   name: "sandbox",
@@ -279,6 +304,12 @@ export default defineDesktopExtension({
         },
       });
       setSandboxProvider(service);
+      const s = service;
+      workspaces.onEnded((id) => {
+        s.release(id).catch((e) =>
+          console.error(`sandbox: ${id} did not stop`, e)
+        );
+      });
     }).catch((e) => console.error("sandbox: not started", e));
   },
   methods: {
