@@ -839,8 +839,44 @@ export class App {
     return (await this.tiles()).map((t) => t.id);
   }
 
-  /** Click terminal `id`'s chip and wait until it is focused. */
+  /**
+   * Wait until every chip whose shell is running shows its read title, not the "shell"
+   * placeholder a terminal starts with. The title is read a moment after the spawn (a terminal
+   * that was never shown has not spawned, and keeps the placeholder) and widens the chip, which
+   * moves its close button and every chip after it: a click aimed before that lands elsewhere.
+   */
+  async waitForChipTitles(): Promise<void> {
+    await waitFor(
+      () =>
+        this.eval(() => {
+          const e2e = (globalThis as unknown as {
+            __e2e: { terminal(id: string): { ptyId?: string } | null };
+          }).__e2e;
+          return [
+            ...document.querySelectorAll<HTMLElement>(
+              "[data-testid=chip][data-exited=false]",
+            ),
+          ].every((chip) =>
+            !e2e.terminal(chip.dataset.id!)?.ptyId ||
+            chip.querySelector(".chip-title")?.textContent !== "shell"
+          );
+        }),
+      3000,
+      "the chips' titles",
+    );
+  }
+
+  /** Click the close button on terminal `id`'s chip, once the chips have their titles. */
+  async closeChip(id: string): Promise<void> {
+    await this.waitForChipTitles();
+    await this.click(
+      `[data-testid=chip][data-id="${id}"] [data-testid=chip-close]`,
+    );
+  }
+
+  /** Click terminal `id`'s chip (once the chips have their titles) and wait until it is focused. */
   async focusChip(id: string): Promise<void> {
+    await this.waitForChipTitles();
     await this.click(`[data-testid=chip][data-id="${id}"] .chip-title`);
     await waitFor(
       async () => (await this.focusedId()) === id,
