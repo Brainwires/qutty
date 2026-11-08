@@ -147,11 +147,23 @@
     `--add-host=host.docker.internal:host-gateway` and the hub also listens on
     the bridge gateway.
   - Open: a second window's container stops when the app quits (Denext 4.13's
-    `onWindowClosed`, not used yet, can stop it earlier). Native Linux: files
-    the root user creates in a read/write project mount are owned by root on the
-    host (Docker Desktop maps them to you). Changing the image or mounts
-    recreates the container on Restart (packages installed with apt go; `$HOME`
-    stays). Network off also cuts the sandbox off from the hub.
+    `onWindowClosed`, not used yet, can stop it earlier). Changing the image or
+    mounts recreates the container on Restart (packages installed with apt go;
+    `$HOME` stays). With Docker Desktop, network off also cuts the sandbox off
+    from the hub (`host.docker.internal` is served neither without a network nor
+    on an `--internal` one).
+  - Done: native Linux runs the tiles as the app's user
+    (`docker exec -u
+    uid:gid`, the ids from libc `getuid`/`getgid`), so
+    files they create in a read/write project mount are the user's; the
+    container's main process stays root and adds a `passwd` entry and the home
+    volume (`/home/qutty`) for the user at every start. No root inside on Linux,
+    so `apt install` needs `docker exec -u 0`. macOS keeps root (Docker Desktop
+    maps ownership).
+  - Done: native Linux with the network off joins `qutty-sandbox-hub`, an
+    `--internal` network (no route out); its gateway is the host, so the hub
+    listens there and `host.docker.internal` points at it. The host's own
+    services listening on every address are reachable from it too.
 
 - [x] **SSH sessions and a connection manager.** Shipped in 0.3.0; the "Still
       open" items at the end remain. Run the system `ssh` in a PTY, the same way

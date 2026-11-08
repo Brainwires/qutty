@@ -15,14 +15,20 @@
 import {
   BRIDGE_ARGS,
   type ContainerState,
+  gatewayArgs,
+  type HostUser,
+  HUB_NETWORK,
+  HUB_NETWORK_CREATE_ARGS,
   inspectArgs,
   keepaliveArgs,
   parseGateways,
   parseInspect,
   runArgs,
+  sandboxHome,
   type SandboxSpec,
   sandboxSpec,
   specHash,
+  userSetupArgs,
   VERSION_ARGS,
 } from "./docker.ts";
 import { DEFAULT_SANDBOX, type SandboxSettings } from "./settings.ts";
@@ -77,8 +83,15 @@ export interface SandboxReady {
   container: string;
   /** The project folder mounted ("" for none). */
   project: string;
-  /** Extra addresses the hub should listen on (native Linux: the bridge gateway). */
+  /**
+   * Extra addresses the hub should listen on (native Linux: the bridge gateway, or with the
+   * network off the gateway of the internal hub network).
+   */
   bridge: string[];
+  /** The home folder inside. */
+  home: string;
+  /** `uid:gid` the tiles run as (native Linux), absent for root. */
+  user?: string;
 }
 
 export interface SandboxFacts {
@@ -90,6 +103,8 @@ export interface SandboxFacts {
   linux: boolean;
   /** The home volume (tests use their own). */
   volume?: string;
+  /** The app's user (native Linux: the tiles run as it, unless it is root). */
+  user?: HostUser;
 }
 
 /** How long a pull may take; other commands get a minute. */
@@ -111,6 +126,10 @@ export class SandboxController {
   #ensuring: Promise<SandboxReady> | undefined;
   #keepalive: KeepaliveHandle | undefined;
   #bridge: string[] | undefined;
+  /** The internal hub network's gateways (native Linux, network off), once known. */
+  #hubGateways: string[] | undefined;
+  /** The `startedAt` of the container run the user setup was done for. */
+  #setupFor: string | undefined;
   #onChange: (status: SandboxStatus) => void;
 
   constructor(opts: {
@@ -232,10 +251,9 @@ export class SandboxController {
       const hash = specHash(spec);
       let state = await this.#inspect();
       if (state && !state.running) {
-        if (state.config === hash) {
-          this.#set({ phase: "starting", message: "starting the container" });
-          await this.#must(["start", this.name], RUN_MS);
-        } else {
+        // Started again as it was; changed, or unable to start as it was (its network was
+        // removed, …), it is made anew.
+        if (!(state.config === hash && await this.#start(spec))) {
           await this.#docker.run(["rm", "-f", this.name], {
             timeoutMs: RUN_MS,
           });
@@ -245,6 +263,9 @@ export class SandboxController {
       if (!state) await this.#create(spec);
       state = await this.#inspect();
       if (!state?.running) throw new Error("the container did not start");
+      // How the running container was made (a stale one keeps its own user until Restart).
+      const user = state.user || undefined;
+      await this.#setupUser(user, state.startedAt);
       this.#created = state.config;
       this.#applyKeep();
       this.#set({
@@ -255,7 +276,9 @@ export class SandboxController {
       return {
         container: this.name,
         project: this.#settings.project,
-        bridge: await this.#bridgeAddresses(),
+        bridge: await this.#bridgeAddresses(spec),
+        home: sandboxHome(user),
+        ...(user ? { user } : {}),
       };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -264,6 +287,16 @@ export class SandboxController {
       }
       throw new Error(message);
     }
+  }
+
+  /** `docker start` of the stopped container; false when it failed. */
+  async #start(spec: SandboxSpec): Promise<boolean> {
+    await this.#hubGateway(spec);
+    this.#set({ phase: "starting", message: "starting the container" });
+    const r = await this.#docker.run(["start", this.name], {
+      timeoutMs: RUN_MS,
+    });
+    return r.code === 0;
   }
 
   async #create(spec: SandboxSpec): Promise<void> {
@@ -275,8 +308,45 @@ export class SandboxController {
       this.#set({ phase: "starting", message: `pulling ${spec.image}` });
       await this.#must(["pull", spec.image], PULL_MS);
     }
+    const hubGateway = await this.#hubGateway(spec);
     this.#set({ phase: "starting", message: "creating the container" });
-    await this.#must(runArgs(spec), RUN_MS);
+    await this.#must(
+      runArgs(spec, hubGateway ? { hubGateway } : {}),
+      RUN_MS,
+    );
+  }
+
+  /**
+   * Native Linux with the network off: the internal hub network's gateway, the network created
+   * first when it is missing. `undefined` elsewhere, or when it cannot be had (then the
+   * container gets no network at all, and no hub).
+   */
+  async #hubGateway(spec: SandboxSpec): Promise<string | undefined> {
+    if (!spec.linux || spec.network) return undefined;
+    const gateways = async () => {
+      const r = await this.#docker.run(gatewayArgs(HUB_NETWORK), {
+        timeoutMs: RUN_MS,
+      });
+      return r.code === 0 ? parseGateways(r.out) : undefined;
+    };
+    let found = await gateways();
+    if (found === undefined) {
+      await this.#docker.run(HUB_NETWORK_CREATE_ARGS, { timeoutMs: RUN_MS });
+      found = await gateways();
+    }
+    this.#hubGateways = found ?? [];
+    return this.#hubGateways[0];
+  }
+
+  /** The host user's passwd entry and home inside, once per container start (native Linux). */
+  async #setupUser(
+    user: string | undefined,
+    startedAt: string,
+  ): Promise<void> {
+    if (!user || this.#setupFor === startedAt) return;
+    this.#set({ phase: "starting", message: "setting up your user" });
+    await this.#must(userSetupArgs(this.name, user), PULL_MS);
+    this.#setupFor = startedAt;
   }
 
   async #must(args: string[], timeoutMs: number): Promise<string> {
@@ -292,8 +362,12 @@ export class SandboxController {
     return r.code === 0 ? parseInspect(r.out) : undefined;
   }
 
-  async #bridgeAddresses(): Promise<string[]> {
-    if (!this.#facts.linux || !this.#settings.network) return [];
+  async #bridgeAddresses(spec: SandboxSpec): Promise<string[]> {
+    if (!spec.linux) return [];
+    if (!spec.network) {
+      if (this.#hubGateways === undefined) await this.#hubGateway(spec);
+      return [...(this.#hubGateways ?? []).slice(0, 1)];
+    }
     if (this.#bridge) return this.#bridge;
     const r = await this.#docker.run(BRIDGE_ARGS, { timeoutMs: RUN_MS });
     this.#bridge = r.code === 0 ? parseGateways(r.out) : [];

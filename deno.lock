@@ -189,6 +189,7 @@
     "@rullama/provider-speech@0.12.1": {
       "integrity": "b3853e6afb165ccde08efc6853f41e73427530fd4b0f86c61eaf131985761860",
       "dependencies": [
+        "jsr:@rullama/core@~0.12.1",
         "jsr:@rullama/core@~0.12.2"
       ]
     },

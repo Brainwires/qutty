@@ -19,7 +19,7 @@ export class DemoDocker implements DockerCli {
   /** The image is present (else `pull` is called first). */
   image = false;
   container:
-    | { running: boolean; config: string; startedAt: string }
+    | { running: boolean; config: string; startedAt: string; user?: string }
     | undefined;
   failRun = false;
   /** Extra replies by command (`network` → its output). */
@@ -39,7 +39,7 @@ export class DemoDocker implements DockerCli {
           : fail("Cannot connect to the Docker daemon");
       case "inspect":
         return c
-          ? ok(`${c.running}|${c.config}|${c.startedAt}|demo`)
+          ? ok(`${c.running}|${c.config}|${c.startedAt}|demo|${c.user ?? ""}`)
           : fail("Error: No such container");
       case "image":
         return this.image ? ok("sha256:1") : fail("No such image");
@@ -48,11 +48,14 @@ export class DemoDocker implements DockerCli {
         return ok();
       case "run": {
         if (this.failRun) return fail("docker: invalid mount config\n");
-        const label = args.find((a) => a.startsWith("org.qutty.config="));
+        const label = (name: string) =>
+          args.find((a) => a.startsWith(`${name}=`))?.split("=")[1];
+        const user = label("org.qutty.user");
         this.container = {
           running: true,
-          config: label?.split("=")[1] ?? "",
+          config: label("org.qutty.config") ?? "",
           startedAt: new Date().toISOString(),
+          ...(user ? { user } : {}),
         };
         return ok("abcdef\n");
       }

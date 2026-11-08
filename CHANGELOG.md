@@ -45,6 +45,13 @@
 - The switcher bar keeps the focused terminal's chip in view when focusing it
   reorders the bar (recently-used order), most visibly with Reduce Motion on,
   and chips no longer stay shifted out of place after several quick reorders.
+- Sandbox on Linux: tiles run as you instead of root, so files they create in
+  the project folder are yours on the host. macOS is unchanged (Docker Desktop
+  already maps them to you).
+- Sandbox on Linux: with Network off, agents inside still reach the agent hub.
+  The container joins an internal network with no way out to the internet. With
+  Docker Desktop (macOS), Network off still cuts the hub off too, and Settings
+  now says so.
 - The agent hub could freeze the app (seen on Linux) when one agent's connection
   closed just as another one arrived.
 - Detachable sessions. Closing the window no longer closes its terminals: they
