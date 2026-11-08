@@ -80,9 +80,7 @@ suite("detach", (test) => {
 
   test("detach: closing a tile releases its terminal; a remount does not bring it back", async (app) => {
     const ids = await app.ensureTerminals(2);
-    await app.click(
-      `[data-testid=chip][data-id="${ids[1]}"] [data-testid=chip-close]`,
-    );
+    await app.closeChip(ids[1]);
     await waitFor(
       async () => (await app.chips()).length === 1,
       3000,

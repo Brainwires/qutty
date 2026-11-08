@@ -174,9 +174,7 @@ suite("basics", (test) => {
     const focused = (await app.focusedId())!;
     const target = ids.find((id) => id !== focused)!;
     const ptyId = (await app.terminal(target))!.ptyId!;
-    await app.click(
-      `[data-testid=chip][data-id="${target}"] [data-testid=chip-close]`,
-    );
+    await app.closeChip(target);
     await waitFor(
       async () => (await app.chips()).length === 2,
       3000,
