@@ -146,12 +146,13 @@
     libc like the unix sockets (no `net` permission); native Linux Docker gets
     `--add-host=host.docker.internal:host-gateway` and the hub also listens on
     the bridge gateway.
-  - Open: a second window's container stops when the app quits (Denext 4.13's
-    `onWindowClosed`, not used yet, can stop it earlier). Changing the image or
-    mounts recreates the container on Restart (packages installed with apt go;
-    `$HOME` stays). With Docker Desktop, network off also cuts the sandbox off
-    from the hub (`host.docker.internal` is served neither without a network nor
-    on an `--internal` one).
+  - Done: the container follows its workspace (#32): closing a window detaches
+    it and keeps the container for its tiles; ending the workspace stops it
+    (unless "keep running" is on).
+  - Open: changing the image or mounts recreates the container on Restart
+    (packages installed with apt go; `$HOME` stays). With Docker Desktop,
+    network off also cuts the sandbox off from the hub (`host.docker.internal`
+    is served neither without a network nor on an `--internal` one).
   - Done: native Linux runs the tiles as the app's user
     (`docker exec -u
     uid:gid`, the ids from libc `getuid`/`getgid`), so
