@@ -11,7 +11,9 @@
 //   a long image pull is not cut short by the 30 s method timeout), and stops with the app: a
 //   keepalive `docker exec -i` in a hidden PTY ends when the app exits or crashes, and its
 //   container side then stops the container. "Keep running" releases it.
-// - Agents inside reach the hub over TCP + token (desktop/hub.ts `tcpEndpoint`).
+// - Agents inside reach the hub over TCP + token (desktop/hub.ts `tcpEndpoint`). On native
+//   Linux the tiles run as the app's user (`getuid`/`getgid` through libc, like the hub: no
+//   `--allow-sys`), so files they make in the project are the user's.
 // - Denext 4.12 has no window-closed hook: a second window's container stops when the app quits.
 //
 // Nothing here may throw into the app's startup: without Docker the sandbox is `unavailable`
@@ -46,6 +48,7 @@ import {
   sanitizeSandbox,
 } from "../lib/sandbox/settings.ts";
 import { hubPaths } from "../lib/hub/launch.ts";
+import { getgid, getuid } from "./hub-socket.ts";
 
 export type { SandboxStatus };
 
@@ -234,7 +237,7 @@ export class SandboxService {
     const ready = await ctl.ensure();
     const file = await this.#dockerPath();
     if (!file) throw new Error("docker is not installed");
-    const workdir = sandboxWorkdir(ready.project, req.cwd);
+    const workdir = sandboxWorkdir(ready.project, req.cwd, ready.home);
     return {
       file,
       cwd: workdir,
@@ -243,6 +246,7 @@ export class SandboxService {
         execArgs(ready.container, {
           workdir,
           envNames,
+          ...(ready.user ? { user: ready.user } : {}),
           command: sandboxCommand({
             ...(req.shell ? { shell: req.shell } : {}),
             ...(req.agent
@@ -295,12 +299,14 @@ export default defineDesktopExtension({
     const home = Deno.env.get("HOME");
     if (!home || Deno.build.os === "windows") return;
     void hostConfigDirs(home).then((hostConfigs) => {
+      const linux = Deno.build.os === "linux";
       service = new SandboxService({
         docker: new PtyDockerCli({ appSupportDir: host.appSupportDir }),
         facts: {
           quttyDir: hubPaths(home).dir,
           hostConfigs,
-          linux: Deno.build.os === "linux",
+          linux,
+          ...(linux ? { user: { uid: getuid(), gid: getgid() } } : {}),
         },
       });
       setSandboxProvider(service);

@@ -61,6 +61,7 @@ import {
   integrationStatus,
 } from "../lib/hub/integration.ts";
 import { hubPaths } from "../lib/hub/launch.ts";
+import { closedWithin, generating } from "./ollama_helpers.ts";
 
 /** A request as qutty-agent sends it. */
 function request(
@@ -595,19 +596,15 @@ Deno.test("abortable: passes the result through; a CancelledError on abort", asy
   );
 });
 
-Deno.test("Ollama: an abort rejects at once (the provider takes no signal)", async () => {
-  let release: () => void = () => {};
-  const held = new Promise<void>((r) => release = r);
+Deno.test("Ollama: an abort rejects at once and closes the request (Ollama stops generating)", async () => {
+  // A fake Ollama (no model): it holds the request until the client goes away.
+  const reply = generating();
+  const gone = reply.closed;
   const server = Deno.serve(
     { hostname: "127.0.0.1", port: 0, onListen: () => {} },
     async (req) => {
       await req.json();
-      await held;
-      return Response.json({
-        model: "m",
-        message: { role: "assistant", content: "late" },
-        done: true,
-      });
+      return reply.response;
     },
   );
   try {
@@ -619,8 +616,9 @@ Deno.test("Ollama: an abort rejects at once (the provider takes no signal)", asy
     const p = brain.complete("SYS", "PROMPT", c.signal);
     setTimeout(() => c.abort(), 50);
     await assertRejects(() => p, CancelledError);
+    // The server saw the connection close: generation is cut off, not left running.
+    await closedWithin(gone);
   } finally {
-    release();
     await server.shutdown();
   }
 });

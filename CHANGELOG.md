@@ -41,7 +41,9 @@
 - The companion's brain can run on a local Ollama model. Settings → Companion →
   Brain runs on: Claude Code (as before) or Ollama, with a model picked from the
   pulled models that can call tools. It acts on tiles through the same hub tools
-  as the Claude Code brain. An API key brain is listed but not available yet.
+  as the Claude Code brain, over Ollama's own chat API (native tool calls), and
+  stopping the companion stops the model's generation too. An API key brain is
+  listed but not available yet.
 - Drag Loopy to move it. Drop it anywhere and it snaps to the nearest corner,
   which becomes Settings → Companion → Corner. A click still opens the chat.
 - While you hold the mic, Loopy's head swells and glows with your voice's level.
@@ -49,8 +51,8 @@
   (`📬 2 new messages — , inbox`), at most every 5 seconds
   (`QUTTY_AGENT_NOTIFY_EVERY`, `off` to turn it off).
 - Shell agent: Ctrl-C while the model thinks cancels the request in the hub
-  (Claude Code's run is stopped; an Ollama answer is dropped), and the request
-  stays out of the conversation.
+  (Claude Code's run is stopped; an Ollama request is closed, so Ollama stops
+  generating), and the request stays out of the conversation.
 - Agent integration: Qutty asks the installed Codex whether it trusts Qutty's
   hooks; if not, Settings → Agent integration shows a warning with a one-click
   Re-trust.
@@ -61,6 +63,13 @@
 - The switcher bar keeps the focused terminal's chip in view when focusing it
   reorders the bar (recently-used order), most visibly with Reduce Motion on,
   and chips no longer stay shifted out of place after several quick reorders.
+- Sandbox on Linux: tiles run as you instead of root, so files they create in
+  the project folder are yours on the host. macOS is unchanged (Docker Desktop
+  already maps them to you).
+- Sandbox on Linux: with Network off, agents inside still reach the agent hub.
+  The container joins an internal network with no way out to the internet. With
+  Docker Desktop (macOS), Network off still cuts the hub off too, and Settings
+  now says so.
 - The agent hub could freeze the app (seen on Linux) when one agent's connection
   closed just as another one arrived.
 - Detachable sessions. Closing the window no longer closes its terminals: they

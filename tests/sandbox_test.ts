@@ -15,15 +15,19 @@ import {
   containerName,
   DETACH_KEYS,
   execArgs,
+  execUser,
+  HUB_NETWORK,
   inspectArgs,
   keepaliveArgs,
   parseGateways,
   parseInspect,
   runArgs,
   sandboxCommand,
+  sandboxHome,
   sandboxSpec,
   sandboxWorkdir,
   specHash,
+  userSetupArgs,
 } from "../lib/sandbox/docker.ts";
 import { SandboxController } from "../lib/sandbox/lifecycle.ts";
 import { DemoDocker } from "../lib/sandbox/demo.ts";
@@ -167,6 +171,81 @@ Deno.test("docker argv: run with project, volume, shims, labels; network and Lin
   assertEquals(bare[bare.indexOf("-w") + 1], "/root");
 });
 
+Deno.test("docker argv: native Linux runs the tiles as the host user, with its own home", () => {
+  const settings: SandboxSettings = { ...DEFAULT_SANDBOX, mode: "shared" };
+  const user = { uid: 1000, gid: 1001 };
+  const spec = sandboxSpec(settings, { ...FACTS, linux: true, user });
+  assertEquals(spec.user, user);
+  assertEquals(sandboxHome("1000:1001"), "/home/qutty");
+  assertEquals(sandboxHome(undefined), "/root");
+  assertEquals(execUser(spec), "1000:1001");
+  const run = runArgs(spec);
+  const joined = run.join(" ");
+  // The main process stays root (it sets the user up, and the keepalive stops it).
+  assert(joined.includes("--user 0:0"));
+  assert(joined.includes("-e HOME=/home/qutty"));
+  assert(
+    joined.includes("type=volume,source=qutty-sandbox-home,target=/home/qutty"),
+  );
+  assertEquals(run[run.indexOf("-w") + 1], "/home/qutty");
+  assert(joined.includes("--label org.qutty.user=1000:1001"));
+  const setup = userSetupArgs(spec.name, "1000:1001");
+  assertEquals(setup.slice(0, 6), ["exec", "-u", "0:0", spec.name, "sh", "-c"]);
+  assert(setup[6].includes("/etc/passwd") && setup[6].includes("chown -R"));
+  assertEquals(setup.slice(7), ["qutty-setup", "1000", "1001", "/home/qutty"]);
+  // A tile: -u before the command; no -u for root.
+  const exec = execArgs("ctr", {
+    workdir: "/home/qutty",
+    envNames: [],
+    command: ["bash", "-l"],
+    user: "1000:1001",
+  });
+  assertEquals(exec.slice(4, 8), ["-u", "1000:1001", "-w", "/home/qutty"]);
+  assert(
+    !execArgs("ctr", { workdir: "/", envNames: [], command: [] }).includes(
+      "-u",
+    ),
+  );
+  assertEquals(sandboxWorkdir("", undefined, "/home/qutty"), "/home/qutty");
+  // macOS, and an app run as root: root, as before.
+  for (
+    const facts of [
+      { ...FACTS, user: { uid: 501, gid: 20 } },
+      { ...FACTS, linux: true, user: { uid: 0, gid: 0 } },
+    ]
+  ) {
+    const s = sandboxSpec(settings, facts);
+    assertEquals(s.user, undefined);
+    assertEquals(execUser(s), undefined);
+    assert(runArgs(s).join(" ").includes("-e HOME=/root"));
+    assert(!runArgs(s).join(" ").includes("org.qutty.user"));
+  }
+  // The user is part of what the container is made of.
+  assert(
+    specHash(spec) !== specHash({ ...spec, user: { uid: 1002, gid: 1001 } }),
+  );
+});
+
+Deno.test("docker argv: network off on native Linux joins the internal hub network", () => {
+  const settings: SandboxSettings = {
+    ...DEFAULT_SANDBOX,
+    mode: "shared",
+    network: false,
+  };
+  const linux = sandboxSpec(settings, { ...FACTS, linux: true });
+  const off = runArgs(linux, { hubGateway: "172.18.0.1" }).join(" ");
+  assert(off.includes(`--network ${HUB_NETWORK}`));
+  assert(off.includes("--add-host host.docker.internal:172.18.0.1"));
+  assert(!off.includes("host-gateway") && !off.includes("--network none"));
+  // No gateway known: no network at all.
+  assert(runArgs(linux).join(" ").includes("--network none"));
+  // macOS ignores a gateway: none.
+  const mac = runArgs(sandboxSpec(settings, FACTS), { hubGateway: "x" }).join(
+    " ",
+  );
+  assert(mac.includes("--network none") && !mac.includes(HUB_NETWORK));
+});
+
 Deno.test("docker argv: the config hash follows what the container is made of", () => {
   const base = sandboxSpec({ ...DEFAULT_SANDBOX, mode: "shared" }, FACTS);
   assertEquals(specHash(base), specHash({ ...base }));
@@ -265,7 +344,16 @@ Deno.test("docker argv: keepalive, inspect and bridge parsing", () => {
     config: "abc",
     startedAt: "2026-11-06T10:00:00Z",
     image: "node:22",
+    user: "",
   });
+  assertEquals(
+    parseInspect("true|abc|2026-11-06T10:00:00Z|node:22|1000:1001")?.user,
+    "1000:1001",
+  );
+  assertEquals(
+    parseInspect("true|abc|2026-11-06T10:00:00Z|node:22|<no value>")?.user,
+    "",
+  );
   assertEquals(parseInspect("Error: No such container: c"), undefined);
   assertEquals(parseGateways("172.17.0.1 fd00::1 \n"), ["172.17.0.1"]);
 });
@@ -306,7 +394,12 @@ Deno.test("lifecycle: first ensure pulls, creates, starts the keepalive; callers
   ctl.configure(SHARED);
   const [a, b] = await Promise.all([ctl.ensure(), ctl.ensure()]);
   assertEquals(a, b);
-  assertEquals(a, { container: "ctr", project: "", bridge: [] });
+  assertEquals(a, {
+    container: "ctr",
+    project: "",
+    bridge: [],
+    home: "/root",
+  });
   assertEquals(d.calls.filter((c) => c === "run -d").length, 1);
   assert(d.calls.includes("pull img"));
   assert(changes.includes("starting"));
@@ -425,15 +518,153 @@ Deno.test("lifecycle: native Linux asks for the bridge gateway (only with a netw
   const d = new FakeDocker();
   d.run =
     ((orig) => (args: string[]) =>
-      args[0] === "network"
+      args[0] === "network" && args[2] === "bridge"
         ? Promise.resolve({ code: 0, out: "172.17.0.1 " })
         : orig(args))(d.run.bind(d));
   const { ctl } = controller(d, true);
   ctl.configure(SHARED);
   assertEquals((await ctl.ensure()).bridge, ["172.17.0.1"]);
-  await ctl.stop();
+  // macOS: none.
+  const mac = controller(new FakeDocker()).ctl;
+  mac.configure({ ...SHARED, network: false });
+  assertEquals((await mac.ensure()).bridge, []);
+});
+
+/** A fake docker that records every full argv and answers `network` commands itself. */
+function linuxDocker(opts: { network?: boolean } = {}) {
+  const d = new FakeDocker();
+  const argv: string[][] = [];
+  let hubNetwork = opts.network ?? false;
+  d.run = ((orig) => (args: string[]) => {
+    argv.push(args);
+    if (args[0] === "network" && args[1] === "inspect") {
+      return Promise.resolve(
+        args[2] === HUB_NETWORK
+          ? hubNetwork
+            ? { code: 0, out: "172.18.0.1 " }
+            : { code: 1, out: "Error: network qutty-sandbox-hub not found" }
+          : { code: 0, out: "172.17.0.1 " },
+      );
+    }
+    if (args[0] === "network" && args[1] === "create") hubNetwork = true;
+    return orig(args);
+  })(d.run.bind(d));
+  return { d, argv };
+}
+
+Deno.test("lifecycle: native Linux with the network off keeps the hub on an internal network", async () => {
+  const { d, argv } = linuxDocker();
+  const { ctl } = controller(d, true);
   ctl.configure({ ...SHARED, network: false });
-  assertEquals((await ctl.ensure()).bridge, []);
+  const ready = await ctl.ensure();
+  // The network was missing: created internal, then its gateway read.
+  const create = argv.find((a) => a[0] === "network" && a[1] === "create");
+  assertEquals(create, [
+    "network",
+    "create",
+    "--internal",
+    "--label",
+    "org.qutty.sandbox=1",
+    HUB_NETWORK,
+  ]);
+  const run = argv.find((a) => a[0] === "run")!.join(" ");
+  assert(run.includes(`--network ${HUB_NETWORK}`), run);
+  assert(run.includes("--add-host host.docker.internal:172.18.0.1"), run);
+  assert(!run.includes("--network none"));
+  // The hub listens on that gateway.
+  assertEquals(ready.bridge, ["172.18.0.1"]);
+
+  // Stopped and started again: the network is checked (not created twice), the container reused.
+  await ctl.stop();
+  argv.length = 0;
+  await ctl.ensure();
+  assertEquals(
+    argv.filter((a) => a[0] === "network").map((a) => a[1]),
+    ["inspect"],
+  );
+  assert(argv.some((a) => a[0] === "start"));
+  assert(!argv.some((a) => a[0] === "run"));
+});
+
+Deno.test("lifecycle: a stopped container that cannot start is made anew", async () => {
+  const { d } = linuxDocker({ network: true });
+  const { ctl } = controller(d, true);
+  ctl.configure({ ...SHARED, network: false });
+  await ctl.ensure();
+  await ctl.stop();
+  const inner = d.run.bind(d);
+  const calls: string[] = [];
+  d.run = (args: string[]) => {
+    calls.push(args[0]);
+    return args[0] === "start"
+      ? Promise.resolve({ code: 1, out: "network abc not found" })
+      : inner(args);
+  };
+  await ctl.ensure();
+  assertEquals(ctl.status().phase, "running");
+  assert(calls.indexOf("rm") > calls.indexOf("start"), calls.join(" "));
+  assert(calls.includes("run"));
+  assert(d.container?.running);
+});
+
+Deno.test("lifecycle: on native Linux the tiles run as the host user, set up once per start", async () => {
+  const { d, argv } = linuxDocker();
+  const ctl = new SandboxController({
+    docker: d,
+    name: "ctr",
+    facts: {
+      quttyDir: "/q",
+      hostConfigs: [],
+      linux: true,
+      user: { uid: 1000, gid: 1001 },
+    },
+  });
+  ctl.configure(SHARED);
+  const ready = await ctl.ensure();
+  assertEquals(ready.user, "1000:1001");
+  assertEquals(ready.home, "/home/qutty");
+  const setups = () =>
+    argv.filter((a) => a[0] === "exec" && a.includes("qutty-setup"));
+  assertEquals(setups().length, 1);
+  assertEquals(setups()[0].slice(0, 4), ["exec", "-u", "0:0", "ctr"]);
+  assertEquals(setups()[0].slice(-3), ["1000", "1001", "/home/qutty"]);
+  // Again while running: no second setup. After a restart: once more.
+  await ctl.ensure();
+  assertEquals(setups().length, 1);
+  await ctl.stop();
+  await new Promise((r) => setTimeout(r, 2)); // a new startedAt
+  await ctl.ensure();
+  assertEquals(setups().length, 2);
+  // A failed setup fails the start with docker's reason.
+  await ctl.stop();
+  const inner = d.run.bind(d);
+  d.run = (args: string[]) =>
+    args.includes("qutty-setup")
+      ? Promise.resolve({ code: 1, out: "chown: Operation not permitted" })
+      : inner(args);
+  await new Promise((r) => setTimeout(r, 2));
+  await assertRejects(() => ctl.ensure(), Error, "Operation not permitted");
+  assertEquals(ctl.status().phase, "error");
+
+  // macOS (Docker Desktop maps ownership itself) and root keep root.
+  for (
+    const facts of [
+      { linux: false, user: { uid: 501, gid: 20 } },
+      { linux: true, user: { uid: 0, gid: 0 } },
+    ]
+  ) {
+    const other = new FakeDocker();
+    const c = new SandboxController({
+      docker: other,
+      name: "ctr",
+      facts: { quttyDir: "/q", hostConfigs: [], ...facts },
+    });
+    c.configure(SHARED);
+    const r = await c.ensure();
+    assertEquals(r.user, undefined);
+    assertEquals(r.home, "/root");
+    assert(!other.calls.some((x) => x.startsWith("exec")));
+  }
 });
 
 // --- the workspace store and the demo backend ------------------------------------------------
@@ -469,4 +700,29 @@ Deno.test("demo backend: the sandbox starts on ensure; a sandboxed spawn is mark
   assertEquals(snap.tiles.find((x) => x.id === t.id)?.sandbox, true);
   assertEquals((await backend.sandboxAction("stop")).phase, "stopped");
   await backend.kill(t.id);
+});
+
+Deno.test("lifecycle: a running container keeps the user it was made with until Restart", async () => {
+  // Made as root (an older Qutty): stale now that the tiles would run as the user.
+  const d = new FakeDocker();
+  d.container = { running: true, config: "old", startedAt: "t0" };
+  const ctl = new SandboxController({
+    docker: d,
+    name: "ctr",
+    facts: {
+      quttyDir: "/q",
+      hostConfigs: [],
+      linux: true,
+      user: { uid: 1000, gid: 1000 },
+    },
+  });
+  ctl.configure(SHARED);
+  const ready = await ctl.ensure();
+  assertEquals([ready.user, ready.home], [undefined, "/root"]);
+  assertEquals(ctl.status().stale, true);
+  assert(!d.calls.includes("exec -u"));
+  // Restart makes it anew, as the user.
+  await ctl.restart();
+  assertEquals(d.container?.user, "1000:1000");
+  assert(d.calls.includes("exec -u"));
 });

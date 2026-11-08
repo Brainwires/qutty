@@ -98,22 +98,23 @@
   - Shell agent, open: bash 4.0–5.0 draws the request line once more than 5.1+
     may (only 5.1+ clears it before a `bind -x` command; untested there);
     macOS's bash 3.2 gets the proposal in the history, not the buffer (no
-    `READLINE_LINE`); Ctrl-C cancels a request hub-side, but an Ollama request
-    runs on in Ollama (`OllamaChatProvider.chat` takes no signal; its answer is
-    dropped); the prompt's new-message check over TCP (sandbox) has no connect
-    timeout. Danger flags are Rullama's `classifyCommand` plus four Qutty
-    warnings it leaves out on purpose (any `rm -r`/`-f`, `--force-with-lease`,
-    `checkout`/`restore .`, `chmod`/`chown -R`); those four are regexes over the
-    command with quoted data dropped, not a shell parse.
+    `READLINE_LINE`); the prompt's new-message check over TCP (sandbox) has no
+    connect timeout. Done: Ctrl-C cancels a request hub-side, and an Ollama
+    request is closed too (`ChatOptions.signal`, @rullama/provider 0.12.3), so
+    Ollama stops generating. Danger flags are Rullama's `classifyCommand` plus
+    four Qutty warnings it leaves out on purpose (any `rm -r`/`-f`,
+    `--force-with-lease`, `checkout`/`restore .`, `chmod`/`chown -R`); those
+    four are regexes over the command with quoted data dropped, not a shell
+    parse.
   - Done: the second brain, a local Ollama model
     (`lib/companion/inference-brain.ts`, `runAgentLoop` over
-    `@rullama/provider`'s Chat Completions provider on Ollama's `/v1`), its
+    `@rullama/provider`'s native `OllamaChatProvider` on Ollama's `/api/chat`,
+    0.12.3: native `tool_calls` and tool results, and `ChatOptions.signal`, so
+    stopping the companion closes the request and Ollama stops generating), its
     tools the hub's handler called in process as the companion
-    (`companionToolbox`); Settings → Companion → Brain runs on. Upstream gaps:
-    `OllamaChatProvider` (0.12.2) drops tool calls and tool results, and no
-    provider takes an `AbortSignal` (a stopped turn's request runs on and is
-    dropped). An API key brain waits on Denext: `secureStore` still bakes
-    `--allow-run=security` and `--allow-sys` (4.13.1).
+    (`companionToolbox`); Settings → Companion → Brain runs on. An API key brain
+    waits on Denext: `secureStore` still bakes `--allow-run=security` and
+    `--allow-sys` (4.13.1).
   - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
     setting) and the mic level driving its listening pulse (`level` events from
     desktop/voice.ts, ~20 Hz while capturing).
@@ -145,12 +146,25 @@
     libc like the unix sockets (no `net` permission); native Linux Docker gets
     `--add-host=host.docker.internal:host-gateway` and the hub also listens on
     the bridge gateway.
-  - Open: a second window's container stops when the app quits (Denext 4.13's
-    `onWindowClosed`, not used yet, can stop it earlier). Native Linux: files
-    the root user creates in a read/write project mount are owned by root on the
-    host (Docker Desktop maps them to you). Changing the image or mounts
-    recreates the container on Restart (packages installed with apt go; `$HOME`
-    stays). Network off also cuts the sandbox off from the hub.
+  - Done: the container follows its workspace (#32): closing a window detaches
+    it and keeps the container for its tiles; ending the workspace stops it
+    (unless "keep running" is on).
+  - Open: changing the image or mounts recreates the container on Restart
+    (packages installed with apt go; `$HOME` stays). With Docker Desktop,
+    network off also cuts the sandbox off from the hub (`host.docker.internal`
+    is served neither without a network nor on an `--internal` one).
+  - Done: native Linux runs the tiles as the app's user
+    (`docker exec -u
+    uid:gid`, the ids from libc `getuid`/`getgid`), so
+    files they create in a read/write project mount are the user's; the
+    container's main process stays root and adds a `passwd` entry and the home
+    volume (`/home/qutty`) for the user at every start. No root inside on Linux,
+    so `apt install` needs `docker exec -u 0`. macOS keeps root (Docker Desktop
+    maps ownership).
+  - Done: native Linux with the network off joins `qutty-sandbox-hub`, an
+    `--internal` network (no route out); its gateway is the host, so the hub
+    listens there and `host.docker.internal` points at it. The host's own
+    services listening on every address are reachable from it too.
 
 - [x] **SSH sessions and a connection manager.** Shipped in 0.3.0; the "Still
       open" items at the end remain. Run the system `ssh` in a PTY, the same way

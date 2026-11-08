@@ -79,6 +79,7 @@ const SYMBOLS = {
   },
   getsockname: { parameters: ["i32", "buffer", "buffer"], result: "i32" },
   getuid: { parameters: [], result: "u32" },
+  getgid: { parameters: [], result: "u32" },
   pipe: { parameters: ["buffer"], result: "i32" },
   write: { parameters: ["i32", "buffer", "usize"], result: "isize" },
   kill: { parameters: ["i32", "i32"], result: "i32" },
@@ -105,6 +106,11 @@ function readableNow(fd: number): boolean {
 /** The real user id (`Deno.uid()` needs `--allow-sys`, which the app does not have). */
 export function getuid(): number {
   return libc().getuid();
+}
+
+/** The real group id (`Deno.gid()` needs `--allow-sys` too). */
+export function getgid(): number {
+  return libc().getgid();
 }
 
 /** `mkdir(path, mode)`; true when it was created (false: it exists, or failed). */

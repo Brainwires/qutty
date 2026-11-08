@@ -217,3 +217,74 @@ Deno.test({
     assert(await findDocker());
   },
 });
+
+Deno.test({
+  name:
+    "docker sandbox: the Linux user mode runs tiles as the host user with a home of its own",
+  ignore,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // The Linux facts on whatever Docker is here (Docker Desktop's VM is Linux too): the ids
+    // are made up, so the image has no such user and the setup must add one.
+    const name = `${NAME}-user`;
+    const volume = `${VOLUME}-user`;
+    const quttyDir = await Deno.makeTempDir({ prefix: "qutty-user" });
+    await Deno.mkdir(`${quttyDir}/bin`);
+    const sandbox = new SandboxService({
+      docker: new PtyDockerCli(),
+      facts: {
+        quttyDir,
+        hostConfigs: [],
+        linux: true,
+        user: { uid: 4321, gid: 4322 },
+        volume,
+      },
+      names: () => name,
+    });
+    const ctl = sandbox.controller("user");
+    try {
+      ctl.configure({ ...DEFAULT_SANDBOX, mode: "shared", image: IMAGE });
+      if (!docker("image", "inspect", IMAGE).ok) {
+        assert(docker("pull", IMAGE).ok, "pull the test image");
+      }
+      const ready = await ctl.ensure();
+      assertEquals(ready.user, "4321:4322");
+      assertEquals(ready.home, "/home/qutty");
+      const as = (cmd: string) =>
+        docker("exec", "-u", ready.user!, name, "sh", "-c", cmd);
+      const who = as(
+        'id -un; id -u; id -g; echo "$HOME"; touch "$HOME/made"; stat -c %u:%g "$HOME/made"',
+      );
+      assert(who.ok, who.out);
+      assertEquals(who.out.trim().split("\n"), [
+        "qutty",
+        "4321",
+        "4322",
+        "/home/qutty",
+        "4321:4322",
+      ]);
+      // A home volume root used before (an older Qutty, the macOS layout) is handed over, all
+      // of it, at the next start.
+      assert(
+        docker(
+          "exec",
+          name,
+          "sh",
+          "-c",
+          "touch /home/qutty/by-root && chown -R 0:0 /home/qutty",
+        ).ok,
+      );
+      await ctl.stop();
+      await ctl.ensure();
+      assertEquals(as("stat -c %u /home/qutty/by-root").out.trim(), "4321");
+      // The passwd entry is not added twice.
+      assertEquals(as("grep -c '^qutty:' /etc/passwd").out.trim(), "1");
+    } finally {
+      await ctl.stop().catch(() => {});
+      docker("rm", "-f", name);
+      docker("volume", "rm", "-f", volume);
+      await Deno.remove(quttyDir, { recursive: true }).catch(() => {});
+    }
+  },
+});

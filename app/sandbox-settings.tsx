@@ -196,11 +196,19 @@ export function SandboxSettingsSection(props: SandboxSettingsProps) {
             onChange({ project: (e.target as HTMLInputElement).value })}
         />
         <span class="field-hint">
-          Mounted at the same path inside; empty for none.
+          Mounted at the same path inside; empty for none. Tiles run as root
+          inside; on Linux they run as you, so the files they create are yours.
         </span>
       </label>
       {check("projectWritable", "The sandbox may change the project folder")}
-      {check("network", "Network (off also cuts agents off from the hub)")}
+      {check("network", "Network")}
+      <span class="field-hint" data-testid="sandbox-network-hint">
+        Off: nothing inside reaches the internet. On Linux, agents still reach
+        the hub: the container joins an internal network with no route out, but
+        this computer stays reachable on it (as are its services that listen on
+        every address). With Docker Desktop (macOS), off has no network at all,
+        so agents inside cannot reach the hub.
+      </span>
       {check("newTilesInSandbox", "New tiles open in the sandbox")}
       {check("keepRunning", "Keep running when the window closes")}
       {check(

@@ -29,9 +29,13 @@ import {
 } from "../lib/hub/tools.ts";
 import type { PrivilegedCall } from "../lib/hub/protocol.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
-import { ollamaHasModel } from "../desktop/companion-brain.ts";
+import {
+  ollamaCompanionBrain,
+  ollamaHasModel,
+} from "../desktop/companion-brain.ts";
 import { CompanionHost } from "../desktop/companion.ts";
 import { hubWithTiles, waitUntil } from "./hub_helpers.ts";
+import { closedWithin, generating } from "./ollama_helpers.ts";
 
 type Reply = { text?: string; tools?: { name: string; input: unknown }[] };
 
@@ -317,4 +321,137 @@ Deno.test("brain choice: Ollama's model lookup; Settings switches the adapter an
   assertEquals(made[0], { engine: "ollama", model: "qwen3.8:27b-mlx" });
   assertEquals(host.configure(true, "", "claude").adapter, "Claude Code");
   host.runtime.stop();
+});
+
+// ---------------------------------------------------------------------------------------------
+// The Ollama brain over the native provider, against a fake Ollama (an HTTP server, no model)
+// ---------------------------------------------------------------------------------------------
+
+type OllamaBody = {
+  model: string;
+  stream: boolean;
+  tools?: { type: string; function: { name: string } }[];
+  messages: {
+    role: string;
+    content: string;
+    tool_calls?: {
+      id?: string;
+      function: { name: string; arguments: unknown };
+    }[];
+    tool_name?: string;
+    tool_call_id?: string;
+  }[];
+};
+
+/** A fake Ollama: `/api/tags` lists `m:latest`; `/api/chat` answers with `chat`. */
+function fakeOllama(chat: (body: OllamaBody) => Response) {
+  const bodies: OllamaBody[] = [];
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    async (req) => {
+      const path = new URL(req.url).pathname;
+      if (path === "/api/tags") {
+        return Response.json({ models: [{ name: "m:latest" }] });
+      }
+      if (path !== "/api/chat") return new Response(null, { status: 404 });
+      const body = await req.json() as OllamaBody;
+      bodies.push(body);
+      return chat(body);
+    },
+  );
+  return { bodies, server, url: `http://127.0.0.1:${server.addr.port}` };
+}
+
+Deno.test("Ollama brain: native /api/chat tool calls run the hub's tools; results go back as tool messages", async () => {
+  const { core, env } = hubWithTiles();
+  env.mirrors.set("pty-2", new ScreenMirror(40, 5));
+  const handler = createHubHandler(core, buildToolRegistry(core));
+  const replies = [
+    // An older server: a native call without an id.
+    {
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "list_peers", arguments: {} } }],
+      },
+      done: true,
+      done_reason: "stop",
+    },
+    {
+      message: { role: "assistant", content: "Three tiles." },
+      done: true,
+      done_reason: "stop",
+    },
+  ];
+  const ollama = fakeOllama(() => Response.json(replies.shift()));
+  try {
+    const brain = ollamaCompanionBrain(
+      "m",
+      companionToolbox(handler),
+      ollama.url,
+    );
+    assertEquals(brain.label, "Ollama (m)");
+    const events: BrainEvent[] = [];
+    await brain.start({ event: (e) => events.push(e), exited() {} });
+    await brain.send("what tiles exist?");
+    await waitUntil(() => turnEnd(events), 2000);
+    assertEquals(turnEnd(events), {
+      kind: "turnEnd",
+      text: "Three tiles.",
+      isError: false,
+    });
+
+    assertEquals(ollama.bodies.length, 2);
+    const [first, second] = ollama.bodies;
+    assertEquals(first.model, "m");
+    assertEquals(first.stream, false);
+    assert(first.tools!.some((t) => t.function.name === "list_peers"));
+    assertEquals(first.messages[0].role, "system");
+    // The call went back as the assistant's native tool_calls, its result as a tool message.
+    const call = second.messages.at(-2)!;
+    assertEquals(call.role, "assistant");
+    assertEquals(call.tool_calls![0].function.name, "list_peers");
+    const result = second.messages.at(-1)!;
+    assertEquals(result.role, "tool");
+    assertEquals(result.tool_name, "list_peers");
+    assertEquals(result.tool_call_id, call.tool_calls![0].id);
+    assertStringIncludes(result.content, "pty-2");
+    assertEquals(
+      events.filter((e) => e.kind === "toolUse").map((e) =>
+        (e as { name: string }).name
+      ),
+      ["list_peers"],
+    );
+  } finally {
+    await ollama.server.shutdown();
+  }
+});
+
+Deno.test("Ollama brain: stop() closes the request (Ollama stops generating); a missing model fails the start", async () => {
+  const reply = generating();
+  const gone = reply.closed;
+  const ollama = fakeOllama(() => reply.response);
+  const tools = {
+    list: () => [],
+    call: () => Promise.reject(new Error("unused")),
+  };
+  try {
+    const brain = ollamaCompanionBrain("m", tools, ollama.url);
+    const events: BrainEvent[] = [];
+    await brain.start({ event: (e) => events.push(e), exited() {} });
+    await brain.send("hello");
+    await waitUntil(() => ollama.bodies.length > 0, 2000);
+    brain.stop();
+    await closedWithin(gone);
+    await new Promise((r) => setTimeout(r, 10));
+    assertEquals(turnEnd(events), undefined, "stopped on purpose: no turn end");
+
+    let reason = "";
+    await ollamaCompanionBrain("other", tools, ollama.url)
+      .start({ event() {}, exited() {} })
+      .catch((e) => reason = e.message);
+    assertEquals(reason, 'Ollama has no model "other" (ollama pull other)');
+  } finally {
+    await ollama.server.shutdown();
+  }
 });
