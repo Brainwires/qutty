@@ -145,12 +145,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # GitHub's images, not the self-hosted RUNNER_LINUX_X64 pool: that pool is offline, and a
-        # release must not queue on it (the release job waits for these). The arm64 build runs
-        # natively on GitHub's Arm image; there is no self-hosted Linux arm64 pool.
+        # x86_64 on the self-hosted RUNNER_LINUX_X64 pool (GitHub's ubuntu-24.04 for a fork's pull
+        # request); arm64 natively on GitHub's Arm image, as there is no self-hosted Linux arm64 pool.
         include:
-          # runners-first: the self-hosted Linux x64 pool is offline; a tag release must not queue on it
-          - runner: ubuntu-24.04
+          - runner: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-24.04"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-24.04'))) }}
             arch: x86_64
             label: x64
             tool: x86_64
@@ -279,7 +277,8 @@ jobs:
     needs: [build, linux]
     # Tags only, once both macOS apps are built; Linux is best-effort (see the top).
     if: always() && github.event_name == 'push' && needs.build.result == 'success'
-    runs-on: ubuntu-latest
+    # The self-hosted Linux runner RUNNER_LINUX_X64 names, else ubuntu-latest.
+    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     timeout-minutes: 15
     permissions:
       contents: write
