@@ -96,6 +96,7 @@ const SHORTCUTS: [string, string][] = [
   ["Mod+Shift+L", "Cycle pattern"],
   ["Mod+Shift+B", "Move the bar"],
   ["Mod+Shift+O", "SSH connections"],
+  ["Mod+Shift+I", "Broadcast input on / off"],
   ["Mod+=", "Bigger font"],
   ["Mod+-", "Smaller font"],
   ["Mod+0", "Default font size"],

@@ -8,7 +8,8 @@
 // shown, which is also how a new terminal animates in.
 //
 // SSH tiles add a badge and their host tint (`data-tint`), plus whatever the workspace renders
-// into the header (`renderHeadActions`) and over the terminal (`renderOverlay`). A tile the agent
+// into the header (`renderHeadLead` on the left, `renderHeadActions` on the right) and over the
+// terminal (`renderOverlay`). The tiles input is broadcast to (`broadcastIds`) wear a loud border. A tile the agent
 // hub knows an agent harness for (`agentOf`) shows the agent's hub name, its status (busy, idle,
 // waiting for the user) and how many messages wait for it.
 //
@@ -36,7 +37,11 @@ interface TileExtras {
   /** The agent hub's entry for a tile (the badge is drawn when it has a harness). */
   agentOf?(id: string): TileInfo | undefined;
   renderHeadActions?(entry: TerminalEntry): ReactNode;
+  /** Drawn first in the header (the broadcast checkbox). */
+  renderHeadLead?(entry: TerminalEntry): ReactNode;
   renderOverlay?(entry: TerminalEntry, focused: boolean): ReactNode;
+  /** The tiles typing is broadcast to (marked loudly; empty when broadcast is off). */
+  broadcastIds?: ReadonlySet<string>;
 }
 
 export interface TileClusterProps extends TileExtras {
@@ -78,7 +83,9 @@ export function TileCluster(props: TileClusterProps) {
           dropTargetId={props.dropTargetId}
           agentOf={props.agentOf}
           renderHeadActions={props.renderHeadActions}
+          renderHeadLead={props.renderHeadLead}
           renderOverlay={props.renderOverlay}
+          broadcastIds={props.broadcastIds}
         />
       ))}
     </div>
@@ -219,6 +226,8 @@ function TerminalTile(props: TerminalTileProps) {
   if (entry.sandbox) classes.push("is-sandbox");
   if (tint) classes.push("has-tint");
   if (props.dropTargetId === id) classes.push("is-drop-target");
+  const broadcasting = props.broadcastIds?.has(id) ?? false;
+  if (broadcasting) classes.push("is-broadcast");
 
   return (
     <div
@@ -234,6 +243,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-ssh={entry.ssh ? "true" : undefined}
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
+      data-broadcast={broadcasting ? "true" : undefined}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
         const native = e as unknown as globalThis.TransitionEvent;
@@ -243,8 +253,10 @@ function TerminalTile(props: TerminalTileProps) {
           prop === "width" || prop === "height" || prop === "transform"
         ) manager.fitNow(id);
       }}
-      onPointerDownCapture={() => {
-        if (!focused) props.onFocus(id);
+      onPointerDownCapture={(e: { target: EventTarget | null }) => {
+        // A header control that must not move the focus (the broadcast checkbox) opts out.
+        const t = e.target as Element | null;
+        if (!focused && !t?.closest?.("[data-keep-focus]")) props.onFocus(id);
       }}
     >
       <div class="tile-inner">
@@ -255,6 +267,7 @@ function TerminalTile(props: TerminalTileProps) {
           // keyboard focus to <body> right after pointerdown focused the terminal.
           onMouseDown={(e) => e.preventDefault()}
         >
+          {props.renderHeadLead?.(entry)}
           {entry.ssh && (
             <span class="tile-badge" data-testid="tile-ssh-badge">SSH</span>
           )}

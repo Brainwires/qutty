@@ -6,7 +6,7 @@
 // never rewritten, except for the one-line `Include ~/.ssh/qutty.conf` that `ensureInclude`
 // adds at its top. `~/.ssh/qutty.conf` holds the hosts saved in Qutty, so they also work from
 // a plain terminal. Qutty's own per-host data (tint, tags, favorite, tmux-on-connect, remote
-// command) lives in a `# qutty: {...}` comment inside the host block, which ssh ignores.
+// command, favourite port forwards) lives in a `# qutty: {...}` comment inside the host block, which ssh ignores.
 //
 // The document model keeps every line verbatim and only rewrites the lines it models, so a
 // round trip through `parseSshConfig` + `serializeSshConfig` never loses a comment, a `Match`
@@ -27,6 +27,11 @@ export interface SshHostMeta {
   tmux?: boolean;
   /** A command to run instead of the login shell (through the remote shell). */
   remoteCommand?: string;
+  /**
+   * Favourite port forwards for the forward panel, as `L 8080:localhost:80`, `R …` or `D 1080`
+   * (lib/ssh-forward.ts parses them). Never started on their own: only from the panel.
+   */
+  forwards?: string[];
 }
 
 /** One `Host` entry, as the connection manager lists it. */
@@ -298,8 +303,20 @@ function normalizeMeta(raw: Record<string, unknown>): SshHostMeta {
   if (typeof raw.remoteCommand === "string" && raw.remoteCommand) {
     meta.remoteCommand = raw.remoteCommand;
   }
+  if (Array.isArray(raw.forwards)) {
+    const forwards = raw.forwards.filter((f): f is string =>
+      typeof f === "string" && STORED_FORWARD.test(f)
+    );
+    if (forwards.length > 0) {
+      meta.forwards = [...new Set(forwards)].slice(0, MAX_STORED_FORWARDS);
+    }
+  }
   return meta;
 }
+
+/** A stored favourite forward's shape (lib/ssh-forward.ts checks every field when it is used). */
+const STORED_FORWARD = /^[LRD] [A-Za-z0-9._:%\[\]-]{1,300}$/;
+const MAX_STORED_FORWARDS = 64;
 
 /** `# qutty: {...}`, or `undefined` when there is nothing to store. */
 export function serializeMeta(meta: SshHostMeta): string | undefined {
@@ -421,9 +438,16 @@ function modelledLines(
 export function upsertHost(text: string, input: SshHostInput): string {
   const doc = parseSshConfig(text);
   const indent = detectIndent(doc.lines);
-  const wanted = modelledLines(input, indent);
   const existing = findBlock(doc, input.previousAlias ?? input.alias) ??
     findBlock(doc, input.alias);
+  // The host form does not edit the favourite forwards: a save without them keeps the block's.
+  const kept = input.forwards === undefined && existing
+    ? blockMeta(doc, existing)?.forwards
+    : undefined;
+  const wanted = modelledLines(
+    kept ? { ...input, forwards: kept } : input,
+    indent,
+  );
   if (!existing) {
     const body = [`Host ${input.alias}`, ...wanted.values()];
     const lines = doc.lines;
@@ -473,6 +497,46 @@ export function upsertHost(text: string, input: SshHostInput): string {
     ...body,
     ...doc.lines.slice(existing.end),
   ];
+  return lines.join("\n");
+}
+
+/** The metadata comment of a block, if it has one. */
+function blockMeta(doc: SshConfigDoc, b: Block): SshHostMeta | undefined {
+  for (let i = b.start + 1; i < b.end; i++) {
+    const meta = parseMeta(doc.lines[i]);
+    if (meta) return meta;
+  }
+  return undefined;
+}
+
+/**
+ * Set the favourite forwards of the Qutty host `alias`: only its metadata comment changes (added
+ * after the `Host` line when it has none, dropped when nothing is left in it). The text is
+ * unchanged when there is no such block.
+ */
+export function setHostForwards(
+  text: string,
+  alias: string,
+  forwards: readonly string[],
+): string {
+  const doc = parseSshConfig(text);
+  const b = findBlock(doc, alias);
+  if (!b) return text;
+  const meta: SshHostMeta = { ...blockMeta(doc, b) };
+  if (forwards.length > 0) meta.forwards = [...forwards];
+  else delete meta.forwards;
+  const serialized = serializeMeta(meta);
+  const line = serialized === undefined
+    ? undefined
+    : `${detectIndent(doc.lines)}${serialized}`;
+  const lines = [...doc.lines];
+  const at = lines.findIndex((l, i) =>
+    i > b.start && i < b.end && parseMeta(l) !== undefined
+  );
+  if (at < 0) {
+    if (line !== undefined) lines.splice(b.start + 1, 0, line);
+  } else if (line === undefined) lines.splice(at, 1);
+  else lines[at] = line;
   return lines.join("\n");
 }
 

@@ -27,6 +27,12 @@
 // `detachAll` (the page going away) disposes the xterm instances but leaves the PTYs running. A
 // terminal's PTY is released (`kill`) when its tile closes, also once it ended.
 //
+// Broadcast (cluster ssh, lib/broadcast.ts): while two or more tiles are selected, what the user
+// types or pastes in one of them is written to all of them. Keyboard, paste and IME events are
+// marked on the terminal's element (capture phase, before xterm handles them) and the next data
+// chunk claims the mark; xterm's own replies and mouse reports carry none and stay in their tile.
+// A big paste waits for the workspace to confirm it (`onBroadcastPaste`, then `sendHeldPaste`).
+//
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
 
@@ -55,6 +61,12 @@ import {
   trustedRemoteCwd,
 } from "./ssh-ui.ts";
 import { parseOsc7 } from "./osc7.ts";
+import {
+  broadcastTargets,
+  type InputOrigin,
+  pasteFor,
+  pasteNeedsConfirm,
+} from "./broadcast.ts";
 import {
   type LinkHit,
   type LinkHoverState,
@@ -101,6 +113,11 @@ export interface TerminalManagerEvents {
   ): void;
   /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
   platform?: "mac" | "other";
+  /**
+   * A big paste into a broadcasting tile is held: confirm it, then call `sendHeldPaste`. Without
+   * this handler such a paste reaches the source tile only.
+   */
+  onBroadcastPaste?(id: string, data: string, tiles: number): void;
 }
 
 const ACTIVITY_THROTTLE_MS = 300;
@@ -139,6 +156,9 @@ interface Managed {
   links: TerminalLinks | null;
   /** Rebuilt on a running PTY: a full-screen program is nudged to redraw once it is shown. */
   adopted: boolean;
+  /** The input event in progress (a key, a paste), claimed by the data chunk it produces. */
+  origin: InputOrigin;
+  originTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -171,6 +191,8 @@ export class TerminalManager {
   #font: TerminalFontOptions = { ...DEFAULT_TERMINAL_FONT };
   #unwatchFonts: (() => void) | null = null;
   #theme: ITheme = { ...themeById(DEFAULT_THEME_ID).terminal };
+  /** The broadcast members (two or more), or `null`: each tile gets its own input only. */
+  #broadcast: ReadonlySet<string> | null = null;
 
   constructor(backend: PtyBackend, events: TerminalManagerEvents) {
     this.#backend = backend;
@@ -337,6 +359,8 @@ export class TerminalManager {
       infoCwd: undefined,
       links: null,
       adopted: false,
+      origin: null,
+      originTimer: undefined,
     };
     this.#terms.set(id, m);
     // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. An SSH tile's is remote (where
@@ -358,8 +382,9 @@ export class TerminalManager {
       // otherwise drop: send what the binding means, like every native app does.
       const bound = keyBindingData(this.#keyBindings, e);
       if (bound !== null) {
+        m.origin = null;
         if (e.type === "keydown" && m.ptyId && !m.exited) {
-          void this.#backend.write(m.ptyId, bound).catch(() => {});
+          this.#input(m, bound, "key");
         }
         e.preventDefault();
         return false;
@@ -367,12 +392,16 @@ export class TerminalManager {
       return true;
     });
     term.onData((data) => {
+      // One input event, one chunk: a reply xterm sends while handling it (a synchronous echo
+      // that asked for the cursor position) finds the mark already taken.
+      const origin = m.origin;
+      m.origin = null;
       if (m.exited) {
         const enter = data === "\r" || data === "\n";
         if (enter && restartsOnEnter(m.profile)) void this.restart(id);
         return;
       }
-      if (m.ptyId) void this.#backend.write(m.ptyId, data).catch(() => {});
+      this.#input(m, data, origin);
     });
     term.onBinary((data) => {
       // Legacy mouse reports: one byte per char, so they must not be UTF-8 encoded.
@@ -391,7 +420,10 @@ export class TerminalManager {
     m.host = host;
     if (!m.term.element) {
       m.term.open(host);
-      if (m.term.element) m.links?.attach(m.term.element);
+      if (m.term.element) {
+        m.links?.attach(m.term.element);
+        this.#watchInput(m, m.term.element);
+      }
       this.#tryWebgl(m);
     }
     const before = { cols: m.term.cols, rows: m.term.rows };
@@ -452,6 +484,107 @@ export class TerminalManager {
     const pty = m.ptyId;
     void this.#backend.resize(pty, cols, Math.max(1, rows - 1))
       .then(() => this.#backend.resize(pty, cols, rows)).catch(() => {});
+  }
+
+  /**
+   * Mark the user's input events on the terminal's element, in the capture phase (before xterm's
+   * own listeners turn them into data). A mark lasts until the chunk claims it or the task ends.
+   * xterm sends an IME composition's text from a timeout of its own, so that mark outlives one
+   * more task.
+   */
+  #watchInput(m: Managed, el: HTMLElement): void {
+    const mark = (origin: InputOrigin, hops: number) => {
+      m.origin = origin;
+      if (m.originTimer !== undefined) clearTimeout(m.originTimer);
+      const clear = () => {
+        m.origin = null;
+        m.originTimer = undefined;
+      };
+      m.originTimer = setTimeout(
+        hops > 1 ? () => (m.originTimer = setTimeout(clear, 0)) : clear,
+        0,
+      );
+    };
+    for (const type of ["keydown", "keypress", "input"]) {
+      el.addEventListener(type, () => mark("key", 1), true);
+    }
+    el.addEventListener("compositionend", () => mark("key", 2), true);
+    el.addEventListener("paste", () => mark("paste", 1), true);
+  }
+
+  /**
+   * The user's input `data` in terminal `m`: to its PTY, and, when `m` broadcasts, to the other
+   * members too (a big paste is held for confirmation instead).
+   */
+  #input(m: Managed, data: string, origin: InputOrigin): void {
+    const others = this.#othersFor(m.id, data, origin);
+    if (
+      others.length > 0 && origin === "paste" && pasteNeedsConfirm(data) &&
+      this.#events.onBroadcastPaste
+    ) {
+      this.#events.onBroadcastPaste(m.id, data, others.length + 1);
+      return;
+    }
+    this.#send(m, others, data, origin);
+  }
+
+  /** The other members a chunk from `id` goes to (none unless `id` broadcasts). */
+  #othersFor(id: string, data: string, origin: InputOrigin): Managed[] {
+    return broadcastTargets(
+      id,
+      data,
+      origin,
+      this.#broadcast,
+      (x) => this.#writable(x) !== undefined,
+    ).map((x) => this.#writable(x)!);
+  }
+
+  /** Write `data` to `m` and to `others` (a paste rewrapped for each one's bracketed mode). */
+  #send(m: Managed, others: Managed[], data: string, origin: InputOrigin) {
+    this.#write(m, data);
+    for (const t of others) {
+      this.#write(
+        t,
+        origin === "paste"
+          ? pasteFor(data, t.term.modes.bracketedPasteMode)
+          : data,
+      );
+    }
+  }
+
+  /** Terminal `id` when it has a running PTY to write to. */
+  #writable(id: string): Managed | undefined {
+    const t = this.#terms.get(id);
+    return t && !t.disposed && !t.exited && t.ptyId ? t : undefined;
+  }
+
+  #write(m: Managed, data: string): void {
+    if (m.ptyId && !m.exited) {
+      void this.#backend.write(m.ptyId, data).catch(() => {});
+    }
+  }
+
+  /**
+   * Broadcast to these tiles (two or more; fewer, or `null`, turns it off). Typing in a member
+   * reaches every member; typing anywhere else reaches that tile alone.
+   */
+  setBroadcast(members: ReadonlySet<string> | null): void {
+    this.#broadcast = members && members.size >= 2 ? new Set(members) : null;
+  }
+
+  /**
+   * Send a paste held by `onBroadcastPaste`: to `id` alone, or to every member as they are now
+   * (when `id` is still one of them).
+   */
+  sendHeldPaste(id: string, data: string, toAll: boolean): void {
+    const m = this.#writable(id);
+    if (!m) return;
+    this.#send(
+      m,
+      toAll ? this.#othersFor(id, data, "paste") : [],
+      data,
+      "paste",
+    );
   }
 
   /** Clickable links for `m` (lib/terminal-links.ts): where its paths point, and what a click does. */
@@ -775,6 +908,7 @@ export class TerminalManager {
     m.disposed = true;
     this.#terms.delete(id);
     if (m.fitTimer !== undefined) clearTimeout(m.fitTimer);
+    if (m.originTimer !== undefined) clearTimeout(m.originTimer);
     for (const u of m.unsubs.splice(0)) u();
     m.links?.dispose();
     if (m.ptyId && !keepPty) void this.#backend.kill(m.ptyId).catch(() => {});

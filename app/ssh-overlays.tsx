@@ -288,25 +288,54 @@ function TransferRow(props: {
 export function SshHeadActions(props: {
   entry: TerminalEntry;
   onDownload(): void;
+  onForwards(): void;
 }) {
   if (props.entry.exited) return null;
+  return (
+    <>
+      <HeadAction
+        testid="tile-forwards"
+        title="Port forwards on this connection…"
+        label="Forwards…"
+        path="M2.5 5.5h9M9 3l2.5 2.5L9 8M13.5 10.5h-9M7 8l-2.5 2.5L7 13"
+        onClick={props.onForwards}
+      />
+      <HeadAction
+        testid="tile-download"
+        title="Download a file from this host…"
+        label="Download…"
+        path="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"
+        onClick={props.onDownload}
+      />
+    </>
+  );
+}
+
+function HeadAction(props: {
+  testid: string;
+  title: string;
+  label: string;
+  /** The icon's stroke. */
+  path: string;
+  onClick(): void;
+}) {
   return (
     <button
       type="button"
       class="tile-action"
-      data-testid="tile-download"
-      title="Download a file from this host…"
-      aria-label="Download from this host"
+      data-testid={props.testid}
+      title={props.title}
+      aria-label={props.title.replace(/…$/, "")}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation();
-        props.onDownload();
+        props.onClick();
       }}
     >
       <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
         <path
-          d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"
+          d={props.path}
           stroke="currentColor"
           stroke-width="1.5"
           stroke-linecap="round"
@@ -314,7 +343,7 @@ export function SshHeadActions(props: {
           fill="none"
         />
       </svg>
-      <span>Download…</span>
+      <span>{props.label}</span>
     </button>
   );
 }

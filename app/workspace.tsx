@@ -6,6 +6,8 @@
 // hub's tiles (the agent badges) in `useHub`; the companion (Loopy, in a corner of the tile area:
 // `ask_user` questions, `qutty-hook say`, the chat with its brain) in `CompanionOverlay`, its
 // settings and commands in `useCompanion`. With the companion Off, `AskDialog` asks instead.
+// Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the tiles' checkboxes; an
+// SSH tile's port forwards open in `ForwardsDialog`.
 //
 // Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
 // terminals that kept running while no window showed it, or started with its first shell, and the
@@ -68,6 +70,9 @@ import {
 import { ConnectionsDialog } from "./connections-dialog.tsx";
 import { RemoteBrowser } from "./remote-browser.tsx";
 import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
+import { ForwardsDialog } from "./forwards-panel.tsx";
+import { useBroadcast } from "./use-broadcast.ts";
+import { BroadcastBanner, BroadcastCheck } from "./broadcast-banner.tsx";
 import { useSsh } from "./use-ssh.ts";
 import { useLinks } from "./use-links.ts";
 import { LinkMenu } from "./link-menu.tsx";
@@ -127,6 +132,8 @@ function WorkspaceView() {
   const [platform, setPlatform] = useState<KeyPlatform>("mac");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The SSH tile whose port forwards are open. */
+  const [forwardsFor, setForwardsFor] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   /** Read a terminal's foreground process + cwd into its title (no-op once it is gone). */
@@ -258,7 +265,7 @@ function WorkspaceView() {
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
   const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
-    ollamaOpen;
+    ollamaOpen || forwardsFor !== null;
   const hubTileOf = useHub(managerRef.current, state.terminals);
 
   const closeTerminal = useCallback((id: string) => {
@@ -309,6 +316,13 @@ function WorkspaceView() {
     const id = stateRef.current.focusedId;
     if (id) managerRef.current?.focus(id);
   }, []);
+  const broadcast = useBroadcast({
+    manager: managerRef.current,
+    terminals: state.terminals,
+    refocus,
+  });
+  const broadcastRef = useRef(broadcast);
+  broadcastRef.current = broadcast;
   const voice = useVoice({
     backend: managerRef.current?.backend,
     settings: state.settings.voice,
@@ -379,6 +393,8 @@ function WorkspaceView() {
       case "openConnections":
         setSettingsOpen(false);
         return sshRef.current.toggleDialog();
+      case "toggleBroadcast":
+        return broadcastRef.current.toggle();
     }
   }, [newTerminal, closeTerminal, run]);
 
@@ -431,6 +447,8 @@ function WorkspaceView() {
       onSpawned: (id) => setTimeout(() => void pollTitle(id), 400),
       onLink: (id, hit, e, how) =>
         void linksRef.current.onLink(id, hit, e, how),
+      onBroadcastPaste: (id, data, tiles) =>
+        broadcastRef.current.hold(id, data, tiles),
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
@@ -633,6 +651,8 @@ function WorkspaceView() {
         }}
         connectionsOpen={ssh.dialog !== null}
         onConnections={ssh.toggleDialog}
+        broadcast={{ on: broadcast.on, count: broadcast.state.members.length }}
+        onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
@@ -657,8 +677,18 @@ function WorkspaceView() {
                 <SshHeadActions
                   entry={entry}
                   onDownload={() => ssh.browse(entry.id)}
+                  onForwards={() => setForwardsFor(entry.id)}
                 />
               )}
+            renderHeadLead={(entry) =>
+              broadcast.on && (
+                <BroadcastCheck
+                  checked={broadcast.members.has(entry.id)}
+                  ssh={entry.ssh !== undefined}
+                  onChange={(on) => broadcast.setChecked(entry.id, on)}
+                />
+              )}
+            broadcastIds={broadcast.on ? broadcast.members : undefined}
             renderOverlay={(entry, focused) =>
               entry.ssh && (
                 <SshTileOverlay
@@ -687,6 +717,16 @@ function WorkspaceView() {
               : ""}
             hot={hotWanted && sys.hot}
             onHotShown={onHotShown}
+          />
+        )}
+        {broadcast.on && (
+          <BroadcastBanner
+            state={broadcast.state}
+            nonSsh={broadcast.nonSsh}
+            held={broadcast.held}
+            shortcut={shortcutLabel("Mod+Shift+I", platform)}
+            onStop={broadcast.toggle}
+            onPaste={broadcast.resolvePaste}
           />
         )}
         {ready && session.booted && state.terminals.length === 0 && (
@@ -775,6 +815,16 @@ function WorkspaceView() {
           onClose={links.closeMenu}
         />
       )}
+      {manager && forwardsFor && (
+        <ForwardsFor
+          id={forwardsFor}
+          manager={manager}
+          onClose={() => {
+            setForwardsFor(null);
+            refocus();
+          }}
+        />
+      )}
       {manager && ssh.browseFor && (
         <BrowserFor
           id={ssh.browseFor}
@@ -784,6 +834,24 @@ function WorkspaceView() {
         />
       )}
     </div>
+  );
+}
+
+/** The port forwards of SSH tile `id`'s connection (nothing when `id` is not an SSH tile). */
+function ForwardsFor(props: {
+  id: string;
+  manager: TerminalManager;
+  onClose(): void;
+}) {
+  const profile = props.manager.profile(props.id);
+  if (profile?.kind !== "ssh") return null;
+  return (
+    <ForwardsDialog
+      backend={props.manager.backend}
+      target={profile.target}
+      label={profile.label}
+      onClose={props.onClose}
+    />
   );
 }
 

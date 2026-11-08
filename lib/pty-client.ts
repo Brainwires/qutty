@@ -52,8 +52,11 @@ import type {
 import type {
   SshCommand,
   SshDownloadArgs,
+  SshForwardArgs,
+  SshForwardStatus,
   SshHostsResult,
   SshListArgs,
+  SshSaveForwardsArgs,
   SshTransferEvent,
   SshTransferStarted,
   SshUploadArgs,
@@ -83,8 +86,11 @@ import { quitApp, setTitleBarStyle } from "denext/desktop/window";
 export type {
   SshCommand,
   SshDownloadArgs,
+  SshForwardArgs,
+  SshForwardStatus,
   SshHostsResult,
   SshListArgs,
+  SshSaveForwardsArgs,
   SshTransferEvent,
   SshTransferStarted,
   SshUploadArgs,
@@ -234,6 +240,14 @@ export interface PtyBackend {
   sshList(args: SshListArgs): Promise<SshListing>;
   /** Stop a transfer; its final event has `error: "cancelled"`. */
   sshCancel(transferId: string): Promise<void>;
+  /** Whether the target's shared connection is up, and the forwards added on it (`ssh -O check`). */
+  sshForwards(target: SshTarget): Promise<SshForwardStatus>;
+  /** Add a port forward to the live connection (`ssh -O forward`); rejects with ssh's error. */
+  sshForwardAdd(args: SshForwardArgs): Promise<SshForwardStatus>;
+  /** Stop a port forward (`ssh -O cancel`). */
+  sshForwardCancel(args: SshForwardArgs): Promise<SshForwardStatus>;
+  /** Replace a Qutty host's favourite forwards (its `# qutty:` metadata in qutty.conf). */
+  sshSaveForwards(args: SshSaveForwardsArgs): Promise<SshHost>;
   /** Progress and completion of every transfer. Subscribe before starting one. */
   onTransfer(cb: (event: SshTransferEvent) => void): () => void;
 
@@ -641,6 +655,18 @@ export function createDesktopBackend(
     async sshCancel(transferId) {
       await ssh.sshCancel({ transferId });
     },
+    async sshForwards(target) {
+      return await ssh.sshForwards({ target });
+    },
+    async sshForwardAdd(args) {
+      return await ssh.sshForwardAdd(args);
+    },
+    async sshForwardCancel(args) {
+      return await ssh.sshForwardCancel(args);
+    },
+    async sshSaveForwards(args) {
+      return await ssh.sshSaveForwards(args);
+    },
     onTransfer: (cb) => {
       listenTransfers();
       return transfers.on(cb);
@@ -744,12 +770,20 @@ const DEMO_HELP = [
   }load${RESET} <cpu> [gpu]  pin the demo's CPU / GPU figures (\`load off\`)`,
   `  ${
     fg(81)
+  }query${RESET}      ask the terminal for its cursor and attributes`,
+  `  ${fg(81)}replies${RESET}    how many answers to queries arrived`,
+  `  ${
+    fg(81)
   }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
   `  ${fg(81)}pwd${RESET}, ${fg(81)}cd${RESET}, ${fg(81)}whoami${RESET}, ${
     fg(81)
   }exit${RESET}`,
   "",
 ];
+
+/** xterm's answers to the demo's `query`: a cursor position report, primary device attributes. */
+// deno-lint-ignore no-control-regex
+const QUERY_REPLY = /\x1b\[\d+;\d+R|\x1b\[\?[\d;]*c/g;
 
 /** An OSC 8 hyperlink: `text` linked to `uri`. */
 const osc8 = (uri: string, text: string) =>
@@ -844,6 +878,8 @@ class DemoShell {
   /** A demo agent's busy → idle timer. */
   idleTimer: ReturnType<typeof setTimeout> | undefined;
   exited = false;
+  /** Answers to `query` received (cursor position and device attributes reports). */
+  replies = 0;
 
   constructor(
     readonly id: string,
@@ -934,6 +970,9 @@ class DemoShell {
       if (data.includes("q") || data.includes("\x03")) this.stopTop();
       return;
     }
+    // The terminal's answers to `query`, counted for `replies` (the broadcast e2e checks that a
+    // tile's answers never reach another tile).
+    this.replies += (data.match(QUERY_REPLY) ?? []).length;
     // Drop escape sequences (arrows, function keys); the demo has no history or cursor motion.
     // deno-lint-ignore no-control-regex
     const clean = data.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1bO.|\x1b./g, "");
@@ -1124,6 +1163,13 @@ class DemoShell {
         return;
       case "load":
         println(demoLoadCommand(args));
+        return;
+      case "query":
+        // Cursor position (DSR 6) and primary device attributes: xterm answers both.
+        this.out(`${ESC}[6n${ESC}[c`);
+        return;
+      case "replies":
+        println(`replies: ${this.replies}`);
         return;
       case "qutty-hook":
         if (args[0] !== "say") {
@@ -1364,6 +1410,10 @@ export function createDemoBackend(): PtyBackend {
     sshDownload: (args) => ssh.sshDownload(args),
     sshList: (args) => ssh.sshList(args),
     sshCancel: (transferId) => ssh.sshCancel(transferId),
+    sshForwards: (target) => ssh.sshForwards(target),
+    sshForwardAdd: (args) => ssh.sshForwardAdd(args),
+    sshForwardCancel: (args) => ssh.sshForwardCancel(args),
+    sshSaveForwards: (args) => ssh.sshSaveForwards(args),
     onTransfer: (cb) => transfers.on(cb),
     hubSnapshot: () => hub.snapshot(),
     hubAnswer: (id, action) => hub.answer(id, action),
