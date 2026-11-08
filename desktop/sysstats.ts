@@ -168,7 +168,11 @@ export class MachHost {
   #levelSize = new BigUint64Array(1);
   #levelName = cstr("kern.memorystatus_level");
 
-  /** `host_statistics(HOST_CPU_LOAD_INFO)`: the user, system, idle and nice ticks. */
+  /**
+   * `host_statistics(HOST_CPU_LOAD_INFO)`: the user, system, idle and nice ticks. The kernel
+   * folds the CPUs' ticks into these in bursts (up to about a second apart), so two readings
+   * close together may be equal (a `null` share, which the moving average skips).
+   */
   ticks(): CpuTicks | null {
     this.#count[0] = CPU_STATE_MAX;
     const kr = this.#lib.symbols.host_statistics(

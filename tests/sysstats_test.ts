@@ -290,6 +290,12 @@ Deno.test("sysstats: the demo's load pins the figures; load off lets them drift"
 
 // --- the real readers (macOS) ------------------------------------------------------------------
 
+/** Mach's `natural_t` tick counters wrap at 2^32. */
+const MACH_WRAP = 2 ** 32;
+/** `b` is at or ahead of `a` on a wrapping counter (a step back would be a huge forward one). */
+const forward = (a: number, b: number) =>
+  (b - a + MACH_WRAP) % MACH_WRAP < MACH_WRAP / 2;
+
 Deno.test({
   name:
     "sysstats: Mach's CPU ticks, the memory level and IOKit's GPU, through FFI",
@@ -299,12 +305,36 @@ Deno.test({
     try {
       const a = host.ticks();
       assert(a && a.total > 0 && a.busy > 0 && a.busy <= a.total);
-      // Burn a little CPU so the counters move.
-      const until = performance.now() + 60;
-      while (performance.now() < until) Math.sqrt(Math.random());
-      await new Promise((r) => setTimeout(r, 40));
-      const cpu = cpuPercent(a, host.ticks()!, 2 ** 32);
-      assert(cpu !== null && cpu >= 0 && cpu <= 100, `CPU ${cpu}`);
+      // The kernel folds each CPU's ticks into these totals in bursts (on Apple silicon up to a
+      // second apart, longer under load), so two readings a moment apart may well be equal: the
+      // share is then null, never 0 or junk. Read until the counters move (the app samples every
+      // 4 s or more), checking that every reading only goes forward.
+      const reader = new CpuReader(() => host.ticks(), MACH_WRAP);
+      assertEquals(await reader.read(), null, "the first reading has no share");
+      let prev = a;
+      let cpu: number | null = null;
+      const deadline = performance.now() + 10_000;
+      while (cpu === null && performance.now() < deadline) {
+        // Burn a little CPU so the counters move.
+        const until = performance.now() + 20;
+        while (performance.now() < until) Math.sqrt(Math.random());
+        await new Promise((r) => setTimeout(r, 50));
+        const t = host.ticks();
+        assert(t, "host_statistics failed");
+        assert(
+          forward(prev.total, t.total) && forward(prev.busy, t.busy),
+          `the ticks went back: ${JSON.stringify([prev, t])}`,
+        );
+        const share = cpuPercent(prev, t, MACH_WRAP);
+        if (t.total === prev.total) assertEquals(share, null);
+        else assert(share !== null && share >= 0 && share <= 100, `${share}`);
+        prev = t;
+        cpu = await reader.read();
+        assert(cpu === null || (cpu >= 0 && cpu <= 100), `CPU ${cpu}`);
+      }
+      assert(cpu !== null, "the CPU ticks never moved in 10 s");
+      const overall = cpuPercent(a, prev, MACH_WRAP);
+      assert(overall !== null && overall >= 0 && overall <= 100);
       const mem = host.memPressure();
       assert(mem !== null && mem >= 0 && mem <= 100, `memory ${mem}`);
     } finally {
