@@ -595,19 +595,43 @@ Deno.test("abortable: passes the result through; a CancelledError on abort", asy
   );
 });
 
-Deno.test("Ollama: an abort rejects at once (the provider takes no signal)", async () => {
-  let release: () => void = () => {};
-  const held = new Promise<void>((r) => release = r);
+/**
+ * A reply still being generated: its headers go out at once, then a space every 20 ms;
+ * `onClosed` runs when the client closes the connection. It gives up after 3 s (so a client
+ * that never closes fails the test instead of hanging it).
+ */
+function generatingForever(onClosed: () => void): Response {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      const began = Date.now();
+      timer = setInterval(() => {
+        if (Date.now() - began < 3000) c.enqueue(new TextEncoder().encode(" "));
+        else {
+          clearInterval(timer);
+          c.close();
+        }
+      }, 20);
+    },
+    cancel() {
+      clearInterval(timer);
+      onClosed();
+    },
+  });
+  return new Response(body, {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+Deno.test("Ollama: an abort rejects at once and closes the request (Ollama stops generating)", async () => {
+  // A fake Ollama (no model): it holds the request until the client goes away.
+  let closed: () => void = () => {};
+  const gone = new Promise<void>((r) => closed = r);
   const server = Deno.serve(
     { hostname: "127.0.0.1", port: 0, onListen: () => {} },
     async (req) => {
       await req.json();
-      await held;
-      return Response.json({
-        model: "m",
-        message: { role: "assistant", content: "late" },
-        done: true,
-      });
+      return generatingForever(closed);
     },
   );
   try {
@@ -619,8 +643,19 @@ Deno.test("Ollama: an abort rejects at once (the provider takes no signal)", asy
     const p = brain.complete("SYS", "PROMPT", c.signal);
     setTimeout(() => c.abort(), 50);
     await assertRejects(() => p, CancelledError);
+    // The server saw the connection close: generation is cut off, not left running.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      gone,
+      new Promise((_, reject) =>
+        timer = setTimeout(
+          () => reject(new Error("the request was not closed")),
+          2000,
+        )
+      ),
+    ]);
+    clearTimeout(timer);
   } finally {
-    release();
     await server.shutdown();
   }
 });

@@ -1,7 +1,7 @@
 /**
  * The companion's second brain: `@rullama/inference`'s `runAgentLoop` over a `@rullama/provider`
- * chat provider (a local Ollama model, desktop/companion-brain.ts), with the hub's tools as the
- * loop's tools.
+ * chat provider (a local Ollama model through its native `/api/chat`, desktop/companion-brain.ts),
+ * with the hub's tools as the loop's tools.
  *
  * The tools are called in process, as the companion: {@linkcode CompanionTools} is the hub's own
  * MCP handler (lib/hub/tools.ts `companionToolbox`) with a companion request context, so a call
@@ -12,6 +12,10 @@
  * {@linkcode MAX_MESSAGES} messages, at a user turn so a tool call never loses its result). The
  * provider is not streamed (a tool round needs the whole reply anyway), so each assistant
  * message's text arrives in one `text` event.
+ *
+ * Stopping aborts the turn's signal, which goes to the provider as `ChatOptions.signal`: the
+ * request's connection is closed, so Ollama stops generating. The call is also raced against the
+ * signal, so a provider that ignores it still ends the turn at once.
  *
  * Pure apart from the injected provider and tools.
  *
@@ -127,7 +131,7 @@ export function trimConversation(
 
 const aborted = () => new Error("stopped");
 
-/** Settle with `p`, or reject as soon as `signal` aborts (the provider's fetch takes no signal). */
+/** Settle with `p`, or reject as soon as `signal` aborts (whether or not the provider honours it). */
 function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(aborted());
   return new Promise((resolve, reject) => {
@@ -217,6 +221,7 @@ export class InferenceBrain implements BrainAdapter {
       temperature: 0.2,
       max_tokens: 1024,
       system: this.#opts.systemPrompt ?? COMPANION_SYSTEM_PROMPT,
+      signal,
     });
     const add = (m: Message) => this.#messages.push(m);
     return {

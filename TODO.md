@@ -98,22 +98,23 @@
   - Shell agent, open: bash 4.0–5.0 draws the request line once more than 5.1+
     may (only 5.1+ clears it before a `bind -x` command; untested there);
     macOS's bash 3.2 gets the proposal in the history, not the buffer (no
-    `READLINE_LINE`); Ctrl-C cancels a request hub-side, but an Ollama request
-    runs on in Ollama (`OllamaChatProvider.chat` takes no signal; its answer is
-    dropped); the prompt's new-message check over TCP (sandbox) has no connect
-    timeout. Danger flags are Rullama's `classifyCommand` plus four Qutty
-    warnings it leaves out on purpose (any `rm -r`/`-f`, `--force-with-lease`,
-    `checkout`/`restore .`, `chmod`/`chown -R`); those four are regexes over the
-    command with quoted data dropped, not a shell parse.
+    `READLINE_LINE`); the prompt's new-message check over TCP (sandbox) has no
+    connect timeout. Done: Ctrl-C cancels a request hub-side, and an Ollama
+    request is closed too (`ChatOptions.signal`, @rullama/provider 0.12.3), so
+    Ollama stops generating. Danger flags are Rullama's `classifyCommand` plus
+    four Qutty warnings it leaves out on purpose (any `rm -r`/`-f`,
+    `--force-with-lease`, `checkout`/`restore .`, `chmod`/`chown -R`); those
+    four are regexes over the command with quoted data dropped, not a shell
+    parse.
   - Done: the second brain, a local Ollama model
     (`lib/companion/inference-brain.ts`, `runAgentLoop` over
-    `@rullama/provider`'s Chat Completions provider on Ollama's `/v1`), its
+    `@rullama/provider`'s native `OllamaChatProvider` on Ollama's `/api/chat`,
+    0.12.3: native `tool_calls` and tool results, and `ChatOptions.signal`, so
+    stopping the companion closes the request and Ollama stops generating), its
     tools the hub's handler called in process as the companion
-    (`companionToolbox`); Settings → Companion → Brain runs on. Upstream gaps:
-    `OllamaChatProvider` (0.12.2) drops tool calls and tool results, and no
-    provider takes an `AbortSignal` (a stopped turn's request runs on and is
-    dropped). An API key brain waits on Denext: `secureStore` still bakes
-    `--allow-run=security` and `--allow-sys` (4.13.1).
+    (`companionToolbox`); Settings → Companion → Brain runs on. An API key brain
+    waits on Denext: `secureStore` still bakes `--allow-run=security` and
+    `--allow-sys` (4.13.1).
   - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
     setting) and the mic level driving its listening pulse (`level` events from
     desktop/voice.ts, ~20 Hz while capturing).

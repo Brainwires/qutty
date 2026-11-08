@@ -12,8 +12,8 @@
 // `auto` (the default) picks Claude Code when it is installed, else a running Ollama.
 //
 // Cancelling (Ctrl-C in `qutty-agent`, an aborted signal): Claude Code's hidden PTY is killed;
-// Ollama's request cannot be stopped (`OllamaChatProvider.chat` takes no signal), so the call
-// rejects at once and the late answer is dropped.
+// Ollama's request gets the signal as `ChatOptions.signal`, so its connection is closed and
+// Ollama stops generating (the call also rejects at once, with a `CancelledError`).
 
 import { ChatOptions, Message } from "@rullama/core";
 import { OllamaChatProvider } from "@rullama/provider";
@@ -179,12 +179,13 @@ export class OllamaShellBrain implements ShellBrain {
     prompt: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    // `chat` takes no signal: its fetch runs on, and its answer is dropped.
+    // The signal closes the request (Ollama stops generating); `abortable` makes the rejection a
+    // `CancelledError` at once.
     const response = await abortable(
       this.#provider.chat(
         [Message.user(prompt)],
         undefined,
-        new ChatOptions({ temperature: 0.2, max_tokens: 1024, system }),
+        new ChatOptions({ temperature: 0.2, max_tokens: 1024, system, signal }),
       ),
       signal,
     );

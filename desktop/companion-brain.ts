@@ -12,13 +12,12 @@
 // one event. One session lives across turns until it exits or is stopped.
 //
 // The second brain, a local Ollama model (`ollamaCompanionBrain`): lib/companion/inference-brain.ts
-// over `@rullama/provider`'s OpenAI-compatible provider pointed at Ollama's `/v1` endpoint on
-// 127.0.0.1:11434 (the app's one `netConnect` permission). Not `OllamaChatProvider`: in
-// @rullama/provider 0.12.2 it sends no tool results back and reads no tool calls from the reply,
-// so a model could never use a tool through it (an upstream gap); the Chat Completions provider
-// does the whole tool round trip, and Ollama serves that API itself.
+// over `@rullama/provider`'s `OllamaChatProvider`, Ollama's native `/api/chat` on 127.0.0.1:11434
+// (the app's one `netConnect` permission). It does the whole tool round trip (native
+// `tool_calls`, results as `role: "tool"` messages) and takes `ChatOptions.signal`, so stopping
+// the companion closes the request and Ollama stops generating.
 
-import { OpenAiChatProvider } from "@rullama/provider";
+import { OllamaChatProvider } from "@rullama/provider";
 import { PtyHost, resolveProgram } from "./pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
 import { detectOllama, OLLAMA_URL } from "./shell-agent.ts";
@@ -176,12 +175,7 @@ export function ollamaCompanionBrain(
 ): BrainAdapter {
   return new InferenceBrain({
     label: `Ollama (${model})`,
-    provider: new OpenAiChatProvider(
-      "ollama", // Ollama ignores the key (the provider sends it as a bearer token)
-      model,
-      `${baseUrl}/v1/chat/completions`,
-      "ollama",
-    ),
+    provider: new OllamaChatProvider(model, baseUrl),
     tools,
     async check() {
       const models = await detectOllama(baseUrl);
