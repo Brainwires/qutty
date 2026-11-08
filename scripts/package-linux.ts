@@ -92,12 +92,66 @@ const OS = "linux";
 async function buildBundle(
   name: string,
   arch: "x86_64" | "arm64",
+  meta: DesktopPackageMeta,
 ): Promise<string> {
-  return await buildDesktopBundle(import.meta.url, OS, {
+  const dir = await buildDesktopBundle(import.meta.url, OS, {
     target: TARGETS[arch],
     out: `dist/${name}-${LABELS[arch]}`,
     icons: ["icons/app.png", "desktop-icon.png"],
   });
+  // Qutty: the bundle's launcher (in the tarball and the AppImage) says Name=<exe>, Utility.
+  const entry = `${dir}/${meta.identifier}.desktop`;
+  const text = await Deno.readTextFile(entry).catch(() => undefined);
+  if (text !== undefined) {
+    await Deno.writeTextFile(
+      entry,
+      terminalEntry(text.replace(/^Name=.*$/m, `Name=${meta.name}`)),
+    );
+  }
+  return dir;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Qutty: a terminal's launcher. denext (4.13.1) writes `Categories=Utility;` into every
+// `.desktop` entry with no way to set it, so a launcher would not list Qutty with the terminals.
+// Retag the entries it writes.
+// ---------------------------------------------------------------------------------------------
+
+/** The freedesktop categories and search keywords of a terminal emulator. */
+const TERMINAL_KEYS = [
+  "GenericName=Terminal",
+  "Categories=System;TerminalEmulator;",
+  "Keywords=terminal;shell;console;command line;tiling;ssh;",
+];
+
+/** A `.desktop` entry with the terminal categories, keywords and generic name. */
+function terminalEntry(text: string): string {
+  const keep = text.split("\n").filter((l) =>
+    l !== "" && !/^(Categories|Keywords|GenericName)=/.test(l)
+  );
+  return [...keep, ...TERMINAL_KEYS, ""].join("\n");
+}
+
+/**
+ * Retag the `.desktop` entry inside a `.deb` (`dpkg-deb`: unpack, edit, rebuild with root
+ * ownership). Without dpkg-deb (a non-Debian host) the package keeps denext's entry.
+ */
+async function retagDeb(deb: string, meta: DesktopPackageMeta): Promise<void> {
+  if (!await desktopRequireTool("dpkg-deb", ".deb launcher retag", false)) {
+    return;
+  }
+  const root = await Deno.makeTempDir({ prefix: "qutty-deb-" });
+  try {
+    await run(["dpkg-deb", "-R", deb, root]);
+    const entry = `${root}/usr/share/applications/${meta.identifier}.desktop`;
+    await Deno.writeTextFile(
+      entry,
+      terminalEntry(await Deno.readTextFile(entry)),
+    );
+    await run(["dpkg-deb", "--root-owner-group", "-Zxz", "-b", root, deb]);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
 }
 
 /** tar.gz a bundle directory for distribution (written by denext: modes kept on any host). */
@@ -115,6 +169,7 @@ async function appImage(
   name: string,
   arch: "x86_64" | "arm64",
   dir: string,
+  meta: DesktopPackageMeta,
 ): Promise<string> {
   const appdir = `${dir}.AppDir`;
   await Deno.remove(appdir, { recursive: true }).catch(() => {});
@@ -122,9 +177,10 @@ async function appImage(
   // AppDir layout: the bundle contents + the .desktop at the root + an AppRun → exe.
   await run(["cp", "-r", `${dir}/.`, appdir]);
   const exe = `${name}-${LABELS[arch]}`;
+  // Qutty: run as the app id, as the .deb's launcher does (`env LAUFEY_APP_ID=…`).
   await Deno.writeTextFile(
     `${appdir}/AppRun`,
-    `#!/bin/sh\nHERE=$(dirname "$0")\nexec "$HERE/${exe}" "$@"\n`,
+    `#!/bin/sh\nHERE=$(dirname "$0")\nexport LAUFEY_APP_ID=${meta.identifier}\nexec "$HERE/${exe}" "$@"\n`,
   );
   await Deno.chmod(`${appdir}/AppRun`, 0o755);
   const outFile = `dist/${name}-${LABELS[arch]}.AppImage`;
@@ -154,6 +210,7 @@ async function installers(
     if (format === "tar.gz") out.push(await tarball(name, arch, dir));
     if (format === "deb" && versionOk("deb")) {
       out.push(await buildDesktopDeb({ ...pkg, out: `${base}.deb` }));
+      await retagDeb(`${base}.deb`, meta);
     }
     if (
       format === "rpm" && versionOk("rpm") &&
@@ -165,7 +222,7 @@ async function installers(
       format === "appimage" &&
       await desktopRequireTool("appimagetool", "AppImage", plan.explicit)
     ) {
-      out.push(await appImage(name, arch, dir));
+      out.push(await appImage(name, arch, dir, meta));
     }
   }
   return out;
@@ -186,7 +243,7 @@ async function main(): Promise<void> {
 
   const artifacts: string[] = [];
   for (const arch of desktopPackageArches(opts.arch)) {
-    const dir = await buildBundle(name, arch);
+    const dir = await buildBundle(name, arch, meta);
     artifacts.push(dir, ...await installers(name, arch, dir, plan, meta));
   }
 

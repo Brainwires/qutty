@@ -4,10 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/Brainwires/qutty)](https://github.com/Brainwires/qutty/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A tiling terminal for macOS. Every terminal lives in one window, and the one you
-are using gets the most space: in the cascade layout, tiles shrink the longer
-they go unused, so your working set stays big and the rest step back. Terminals
-that don't fit move to the switcher bar.
+A tiling terminal for macOS and Linux. Every terminal lives in one window, and
+the one you are using gets the most space: in the cascade layout, tiles shrink
+the longer they go unused, so your working set stays big and the rest step back.
+Terminals that don't fit move to the switcher bar.
 
 Website: <https://qutty.org>
 
@@ -27,6 +27,8 @@ Website: <https://qutty.org>
 
 ## Install
 
+### macOS
+
 With [Homebrew](https://brew.sh):
 
 ```sh
@@ -40,8 +42,37 @@ Or download the `.dmg` for your Mac from the
 for Apple Silicon, `x86_64` for Intel. Open it and drag Qutty to Applications.
 Builds are signed with a Developer ID and notarized by Apple.
 
-Qutty also runs on Linux from source (see Development); packaged Linux builds
-are planned.
+### Linux
+
+Each [release](https://github.com/Brainwires/qutty/releases/latest) has an
+AppImage, a `.deb` and a tarball for `x86_64` and `arm64`. The window is
+WebKitGTK, so the machine needs `libwebkit2gtk-4.1-0` and `libgtk-3-0` (Ubuntu
+22.04+, Debian 12+, Fedora's `webkit2gtk4.1`). The `.deb` installs them for you.
+
+Debian and Ubuntu:
+
+```sh
+sudo apt install ./Qutty-<version>-x86_64.deb   # or -arm64.deb
+qutty
+```
+
+The package puts Qutty in `/usr/lib/qutty`, links `/usr/bin/qutty` and adds a
+launcher and icon (listed with the terminal emulators).
+
+Any distribution, with the AppImage:
+
+```sh
+chmod +x Qutty-<version>-x86_64.AppImage
+./Qutty-<version>-x86_64.AppImage
+```
+
+It mounts itself with FUSE (`fusermount`, from the `fuse3` package, which most
+desktops have); without it, run it with `--appimage-extract-and-run`. The
+tarball holds the same app as a folder: unpack it and run `Qutty-x64/Qutty-x64`
+(or `Qutty-arm64/Qutty-arm64`). Each file has a `.sha256` beside it
+(`sha256sum -c Qutty-….sha256`).
+
+Qutty also runs on Linux from source (see Development).
 
 ## Development
 

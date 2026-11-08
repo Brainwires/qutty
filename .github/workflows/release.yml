@@ -1,11 +1,27 @@
 name: Release
 
 # Push a tag like v0.2.0 (matching deno.json's version) to build, sign and notarize the arm64 and
-# x86_64 apps and publish a GitHub release with their .dmg files and the CHANGELOG.md section.
+# x86_64 apps, build the Linux packages (AppImage, .deb, tarball) for x86_64 and arm64, and
+# publish a GitHub release with them, their SHA-256 files and the CHANGELOG.md section.
 # A tag with a pre-release suffix (v0.2.0-beta.1) is published as a pre-release.
+#
+# The Linux packages are best-effort: the release waits for them, but a Linux failure does not
+# hold back the macOS apps (a tag is never moved or reused, so a failed release costs a version).
+# Re-run the failed Linux job and the release job re-runs after it and adds the Linux files to
+# the published release.
+#
+# Dry runs, which build and check the Linux packages and publish nothing (no macOS build, no
+# release): a pull request that touches the Linux packaging, and workflow_dispatch.
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package-linux.ts
+      - scripts/build-node-pty-linux.sh
+      - denext.config.ts
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +32,8 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.arch }}
+    # Tags only: signing and notarization need the release secrets.
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +80,8 @@ jobs:
           security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
           # Default + first in the search list, so codesign and notarytool's keychain profile find it.
           security default-keychain -s "$KEYCHAIN"
+          # The existing keychains, one argument each (word splitting intended).
+          # shellcheck disable=SC2046
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 
           # The Developer ID G2 intermediate that issued our certificate. GitHub's images ship it;
@@ -120,9 +140,145 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
+  linux:
+    name: Build Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # GitHub's images, not the self-hosted RUNNER_LINUX_X64 pool: that pool is offline, and a
+        # release must not queue on it (the release job waits for these). The arm64 build runs
+        # natively on GitHub's Arm image; there is no self-hosted Linux arm64 pool.
+        include:
+          # runners-first: the self-hosted Linux x64 pool is offline; a tag release must not queue on it
+          - runner: ubuntu-24.04
+            arch: x86_64
+            label: x64
+            tool: x86_64
+            appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          # runners-first: there is no self-hosted Linux arm64 pool
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            label: arm64
+            tool: aarch64
+            appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+    runs-on: ${{ matrix.runner }}
+    # Tests, node-pty, the packages and their self-tests; a hang fails here, not at 6 h.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      # nodejs.org's Node for the node-pty build: a distro nodejs links pty.node to its shared
+      # libnode, which the users' machines do not have (scripts/build-node-pty-linux.sh).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Version
+        id: version
+        run: |
+          VERSION="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          if [ "${GITHUB_EVENT_NAME}" = push ] && [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match deno.json version ${VERSION}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the packaging tools and the window's runtime (for the self-test)
+        env:
+          TOOL: ${{ matrix.tool }}
+          TOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+          RUNTIME_SHA256: ${{ matrix.runtime_sha256 }}
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-0 libgtk-3-0 xvfb xauth desktop-file-utils
+          # appimagetool and the AppImage runtime it embeds, pinned by hash (by default it
+          # downloads the runtime's "continuous" build). A wrapper hands it the runtime.
+          BIN="$RUNNER_TEMP/bin"
+          mkdir -p "$BIN"
+          curl -fsSL --retry 3 -o "$BIN/appimagetool.AppImage" \
+            "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${TOOL}.AppImage"
+          curl -fsSL --retry 3 -o "$BIN/runtime" \
+            "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${TOOL}"
+          echo "${TOOL_SHA256}  $BIN/appimagetool.AppImage" | sha256sum -c -
+          echo "${RUNTIME_SHA256}  $BIN/runtime" | sha256sum -c -
+          chmod +x "$BIN/appimagetool.AppImage"
+          printf '#!/bin/sh\nexec "%s/appimagetool.AppImage" --appimage-extract-and-run --runtime-file "%s/runtime" "$@"\n' \
+            "$BIN" "$BIN" > "$BIN/appimagetool"
+          chmod +x "$BIN/appimagetool"
+          echo "$BIN" >> "$GITHUB_PATH"
+
+      # node-pty has no Linux prebuilds: compile pty.node into Deno's npm cache, where the
+      # package step embeds it.
+      - run: sh scripts/build-node-pty-linux.sh
+
+      - if: github.event_name == 'push'
+        run: deno task test
+
+      - name: Package (AppImage, .deb, tarball)
+        run: deno task desktop:package:linux --format tar.gz,deb,appimage
+
+      - name: Check the packages and run the PTY self-test from each
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -eu
+          dpkg-deb -I "dist/Qutty-${LABEL}.deb"
+          dpkg-deb --fsys-tarfile "dist/Qutty-${LABEL}.deb" \
+            | tar -xO ./usr/share/applications/org.qutty.Qutty.desktop > "$RUNNER_TEMP/entry.desktop"
+          cat "$RUNNER_TEMP/entry.desktop"
+          desktop-file-validate "$RUNNER_TEMP/entry.desktop"
+          grep -qx 'Categories=System;TerminalEmulator;' "$RUNNER_TEMP/entry.desktop"
+          sudo apt-get install -y -qq "./dist/Qutty-${LABEL}.deb"
+          # Load node-pty's addon, start a login shell, have it answer, exit 0 (desktop/pty.ts),
+          # under a throwaway HOME and a virtual display.
+          selftest() {
+            HOME="$(mktemp -d)" QUTTY_PTY_SELFTEST=1 timeout 180 xvfb-run -a "$@" 2>&1 \
+              | tee "$RUNNER_TEMP/selftest.log"
+            grep -q '^pty self-test: OK$' "$RUNNER_TEMP/selftest.log"
+          }
+          echo "::group::.deb: /usr/bin/qutty"
+          selftest qutty
+          echo "::endgroup::"
+          echo "::group::AppImage"
+          chmod +x "dist/Qutty-${LABEL}.AppImage"
+          selftest "dist/Qutty-${LABEL}.AppImage" --appimage-extract-and-run
+          echo "::endgroup::"
+
+      - name: Name the artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -eu
+          mkdir -p release
+          cp "dist/Qutty-${LABEL}.AppImage" "release/Qutty-${VERSION}-${ARCH}.AppImage"
+          cp "dist/Qutty-${LABEL}.deb" "release/Qutty-${VERSION}-${ARCH}.deb"
+          cp "dist/Qutty-${LABEL}-linux.tar.gz" "release/Qutty-${VERSION}-${ARCH}-linux.tar.gz"
+          cd release
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
+          ls -la
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: qutty-linux-${{ matrix.arch }}
+          path: release/
+          if-no-files-found: error
+          # A dry run's packages are for inspection only.
+          retention-days: ${{ github.event_name == 'push' && 90 || 7 }}
+
   release:
     name: Publish GitHub release
-    needs: build
+    needs: [build, linux]
+    # Tags only, once both macOS apps are built; Linux is best-effort (see the top).
+    if: always() && github.event_name == 'push' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -136,8 +292,17 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          LINUX: ${{ needs.linux.result }}
         run: |
           set -eu
+          if [ "$LINUX" != success ]; then
+            echo "::warning::The Linux packages failed ($LINUX); publishing the macOS apps alone. Re-run the failed Linux job to add them."
+          fi
+          # A re-run (after a failed Linux job): the release exists, so add the files to it.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            exit 0
+          fi
           VERSION="${GITHUB_REF_NAME#v}"
           # This version's CHANGELOG.md section, up to the next "## " heading.
           awk -v v="$VERSION" '

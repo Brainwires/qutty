@@ -339,3 +339,10 @@
       poll loop handed a closed fd's revents to a new connection under the same
       number (a blocking `read` on Linux), and the e2e harness waited on a
       stalled page without a bound. Fixed; every CI job has `timeout-minutes`.
+- [x] Linux packaging: the release builds an AppImage, a `.deb` and a tarball
+      for x86_64 and arm64 on GitHub's Ubuntu 24.04 images, installs each and
+      runs the PTY self-test under Xvfb. Best-effort: a Linux failure does not
+      hold back the macOS release. Pull requests that touch the packaging run
+      the same build as a dry run. Open: Denext's `.desktop` entry is always
+      `Categories=Utility;` (scripts/package-linux.ts retags it), and the
+      AppImage is not self-contained (it needs the host's WebKitGTK).

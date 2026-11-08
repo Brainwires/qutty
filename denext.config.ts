@@ -23,6 +23,14 @@ export default {
       restoreWindows: true,
       maxWindows: 16,
     },
+    // What the Linux packages say about the app (scripts/package-linux.ts; the release builds
+    // `--format tar.gz,deb,appimage`). The window is WebKitGTK (the `webview` backend): the .deb
+    // depends on libwebkit2gtk-4.1-0 and libgtk-3-0; the AppImage and the tarball need them too.
+    installers: {
+      publisher: "Brainwires",
+      description:
+        "A tiling terminal: the terminal you are using gets the most space",
+    },
     // The first window. There is no window background-colour option in the config schema; the
     // page's own CSS paints the dark background.
     // Its key is the first workspace's id, so its frame comes back too.

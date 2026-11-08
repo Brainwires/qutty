@@ -20,6 +20,15 @@
   config opens with every connection, and favourites, which Qutty hosts keep in
   their `# qutty:` metadata in `~/.ssh/qutty.conf` (never as `LocalForward`
   lines). Ports and hosts are checked strictly, and ssh's own errors are shown.
+- Linux packages. Each release has an AppImage, a `.deb` and a tarball for
+  `x86_64` and `arm64`, with SHA-256 files, next to the macOS `.dmg` files. The
+  `.deb` installs Qutty in `/usr/lib/qutty`, links `/usr/bin/qutty`, depends on
+  WebKitGTK 4.1 and GTK 3, and adds a launcher listed with the terminal
+  emulators. Every package is installed and its terminal checked (node-pty
+  loads, a shell answers) in the release run. See README → Install → Linux.
+- `scripts/build-node-pty-linux.sh` refuses a `pty.node` linked to a distro
+  Node's shared `libnode` (Ubuntu's `nodejs`), which a packaged app cannot load
+  on another machine; build it with nodejs.org's Node.
 - Clickable links. ⌘-click (Ctrl-click on Linux) opens what is under the
   pointer, which is underlined only while the modifier is held; a plain click
   still selects text or goes to the program. URLs (`http`, `https`, `file`,
