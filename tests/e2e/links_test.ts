@@ -61,6 +61,9 @@ async function printLinks(app: App): Promise<string> {
   const id = (await app.focusedId())!;
   await app.run(id, "links");
   await app.waitForText(id, /not links: 1\.2\.3/);
+  // The first tile grows into place after boot: measure cells once it is still (a resize also
+  // makes xterm drop the link under the pointer).
+  await app.settle();
   return id;
 }
 
@@ -191,8 +194,7 @@ suite("links", (test) => {
     await new Promise((r) => setTimeout(r, 300));
     assertEquals(await linkCalls(app), [], "a plain click opens nothing");
 
-    // The plain click's mousedown drops xterm's current link; hover again to find it.
-    await hover(app, id, "https://deno.com/", "https://deno.com/");
+    // ⌘-click right after the plain click, without moving the pointer.
     await modClick(app, id, "https://deno.com/");
     await hover(
       app,
@@ -215,6 +217,22 @@ suite("links", (test) => {
       { kind: "reveal", path: "/Users/demo/Downloads" },
       { kind: "open", path: "/Users/demo/notes.md" },
     ]);
+  });
+
+  test("the first ⌘-click, with no hover before it, opens the link", async (app) => {
+    const id = await printLinks(app);
+    // Straight onto the link with the modifier already held, and click at once: xterm may not
+    // have answered for the row yet.
+    const pt = await pointOf(app, id, "https://deno.com/");
+    await app.page.keyboard.down(app.mod);
+    await app.page.mouse.move(pt.x, pt.y);
+    await app.page.mouse.click(pt.x, pt.y);
+    await app.page.keyboard.up(app.mod);
+    await callCount(app, 1);
+    assertEquals(await linkCalls(app), [{
+      kind: "url",
+      url: "https://deno.com/",
+    }]);
   });
 
   test("a file with a line opens in the editor; the setting persists", async (app) => {

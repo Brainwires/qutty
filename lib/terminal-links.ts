@@ -15,6 +15,11 @@
 //    it is linked without a check, resolved against the OSC 7 directory, and offers Download.
 //
 // No key is taken: the modifier is only observed (a passive keydown/keyup listener).
+//
+// xterm.js forgets the link under the pointer when the terminal resizes (a tile growing into
+// place, a window resize), and finds it again only when the pointer moves to another cell. So
+// pressing the modifier with the pointer still asks xterm to look again (internal, guarded), and a
+// modifier-click that xterm has no link for finds the link under the pointer itself and opens it.
 
 import type { ILink, ILinkProvider, Terminal } from "./xterm.ts";
 import {
@@ -164,6 +169,30 @@ function remotePath(path: string, cwd: string | undefined): string | undefined {
 
 type Hover = { link: ILink; hit: LinkHit };
 
+/** A buffer cell: 1-based x, 1-based buffer y (xterm's link coordinates). */
+type Cell = { x: number; y: number };
+
+/** Whether `link` covers `cell` (xterm's own test). */
+function covers(link: ILink, cell: Cell, cols: number): boolean {
+  const at = (p: Cell) => p.y * cols + p.x;
+  const here = at(cell);
+  return at(link.range.start) <= here && here <= at(link.range.end);
+}
+
+/** The parts of xterm's Linkifier that `#rehover` uses (internal, so all optional). */
+interface XtermLinkifier {
+  _lastBufferCell?: unknown;
+  _handleMouseMove?: (e: MouseEvent) => void;
+}
+
+/** xterm.js internals this file reaches into, every step guarded. */
+type XtermCore = {
+  _core?: {
+    _linkProviderService?: { linkProviders?: ILinkProvider[] };
+    linkifier?: XtermLinkifier;
+  };
+};
+
 /** The links of one terminal; created with it, `attach`ed once it is opened into the DOM. */
 export class TerminalLinks {
   #term: Terminal;
@@ -171,6 +200,13 @@ export class TerminalLinks {
   #current: Hover | null = null;
   #cache = new Map<string, { at: number; value: LinkTarget | null }>();
   #disposers: (() => void)[] = [];
+  #provider: ILinkProvider;
+  /** The last pointer move over this terminal (null once it leaves). */
+  #pointer: MouseEvent | null = null;
+  /** A modifier-click xterm had no link for: where it went down and the link found there. */
+  #pending: { cell: Cell; link: Promise<ILink | undefined> } | null = null;
+  /** The last event a link was activated with (so a click opens at most once). */
+  #activated: Event | null = null;
 
   constructor(term: Terminal, host: TerminalLinksHost) {
     this.#term = term;
@@ -179,23 +215,31 @@ export class TerminalLinks {
     term.options.linkHandler = {
       allowNonHttpProtocols: true,
       activate: (event, uri) => {
+        this.#activated = event;
         if (!this.#held(event) || !isOpenableUrl(uri)) return;
         host.activate({ kind: "url", url: uri, osc8: true }, event);
       },
     };
     this.#wrapOsc8();
-    const provider = term.registerLinkProvider({
+    this.#provider = {
       provideLinks: (y, cb) => {
         this.#provide(y).then(cb, () => cb(undefined));
       },
-    });
+    };
+    const provider = term.registerLinkProvider(this.#provider);
     this.#disposers.push(() => provider.dispose());
-    const onModifier = () => this.#sync();
+    const onModifier = () => {
+      this.#sync();
+      if (modifier.held && !this.#current) this.#rehover();
+    };
     modifier.subs.add(onModifier);
     this.#disposers.push(() => modifier.subs.delete(onModifier));
   }
 
-  /** Listen for right-clicks on links (once the terminal has its element). */
+  /**
+   * Listen for right-clicks on links, and for modifier-clicks xterm has no link for (once the
+   * terminal has its element).
+   */
   attach(element: HTMLElement): void {
     const onMenu = (e: MouseEvent) => {
       const cur = this.#current;
@@ -204,10 +248,23 @@ export class TerminalLinks {
       e.stopPropagation();
       this.#host.menu(cur.hit, e);
     };
-    element.addEventListener("contextmenu", onMenu, true);
-    this.#disposers.push(() =>
-      element.removeEventListener("contextmenu", onMenu, true)
-    );
+    const listen = <K extends keyof HTMLElementEventMap>(
+      type: K,
+      fn: (e: HTMLElementEventMap[K]) => void,
+      capture = false,
+    ) => {
+      element.addEventListener(type, fn, capture);
+      this.#disposers.push(() =>
+        element.removeEventListener(type, fn, capture)
+      );
+    };
+    listen("contextmenu", onMenu, true);
+    listen("mousemove", (e) => this.#pointer = e);
+    listen("mouseleave", () => this.#pointer = null);
+    // Capture: before xterm's own mousedown, while its current link is the one under the pointer.
+    listen("mousedown", (e) => this.#modifierDown(e), true);
+    // Bubble, on the terminal's root: after xterm's mouseup (on its screen) had its chance.
+    listen("mouseup", (e) => this.#modifierUp(e));
   }
 
   /** What the pointer is over (for the e2e suite). */
@@ -227,6 +284,84 @@ export class TerminalLinks {
 
   #held(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
     return linkModifier(e, this.#host.platform);
+  }
+
+  /** A modifier-press with the pointer still: have xterm look for the link under it again. */
+  #rehover(): void {
+    const e = this.#pointer;
+    if (!e) return;
+    try {
+      const lk = (this.#term as unknown as XtermCore)._core?.linkifier;
+      if (!lk || typeof lk._handleMouseMove !== "function") return;
+      if (!("_lastBufferCell" in lk)) return;
+      // xterm only looks again when the pointer enters another cell; make this one new.
+      lk._lastBufferCell = undefined;
+      lk._handleMouseMove(e);
+    } catch {
+      /* xterm's internals moved: the link shows again once the pointer moves */
+    }
+  }
+
+  /** A modifier-mousedown on a cell xterm has no link for: look for one there ourselves. */
+  #modifierDown(e: MouseEvent): void {
+    this.#pending = null;
+    if (e.button !== 0 || !this.#held(e)) return;
+    const cell = this.#cellAt(e);
+    if (!cell) return;
+    const cur = this.#current?.link;
+    if (cur && covers(cur, cell, this.#term.cols)) return;
+    this.#pending = { cell, link: this.#linkAt(cell) };
+  }
+
+  /** The mouseup of such a click: open what was found, unless xterm opened something itself. */
+  #modifierUp(e: MouseEvent): void {
+    const p = this.#pending;
+    this.#pending = null;
+    if (!p || this.#activated === e) return;
+    const cell = this.#cellAt(e);
+    if (cell?.x !== p.cell.x || cell.y !== p.cell.y) return;
+    p.link.then((link) => {
+      if (link && this.#activated !== e) link.activate(e, link.text);
+    });
+  }
+
+  /** The buffer cell under a mouse event, from the screen's size in cells. */
+  #cellAt(e: MouseEvent): Cell | undefined {
+    const term = this.#term;
+    const screen = term.element?.querySelector(".xterm-screen");
+    const r = screen?.getBoundingClientRect();
+    if (!r || r.width <= 0 || r.height <= 0) return undefined;
+    const col = Math.floor((e.clientX - r.left) / (r.width / term.cols));
+    const row = Math.floor((e.clientY - r.top) / (r.height / term.rows));
+    if (col < 0 || col >= term.cols || row < 0 || row >= term.rows) {
+      return undefined;
+    }
+    return { x: col + 1, y: row + 1 + term.buffer.active.viewportY };
+  }
+
+  /** The link at `cell`, asking the providers in xterm's order (the first with one wins). */
+  async #linkAt(cell: Cell): Promise<ILink | undefined> {
+    const providers = this.#providers();
+    for (const p of providers) {
+      const links = await new Promise<ILink[] | undefined>((resolve) =>
+        p.provideLinks(cell.y, resolve)
+      );
+      const link = links?.find((l) => covers(l, cell, this.#term.cols));
+      if (link) return link;
+    }
+    return undefined;
+  }
+
+  /** xterm's link providers (OSC 8 first), or just ours if its internals moved. */
+  #providers(): ILinkProvider[] {
+    try {
+      const list = (this.#term as unknown as XtermCore)._core
+        ?._linkProviderService?.linkProviders;
+      if (Array.isArray(list) && list.includes(this.#provider)) return list;
+    } catch {
+      /* fall through */
+    }
+    return [this.#provider];
   }
 
   /** Show the hovered link as a link exactly while the modifier is held. */
@@ -249,7 +384,10 @@ export class TerminalLinks {
       range,
       text,
       decorations: { underline: modifier.held, pointerCursor: modifier.held },
-      activate: (e) => activate(e),
+      activate: (e) => {
+        this.#activated = e;
+        activate(e);
+      },
       hover: (e, t) => {
         this.#current = { link, hit };
         // xterm read the decorations when the pointer arrived; they may be stale.
@@ -270,9 +408,7 @@ export class TerminalLinks {
    */
   #wrapOsc8(): void {
     try {
-      const core = (this.#term as unknown as {
-        _core?: { _linkProviderService?: { linkProviders?: ILinkProvider[] } };
-      })._core;
+      const core = (this.#term as unknown as XtermCore)._core;
       const osc = core?._linkProviderService?.linkProviders?.[0];
       if (!osc || typeof osc.provideLinks !== "function") return;
       const provide = osc.provideLinks.bind(osc);
