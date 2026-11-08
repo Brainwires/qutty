@@ -360,7 +360,8 @@ suite("loopy reactions", (test) => {
     await waitMood(app, "sleepy", 3000);
     await pause(900);
     await shot(app, "sleepy");
-    await setClock(app, null);
+    // Daytime (the real clock may be at night where the suite runs).
+    await setClock(app, tomorrowAt(14));
     await waitMood(app, "neutral", 3000);
     await job(app, shell, "1.2 0 cargo test");
     await waitMood(app, "success");

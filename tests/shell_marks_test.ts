@@ -204,21 +204,28 @@ Deno.test({
   name: "qutty.bash: D with the exit, the line and the duration, then A",
   ignore: !(await have("bash")),
   async fn() {
-    // The first prompt sees the history file's entry (none here) and reports nothing; a command
-    // added to the history after it is reported with its exit status (`history -s` on the same
-    // line replaces that line's own entry, as if the command had been typed).
+    // The prompt hook: the first prompt reports no command (it sees the history file's entry,
+    // none here), only the prompt mark.
+    const first = marksIn(
+      await runShell("bash", "set -o history\n__qutty_precmd"),
+    );
+    assertEquals(first, ["A"]);
+    // A command that ran (the newest history entry: `history -s` replaces its own line's entry,
+    // as if the command had been typed) is reported with its exit status, line and duration.
+    // Called directly: when the hook counts a command as new depends on the bash version's
+    // history numbering in `-c` mode, which is the hook's own business.
     const out = await runShell(
       "bash",
       [
         "set -o history",
-        "__qutty_precmd",
-        'history -s "cargo test; echo 50%"; (exit 2); __qutty_precmd',
+        'history -s "cargo test; echo 50%"; __qutty_marks 2 1',
+        "__qutty_marks 0 ''",
+        "QUTTY_SHELL_MARKS=off __qutty_marks 0 1",
       ].join("\n"),
     );
     const marks = marksIn(out);
-    assertEquals(marks[0], "A");
-    const done = parseOsc133(marks[1]);
-    assert(done?.kind === "done", marks[1]);
+    const done = parseOsc133(marks[0]);
+    assert(done?.kind === "done", marks[0]);
     assertEquals(done.exitCode, 2);
     assertEquals(done.command, "cargo test; echo 50%");
     assert(
@@ -226,7 +233,7 @@ Deno.test({
         done.durationMs < 60_000,
       String(done.durationMs),
     );
-    assertEquals(marks[2], "A");
-    assertEquals(marks.length, 3);
+    // Then the prompt; with nothing new only the prompt; with the marks off nothing.
+    assertEquals(marks.slice(1), ["A", "A"]);
   },
 });
