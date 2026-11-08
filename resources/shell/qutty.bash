@@ -81,21 +81,22 @@ __qutty_notify() {
   __qutty_unread=$n
 }
 
-# The OSC 133 marks for the command that just ended (exit $1, history entry $2) and the prompt.
+# The OSC 133 marks for the command that just ended (exit $1, its line $2; none when $2 is
+# empty) and the prompt. The duration comes from the history entry's timestamp, left out when
+# the entry has none.
 __qutty_marks() {
   [ "${QUTTY_SHELL_MARKS-}" != off ] || return 0
-  local entry when="" now line re='^ *[0-9]+[*]? +([0-9]+) (.*)$'
-  if [ -n "$2" ]; then
+  local entry now line=$2 took="" re='^ *[0-9]+[*]? +([0-9]+) '
+  if [ -n "$line" ]; then
     entry=$(HISTTIMEFORMAT='%s ' builtin history 1)
     if [[ $entry =~ $re ]]; then
-      when=${BASH_REMATCH[1]}
-      line=${BASH_REMATCH[2]}
       now=${EPOCHSECONDS:-$(date +%s)}
-      line=${line//%/%25}
-      line=${line//;/%3B}
-      line=${line//[[:cntrl:]]/ }
-      printf '\033]133;D;%s;cmdline_url=%s;duration=%s\007' "$1" "$line" "$((now - when))"
+      took=";duration=$((now - BASH_REMATCH[1]))"
     fi
+    line=${line//%/%25}
+    line=${line//;/%3B}
+    line=${line//[[:cntrl:]]/ }
+    printf '\033]133;D;%s;cmdline_url=%s%s\007' "$1" "$line" "$took"
   fi
   printf '\033]133;A\007'
 }
@@ -115,7 +116,7 @@ __qutty_precmd() {
     line=${line//$'\t'/ }
     __qutty_history+=("$exit_status"$'\t'"$PWD"$'\t'"$line")
     [ "${#__qutty_history[@]}" -le 10 ] || __qutty_history=("${__qutty_history[@]:1}")
-    ran=1
+    ran=$line
   fi
   __qutty_marks "$exit_status" "$ran"
   __qutty_seen_prompt=1

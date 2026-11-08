@@ -200,40 +200,74 @@ Deno.test({
   },
 });
 
+/** Feed `lines` to an interactive bash with the plugin as its rc file, as if typed. */
+async function typedBash(
+  lines: string[],
+  env: Record<string, string> = {},
+): Promise<string> {
+  const plugin = new URL("resources/shell/qutty.bash", ROOT).pathname;
+  const child = new Deno.Command("bash", {
+    args: ["--noprofile", "--rcfile", plugin, "-i"],
+    env: {
+      QUTTY_SOCK: "/nonexistent/qutty.sock",
+      QUTTY_AGENT_NOTIFY_EVERY: "off",
+      QUTTY_AGENT_BIN: "/usr/bin/false",
+      HOME: Deno.makeTempDirSync(),
+      PATH: "/usr/bin:/bin",
+      ...env,
+    },
+    clearEnv: true,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const w = child.stdin.getWriter();
+  await w.write(new TextEncoder().encode(lines.join("\n") + "\n"));
+  await w.close();
+  const out = await child.output();
+  return new TextDecoder().decode(out.stdout);
+}
+
 Deno.test({
   name: "qutty.bash: D with the exit, the line and the duration, then A",
   ignore: !(await have("bash")),
   async fn() {
-    // The prompt hook: the first prompt reports no command (it sees the history file's entry,
-    // none here), only the prompt mark.
-    const first = marksIn(
-      await runShell("bash", "set -o history\n__qutty_precmd"),
-    );
-    assertEquals(first, ["A"]);
-    // A command that ran (the newest history entry: `history -s` replaces its own line's entry,
-    // as if the command had been typed) is reported with its exit status, line and duration.
-    // Called directly: when the hook counts a command as new depends on the bash version's
-    // history numbering in `-c` mode, which is the hook's own business.
-    const out = await runShell(
-      "bash",
-      [
-        "set -o history",
-        'history -s "cargo test; echo 50%"; __qutty_marks 2 1',
-        "__qutty_marks 0 ''",
-        "QUTTY_SHELL_MARKS=off __qutty_marks 0 1",
-      ].join("\n"),
-    );
+    const out = await typedBash([
+      "cargo() { return 2; }",
+      "cargo test 50%",
+      "true",
+    ]);
     const marks = marksIn(out);
-    const done = parseOsc133(marks[0]);
-    assert(done?.kind === "done", marks[0]);
-    assertEquals(done.exitCode, 2);
-    assertEquals(done.command, "cargo test; echo 50%");
-    assert(
-      done.durationMs !== undefined && done.durationMs >= 0 &&
-        done.durationMs < 60_000,
-      String(done.durationMs),
+    // The first prompt reports no command (it sees the history file's entry, none here).
+    assertEquals(marks[0], "A");
+    const done = marks.map(parseOsc133).filter((m) => m?.kind === "done");
+    const cargo = done.find((m) =>
+      m?.kind === "done" && m.command === "cargo test 50%"
     );
-    // Then the prompt; with nothing new only the prompt; with the marks off nothing.
-    assertEquals(marks.slice(1), ["A", "A"]);
+    assert(cargo?.kind === "done", marks.join(" | "));
+    assertEquals(cargo.exitCode, 2);
+    assert(
+      cargo.durationMs !== undefined && cargo.durationMs >= 0 &&
+        cargo.durationMs < 60_000,
+      String(cargo.durationMs),
+    );
+    assert(
+      done.some((m) =>
+        m?.kind === "done" && m.command === "true" &&
+        m.exitCode === 0
+      ),
+      marks.join(" | "),
+    );
+    // Every D is followed by the prompt's A.
+    marks.forEach((m, i) => {
+      if (m.startsWith("D;")) {
+        assertEquals(marks[i + 1], "A", marks.join(" | "));
+      }
+    });
+    // Off: no marks at all.
+    const off = await typedBash(["true", "false"], {
+      QUTTY_SHELL_MARKS: "off",
+    });
+    assertEquals(marksIn(off), []);
   },
 });
