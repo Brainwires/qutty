@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — detach and New Window, Linux packages, SSH broadcast, Loopy reacts
 
 - Broadcast input (cluster ssh). Turn it on with the bar's broadcast button or
   ⌘⇧I (Ctrl+Shift+I on Linux), then check the tiles to type into in their
