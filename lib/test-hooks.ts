@@ -88,6 +88,7 @@ export function withBackendSpy(
       spy.links.push({ kind: "edit", ...request });
       return backend.linkEdit(request);
     },
+    sysSample: () => backend.sysSample(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
     sshHosts: () => backend.sshHosts(),

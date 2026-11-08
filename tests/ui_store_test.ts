@@ -272,6 +272,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     "sandbox",
     "ollama",
     "links",
+    "monitor",
     "integration",
   ]);
 
@@ -407,4 +408,32 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     settings: loadSettings(storage)!,
   });
   assertEquals(back.settings.links, { editor: "custom", command: "hx {file}" });
+});
+
+Deno.test("settings: the system monitor defaults (meter off, hot Loopy on), reduces and persists", () => {
+  assertEquals(DEFAULT_SETTINGS.monitor, {
+    meter: false,
+    hotLoopy: true,
+    hotAt: 85,
+    coolAt: 70,
+    sustainS: 10,
+  });
+  let s = initialState();
+  s = reduce(s, { type: "setMonitor", patch: { meter: true, sustainS: 4 } });
+  assertEquals(s.settings.monitor.meter, true);
+  assertStrictEquals(
+    reduce(s, { type: "setMonitor", patch: { meter: true } }),
+    s,
+  );
+  const { storage } = memoryStorage();
+  assert(saveSettings(s.settings, storage));
+  const back = reduce(initialState(), {
+    type: "hydrateSettings",
+    settings: loadSettings(storage)!,
+  });
+  assertEquals(back.settings.monitor, { ...s.settings.monitor });
+  assertEquals(
+    sanitizeSettings({ monitor: { hotAt: "x", meter: 1 } }).monitor,
+    DEFAULT_SETTINGS.monitor,
+  );
 });

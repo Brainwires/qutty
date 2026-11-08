@@ -77,6 +77,9 @@ import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
 import { useVoice } from "./use-voice.ts";
+import { useSysStats } from "./use-sysstats.ts";
+import { HOT_LINE, maySayHot, thresholds } from "../lib/sysstats.ts";
+import { anyAlertOn } from "../lib/voice/alerts.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { effectiveMode } from "../lib/companion/settings.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
@@ -321,6 +324,29 @@ function WorkspaceView() {
       return true;
     },
   });
+  // The lite system monitor: the bar meter, and Loopy's hot face (with Lively on).
+  const monitor = state.settings.monitor;
+  const hotWanted = monitor.hotLoopy && state.settings.companion.lively &&
+    effectiveMode(state.settings.companion.mode) === "window";
+  const sys = useSysStats({
+    backend: managerRef.current?.backend ?? null,
+    active: monitor.meter || hotWanted,
+    thresholds: thresholds(monitor),
+  });
+  const hotSaidAt = useRef<number | null>(null);
+  const onHotShown = () => {
+    const now = Date.now();
+    if (
+      !maySayHot({
+        alertsOn: anyAlertOn(stateRef.current.settings.voice),
+        speaking: voice.speaking,
+        lastSaidAt: hotSaidAt.current,
+        now,
+      })
+    ) return;
+    hotSaidAt.current = now;
+    voice.test(HOT_LINE);
+  };
   const pttKeyRef = useRef(state.settings.voice.pttKey);
   pttKeyRef.current = state.settings.voice.pttKey;
 
@@ -609,6 +635,7 @@ function WorkspaceView() {
         onConnections={ssh.toggleDialog}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
+        {...(monitor.meter ? { stats: sys.stats } : {})}
       />
       <div class="cluster" ref={clusterRef} data-testid="cluster">
         {manager && (
@@ -658,6 +685,8 @@ function WorkspaceView() {
             pttLabel={pttAvailable(settings.voice.pttKey, platform)
               ? shortcutLabel(settings.voice.pttKey, platform)
               : ""}
+            hot={hotWanted && sys.hot}
+            onHotShown={onHotShown}
           />
         )}
         {ready && session.booted && state.terminals.length === 0 && (
@@ -695,6 +724,7 @@ function WorkspaceView() {
           {...(ollama.loaded ? { ollama } : {})}
           onOllama={(patch) => run({ type: "setOllama", patch })}
           onLinks={(patch) => run({ type: "setLinks", patch })}
+          onMonitor={(patch) => run({ type: "setMonitor", patch })}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
         />

@@ -17,6 +17,8 @@ import {
 import { isTintId } from "../lib/workspace/themes.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
 import { LaunchMenu, type LaunchMenuProps } from "./launch-menu.tsx";
+import { SysMeter } from "./sys-meter.tsx";
+import type { Smoothed } from "../lib/sysstats.ts";
 
 export interface SwitcherBarProps {
   state: WorkspaceState;
@@ -43,6 +45,8 @@ export interface SwitcherBarProps {
   onConnections(): void;
   onPattern(pattern: LayoutPattern): void;
   onToggleSettings(): void;
+  /** The system meter's figures (Settings → System monitor); absent: no meter. */
+  stats?: Smoothed;
 }
 
 /** Scroll `list` so chip `el` is in view, by where the chip is laid out (its FLIP transform aside). */
@@ -404,6 +408,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
             )}
           </div>
         )}
+        {props.stats && <SysMeter stats={props.stats} vertical={vertical} />}
         <div class="menu-anchor">
           <button
             type="button"
