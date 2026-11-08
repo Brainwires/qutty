@@ -330,6 +330,11 @@
 - [x] v0.3.0: SSH, shell picker, scaled tiles, Homebrew, agent hub, companion,
       voice, shared sandbox.
 - [x] v0.3.1: Codex, Ollama helper, more harnesses, shell agent, lively Loopy.
+- [x] v0.4.0: detachable sessions and New Window, Linux packages, SSH broadcast
+      input and port forwards, clickable links, CPU / GPU meter, Loopy reacts.
+- [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
+      doesn't run, so the focused chip (first in the strip) can stay scrolled
+      out of view on the left (seen while hardening the e2e chip clicks, #43).
 - [x] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
       overflow: +N appears…" in tests/e2e/bar_test.ts failed about half the
       time. Not a test timing issue but two bar bugs: the focused chip was
