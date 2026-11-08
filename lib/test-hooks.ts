@@ -7,6 +7,7 @@
 // - `window.__e2e.resizes`: every PTY resize the backend was asked for, in order.
 // - `window.__e2e.links`: every link the backend was asked to open or edit, in order, and
 //   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
+// - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for Loopy's night.
 
 import type { PtyBackend } from "./pty-client.ts";
 import type { LinkEditRequest, LinkOpenRequest } from "./links.ts";
@@ -35,6 +36,8 @@ export interface BackendSpy {
 interface E2eHooks extends BackendSpy {
   terminal(id: string): TerminalDebugState | null;
   linkState(id: string): LinkHoverState | null;
+  /** Move the app's clock ({@linkcode clockNow}) to `ms`, or back (`null`). */
+  setClock(ms: number | null): void;
 }
 
 /** Whether the page was opened in test mode (`?test=1`). */
@@ -137,6 +140,29 @@ export function installE2eHooks(
     kills: spy.kills,
     resizes: spy.resizes,
     links: spy.links,
+    setClock,
   };
   (globalThis as { __e2e?: E2eHooks }).__e2e = hooks;
+}
+
+// --- the app's clock --------------------------------------------------------------------------
+
+/** How far the e2e suite moved the clock (`window.__e2e.setClock`), ms. 0 outside test mode. */
+let clockOffset = 0;
+
+/** The event the window gets when the e2e suite moves the clock. */
+export const CLOCK_EVENT = "qutty:clock";
+
+/**
+ * Now, for what depends on the time of day (Loopy sleepy at night: lib/companion/sleepy.ts):
+ * `Date.now()`, moved by the e2e suite in test mode.
+ */
+export function clockNow(): number {
+  return Date.now() + clockOffset;
+}
+
+/** Move the clock to `ms` (since the epoch), or back to the real time (`null`). Test mode only. */
+function setClock(ms: number | null): void {
+  clockOffset = ms === null ? 0 : ms - Date.now();
+  globalThis.dispatchEvent?.(new Event(CLOCK_EVENT));
 }

@@ -32,8 +32,15 @@
 # QUTTY_AGENT_NOTIFY_EVERY seconds (default 5; 0: every prompt; off: never), silently skipped when
 # the hub does not answer within a second.
 #
+# Shell integration marks (OSC 133, lib/shell-marks.ts): bash has no hook before a command runs,
+# so the same PROMPT_COMMAND hook sends, for each new command, `133;D;<exit>` with its line and
+# how long it ran (from the history entry's timestamp), then `133;A` as the prompt starts. Qutty
+# learns each command's exit status and duration from it (Loopy's reactions, Settings →
+# Companion). They are invisible; QUTTY_SHELL_MARKS=off leaves them out.
+#
 # Settings (environment): QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude |
-# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY.
+# ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY,
+# QUTTY_SHELL_MARKS.
 
 case $- in *i*) ;; *) return 0 ;; esac
 [ -n "${QUTTY_SOCK-}${QUTTY_HUB-}" ] || return 0
@@ -74,8 +81,28 @@ __qutty_notify() {
   __qutty_unread=$n
 }
 
+# The OSC 133 marks for the command that just ended (exit $1, its line $2; none when $2 is
+# empty) and the prompt. The duration comes from the history entry's timestamp, left out when
+# the entry has none.
+__qutty_marks() {
+  [ "${QUTTY_SHELL_MARKS-}" != off ] || return 0
+  local entry now line=$2 took="" re='^ *[0-9]+[*]? +([0-9]+) '
+  if [ -n "$line" ]; then
+    entry=$(HISTTIMEFORMAT='%s ' builtin history 1)
+    if [[ $entry =~ $re ]]; then
+      now=${EPOCHSECONDS:-$(date +%s)}
+      took=";duration=$((now - BASH_REMATCH[1]))"
+    fi
+    line=${line//%/%25}
+    line=${line//;/%3B}
+    line=${line//[[:cntrl:]]/ }
+    printf '\033]133;D;%s;cmdline_url=%s%s\007' "$1" "$line" "$took"
+  fi
+  printf '\033]133;A\007'
+}
+
 __qutty_precmd() {
-  local exit_status=$? entry num="" line="" re='^ *([0-9]+)[*]? +(.*)$'
+  local exit_status=$? entry num="" line="" re='^ *([0-9]+)[*]? +(.*)$' ran=""
   entry=$(HISTTIMEFORMAT='' builtin history 1)
   if [[ $entry =~ $re ]]; then
     num=${BASH_REMATCH[1]}
@@ -89,7 +116,9 @@ __qutty_precmd() {
     line=${line//$'\t'/ }
     __qutty_history+=("$exit_status"$'\t'"$PWD"$'\t'"$line")
     [ "${#__qutty_history[@]}" -le 10 ] || __qutty_history=("${__qutty_history[@]:1}")
+    ran=$line
   fi
+  __qutty_marks "$exit_status" "$ran"
   __qutty_seen_prompt=1
   __qutty_skip_hist=""
   __qutty_last_hist=$num

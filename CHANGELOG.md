@@ -93,6 +93,23 @@
   are read in the app's own process (Mach and IOKit on macOS, `/proc` on Linux)
   every 4 seconds while something shows them, every 12 in the background and
   never while the window is hidden; a reading takes about 0.2 ms.
+- Loopy reacts to your work. When a long build or test run finishes, Loopy hops
+  for joy (✓ shell-2: cargo test (1m 4s)); when one fails, it looks sad for a
+  moment (✗ shell-2: make failed (exit 2)). Shell tiles count commands that ran
+  at least 20 seconds and look like a build, test, check or install (or any long
+  command, in Settings); editors, `ssh` and other interactive programs, and
+  commands stopped with Ctrl-C, never count. Agents count when their status note
+  says "tests passed" or "build failed". Late at night (00:00–06:00 by default)
+  with the pointer resting, Loopy dozes off, and wakes with a stretch when the
+  pointer comes near or something needs it. Reactions never cover a question,
+  thinking or a voice turn, and are said aloud only with the matching voice
+  alert on. Settings → Companion → Reactions has the toggles, the night's hours
+  and the minimum duration.
+- Shell integration marks. Qutty's zsh and bash plugins (Settings → Agent
+  integration) now send OSC 133 prompt and command marks, so Qutty knows when
+  each command starts and ends and how it ended; other shell integrations that
+  send OSC 133 (iTerm2's, VS Code's) work too. `QUTTY_SHELL_MARKS=off` turns
+  them off.
 
 ## 0.3.1 — Codex, Ollama, more harnesses, shell agent, lively Loopy
 

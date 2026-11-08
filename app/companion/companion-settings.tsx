@@ -1,6 +1,7 @@
 // Settings → Companion: where Loopy is drawn (in the window; floating comes with Denext
 // multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner, whether
-// it is lively (idle expressions, eyes that follow the pointer), whether its brain may run, which
+// it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at night,
+// celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its brain may run, which
 // brain (headless Claude Code with its model, or a local Ollama model that can call tools, from the
 // Ollama helper's tracked models; an API key brain is listed but off: see BrainEngine) and the
 // brain's status, and "Companion activity": the
@@ -24,6 +25,7 @@ import {
 } from "../../lib/companion/settings.ts";
 import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
+import { ReactionSettings } from "./reaction-settings.tsx";
 
 export interface CompanionSettingsProps {
   settings: CompanionSettings;
@@ -152,6 +154,7 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
           Lively (idle expressions and eyes follow the pointer)
         </span>
       </label>
+      <ReactionSettings settings={settings} shown={shown} onChange={onChange} />
       <label class="field field-check">
         <input
           type="checkbox"

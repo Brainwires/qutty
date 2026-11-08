@@ -493,6 +493,14 @@ suite("companion", (test) => {
       model: "",
       ollamaModel: "",
       lively: true,
+      nightSleepy: true,
+      nightFrom: 0,
+      nightTo: 360,
+      celebrate: true,
+      sad: true,
+      reactMinS: 20,
+      reactAnyCommand: false,
+      reactBubble: true,
     });
     assertEquals(await app.exists(OVERLAY), false);
   });
@@ -875,7 +883,12 @@ suite("companion", (test) => {
     await record(app);
     await approach(app);
     await pause(800);
-    assertEquals(await record(app, false), [], "no excitement");
+    // Idle blinks come on their own (2.5–6 s apart): only excitement counts here.
+    assertEquals(
+      (await record(app, false)).filter((v) => v !== "blink" && v !== "idle"),
+      [],
+      "no excitement",
+    );
     assertEquals(after.expr, null);
   });
 });

@@ -71,6 +71,8 @@ export interface VoiceApi {
   stopSpeaking(): void;
   /** Say `text` now (Settings' "Test voice"). */
   test(text: string): void;
+  /** Say `text` as an alert, after whatever is being said (Loopy's reactions). */
+  alert(text: string): void;
 }
 
 export function useVoice(opts: UseVoiceOptions): VoiceApi {
@@ -235,5 +237,6 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     test: (text) => {
       void queue.interrupt().then(() => queue.say(text, "alert"));
     },
+    alert: (text) => queue.say(text, "alert"),
   };
 }

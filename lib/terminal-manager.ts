@@ -68,6 +68,13 @@ import {
   pasteNeedsConfirm,
 } from "./broadcast.ts";
 import {
+  type CommandDone,
+  type MarkState,
+  NO_MARKS,
+  parseOsc133,
+  stepMarks,
+} from "./shell-marks.ts";
+import {
   type LinkHit,
   type LinkHoverState,
   TerminalLinks,
@@ -111,6 +118,11 @@ export interface TerminalManagerEvents {
     event: MouseEvent,
     how: "open" | "menu",
   ): void;
+  /**
+   * A command finished in terminal `id`, as its shell's integration marks told (OSC 133,
+   * lib/shell-marks.ts): its line, exit status and how long it ran.
+   */
+  onCommandDone?(id: string, done: CommandDone): void;
   /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
   platform?: "mac" | "other";
   /**
@@ -159,6 +171,10 @@ interface Managed {
   /** The input event in progress (a key, a paste), claimed by the data chunk it produces. */
   origin: InputOrigin;
   originTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The shell integration marks so far (OSC 133): the command running, if any. */
+  marks: MarkState;
+  /** A replay is being drawn (`adopt`): its marks are old news, not finished commands. */
+  replaying: boolean;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -361,6 +377,8 @@ export class TerminalManager {
       adopted: false,
       origin: null,
       originTimer: undefined,
+      marks: NO_MARKS,
+      replaying: false,
     };
     this.#terms.set(id, m);
     // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. An SSH tile's is remote (where
@@ -369,6 +387,18 @@ export class TerminalManager {
       const cwd = trustedRemoteCwd(m.profile, data);
       if (cwd !== undefined) m.remoteCwd = cwd;
       else if (m.profile.kind !== "ssh") m.localCwd = parseOsc7(data)?.path;
+      return true;
+    });
+    // OSC 133 (`ESC ] 133 ; A|B|C|D;exit BEL`): the shell's prompt and command marks, so the
+    // workspace hears when a command ends, how, and how long it ran (Loopy's reactions).
+    term.parser.registerOscHandler(133, (data) => {
+      const mark = parseOsc133(data);
+      if (!mark) return false;
+      const step = stepMarks(m.marks, mark, Date.now());
+      m.marks = step.state;
+      if (step.done && !m.replaying) {
+        this.#events.onCommandDone?.(m.id, step.done);
+      }
       return true;
     });
     try {
@@ -462,7 +492,10 @@ export class TerminalManager {
     if (pty.cols !== m.term.cols || pty.rows !== m.term.rows) {
       m.term.resize(Math.max(2, pty.cols), Math.max(1, pty.rows));
     }
-    if (pty.data) m.term.write(pty.data);
+    if (pty.data) {
+      m.replaying = true;
+      m.term.write(pty.data, () => (m.replaying = false));
+    }
     if (pty.exit) {
       m.exited = true;
       m.term.write(`\r\n${DIM}${exitBanner(m.profile, pty.exit)}${RESET}\r\n`);
