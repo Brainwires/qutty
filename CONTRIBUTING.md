@@ -14,6 +14,21 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
   sh scripts/build-node-pty-linux.sh
   ```
 
+  Use nodejs.org's Node (or nvm, fnm, volta), not the distro's `nodejs` package.
+  Debian and Ubuntu build that one as a shared `libnode`, and an addon linked to
+  it does not load in a packaged app on other machines. The script refuses such
+  an addon. To build the Linux packages (AppImage, `.deb`, tarball; the AppImage
+  needs [appimagetool](https://github.com/AppImage/appimagetool/releases) on
+  `PATH`):
+
+  ```sh
+  deno task desktop:package:linux --format tar.gz,deb,appimage
+  ```
+
+  Check a package without the UI: `QUTTY_PTY_SELFTEST=1` loads node-pty, has a
+  shell answer and exits 0. Run it under a throwaway `HOME`, with `xvfb-run` on
+  a machine with no display.
+
 Then:
 
 ```sh
@@ -63,6 +78,13 @@ Releases are cut by pushing a tag. They are not made on merge.
    ```
 
 The Release workflow checks that the tag matches `deno.json`, runs the tests,
-then builds, signs and notarizes the Apple Silicon and Intel apps. It publishes
-the release with both `.dmg` files, their SHA-256 checksums and that version's
-changelog section. A tag with a suffix (`v0.2.0-beta.1`) becomes a pre-release.
+then builds, signs and notarizes the Apple Silicon and Intel apps. It also
+builds the Linux AppImage, `.deb` and tarball for x86_64 and arm64, installs
+each one and runs the PTY self-test. It publishes the release with both `.dmg`
+files, the Linux packages, their SHA-256 checksums and that version's changelog
+section. A tag with a suffix (`v0.2.0-beta.1`) becomes a pre-release.
+
+The Linux packages are best-effort. If they fail, the macOS apps are still
+published. Re-run the failed Linux job, and the release job runs again and adds
+the Linux files. A pull request that changes the Linux packaging (or a manual
+run of the workflow) builds and checks the Linux packages and publishes nothing.
