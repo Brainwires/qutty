@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The companion's API key brain now sends its requests through Rullama's
+  `AnthropicChatProvider` (`@rullama/provider` 0.12.5) instead of Qutty's own
+  Anthropic client. It still reads the key from the keychain for every request,
+  calls only `api.anthropic.com`, sends replies back with their thinking blocks
+  unchanged, sends no temperature, joins consecutive tool results into one turn,
+  asks for the server-side refusal fallback on Claude Opus 5.5 and Sonnet 5.5,
+  names the category when Claude declines, and stops the request when the
+  companion stops. Only the Ollama brain still asks for temperature 0.2.
+
 ## 0.5.0 — Denext 4.15: native quit dialog, Dock reopen, Close Window and End Its Shells, keychain keys
 
 - The system monitor (the bar's CPU / GPU meter and Loopy's hot face) reads its

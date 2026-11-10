@@ -18,7 +18,8 @@
 // the companion closes the request and Ollama stops generating.
 //
 // The third, the API key brain (`anthropicCompanionBrain`): the same loop over Anthropic's
-// Messages API (lib/companion/anthropic-provider.ts, api.anthropic.com) with the user's API key,
+// Messages API (lib/companion/anthropic-provider.ts over `@rullama/provider`'s
+// `AnthropicChatProvider`, api.anthropic.com) with the user's API key,
 // which the hub extension keeps in the OS keychain (its own namespace of Denext's secure store)
 // and reads for each request; the page never sees it.
 
@@ -224,6 +225,7 @@ export function ollamaCompanionBrain(
     label: `Ollama (${model})`,
     provider: new OllamaChatProvider(model, baseUrl),
     tools,
+    temperature: 0.2,
     async check() {
       const models = await detectOllama(baseUrl);
       if (models === undefined) {

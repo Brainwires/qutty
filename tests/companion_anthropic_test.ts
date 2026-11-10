@@ -1,5 +1,6 @@
-// The companion's API key brain (lib/companion/anthropic-provider.ts, desktop/companion-brain.ts
-// `anthropicCompanionBrain`) over a fake `fetch`: no request ever leaves the process. The request
+// The companion's API key brain (lib/companion/anthropic-provider.ts over `@rullama/provider`'s
+// `AnthropicChatProvider`, desktop/companion-brain.ts `anthropicCompanionBrain`) over a fake
+// `fetch`: no request ever leaves the process. The request
 // (endpoint, headers, model, no sampling options, tools, the refusal fallback), a reply's own
 // blocks (thinking included) sent back exactly as they came, the key read for every request and
 // a removed key no longer used, the API's errors and refusals, the abort signal, a whole turn with
@@ -16,7 +17,6 @@ import {
   ANTHROPIC_MODELS,
   ANTHROPIC_URL,
   AnthropicApiProvider,
-  wireMessages,
 } from "../lib/companion/anthropic-provider.ts";
 import { anthropicCompanionBrain } from "../desktop/companion-brain.ts";
 import {
@@ -87,12 +87,13 @@ Deno.test("Anthropic provider: the request (endpoint, key, model, no sampling, t
     model: ANTHROPIC_MODELS.opus,
     fetch: f.fetch,
   });
+  // Sampling options the caller set explicitly are not sent either: current models refuse them.
   const r = await provider.chat([Message.user("hello")], [{
     name: "list_peers",
     description: "List the tiles",
     input_schema: { type: "object", properties: {}, required: [] },
-  }], options());
-  assertEquals(r.message.content, [{ type: "text", text: "hi" }]);
+  }], new ChatOptions({ system: "be brief", temperature: 0.2, top_p: 0.9 }));
+  assertEquals(r.message.content, "hi");
   assertEquals(r.usage.total_tokens, 15);
   const [req] = f.sent;
   assertEquals(req.url, ANTHROPIC_URL);
@@ -107,9 +108,9 @@ Deno.test("Anthropic provider: the request (endpoint, key, model, no sampling, t
   assertEquals(req.body.system, "be brief");
   assertEquals(req.body.fallbacks, "default");
   assertEquals(req.body.max_tokens, 16_000);
-  // ChatOptions defaults a temperature; the current models refuse sampling options.
   assertEquals("temperature" in req.body, false);
   assertEquals("top_p" in req.body, false);
+  assertEquals("top_k" in req.body, false);
   assertEquals(req.body.tools, [{
     name: "list_peers",
     description: "List the tiles",
@@ -159,6 +160,7 @@ Deno.test("Anthropic provider: a reply goes back exactly as it came (thinking bl
     { type: "tool_use", id: "toolu_1", name: "list_peers", input: {} },
   ]);
   const history = [
+    Message.system("ignored"),
     Message.user("tiles?"),
     first.message,
     new Message({
@@ -178,12 +180,14 @@ Deno.test("Anthropic provider: a reply goes back exactly as it came (thinking bl
         is_error: true,
       }],
     }),
+    Message.user(""),
   ];
   await provider.chat(history, undefined, options());
   assertEquals(f.sent[1].body.messages, [
     { role: "user", content: [{ type: "text", text: "tiles?" }] },
     { role: "assistant", content: blocks },
-    // Consecutive tool results arrive as one user turn.
+    // Consecutive tool results arrive as one user turn; system messages and empty text are left
+    // out.
     {
       role: "user",
       content: [
@@ -197,8 +201,6 @@ Deno.test("Anthropic provider: a reply goes back exactly as it came (thinking bl
       ],
     },
   ]);
-  // System messages and empty turns are left out.
-  assertEquals(wireMessages([Message.system("s"), Message.user("")]), []);
 });
 
 Deno.test("Anthropic provider: the key is read for every request; no key, a refused key, a refusal", async () => {
@@ -214,7 +216,12 @@ Deno.test("Anthropic provider: the key is read for every request; no key, a refu
       }),
       { status: 401 },
     ),
-    reply([], "refusal"),
+    Response.json({
+      content: [],
+      stop_reason: "refusal",
+      stop_details: { type: "refusal", category: "cyber" },
+      usage: { input_tokens: 10, output_tokens: 0 },
+    }),
     new Response("overloaded", { status: 529 }),
   ]);
   const provider = new AnthropicApiProvider({
@@ -232,7 +239,7 @@ Deno.test("Anthropic provider: the key is read for every request; no key, a refu
     Error,
     "the API key was refused (Settings → Companion): invalid x-api-key",
   );
-  await assertRejects(ask, Error, "Claude declined to answer");
+  await assertRejects(ask, Error, "Claude declined to answer (cyber)");
   await assertRejects(ask, Error, "Anthropic API error 529: overloaded");
   // Removed: no request at all.
   await keys.clear("anthropic");

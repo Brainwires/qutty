@@ -75,6 +75,11 @@ export interface InferenceBrainOptions {
    * turn once it is longer than `n` characters ({@linkcode historySize}).
    */
   history?: "trim" | { fresh: number };
+  /**
+   * The sampling temperature, sent only when given (current Anthropic models refuse one; the
+   * Ollama brain asks for 0.2).
+   */
+  temperature?: number;
 }
 
 /** How long a conversation is: its messages serialized, each reply's own blocks included. */
@@ -248,8 +253,9 @@ export class InferenceBrain implements BrainAdapter {
     signal: AbortSignal,
   ): AgentRuntime {
     const id = `companion-${++this.#turns}`;
+    const t = this.#opts.temperature;
     const options = new ChatOptions({
-      temperature: 0.2,
+      ...(t === undefined ? {} : { temperature: t }),
       max_tokens: 1024,
       system: this.#opts.systemPrompt ?? COMPANION_SYSTEM_PROMPT,
       signal,
