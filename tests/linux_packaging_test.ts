@@ -72,12 +72,12 @@ async function fakeBundle(): Promise<string> {
   return dir;
 }
 
-Deno.test("linux packaging: the config's desktop entry, license and no made-up email", async () => {
+Deno.test("linux packaging: the config's desktop entry, license and no-reply email", async () => {
   const meta = await desktopPackageMeta(SCRIPT, "Qutty", "linux");
   assertEquals(meta.identifier, ID);
   assertEquals(meta.name, "Qutty");
   assertEquals(meta.license, "MIT");
-  assertEquals(meta.email, undefined);
+  assertEquals(meta.email, "155631428+Brainwires@users.noreply.github.com");
   assertEquals(meta.desktopEntry?.categories, ["System", "TerminalEmulator"]);
   assertEquals(meta.desktopEntry?.genericName, "Terminal");
   // The launchers run the app as its id (LAUFEY_APP_ID), which is its window class.
@@ -101,7 +101,10 @@ Deno.test("linux packaging: the .deb's launcher, metainfo, icon and Maintainer",
     const control = new TextDecoder().decode(
       (await tarFiles(members.get("control.tar.gz")!)).get("./control"),
     );
-    assertStringIncludes(control, "\nMaintainer: Brainwires\n");
+    assertStringIncludes(
+      control,
+      "\nMaintainer: Brainwires <155631428+Brainwires@users.noreply.github.com>\n",
+    );
     assertStringIncludes(control, "libwebkit2gtk-4.1-0");
 
     const data = await tarFiles(members.get("data.tar.gz")!);
