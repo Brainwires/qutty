@@ -246,7 +246,7 @@ jobs:
           echo "::group::.deb"
           dpkg-deb -I "dist/Qutty-${LABEL}.deb"
           dpkg-deb -c "dist/Qutty-${LABEL}.deb" | grep -v ' \./usr/lib/'
-          dpkg-deb -f "dist/Qutty-${LABEL}.deb" Maintainer | grep -qx 'Brainwires'
+          dpkg-deb -f "dist/Qutty-${LABEL}.deb" Maintainer | grep -qxF 'Brainwires <155631428+Brainwires@users.noreply.github.com>'
           DEB="$RUNNER_TEMP/deb"
           dpkg-deb -x "dist/Qutty-${LABEL}.deb" "$DEB"
           check_entry "$DEB/usr/share/applications/${ID}.desktop"
