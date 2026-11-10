@@ -51,6 +51,15 @@ const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 /** The longest reply per request (thinking included); plenty for a companion's turn. */
 const MAX_TOKENS = 16_000;
 
+/**
+ * How long the API key brain's conversation may grow, in characters of serialized history
+ * (roughly 400k tokens at about 4 characters a token, well inside these models' 1M context),
+ * before the next turn starts a fresh session. The history is never trimmed instead: dropping the
+ * oldest turns would edit it, and preserved thinking (Opus 5.5, Sonnet 5.5) accepts thinking
+ * blocks only in an unedited, append-only history (newer accounts get a 400 for an edit).
+ */
+export const ANTHROPIC_HISTORY_CHARS = 1_600_000;
+
 /** A content block as the API sends and takes it. */
 type WireBlock = { type: string; [field: string]: unknown };
 interface WireMessage {

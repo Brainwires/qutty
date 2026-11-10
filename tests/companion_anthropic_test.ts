@@ -19,6 +19,10 @@ import {
   wireMessages,
 } from "../lib/companion/anthropic-provider.ts";
 import { anthropicCompanionBrain } from "../desktop/companion-brain.ts";
+import {
+  appendOrFresh,
+  historySize,
+} from "../lib/companion/inference-brain.ts";
 import { CompanionHost } from "../desktop/companion.ts";
 import type { BrainEvent } from "../lib/companion/brain.ts";
 import { companionKeys } from "../lib/companion/keys.ts";
@@ -362,4 +366,84 @@ Deno.test("settings: the API key brain is a brain choice, sharing Claude Code's 
     sanitizeCompanion({ engine: "openai" }).engine,
     DEFAULT_COMPANION.engine,
   );
+});
+
+/** Run turns `texts` through `brain`, each to its end. */
+async function turns(
+  brain: ReturnType<typeof anthropicCompanionBrain>,
+  texts: string[],
+): Promise<void> {
+  const events: BrainEvent[] = [];
+  await brain.start({ event: (e) => events.push(e), exited() {} });
+  for (const text of texts) {
+    const before = events.filter((e) => e.kind === "turnEnd").length;
+    await brain.send(text);
+    await waitUntil(
+      () => events.filter((e) => e.kind === "turnEnd").length > before,
+      2000,
+    );
+  }
+}
+
+const noTools = {
+  list: () => [],
+  call: () => Promise.reject(new Error("unused")),
+};
+
+Deno.test("API key brain: the history is never trimmed; past the limit the next turn starts fresh", async () => {
+  const long = "x".repeat(600);
+  const f = fakeFetch(
+    Array.from({ length: 4 }, () => reply([{ type: "text", text: long }])),
+  );
+  const brain = anthropicCompanionBrain(
+    "opus",
+    () => Promise.resolve("k"),
+    noTools,
+    f.fetch,
+    2_000,
+  );
+  await turns(brain, ["one", "two", "three", "four"]);
+  const sent = f.sent.map((s) => s.body.messages);
+  // Under the limit: each request is the previous one with the reply and the new turn appended.
+  assertEquals(sent[0].length, 1);
+  assertEquals(sent[1].length, 3);
+  assertEquals(sent[1].slice(0, 1), sent[0]);
+  // Past it: a fresh conversation holding only the new turn, not a suffix of the old one.
+  assertEquals(sent[2], [{
+    role: "user",
+    content: [{ type: "text", text: "three" }],
+  }]);
+  assertEquals(sent[3].length, 3);
+  assertEquals(sent[3].slice(0, 1), sent[2]);
+  assertEquals(sent[3][2].content, [{ type: "text", text: "four" }]);
+  // The system prompt goes with every request.
+  assert(f.sent.every((s) => typeof s.body.system === "string"));
+});
+
+Deno.test("API key brain: with the default limit a long session keeps every turn (no 60-message trim)", async () => {
+  const n = 40; // 79 messages in the last request, past the Ollama brain's 60
+  const f = fakeFetch(
+    Array.from({ length: n }, () => reply([{ type: "text", text: "ok" }])),
+  );
+  const brain = anthropicCompanionBrain(
+    "",
+    () => Promise.resolve("k"),
+    noTools,
+    f.fetch,
+  );
+  await turns(brain, Array.from({ length: n }, (_, i) => `turn ${i}`));
+  const last = f.sent.at(-1)!.body.messages;
+  assertEquals(last.length, 2 * n - 1);
+  assertEquals(last[0].content, [{ type: "text", text: "turn 0" }]);
+  for (let i = 1; i < f.sent.length; i++) {
+    const prev = f.sent[i - 1].body.messages;
+    assertEquals(f.sent[i].body.messages.slice(0, prev.length), prev);
+  }
+});
+
+Deno.test("appendOrFresh: appended under the limit, only the new turn past it", () => {
+  const a = Message.user("a".repeat(100));
+  const b = Message.user("b");
+  assertEquals(appendOrFresh([a], b, 10_000), [a, b]);
+  assertEquals(appendOrFresh([a], b, historySize([a])), [b]);
 });

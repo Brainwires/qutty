@@ -24,6 +24,7 @@
 
 import { OllamaChatProvider } from "@rullama/provider";
 import {
+  ANTHROPIC_HISTORY_CHARS,
   ANTHROPIC_MODELS,
   AnthropicApiProvider,
 } from "../lib/companion/anthropic-provider.ts";
@@ -182,13 +183,15 @@ export function ollamaHasModel(
 
 /**
  * The companion on Anthropic's API with the user's key (`key()`: the hub's keychain entry, read
- * for every request), `model` one of Settings' aliases (`""`: the default model).
+ * for every request), `model` one of Settings' aliases (`""`: the default model). Its history is
+ * never trimmed (preserved thinking): past `historyChars` the next turn starts a fresh session.
  */
 export function anthropicCompanionBrain(
   model: string,
   key: () => Promise<string | null>,
   tools: CompanionTools,
   fetchFn?: typeof fetch,
+  historyChars = ANTHROPIC_HISTORY_CHARS,
 ): BrainAdapter {
   const alias: BrainModel = COMPANION_MODELS.includes(model as BrainModel)
     ? model as BrainModel
@@ -202,6 +205,7 @@ export function anthropicCompanionBrain(
       ...(fetchFn ? { fetch: fetchFn } : {}),
     }),
     tools,
+    history: { fresh: historyChars },
     async check() {
       if (!await key()) {
         throw new Error("no Anthropic API key is saved (Settings → Companion)");

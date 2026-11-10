@@ -130,11 +130,17 @@
     from the history and always sends `temperature`, which the current models
     refuse. The server-side refusal fallback (`fallbacks: "default"`) is on for
     Opus and Sonnet.
+  - API key brain: its history is never trimmed (the Ollama brain keeps its
+    60-message trim). Preserved thinking (Opus 5.5, Sonnet 5.5) accepts thinking
+    blocks only in an unedited, append-only history, and dropping the oldest
+    turns is an edit (a 400 for newer accounts). So once the serialized history
+    passes `ANTHROPIC_HISTORY_CHARS` (1.6M characters, about 400k tokens), the
+    next turn starts a fresh session with the same system prompt
+    (`InferenceBrain` `history: { fresh }`, lib/companion/inference-brain.ts).
   - API key brain, open: never run against the real API (the tests use a fake
-    `fetch`). The session is trimmed to the last 60 messages like the Ollama
-    brain's, which drops the oldest turns, thinking blocks included; check
-    whether that edit of the history is accepted by the current models, or start
-    a fresh session instead. An OpenAI key brain (`OpenAiChatProvider`,
+    `fetch`). A fresh session forgets the earlier turns without a summary; Loopy
+    does not say so yet. The limit is checked at a turn's start, so one turn's
+    tool rounds can grow past it. An OpenAI key brain (`OpenAiChatProvider`,
     api.openai.com) would be one more engine and host.
   - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
     setting) and the mic level driving its listening pulse (`level` events from
