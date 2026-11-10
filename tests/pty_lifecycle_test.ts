@@ -203,9 +203,13 @@ Deno.test({
         await new Promise((r) => setTimeout(r, 20));
       }
       assertEquals(info.cwd, "/");
-      // Ctrl+C ends it; the shell is the foreground again, back in /usr/bin.
+      // Ctrl+C ends it; the shell is the foreground again, back in /usr/bin. (For a moment after
+      // the signal, the foreground can still be the job's process group, whose subshell sits in /.)
       await host.write(t.id, "\x03");
-      while (!shellNames.includes((info = await host.info(t.id)).process)) {
+      while (
+        !shellNames.includes((info = await host.info(t.id)).process) ||
+        info.cwd !== real("/usr/bin")
+      ) {
         if (Date.now() > deadline + 20_000) {
           throw new Error(`process stayed ${info.process}`);
         }
