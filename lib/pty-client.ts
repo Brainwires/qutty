@@ -19,6 +19,8 @@ import {
   desktopExtension,
   desktopOs,
   onDesktopEvent,
+  system,
+  type SystemStatsClient,
 } from "denext/desktop/client";
 import type ptyExtension from "../desktop/pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "../desktop/pty.ts";
@@ -29,8 +31,7 @@ import type ollamaExtension from "../desktop/ollama.ts";
 import type linksExtension from "../desktop/links.ts";
 import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
 import { createDemoLinks } from "./links-demo.ts";
-import type sysstatsExtension from "../desktop/sysstats.ts";
-import type { SysSample } from "./sysstats.ts";
+import { fromSystemStats, type SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
 import { demoJob, markedCommand, osc133, runMark } from "./shell-marks-demo.ts";
 import type { OllamaStatus } from "./ollama/cli.ts";
@@ -212,7 +213,7 @@ export interface PtyBackend {
   /** Run an editor command template on a file. */
   linkEdit(request: LinkEditRequest): Promise<void>;
 
-  // --- The system monitor (desktop/sysstats.ts) ------------------------------------------------
+  // --- The system monitor (Denext's `system.stats`, the `systemStats` capability) ------------
 
   /** CPU since the previous sample, GPU and memory pressure (%), for the meter and hot Loopy. */
   sysSample(): Promise<SysSample>;
@@ -446,6 +447,8 @@ export interface DesktopBridgeDeps {
   onDesktopEvent: typeof onDesktopEvent;
   /** The window calls of the workspaces (default `denext/desktop/window`'s). */
   window?: SessionWindowDeps;
+  /** The system monitor's figures (default `denext/desktop/client`'s `system`). */
+  system?: Pick<SystemStatsClient, "stats">;
 }
 
 /** A PTY event as the page receives it: the terminal's id and the event's own data. */
@@ -467,7 +470,7 @@ export function createDesktopBackend(
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const links = desktopExtension<typeof linksExtension>("links");
-  const sysstats = desktopExtension<typeof sysstatsExtension>("sysstats");
+  const stats = deps.system ?? system;
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -628,7 +631,7 @@ export function createDesktopBackend(
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors({}),
     linkEdit: (request) => links.edit(request),
-    sysSample: () => sysstats.sample({}),
+    sysSample: async () => fromSystemStats(await stats.stats()),
     onData: (id, cb) => {
       listen();
       return events.onData(id, cb);

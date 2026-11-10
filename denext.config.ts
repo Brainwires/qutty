@@ -90,11 +90,12 @@ export default {
         // files, folders and the editor, through hidden PTYs as well (Denext's `shell`
         // capability only opens paths inside the app's own folders and needs `run`).
         "./desktop/links.ts",
-        // The lite system monitor (`desktop/sysstats.ts`): CPU, GPU and memory figures for the bar
-        // meter and Loopy's hot face, read through Mach / IOKit FFI on macOS and `/proc` on Linux
-        // (no `sys`), only when the page asks.
-        "./desktop/sysstats.ts",
       ],
+      // The lite system monitor: CPU, GPU and memory figures for the bar meter and Loopy's hot
+      // face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It
+      // bakes no Deno permission (aggregate figures only; the runtime serves it to an app whose
+      // packaged launch config lists it).
+      systemStats: true,
       // The microphone: push-to-talk opens it in the app's own process (the native audio
       // library's cpal capture). The capability writes the Info.plist usage text macOS shows when
       // it asks (once), and gives a signed (hardened runtime) build the
@@ -121,8 +122,6 @@ export default {
     //   the PTY path.
     //   The voice extension loads rullama-hardware's audio library (`librullama_audio_ffi`) from
     //   the app-support folder the same way.
-    //   The system monitor (desktop/sysstats.ts) calls libSystem (`host_statistics`,
-    //   `sysctlbyname`), IOKit and CoreFoundation the same way, instead of `sys`.
     //   No `run`, `write` or `sys` is needed.
     // - netConnect, loopback only: the shell agent's optional local model (desktop/shell-agent.ts),
     //   Ollama's API on 127.0.0.1:11434 through `@rullama/provider`. Nothing else is reachable.

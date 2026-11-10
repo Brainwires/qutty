@@ -272,16 +272,15 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
-- [x] **Lite system monitor and hot Loopy** (`desktop/sysstats.ts`,
-      `lib/sysstats.ts`, `app/use-sysstats.ts`, `app/sys-meter.tsx`).
-  - Done: CPU (Mach `host_statistics`, `/proc/stat`), GPU (IOKit
-    `PerformanceStatistics` over FFI, `ioreg` fallback; AMD sysfs,
-    `nvidia-smi`), memory pressure; the bar meter; the hot face with hysteresis;
-    Settings → System monitor.
-  - Later: per-core bars; Windows (`GetSystemTimes`, PDH for the GPU); Intel
-    GPUs on Linux (no busy figure without `intel_gpu_top`).
-  - Switch to a Denext `system.stats` API if it lands (proposed to the Denext
-    side), and drop the FFI readers.
+- [x] **Lite system monitor and hot Loopy** (`lib/sysstats.ts`,
+      `app/use-sysstats.ts`, `app/sys-meter.tsx`).
+  - Done: CPU, GPU and memory pressure from Denext's `system.stats()` (the
+    `systemStats` capability, Denext 4.15); the bar meter; the hot face with
+    hysteresis; Settings → System monitor. Qutty's own Mach / IOKit FFI and
+    `/proc` readers are gone.
+  - Later: per-core bars (`system.stats({ perCore: true })` gives `cpu.cores`);
+    Intel GPUs on Linux (Denext reports `null`: no busy figure without
+    `intel_gpu_top`).
 
 - [x] **Loopy's reactions** (`lib/companion/reactions.ts`, `sleepy.ts`,
       `loopy-priority.ts`, `lib/shell-marks.ts`, `app/use-reactions.ts`,

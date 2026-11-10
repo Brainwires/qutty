@@ -39,7 +39,7 @@ export function demoLoadCommand(args: string[]): string {
 /** A demo sample at `now`. */
 export function demoSample(now = Date.now()): SysSample {
   if (pinned) {
-    return { cpu: pinned.cpu, gpu: pinned.gpu, mem: 41, at: now, costMs: 0 };
+    return { cpu: pinned.cpu, gpu: pinned.gpu, mem: 41, at: now };
   }
   const t = now / 1000;
   return {
@@ -47,6 +47,5 @@ export function demoSample(now = Date.now()): SysSample {
     gpu: 9 + 5 * Math.sin(t / 11),
     mem: 41,
     at: now,
-    costMs: 0,
   };
 }
