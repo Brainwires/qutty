@@ -21,7 +21,7 @@
     "menu": {
       "window": {
         "newWindow": "/",
-        "reopenClosed": true,
+        "reopenClosed": "list",
         "list": true
       }
     },

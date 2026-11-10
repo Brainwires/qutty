@@ -18,6 +18,20 @@
   AppImage install AppStream metainfo, so software centres list Qutty, and the
   AppImage's runtime is a pinned, SHA-256-checked type2 build. The package
   script no longer patches the entries or repacks the `.deb`.
+- Window menu: "Close Window and End Its Shells" closes the current window and
+  kills its terminals instead of keeping them running. It has no keyboard
+  shortcut. If an agent in that window is busy, Qutty asks first. A workspace
+  ended this way, or with "End workspace", is not offered again by Reopen Closed
+  Window, the Dock or the next launch.
+- Window menu: Reopen Closed Window is now a submenu that lists the closed
+  windows by their workspace's name, most recent first (⌘⇧T still reopens the
+  last one). The Window menu works with every window closed too.
+- ⌘Q with a busy agent asks in the system's own dialog ("Quit Anyway" or
+  Cancel), even with no window open. Before, it asked inside a window, and
+  opened the agent's window first when none was open.
+- A click on the Dock icon with no window open brings back the window closed
+  last that still has running terminals, or opens a new one.
+- New windows get the inset title bar as they open, not a moment later.
 
 ## 0.4.0 — detach and New Window, Linux packages, SSH broadcast, Loopy reacts
 

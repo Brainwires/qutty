@@ -12,13 +12,16 @@
 // - One window per workspace: denext refuses a second open window with the same key.
 // - Closing a window detaches its workspace: the terminals keep running and their output keeps
 //   filling each PTY's replay buffer. A workspace with no terminals is simply dropped.
-// - Ending a workspace (the page's "End workspace") kills its terminals and lets the sandbox
-//   container go (`onEnded`). Quitting the app (Cmd+Q) ends every workspace; when an agent is busy
-//   the quit asks first (`beforeQuit`).
+// - Ending a workspace (the page's "End workspace", the Window menu's "Close Window and End Its
+//   Shells") kills its terminals and lets the sandbox container go (`onEnded`); desktop.ts then
+//   forgets its window key. A workspace shown in a window is ended once that window has closed
+//   (`endOnClose`), so the close never brings it back to Reopen Closed Window. Quitting the app
+//   (Cmd+Q) ends every workspace; when an agent is busy the quit asks first (`beforeQuit`, asked by
+//   desktop/session.ts).
 //
 // No runtime API is used here (no `Deno.*`), so the whole state machine is tested without a
 // window (tests/workspace_host_test.ts). The singleton {@linkcode workspaces} is shared by the
-// `pty`, `session` and `sandbox` extensions and by desktop.ts (the Dock and the quit guard).
+// `pty`, `session` and `sandbox` extensions and by desktop.ts (the Dock and the window keys).
 
 /** A workspace as the page's Workspaces menu lists it. */
 export interface WorkspaceInfo {
@@ -42,23 +45,13 @@ export interface BusyTile {
   name: string;
 }
 
-/** What the quit guard answers ({@linkcode WorkspaceRegistry.beforeQuit}). */
+/**
+ * What the quit guard answers ({@linkcode WorkspaceRegistry.beforeQuit}): go ahead, or cancel
+ * the quit and ask about these busy agents first.
+ */
 export type QuitDecision =
   | { allow: true }
-  | {
-    allow: false;
-    /** The open window to ask in (it is sent a `quit` event). */
-    window?: string;
-    /** No window is open: open this workspace's window and ask there. */
-    open?: string;
-    request: QuitRequest;
-  };
-
-/** A pending "agents are busy, quit anyway?" question. */
-export interface QuitRequest {
-  busy: BusyTile[];
-  at: number;
-}
+  | { allow: false; busy: BusyTile[] };
 
 interface Workspace {
   id: string;
@@ -69,10 +62,8 @@ interface Workspace {
   detachedAt: number | undefined;
 }
 
-/** How long a confirmed quit stays confirmed (the page calls `quitApp()` right after). */
+/** How long a confirmed quit stays confirmed (the quit is issued again right after). */
 const CONFIRM_TTL_MS = 15_000;
-/** A quit question nobody answered is forgotten after this long. */
-const PENDING_TTL_MS = 120_000;
 /** The id of a workspace whose window has no key (it should not happen; every window has one). */
 const UNKEYED_PREFIX = "win-";
 
@@ -88,7 +79,8 @@ export class WorkspaceRegistry {
   #ended = new Set<(id: string, ptys: string[]) => void>();
   #changed = new Set<() => void>();
   #confirmedAt: number | undefined;
-  #pending: QuitRequest | undefined;
+  /** Workspaces to end, not detach, once their window closes. */
+  readonly #endOnClose = new Set<string>();
   readonly #now: () => number;
 
   constructor(opts: { now?: () => number } = {}) {
@@ -158,14 +150,35 @@ export class WorkspaceRegistry {
     return this.#workspaces.has(id);
   }
 
-  /** A window closed for good: its workspace is detached (or dropped when it has no terminals). */
+  /**
+   * A window closed for good: its workspace is detached (or dropped when it has no terminals), or
+   * ended when {@linkcode endOnClose} marked it.
+   */
   windowClosed(windowId: string): string | undefined {
     this.#focus = this.#focus.filter((w) => w !== windowId);
     const id = this.#byWindow.get(windowId);
     if (id === undefined) return undefined;
+    if (this.#endOnClose.delete(id)) {
+      this.end(id);
+      return id;
+    }
     this.#detach(id);
     this.#notify();
     return id;
+  }
+
+  /**
+   * End workspace `id` when its window closes, instead of detaching it (the window is about to be
+   * closed by the page). Ending it after the close keeps it out of the closed windows Denext
+   * offers to reopen: its key is forgotten once it has been remembered. A detached workspace is
+   * ended at once. Returns whether `id` exists.
+   */
+  endOnClose(id: string): boolean {
+    const ws = this.#workspaces.get(id);
+    if (!ws) return false;
+    if (ws.window === undefined) this.end(id);
+    else this.#endOnClose.add(id);
+    return true;
   }
 
   #detach(id: string): void {
@@ -243,6 +256,7 @@ export class WorkspaceRegistry {
     const ws = this.#workspaces.get(id);
     if (!ws) return [];
     this.#workspaces.delete(id);
+    this.#endOnClose.delete(id);
     if (ws.window !== undefined) this.#byWindow.delete(ws.window);
     const ptys = [...ws.ptys];
     for (const p of ptys) this.#ptyOwner.delete(p);
@@ -292,6 +306,11 @@ export class WorkspaceRegistry {
     }
   }
 
+  /** The busy agent tiles of workspace `id` (what closing its window would end). */
+  busyIn(id: string): BusyTile[] {
+    return this.#busyTiles().filter((t) => this.#ptyOwner.get(t.ptyId) === id);
+  }
+
   /** Every workspace: attached ones first (in focus order), then detached, newest first. */
   list(): WorkspaceInfo[] {
     const busy = new Set(this.#busyTiles().map((t) => t.ptyId));
@@ -336,8 +355,8 @@ export class WorkspaceRegistry {
 
   /**
    * The quit guard: a quit goes ahead when no agent is busy (or the user confirmed it just now).
-   * Otherwise it is cancelled and the user is asked in a window: the one showing a busy agent,
-   * else the active one, else the busy agent's workspace is reopened to ask there.
+   * Otherwise it is cancelled, with the busy agents to ask about (desktop/session.ts asks with
+   * the OS's message box, then answers with {@linkcode answerQuit} and quits again).
    */
   beforeQuit(): QuitDecision {
     const now = this.#now();
@@ -346,37 +365,15 @@ export class WorkspaceRegistry {
       now - this.#confirmedAt < CONFIRM_TTL_MS
     ) {
       this.#confirmedAt = undefined;
-      this.#pending = undefined;
       return { allow: true };
     }
     this.#confirmedAt = undefined;
     const busy = this.#busyTiles();
-    if (busy.length === 0) return { allow: true };
-    const request: QuitRequest = { busy, at: now };
-    this.#pending = request;
-    const windows = busy.map((t) => this.windowOfPty(t.ptyId)).filter((
-      w,
-    ): w is string => typeof w === "string");
-    const window = windows[0] ?? this.activeWindow();
-    if (window !== undefined) return { allow: false, window, request };
-    return {
-      allow: false,
-      open: this.#ptyOwner.get(busy[0].ptyId)!,
-      request,
-    };
-  }
-
-  /** The quit question still waiting for an answer (a window opened to ask reads it on join). */
-  pendingQuit(): QuitRequest | undefined {
-    if (this.#pending && this.#now() - this.#pending.at > PENDING_TTL_MS) {
-      this.#pending = undefined;
-    }
-    return this.#pending;
+    return busy.length === 0 ? { allow: true } : { allow: false, busy };
   }
 
   /** The user answered the quit question: `true` lets the next quit through. */
   answerQuit(quit: boolean): void {
-    this.#pending = undefined;
     this.#confirmedAt = quit ? this.#now() : undefined;
   }
 
@@ -386,7 +383,7 @@ export class WorkspaceRegistry {
     this.#byWindow.clear();
     this.#ptyOwner.clear();
     this.#focus = [];
-    this.#pending = undefined;
+    this.#endOnClose.clear();
     this.#confirmedAt = undefined;
   }
 }

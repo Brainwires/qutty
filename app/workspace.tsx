@@ -60,7 +60,6 @@ import {
 } from "../lib/workspace/store.ts";
 import { useSession } from "./use-session.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
-import { QuitDialog } from "./quit-dialog.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
 import { SettingsPanel } from "./settings-panel.tsx";
@@ -829,15 +828,6 @@ function WorkspaceView() {
       )}
       {manager && effectiveMode(settings.companion.mode) === "off" && (
         <AskDialog backend={manager.backend} onDone={refocus} />
-      )}
-      {session.quit && (
-        <QuitDialog
-          request={session.quit}
-          onAnswer={(quit) => {
-            session.answerQuit(quit);
-            if (!quit) refocus();
-          }}
-        />
       )}
       {manager && ssh.dialog && (
         <ConnectionsDialog

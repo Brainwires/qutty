@@ -7,17 +7,33 @@
 //   window shows them is kept, and the window that shows the workspace next gets it in the replay
 //   and the live output after it;
 // - an exit while detached comes back with the replay; closing the tile releases the terminal;
-// - ending a workspace kills its terminals; the app's quit kills the rest.
+// - ending a workspace kills its terminals; the app's quit kills the rest;
+// - the quit guard asks with the OS's message box (`host.confirm`), with no window open;
+// - the Window menu's "Close Window and End Its Shells": the window used last closes, its
+//   workspace is ended after the close and its key forgotten; a busy agent is asked about first.
 //
 // Run: deno test -A tests/
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { DesktopCapError } from "denext/desktop";
 import ptyExt, { terminalSessions } from "../desktop/pty.ts";
-import sessionExt, { type SessionJoin } from "../desktop/session.ts";
+import sessionExt, {
+  closeQuestion,
+  createEndWindow,
+  guardQuit,
+  quitQuestion,
+  type SessionEndWindow,
+  type SessionJoin,
+} from "../desktop/session.ts";
 import { workspaces } from "../desktop/workspace-host.ts";
+import { forgetEndedWorkspaces } from "../desktop/windows.ts";
 import { HAS_SH, marker, POSIX, warmUp } from "./pty_helpers.ts";
-import { ctxOf, fakeExtensionHost, until } from "./session_helpers.ts";
+import {
+  ctxOf,
+  fakeExtensionHost,
+  fakeRuntimeWindows,
+  until,
+} from "./session_helpers.ts";
 
 await warmUp();
 
@@ -189,5 +205,160 @@ Deno.test("session: save needs a joined window and an object of bounded size", a
     throw new Error("saved for a window that joined nothing");
   } catch (e) {
     assert(e instanceof DesktopCapError && e.code === "not_found");
+  }
+});
+
+/** A detached workspace `ws-1` whose terminal `p1` runs a busy agent, and no window open. */
+function busyDetached(): void {
+  workspaces.clear();
+  workspaces.join("w1", "ws-1");
+  workspaces.addPty("ws-1", "p1");
+  workspaces.windowClosed("w1");
+  workspaces.setBusyProvider(() => [{ ptyId: "p1", name: "claude" }]);
+}
+
+Deno.test("session: Cmd+Q with a busy agent asks with the OS's message box, with no window open", async () => {
+  busyDetached();
+  const fake = fakeExtensionHost([]);
+  const quits: number[] = [];
+  const off = guardQuit(fake.host, () => quits.push(1));
+  try {
+    // Cancel: the quit stays cancelled and nothing quits.
+    fake.reply = () => Promise.resolve(1);
+    assertEquals(await fake.beforeQuit(), false);
+    assertEquals(fake.confirms, [
+      quitQuestion([{ ptyId: "p1", name: "claude" }]),
+    ]);
+    assertEquals(fake.confirms[0].message, "An agent is still working");
+    assertEquals(fake.confirms[0].buttons, ["Quit Anyway", "Cancel"]);
+    assertEquals([fake.confirms[0].defaultId, fake.confirms[0].cancelId], [
+      1,
+      1,
+    ]);
+    assert(fake.confirms[0].detail?.includes("claude"));
+    await new Promise((r) => setTimeout(r, 0));
+    assertEquals(quits, []);
+
+    // A second quit while the box is still up is cancelled without a second box.
+    let press: (n: number) => void = () => {};
+    fake.reply = () => new Promise((r) => press = r);
+    assertEquals(await fake.beforeQuit(), false);
+    assertEquals(await fake.beforeQuit(), false);
+    assertEquals(fake.confirms.length, 2);
+    // Quit Anyway: the quit is issued again, and the guard lets it through.
+    press(0);
+    await until("the quit issued again", () => quits.length === 1);
+    assertEquals(await fake.beforeQuit(), true);
+
+    // A runtime without message boxes: this quit is cancelled, the next one goes through.
+    fake.reply = () =>
+      Promise.reject(new DesktopCapError("unsupported", "no message boxes"));
+    assertEquals(await fake.beforeQuit(), false);
+    await new Promise((r) => setTimeout(r, 0));
+    assertEquals(await fake.beforeQuit(), true);
+    assertEquals(quits.length, 1);
+
+    // No busy agent: no question.
+    workspaces.setBusyProvider(undefined);
+    const asked = fake.confirms.length;
+    assertEquals(await fake.beforeQuit(), true);
+    assertEquals(fake.confirms.length, asked);
+  } finally {
+    off();
+    workspaces.setBusyProvider(undefined);
+    workspaces.clear();
+  }
+});
+
+Deno.test("session: Close Window and End Its Shells acts for the window used last, then forgets its key", async () => {
+  const fake = app([
+    { id: "w1", kind: "window", key: "ws-1" },
+    { id: "w2", kind: "window", key: "ws-2" },
+  ]);
+  const runtime = fakeRuntimeWindows();
+  const off = forgetEndedWorkspaces(workspaces, runtime);
+  try {
+    join("w1");
+    join("w2");
+    workspaces.addPty("ws-1", "p1");
+    session.focus.handler({}, ctxOf("w1"));
+    const endWindow = (window: string, menu = true) =>
+      session.endWindow.handler({ menu }, ctxOf(window)) as Promise<
+        SessionEndWindow
+      >;
+    // Every window's page hears the click: only the one used last closes.
+    assertEquals(await endWindow("w2"), { close: false });
+    assertEquals(await endWindow("w1"), { close: true });
+    assertEquals(fake.confirms, [], "no busy agent: nothing to ask");
+    // Its workspace is ended once the page has closed the window, then its key is forgotten.
+    assert(workspaces.has("ws-1"));
+    assertEquals(runtime.forgotten, []);
+    await fake.close("w1");
+    assert(!workspaces.has("ws-1"));
+    assertEquals(runtime.forgotten, ["ws-1"]);
+    // A late copy of the same click from the other window does nothing.
+    assertEquals(await endWindow("w2"), { close: false });
+    assert(workspaces.has("ws-2"));
+    // The Workspaces menu's "End workspace" (asked in the page) is not the menu's click.
+    assertEquals(await endWindow("w2", false), { close: true });
+    await fake.close("w2");
+    assertEquals(runtime.forgotten, ["ws-1", "ws-2"]);
+    // A window that never joined has nothing to end.
+    assertEquals(await endWindow("w9", false), { close: false });
+  } finally {
+    off();
+    await fake.quit();
+  }
+});
+
+Deno.test("session: Close Window and End Its Shells asks first when an agent there is busy", async () => {
+  workspaces.clear();
+  const fake = fakeExtensionHost([]);
+  let now = 10_000;
+  const endWindow = createEndWindow(fake.host, () => now);
+  try {
+    workspaces.join("w1", "ws-1");
+    workspaces.addPty("ws-1", "p1");
+    workspaces.join("w2", "ws-2");
+    workspaces.addPty("ws-2", "p2");
+    workspaces.focused("w1");
+    workspaces.setBusyProvider(() => [
+      { ptyId: "p1", name: "claude" },
+      { ptyId: "p2", name: "codex" },
+    ]);
+    // Cancel: nothing closes, nothing is ended.
+    fake.reply = () => Promise.resolve(1);
+    assertEquals(await endWindow("w1", true), { close: false });
+    assertEquals(fake.confirms, [
+      closeQuestion([{ ptyId: "p1", name: "claude" }]),
+    ]);
+    assertEquals(
+      fake.confirms[0].message,
+      "An agent is still working in this window",
+    );
+    assertEquals(fake.confirms[0].buttons, ["Close and End", "Cancel"]);
+    assert(!fake.confirms[0].detail?.includes("codex"), "only this window's");
+    // The same click heard by another window is ignored; a new click a second later asks again.
+    assertEquals(await endWindow("w1", true), { close: false });
+    assertEquals(fake.confirms.length, 1);
+    now += 1500;
+    // While the box is up, every other copy of the click is ignored.
+    let press: (n: number | null) => void = () => {};
+    fake.reply = () => new Promise((r) => press = r);
+    const asking = endWindow("w1", true);
+    now += 1500;
+    assertEquals(await endWindow("w1", true), { close: false });
+    press(0);
+    assertEquals(await asking, { close: true });
+    assertEquals(fake.confirms.length, 2);
+    // A runtime without message boxes: the busy window is not closed.
+    workspaces.focused("w2");
+    now += 1500;
+    fake.reply = () => Promise.reject(new DesktopCapError("unsupported", "x"));
+    assertEquals(await endWindow("w2", true), { close: false });
+    assert(workspaces.has("ws-2"));
+  } finally {
+    workspaces.setBusyProvider(undefined);
+    workspaces.clear();
   }
 });

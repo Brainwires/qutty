@@ -10,11 +10,15 @@
 // module itself (and any plugin it imports) is never compiled into the app.
 //
 // Windows are views of workspaces (desktop/workspace-host.ts): a window's key is its workspace's
-// id. Here: New Window (Cmd+N) opens a fresh workspace, a Dock click with no window open reopens
-// the workspace detached last (or a fresh one), and Cmd+Q asks first when an agent is busy.
+// id. Here: New Window (Cmd+N) opens a fresh workspace, a Dock click with no window showing
+// reopens the workspace detached last (or a fresh one), and an ended workspace's key is
+// forgotten, so Reopen Closed Window, the Dock and the next launch's restored session never offer
+// it again (desktop/windows.ts). The quit guard (Cmd+Q asks first when an agent is busy) is the
+// `session` extension's (desktop/session.ts).
 import config from "./.deno-desktop/config.json" with { type: "json" };
 import { resolveDesktopCapabilities, runDesktop } from "denext/desktop";
 import { workspaces } from "./desktop/workspace-host.ts";
+import { dockReopenWindow, forgetEndedWorkspaces } from "./desktop/windows.ts";
 import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 
@@ -22,40 +26,11 @@ const app = await runDesktop({
   importMetaUrl: import.meta.url,
   ...(await resolveDesktopCapabilities(config, { base: import.meta.url })),
   newWindow: () => workspaceWindow(newWorkspaceId(), true),
+  onDockReopen: () => dockReopenWindow(workspaces, app.windows),
 });
 
 if (!app.sidecarChild) {
-  // The Dock icon clicked with every window closed: show the last detached workspace again.
-  const dock = (Deno as unknown as { dock?: EventTarget }).dock;
-  dock?.addEventListener?.("reopen", (event) => {
-    const visible = (event as CustomEvent<{ hasVisibleWindows?: boolean }>)
-      .detail?.hasVisibleWindows;
-    if (
-      visible === true || app.windows.list().some((w) => w.kind !== "panel")
-    ) {
-      return;
-    }
-    const last = workspaces.lastDetached();
-    app.windows.open(
-      last ? workspaceWindow(last) : workspaceWindow(newWorkspaceId(), true),
-    );
-  });
-
-  // Cmd+Q kills every terminal: ask first when an agent is working.
-  app.onBeforeQuit(() => {
-    const decision = workspaces.beforeQuit();
-    if (decision.allow) return true;
-    if (decision.window !== undefined) {
-      app.windows.get(decision.window)?.focus();
-      app.emit("session", "quit", decision.request, {
-        window: decision.window,
-      });
-    } else if (decision.open !== undefined) {
-      // No window is open: show the busy agent's workspace, whose page asks (from `join`).
-      app.windows.open(workspaceWindow(decision.open));
-    }
-    return false;
-  });
+  forgetEndedWorkspaces(workspaces, app.windows);
 
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
