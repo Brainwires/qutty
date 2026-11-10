@@ -15,10 +15,17 @@
 // forgotten, so Reopen Closed Window, the Dock and the next launch's restored session never offer
 // it again (desktop/windows.ts). The quit guard (Cmd+Q asks first when an agent is busy) is the
 // `session` extension's (desktop/session.ts).
+//
+// Tray mode (desktop/tray.ts): the tray icon (the macOS menu bar, the Linux / Windows tray) lists
+// the workspaces with terminals, reopens or focuses one, opens a new window and quits. With the
+// last window closed and terminals running, the app lives there (no Dock icon on macOS). Opening
+// Qutty again while it runs (Finder, Spotlight: the Dock's reopen; Linux / Windows: the
+// single-instance lock's `secondinstance`) brings back a window.
 import config from "./.deno-desktop/config.json" with { type: "json" };
 import { resolveDesktopCapabilities, runDesktop } from "denext/desktop";
 import { workspaces } from "./desktop/workspace-host.ts";
 import { dockReopenWindow, forgetEndedWorkspaces } from "./desktop/windows.ts";
+import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
 import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 
@@ -27,15 +34,37 @@ const app = await runDesktop({
   ...(await resolveDesktopCapabilities(config, { base: import.meta.url })),
   newWindow: () => workspaceWindow(newWorkspaceId(), true),
   onDockReopen: () => dockReopenWindow(workspaces, app.windows),
+  tray: {
+    ...trayIcons(Deno.build.os),
+    tooltip: "Qutty",
+    menu: trayMenu(workspaces.list(), Deno.build.os),
+  },
 });
 
 if (!app.sidecarChild) {
   forgetEndedWorkspaces(workspaces, app.windows);
+  trayMode.install(app, workspaces);
+  onSecondInstance(() => trayMode.relaunched());
 
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
       console.error(`detach self-test: FAILED: ${e?.message ?? e}`);
       Deno.exit(1);
     });
+  }
+}
+
+/**
+ * A later launch handed to this one by the single-instance lock (`desktop.app.singleInstance`,
+ * Linux and Windows). Denext routes only its deep links and files (none here), and the runtime
+ * raises a window only when one is open, so a launch while Qutty lives in the tray would bring
+ * nothing back. macOS never starts a second instance: opening the app again is the Dock's reopen.
+ */
+function onSecondInstance(fn: () => void): void {
+  const api = (Deno as unknown as {
+    desktop?: { addEventListener?: (type: string, fn: () => void) => void };
+  }).desktop;
+  if (typeof api?.addEventListener === "function") {
+    api.addEventListener("secondinstance", fn);
   }
 }

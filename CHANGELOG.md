@@ -2,15 +2,25 @@
 
 ## Unreleased
 
+- Qutty now has a menu-bar icon (a tray icon on Linux and Windows). Its menu
+  opens a new window, lists the workspaces that have running terminals
+  ("Workspace 2 — 3 terminals", the open ones checked) to reopen or focus one,
+  and quits (still asking first when an agent is busy). Closing the last window
+  while terminals run keeps Qutty there: on macOS the Dock icon goes away until
+  a window opens again. Closing it with nothing left running quits, on every
+  platform. Opening Qutty again (Finder, Spotlight, the app launcher) brings a
+  window back. Where the desktop has no tray (Linux without a StatusNotifier
+  host), the last window's close works as before.
+
 - Closing a window with its close button now asks what to do with its shells:
   Keep Running (the default, Return) closes the window and leaves them running,
-  so Window → Reopen Closed Window, the Dock or the next launch brings them
-  back; End Shells ends them (if an agent there is busy, Qutty asks first);
-  Cancel (Escape) keeps the window open. Tick "Remember my choice" to stop being
-  asked. Change it any time in Settings → Windows → "When a window closes": Ask
-  each time, Keep shells running or End shells. Quitting, ⌘W (which closes the
-  focused terminal) and the Window menu's "Close Window and End Its Shells" are
-  unchanged.
+  so Window → Reopen Closed Window, the menu-bar / tray icon, the Dock or the
+  next launch brings them back; End Shells ends them (if an agent there is busy,
+  Qutty asks first); Cancel (Escape) keeps the window open. Tick "Remember my
+  choice" to stop being asked. Change it any time in Settings → Windows → "When
+  a window closes": Ask each time, Keep shells running or End shells. Quitting,
+  ⌘W (which closes the focused terminal) and the Window menu's "Close Window and
+  End Its Shells" are unchanged.
 
 - The companion's API key brain now sends its requests through Rullama's
   `AnthropicChatProvider` (`@rullama/provider` 0.12.5) instead of Qutty's own

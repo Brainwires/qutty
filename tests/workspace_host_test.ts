@@ -57,6 +57,7 @@ Deno.test("workspaces: closing a window detaches its workspace; reopening attach
     name: "Workspace 1",
     state: "detached",
     terminals: 2,
+    running: 2,
     busy: 0,
     detachedAt: 1500,
   }]);
@@ -66,6 +67,26 @@ Deno.test("workspaces: closing a window detaches its workspace; reopening attach
   assertEquals(r.windowOfPty("pty-2"), "window-3");
   assertEquals(r.list()[0].state, "attached");
   assertEquals(r.lastDetached(), undefined);
+});
+
+Deno.test("workspaces: an exited shell still counts as a terminal, not as running", () => {
+  const { r } = registry();
+  let changes = 0;
+  r.onChanged(() => changes++);
+  r.join("main", "main");
+  r.addPty("main", "pty-1");
+  r.addPty("main", "pty-2");
+  const before = changes;
+  r.ptyExited("pty-1");
+  r.ptyExited("pty-1"); // once
+  r.ptyExited("pty-9"); // unknown
+  assertEquals(changes, before + 1);
+  assertEquals(
+    [r.list()[0].terminals, r.list()[0].running],
+    [2, 1],
+  );
+  r.removePty("pty-1"); // its tile closed
+  assertEquals([r.list()[0].terminals, r.list()[0].running], [1, 1]);
 });
 
 Deno.test("workspaces: an empty workspace is dropped, not detached", () => {

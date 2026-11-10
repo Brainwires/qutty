@@ -215,6 +215,7 @@ export class TerminalSessions {
   #route(event: "data" | "exit", payload: PtyDataEvent | PtyExitEvent): void {
     const { id, ...data } = payload;
     this.#owned.emit(id, event, data);
+    if (event === "exit") this.#ws.ptyExited(id);
     if (event === "exit" && this.#releasing.delete(id)) {
       void this.#owned.remove(id);
     }

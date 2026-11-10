@@ -14,10 +14,15 @@ export default {
         linux: "./icons/app.png",
       },
       // Detachable sessions: closing a window detaches its workspace (its terminals keep running
-      // in the app's process) and the app stays up with no window, in the Dock; Cmd+Q quits and
-      // kills them (desktop/workspace-host.ts). Off macOS the last window's close quits
-      // (desktop/session.ts).
+      // in the app's process) and the app stays up with no window, in the menu bar / tray (the
+      // backend tray, desktop.ts); Cmd+Q quits and kills them (desktop/workspace-host.ts). The
+      // last window's close quits when no terminal is left, and off macOS when there is no tray
+      // (desktop/tray.ts).
       keepAlive: true,
+      // One running Qutty: launching it again while it runs (in the tray, say) hands the launch
+      // to the running one, which opens a window (desktop.ts, `secondinstance`). macOS does this
+      // itself (the Dock's reopen).
+      singleInstance: true,
       // The workspace windows open at the last quit come back at launch, at their frames (each
       // window's key is its workspace's id; their terminals start afresh, a quit ended them).
       restoreWindows: true,

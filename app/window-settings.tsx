@@ -20,7 +20,7 @@ const LABELS: Record<WindowClose, string> = {
 const HINTS: Record<WindowClose, string> = {
   ask: "The window asks whether to keep its shells running or end them.",
   keep:
-    "The window closes and its shells keep running: Window → Reopen Closed Window brings them back.",
+    "The window closes and its shells keep running: Window → Reopen Closed Window or the menu-bar / tray icon brings them back.",
   end:
     "The window closes and its shells end (an agent still working is asked about first).",
 };

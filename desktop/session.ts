@@ -11,6 +11,9 @@
 // cancelled and the OS's own message box asks first (`host.confirm`, app-modal: it works with no
 // window open); "Quit Anyway" quits again.
 //
+// The window lifecycle goes to tray mode (desktop/tray.ts): closing the last window leaves the app
+// in the menu bar / tray while terminals run, and quits when none does.
+//
 // Events: `changed` (the workspace list, to every window).
 
 import {
@@ -26,6 +29,7 @@ import {
   workspaces,
 } from "./workspace-host.ts";
 import { terminalSessions } from "./pty.ts";
+import { quitApp, type TrayMode, trayMode } from "./tray.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 
 export type { PtyReplay, WorkspaceInfo };
@@ -87,30 +91,38 @@ const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
 const CHANGED_DEBOUNCE_MS = 100;
 
 /** Whether a window still shows the app (the tray panel does not count). */
-function hasAppWindow(host: DesktopExtensionHost): boolean {
+function hasAppWindow(host: Pick<DesktopExtensionHost, "windows">): boolean {
   return host.windows().some((w) => w.kind !== "panel");
 }
 
-/** Quit the app (`Deno.desktop.quit()`): the quit guards run again. */
-function quitApp(): void {
-  const desktop = (Deno as unknown as { desktop?: { quit?: () => void } })
-    .desktop;
-  try {
-    desktop?.quit?.();
-  } catch (err) {
-    console.error("session: could not quit", err);
-  }
-}
-
 /**
- * Off macOS there is no Dock to bring a windowless app back, so closing the last window quits
- * (through the quit guard, which asks when an agent is busy). On macOS the app stays up.
+ * Tell tray mode (desktop/tray.ts) about the window lifecycle: a window opening brings the Dock
+ * icon back, and once the last window has closed (not for a quit) the app lives on in the tray
+ * while terminals run, or quits through the quit guard. Where there is no tray, closing the last
+ * window quits off macOS (no Dock to bring the app back) and keeps a Dock app on macOS. The
+ * decision waits a turn, so every close hook (the PTY host's detaches or ends the closed window's
+ * workspace, desktop/terminal-sessions.ts) has run by then.
  */
-function quitWithLastWindow(host: DesktopExtensionHost): void {
-  host.onWindowClosed((info) => {
-    if (info.appQuitting || host.os === "darwin" || hasAppWindow(host)) return;
-    quitApp();
+export function followWindows(
+  host: Pick<
+    DesktopExtensionHost,
+    "onWindowOpened" | "onWindowClosed" | "windows"
+  >,
+  mode: Pick<TrayMode, "windowOpened" | "lastWindowClosed"> = trayMode,
+): () => void {
+  const offOpened = host.onWindowOpened((info) => {
+    if (info.kind !== "panel") mode.windowOpened();
   });
+  const offClosed = host.onWindowClosed((info) => {
+    if (info.appQuitting) return;
+    setTimeout(() => {
+      if (!hasAppWindow(host)) mode.lastWindowClosed();
+    }, 0);
+  });
+  return () => {
+    offOpened();
+    offClosed();
+  };
 }
 
 /** "claude, codex": the busy agents' names, each once. */
@@ -275,7 +287,7 @@ export default defineDesktopExtension({
         host.emit("changed", { workspaces: workspaces.list() });
       }, CHANGED_DEBOUNCE_MS);
     });
-    quitWithLastWindow(host);
+    followWindows(host);
     guardQuit(host);
     endWindow = createEndWindow(host);
   },
