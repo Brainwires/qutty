@@ -1,6 +1,7 @@
 {
   "//": "Denext comes from JSR. To dogfood a local checkout instead, add \"links\": [\"../denext\"].",
   "version": "0.4.0",
+  "license": "MIT",
   "tasks": {
     "dev": "deno run -A jsr:@denext/denext@^4.15.0/cli dev .",
     "build": "deno run -A jsr:@denext/denext@^4.15.0/cli build .",

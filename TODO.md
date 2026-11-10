@@ -347,6 +347,13 @@
       for x86_64 and arm64 on GitHub's Ubuntu 24.04 images, installs each and
       runs the PTY self-test under Xvfb. Best-effort: a Linux failure does not
       hold back the macOS release. Pull requests that touch the packaging run
-      the same build as a dry run. Open: Denext's `.desktop` entry is always
-      `Categories=Utility;` (scripts/package-linux.ts retags it), and the
-      AppImage is not self-contained (it needs the host's WebKitGTK).
+      the same build as a dry run. Open: the AppImage is not self-contained (it
+      needs the host's WebKitGTK; its AppStream metainfo says so).
+- [x] Denext 4.15's Linux packaging: the `.desktop` entries (terminal
+      categories, keywords, `GenericName`, `StartupWMClass`), the bundle's own
+      entry (Name, Icon), AppStream metainfo, the pinned AppImage runtime and
+      `buildDesktopAppImage` come from denext (denext.config.ts
+      `desktop.linux`); scripts/package-linux.ts is the regenerated template
+      again, with no Qutty retagging or repacking.
+- [ ] `desktop.installers.email` for the `.deb` Maintainer and the metainfo's
+      update contact, once Qutty has a public contact address.

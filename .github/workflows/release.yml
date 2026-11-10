@@ -153,14 +153,12 @@ jobs:
             label: x64
             tool: x86_64
             appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-            runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
           # runners-first: there is no self-hosted Linux arm64 pool
           - runner: ubuntu-24.04-arm
             arch: arm64
             label: arm64
             tool: aarch64
             appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
-            runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
     runs-on: ${{ matrix.runner }}
     # Tests, node-pty, the packages and their self-tests; a hang fails here, not at 6 h.
     timeout-minutes: 45
@@ -190,25 +188,22 @@ jobs:
         env:
           TOOL: ${{ matrix.tool }}
           TOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
-          RUNTIME_SHA256: ${{ matrix.runtime_sha256 }}
         run: |
           set -eu
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             libwebkit2gtk-4.1-0 libgtk-3-0 xvfb xauth desktop-file-utils
-          # appimagetool and the AppImage runtime it embeds, pinned by hash (by default it
-          # downloads the runtime's "continuous" build). A wrapper hands it the runtime.
+          # appimagetool, pinned by hash, run without FUSE by a wrapper. The AppImage runtime it
+          # embeds is denext's pin (type2-runtime 20251108, SHA-256-checked by the package script
+          # and passed as --runtime-file).
           BIN="$RUNNER_TEMP/bin"
           mkdir -p "$BIN"
           curl -fsSL --retry 3 -o "$BIN/appimagetool.AppImage" \
             "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${TOOL}.AppImage"
-          curl -fsSL --retry 3 -o "$BIN/runtime" \
-            "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${TOOL}"
           echo "${TOOL_SHA256}  $BIN/appimagetool.AppImage" | sha256sum -c -
-          echo "${RUNTIME_SHA256}  $BIN/runtime" | sha256sum -c -
           chmod +x "$BIN/appimagetool.AppImage"
-          printf '#!/bin/sh\nexec "%s/appimagetool.AppImage" --appimage-extract-and-run --runtime-file "%s/runtime" "$@"\n' \
-            "$BIN" "$BIN" > "$BIN/appimagetool"
+          printf '#!/bin/sh\nexec "%s/appimagetool.AppImage" --appimage-extract-and-run "$@"\n' \
+            "$BIN" > "$BIN/appimagetool"
           chmod +x "$BIN/appimagetool"
           echo "$BIN" >> "$GITHUB_PATH"
 
@@ -227,12 +222,57 @@ jobs:
           LABEL: ${{ matrix.label }}
         run: |
           set -eu
+          ID=org.qutty.Qutty
+          # The launcher each package carries (denext writes them from denext.config.ts
+          # desktop.linux.desktopEntry): valid, named Qutty, listed with the terminals, its icon
+          # installed beside it.
+          check_entry() {
+            echo "--- $1"
+            cat "$1"
+            desktop-file-validate "$1"
+            grep -qx 'Name=Qutty' "$1"
+            grep -qx "Icon=${ID}" "$1"
+            grep -qx 'Categories=System;TerminalEmulator;' "$1"
+            grep -qx 'GenericName=Terminal' "$1"
+            grep -qx "StartupWMClass=${ID}" "$1"
+          }
+          # The AppStream metainfo the .deb and the AppImage install.
+          check_metainfo() {
+            echo "--- $1"
+            cat "$1"
+            grep -q "<id>${ID}</id>" "$1"
+            grep -q "<launchable type=\"desktop-id\">${ID}.desktop</launchable>" "$1"
+          }
+          echo "::group::.deb"
           dpkg-deb -I "dist/Qutty-${LABEL}.deb"
-          dpkg-deb --fsys-tarfile "dist/Qutty-${LABEL}.deb" \
-            | tar -xO ./usr/share/applications/org.qutty.Qutty.desktop > "$RUNNER_TEMP/entry.desktop"
-          cat "$RUNNER_TEMP/entry.desktop"
-          desktop-file-validate "$RUNNER_TEMP/entry.desktop"
-          grep -qx 'Categories=System;TerminalEmulator;' "$RUNNER_TEMP/entry.desktop"
+          dpkg-deb -c "dist/Qutty-${LABEL}.deb" | grep -v ' \./usr/lib/'
+          dpkg-deb -f "dist/Qutty-${LABEL}.deb" Maintainer | grep -qx 'Brainwires'
+          DEB="$RUNNER_TEMP/deb"
+          dpkg-deb -x "dist/Qutty-${LABEL}.deb" "$DEB"
+          check_entry "$DEB/usr/share/applications/${ID}.desktop"
+          check_metainfo "$DEB/usr/share/metainfo/${ID}.metainfo.xml"
+          test -f "$DEB/usr/share/icons/hicolor/512x512/apps/${ID}.png"
+          echo "::endgroup::"
+          echo "::group::tarball"
+          TGZ="$RUNNER_TEMP/tgz"
+          mkdir -p "$TGZ"
+          tar -xzf "dist/Qutty-${LABEL}-linux.tar.gz" -C "$TGZ"
+          check_entry "$TGZ/Qutty-${LABEL}/${ID}.desktop"
+          test -f "$TGZ/Qutty-${LABEL}/${ID}.png"
+          echo "::endgroup::"
+          echo "::group::AppImage contents"
+          chmod +x "dist/Qutty-${LABEL}.AppImage"
+          APPDIR="$RUNNER_TEMP/appimage"
+          mkdir -p "$APPDIR"
+          (cd "$APPDIR" && "$GITHUB_WORKSPACE/dist/Qutty-${LABEL}.AppImage" --appimage-extract > /dev/null)
+          ls -la "$APPDIR/squashfs-root"
+          check_entry "$APPDIR/squashfs-root/${ID}.desktop"
+          check_metainfo "$APPDIR/squashfs-root/usr/share/metainfo/${ID}.metainfo.xml"
+          grep -q 'libwebkit2gtk-4.1' "$APPDIR/squashfs-root/usr/share/metainfo/${ID}.metainfo.xml"
+          test -f "$APPDIR/squashfs-root/.DirIcon"
+          cat "$APPDIR/squashfs-root/AppRun"
+          grep -q "LAUFEY_APP_ID:-${ID}" "$APPDIR/squashfs-root/AppRun"
+          echo "::endgroup::"
           sudo apt-get install -y -qq "./dist/Qutty-${LABEL}.deb"
           # Load node-pty's addon, start a login shell, have it answer, exit 0 (desktop/pty.ts),
           # under a throwaway HOME and a virtual display.
@@ -245,7 +285,6 @@ jobs:
           selftest qutty
           echo "::endgroup::"
           echo "::group::AppImage"
-          chmod +x "dist/Qutty-${LABEL}.AppImage"
           selftest "dist/Qutty-${LABEL}.AppImage" --appimage-extract-and-run
           echo "::endgroup::"
 
