@@ -26,10 +26,33 @@ export default {
     // What the Linux packages say about the app (scripts/package-linux.ts; the release builds
     // `--format tar.gz,deb,appimage`). The window is WebKitGTK (the `webview` backend): the .deb
     // depends on libwebkit2gtk-4.1-0 and libgtk-3-0; the AppImage and the tarball need them too.
+    // The .deb Maintainer is the publisher alone: Qutty has no public contact address yet
+    // (SECURITY.md sends reports to GitHub's private advisories), so no `email`.
     installers: {
       publisher: "Brainwires",
       description:
         "A tiling terminal: the terminal you are using gets the most space",
+    },
+    linux: {
+      // Every .desktop entry denext writes (the .deb's launcher, the bundle's own entry the
+      // tarball and the AppImage carry) lists Qutty with the terminals. The window class is the
+      // app id: the launchers start the app with LAUFEY_APP_ID=org.qutty.Qutty.
+      desktopEntry: {
+        categories: ["System", "TerminalEmulator"],
+        keywords: [
+          "terminal",
+          "shell",
+          "console",
+          "command line",
+          "tiling",
+          "ssh",
+        ],
+        genericName: "Terminal",
+        startupWMClass: "org.qutty.Qutty",
+      },
+      // No `appImage.requires`: the AppImage's metainfo already lists the webview backend's
+      // WebKitGTK 4.1 and GTK 3, and nothing else Qutty loads on Linux comes from the host but
+      // libc (node-pty's pty.node and the libc FFI; the voice library is not built for Linux).
     },
     // The first window. There is no window background-colour option in the config schema; the
     // page's own CSS paints the dark background.
@@ -72,11 +95,12 @@ export default {
         // files, folders and the editor, through hidden PTYs as well (Denext's `shell`
         // capability only opens paths inside the app's own folders and needs `run`).
         "./desktop/links.ts",
-        // The lite system monitor (`desktop/sysstats.ts`): CPU, GPU and memory figures for the bar
-        // meter and Loopy's hot face, read through Mach / IOKit FFI on macOS and `/proc` on Linux
-        // (no `sys`), only when the page asks.
-        "./desktop/sysstats.ts",
       ],
+      // The lite system monitor: CPU, GPU and memory figures for the bar meter and Loopy's hot
+      // face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It
+      // bakes no Deno permission (aggregate figures only; the runtime serves it to an app whose
+      // packaged launch config lists it).
+      systemStats: true,
       // The microphone: push-to-talk opens it in the app's own process (the native audio
       // library's cpal capture). The capability writes the Info.plist usage text macOS shows when
       // it asks (once), and gives a signed (hardened runtime) build the
@@ -103,8 +127,6 @@ export default {
     //   the PTY path.
     //   The voice extension loads rullama-hardware's audio library (`librullama_audio_ffi`) from
     //   the app-support folder the same way.
-    //   The system monitor (desktop/sysstats.ts) calls libSystem (`host_statistics`,
-    //   `sysctlbyname`), IOKit and CoreFoundation the same way, instead of `sys`.
     //   No `run`, `write` or `sys` is needed.
     // - netConnect, loopback only: the shell agent's optional local model (desktop/shell-agent.ts),
     //   Ollama's API on 127.0.0.1:11434 through `@rullama/provider`. Nothing else is reachable.

@@ -279,16 +279,15 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
-- [x] **Lite system monitor and hot Loopy** (`desktop/sysstats.ts`,
-      `lib/sysstats.ts`, `app/use-sysstats.ts`, `app/sys-meter.tsx`).
-  - Done: CPU (Mach `host_statistics`, `/proc/stat`), GPU (IOKit
-    `PerformanceStatistics` over FFI, `ioreg` fallback; AMD sysfs,
-    `nvidia-smi`), memory pressure; the bar meter; the hot face with hysteresis;
-    Settings → System monitor.
-  - Later: per-core bars; Windows (`GetSystemTimes`, PDH for the GPU); Intel
-    GPUs on Linux (no busy figure without `intel_gpu_top`).
-  - Switch to a Denext `system.stats` API if it lands (proposed to the Denext
-    side), and drop the FFI readers.
+- [x] **Lite system monitor and hot Loopy** (`lib/sysstats.ts`,
+      `app/use-sysstats.ts`, `app/sys-meter.tsx`).
+  - Done: CPU, GPU and memory pressure from Denext's `system.stats()` (the
+    `systemStats` capability, Denext 4.15); the bar meter; the hot face with
+    hysteresis; Settings → System monitor. Qutty's own Mach / IOKit FFI and
+    `/proc` readers are gone.
+  - Later: per-core bars (`system.stats({ perCore: true })` gives `cpu.cores`);
+    Intel GPUs on Linux (Denext reports `null`: no busy figure without
+    `intel_gpu_top`).
 
 - [x] **Loopy's reactions** (`lib/companion/reactions.ts`, `sleepy.ts`,
       `loopy-priority.ts`, `lib/shell-marks.ts`, `app/use-reactions.ts`,
@@ -355,6 +354,13 @@
       for x86_64 and arm64 on GitHub's Ubuntu 24.04 images, installs each and
       runs the PTY self-test under Xvfb. Best-effort: a Linux failure does not
       hold back the macOS release. Pull requests that touch the packaging run
-      the same build as a dry run. Open: Denext's `.desktop` entry is always
-      `Categories=Utility;` (scripts/package-linux.ts retags it), and the
-      AppImage is not self-contained (it needs the host's WebKitGTK).
+      the same build as a dry run. Open: the AppImage is not self-contained (it
+      needs the host's WebKitGTK; its AppStream metainfo says so).
+- [x] Denext 4.15's Linux packaging: the `.desktop` entries (terminal
+      categories, keywords, `GenericName`, `StartupWMClass`), the bundle's own
+      entry (Name, Icon), AppStream metainfo, the pinned AppImage runtime and
+      `buildDesktopAppImage` come from denext (denext.config.ts
+      `desktop.linux`); scripts/package-linux.ts is the regenerated template
+      again, with no Qutty retagging or repacking.
+- [ ] `desktop.installers.email` for the `.deb` Maintainer and the metainfo's
+      update contact, once Qutty has a public contact address.

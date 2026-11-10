@@ -1,12 +1,11 @@
 /**
  * The lite system monitor's logic (CPU and GPU use, memory pressure), kept pure so it is
- * unit-tested; desktop/sysstats.ts reads the counters (Mach and IOKit through FFI on macOS,
- * `/proc` and sysfs on Linux) and app/use-sysstats.ts asks for a sample every few seconds.
+ * unit-tested. The figures come from Denext's `system.stats()` (`denext desktop add
+ * system-stats`, `denext/desktop/client`; lib/pty-client.ts asks for one) and app/use-sysstats.ts
+ * asks for a sample every few seconds.
  *
- * - CPU: the busy share of the tick counters between two readings (Mach `host_statistics`,
- *   `/proc/stat`).
- * - GPU: the driver's own utilisation figure (IOKit's `PerformanceStatistics`, AMD's
- *   `gpu_busy_percent`, `nvidia-smi`), parsed here when it comes as text.
+ * - Sample: Denext's `SystemStats` folded to the three figures shown ({@linkcode fromSystemStats}):
+ *   the CPU's busy share since this window's previous sample, the busiest GPU, memory pressure.
  * - Smoothing: an exponential moving average over the samples.
  * - "Hot": a hysteresis state machine over the smoothed figures (hot after the CPU or GPU stays
  *   at or above `hotAt` for `sustainMs`; cool again after both stay below `coolAt` that long), so
@@ -17,139 +16,38 @@
  * @module
  */
 
+import type { SystemStats } from "denext/desktop/client";
+
 // --- samples --------------------------------------------------------------------------------
 
 /** One reading of the machine, in percent (0–100); `null`: not available here. */
 export interface SysSample {
   readonly cpu: number | null;
   readonly gpu: number | null;
-  /** Memory pressure: the share of memory in use or unavailable. */
+  /** Memory pressure: how close the machine is to running out of memory. */
   readonly mem: number | null;
   /** When it was taken (ms since the epoch). */
   readonly at: number;
-  /** How long the backend spent taking it (ms, its own cost). */
-  readonly costMs?: number;
-}
-
-/** Cumulative CPU time counters: the busy and the total ticks since boot. */
-export interface CpuTicks {
-  readonly busy: number;
-  readonly total: number;
-}
-
-/** Mach's `host_cpu_load_info`: [user, system, idle, nice] ticks. */
-export function machTicks(load: ArrayLike<number>): CpuTicks {
-  const [user, system, idle, nice] = [load[0], load[1], load[2], load[3]];
-  return { busy: user + system + nice, total: user + system + idle + nice };
-}
-
-/** The counters are 32-bit on macOS and wrap: the forward distance from `a` to `b`. */
-function delta(a: number, b: number, wrap: number | undefined): number {
-  const d = b - a;
-  return d < 0 && wrap ? d + wrap : d;
 }
 
 /**
- * The CPU's busy share between two readings, in percent; `null` when no time passed (or the
- * counters went backwards without a wrap to explain it). `wrap`: the counters' modulus (2^32 for
- * Mach's `natural_t`), none for 64-bit ones.
+ * Denext's `SystemStats` as the monitor's sample: the aggregate CPU (`cpu.total`), the busiest
+ * GPU (`gpu.utilization`) and memory pressure (`memory.pressure`), each `null` where the OS gives
+ * no figure. A figure is clamped to 0–100; one that is not a finite number counts as missing.
  */
-export function cpuPercent(
-  prev: CpuTicks,
-  next: CpuTicks,
-  wrap?: number,
-): number | null {
-  const total = delta(prev.total, next.total, wrap);
-  const busy = delta(prev.busy, next.busy, wrap);
-  if (!(total > 0) || busy < 0) return null;
-  return clampPct((busy / total) * 100);
-}
-
-/**
- * The aggregate `cpu` line of Linux's `/proc/stat`: user nice system idle iowait irq softirq
- * steal (guest time is already in user and nice). Idle and iowait are the idle ticks.
- */
-export function parseProcStat(text: string): CpuTicks | null {
-  const line = text.split("\n").find((l) => /^cpu\s/.test(l));
-  if (!line) return null;
-  const n = line.trim().split(/\s+/).slice(1, 9).map(Number);
-  if (n.length < 4 || n.some((v) => !Number.isFinite(v))) return null;
-  const [
-    user,
-    nice,
-    system,
-    idle,
-    iowait = 0,
-    irq = 0,
-    softirq = 0,
-    steal = 0,
-  ] = n;
-  const idleAll = idle + iowait;
-  const total = user + nice + system + idleAll + irq + softirq + steal;
-  return { busy: total - idleAll, total };
-}
-
-/** Memory pressure from Linux's `/proc/meminfo`: 100 − MemAvailable / MemTotal. */
-export function parseMeminfo(text: string): number | null {
-  const kb = (key: string) => {
-    const m = new RegExp(`^${key}:\\s+(\\d+)`, "m").exec(text);
-    return m ? Number(m[1]) : null;
+export function fromSystemStats(s: SystemStats): SysSample {
+  return {
+    cpu: pct(s.cpu?.total),
+    gpu: pct(s.gpu?.utilization),
+    mem: pct(s.memory?.pressure),
+    at: typeof s.at === "number" && Number.isFinite(s.at) ? s.at : Date.now(),
   };
-  const total = kb("MemTotal");
-  const available = kb("MemAvailable");
-  if (!total || available === null) return null;
-  return clampPct(100 - (available / total) * 100);
 }
 
-/** The keys IOKit's `PerformanceStatistics` names the GPU's busy share by, best first. */
-export const GPU_UTILISATION_KEYS = [
-  "Device Utilization %", // Apple silicon, Intel graphics
-  "GPU Activity(%)", // AMD on macOS
-  "Renderer Utilization %",
-] as const;
-
-/**
- * The busiest GPU in `ioreg -r -c IOAccelerator -d 1` output (the fallback when IOKit cannot be
- * read through FFI): each accelerator's `PerformanceStatistics` dictionary, its first known key.
- */
-export function parseIoregGpu(text: string): number | null {
-  let best: number | null = null;
-  for (
-    const [, body] of text.matchAll(/"PerformanceStatistics" = \{([^}]*)\}/g)
-  ) {
-    for (const key of GPU_UTILISATION_KEYS) {
-      const esc = key.replace(/[()%]/g, (c) => `\\${c}`);
-      const m = new RegExp(`"${esc}"=(\\d+)`).exec(body);
-      if (m) {
-        best = Math.max(best ?? 0, clampPct(Number(m[1])));
-        break;
-      }
-    }
-  }
-  return best;
-}
-
-/**
- * The busiest GPU in `nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits`
- * output (one number per GPU; the header and a `%` are tolerated).
- */
-export function parseNvidiaSmi(text: string): number | null {
-  let best: number | null = null;
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*(\d+(?:\.\d+)?)\s*%?\s*$/.exec(line);
-    if (m) best = Math.max(best ?? 0, clampPct(Number(m[1])));
-  }
-  return best;
-}
-
-/** AMD's sysfs `gpu_busy_percent` (a bare number). */
-export function parseBusyPercent(text: string): number | null {
-  const n = Number(text.trim());
-  return text.trim() && Number.isFinite(n) ? clampPct(n) : null;
-}
-
-function clampPct(n: number): number {
-  return Math.min(100, Math.max(0, n));
+function pct(v: number | null | undefined): number | null {
+  return typeof v === "number" && Number.isFinite(v)
+    ? Math.min(100, Math.max(0, v))
+    : null;
 }
 
 // --- smoothing ------------------------------------------------------------------------------
