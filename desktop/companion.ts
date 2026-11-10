@@ -10,7 +10,8 @@
 // - Brain: lib/companion/runtime.ts over an adapter (default: desktop/companion-brain.ts, Claude
 //   Code with an MCP config pointing at that socket through the `qutty-mcp` shim; or a local
 //   Ollama model through `@rullama/inference`, calling the hub's tools in process as the
-//   companion: lib/companion/inference-brain.ts).
+//   companion: lib/companion/inference-brain.ts; or Anthropic's API with the user's key, the
+//   same loop, the key read from the hub's keychain entry for each request).
 // - Audit: every companion-only call (and every refused one) appended as a JSON line to
 //   `companion-audit.jsonl` in the app-support folder, and shown in Settings.
 // - Page round trips: a `say` waiting for its button, and a `control` command (spawn / close /
@@ -18,7 +19,12 @@
 
 import { ensureDir, writeFileAtomic } from "./pty.ts";
 import { chmodPath, removeDir, unlinkPath } from "./hub-socket.ts";
-import { ClaudeCodeBrain, ollamaCompanionBrain } from "./companion-brain.ts";
+import {
+  anthropicCompanionBrain,
+  ClaudeCodeBrain,
+  ollamaCompanionBrain,
+} from "./companion-brain.ts";
+import { ANTHROPIC_MODELS } from "../lib/companion/anthropic-provider.ts";
 import {
   type AuditEntry,
   AuditLog,
@@ -127,8 +133,10 @@ export interface CompanionHostOptions {
   emit: CompanionEmit;
   /** Start listening on the companion socket (desktop/hub.ts serves it as the companion). */
   listen(path: string): void;
-  /** The hub's tools as the companion, for an in-process brain (Ollama). */
+  /** The hub's tools as the companion, for an in-process brain (Ollama, the API key brain). */
   tools?: () => CompanionTools;
+  /** The API key brain's Anthropic key (the hub's keychain entry; `null`: none saved). */
+  anthropicKey?: () => Promise<string | null>;
   /** Another brain (tests). Default: Claude Code, or Ollama when Settings picks it. */
   createBrain?: (cfg: BrainConfig) => BrainAdapter;
 }
@@ -142,9 +150,12 @@ export interface BrainConfig {
 
 /** The label Settings shows for a brain choice. */
 function adapterLabel(engine: BrainEngine, model: string | undefined): string {
-  return engine === "ollama"
-    ? `Ollama (${model ?? "no model"})`
-    : "Claude Code";
+  if (engine === "ollama") return `Ollama (${model ?? "no model"})`;
+  if (engine === "anthropic") {
+    const id = ANTHROPIC_MODELS[(model ?? "") as keyof typeof ANTHROPIC_MODELS];
+    return `Anthropic API (${id ?? ANTHROPIC_MODELS[""]})`;
+  }
+  return "Claude Code";
 }
 
 /** The companion's runtime, identity, audit log and page round trips. */
@@ -181,6 +192,12 @@ export class CompanionHost {
             throw new Error("no Ollama model is chosen (Settings → Companion)");
           }
           return ollamaCompanionBrain(cfg.model, opts.tools());
+        }
+        if (cfg.engine === "anthropic") {
+          if (!opts.tools) throw new Error("the hub's tools are not available");
+          const key = opts.anthropicKey;
+          if (!key) throw new Error("the OS keychain is not available");
+          return anthropicCompanionBrain(cfg.model ?? "", key, opts.tools());
         }
         return new ClaudeCodeBrain({
           mcpConfig: cfg.mcpConfig,

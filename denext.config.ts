@@ -81,10 +81,20 @@ export default {
         usageDescription:
           "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile.",
       },
-      // Not yet: `secureStore: true` for cloud voice keys (Deepgram, ElevenLabs). Denext's packager
-      // then bakes `--allow-run=security` and `--allow-sys`, which the app must not have, so the
-      // cloud engines are off (lib/voice/engines.ts CLOUD_KEYS_UNAVAILABLE; TODO.md).
+      // The OS credential store (macOS Keychain, Linux Secret Service) for the API keys of the
+      // cloud voices (Deepgram, ElevenLabs) and the companion's API key brain (Anthropic). Only
+      // the extensions use it, each through its own namespace (`ctx.secureStore` /
+      // `host.secureStore`: `org.qutty.Qutty/ext/voice`, `org.qutty.Qutty/ext/hub`), which no page
+      // can read; the page only sets, clears and asks whether a key is set
+      // (lib/secrets/api-keys.ts). With `secureStore.legacy: false` below and runtime denext.16
+      // (the capability list baked into .deno-desktop/app.json) it bakes no Deno permission on
+      // macOS or Linux: no `--allow-run=security`, no `--allow-sys` (Windows, whose store is the
+      // PasswordVault through PowerShell, gets `--allow-run=powershell.exe`).
+      secureStore: true,
     },
+    // Never `/usr/bin/security` (no item of Qutty's was ever stored through it): the runtime's own
+    // Keychain store only, so no `--allow-run=security` is baked.
+    secureStore: { legacy: false },
     // What the extensions need beyond the baseline (which already has broad read + env):
     // - ffi "*": node-pty's prebuilt Node-API addon (pty.node) is loaded from the compiled app's
     //   embedded file system, whose path cannot be named at package time; the extensions also do
@@ -101,10 +111,22 @@ export default {
     //   The system monitor (desktop/sysstats.ts) calls libSystem (`host_statistics`,
     //   `sysctlbyname`), IOKit and CoreFoundation the same way, instead of `sys`.
     //   No `run`, `write` or `sys` is needed.
-    // - netConnect, loopback only: the shell agent's optional local model (desktop/shell-agent.ts),
-    //   Ollama's API on 127.0.0.1:11434 through `@rullama/provider`. Nothing else is reachable.
-    // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either. (With the
-    // cloud voices on: `netConnect: ["api.deepgram.com", "api.elevenlabs.io"]`.)
-    extraPermissions: { ffi: ["*"], netConnect: ["127.0.0.1:11434"] },
+    // - netConnect: the shell agent's optional local model (desktop/shell-agent.ts) and the
+    //   companion's Ollama brain, Ollama's API on 127.0.0.1:11434 through `@rullama/provider`; the
+    //   cloud voices the user picks with their own key (desktop/voice.ts through
+    //   `@rullama/provider-speech`: api.deepgram.com, api.elevenlabs.io); and the companion's API
+    //   key brain (lib/companion/anthropic-provider.ts: api.anthropic.com). Nothing else is
+    //   reachable, and none of the three cloud hosts is called unless the user picked it and saved
+    //   a key.
+    // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either.
+    extraPermissions: {
+      ffi: ["*"],
+      netConnect: [
+        "127.0.0.1:11434",
+        "api.deepgram.com",
+        "api.elevenlabs.io",
+        "api.anthropic.com",
+      ],
+    },
   },
 } satisfies DenextConfig;

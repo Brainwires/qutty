@@ -28,6 +28,11 @@
 // - The companion (desktop/companion.ts): its own socket and privileged identity, the brain
 //   runtime (`companion` events, `companionSend` / `companionConfigure` / `companionStatus`), the
 //   audit log, and `qutty-hook say …` lines (`say` events, answered with `companionSayDone`).
+//   The API key brain's Anthropic key is kept in the OS keychain through this extension's own
+//   secure store (`host.secureStore`: Denext's `<app identifier>/ext/hub`, which no page can read;
+//   lib/secrets/api-keys.ts): the page sets or clears it and asks whether one is set
+//   (`companionKeyStatus` / `companionKeySet` / `companionKeyClear`), and the brain reads it for
+//   each request.
 //
 // The hub is optional: if it cannot start, it logs why and the terminals work as before. Nothing
 // here may throw into the app's startup or a terminal's spawn.
@@ -42,7 +47,7 @@ import {
   StreamServerListener,
   StreamServerTransport,
 } from "@rullama/mcp-server";
-import { emptyInput, objectSchema, str } from "./schema.ts";
+import { asValidation, emptyInput, objectSchema, str } from "./schema.ts";
 import {
   ensureDir,
   resolveProgram,
@@ -78,9 +83,20 @@ import {
 } from "./companion.ts";
 import type { BrainAdapter } from "../lib/companion/brain.ts";
 import {
+  BRAIN_ENGINES,
   type BrainEngine,
   isOllamaModelName,
 } from "../lib/companion/settings.ts";
+import {
+  companionKeys,
+  type CompanionKeyService,
+} from "../lib/companion/keys.ts";
+import {
+  API_KEY_MAX,
+  type ApiKeys,
+  type KeyPresence,
+  type SecretStore,
+} from "../lib/secrets/api-keys.ts";
 import type { AuditEntry, CompanionStatus } from "../lib/companion/protocol.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
 import {
@@ -298,6 +314,8 @@ export interface HubServiceOptions {
   appSupportDir?: string;
   /** Another companion brain (tests). Default: Claude Code. */
   createBrain?: (cfg: BrainConfig) => BrainAdapter;
+  /** The extension's own secure store (`host.secureStore`; tests: a fake), for the API key brain. */
+  secureStore?: () => SecretStore | undefined;
   /** The shell agent's model backends (tests). Default: Claude Code, else a local Ollama. */
   shellBrains?: ShellBrainDeps;
   /**
@@ -314,6 +332,8 @@ export class HubService {
   readonly files: IntegrationFiles;
   readonly socketDir: string;
   readonly companion: CompanionHost;
+  /** The companion's API keys (the Anthropic key), in the extension's secure store. */
+  readonly keys: ApiKeys<CompanionKeyService>;
   #emit: HubEmit;
   #fs: ConfigFs;
   #reactor = new FdReactor();
@@ -362,6 +382,7 @@ export class HubService {
     const handler = createHubHandler(this.core, buildToolRegistry(this.core), {
       audit: (call) => this.companion.record(call),
     });
+    this.keys = companionKeys(opts.secureStore ?? (() => undefined));
     this.companion = new CompanionHost({
       core: this.core,
       socketDir: this.socketDir,
@@ -371,6 +392,7 @@ export class HubService {
       ...(opts.createBrain ? { createBrain: opts.createBrain } : {}),
       // An in-process brain calls the tools through the same handler as the sockets.
       tools: () => companionToolbox(handler),
+      anthropicKey: () => this.keys.get("anthropic"),
       emit: (event, data) => this.#emit(event, data),
       listen: (path) => {
         this.#companionListener = FdUnixListener.listen(
@@ -829,6 +851,7 @@ async function start(host: DesktopExtensionHost): Promise<void> {
     home,
     socketDir,
     appSupportDir: host.appSupportDir,
+    secureStore: () => host.secureStore,
     // With several windows each event goes where it belongs (desktop/workspace-host.ts).
     emit: (event, data) => {
       const to = hubEventTarget(workspaces, event, data);
@@ -935,17 +958,20 @@ const configureInput = objectSchema<
     if (!isOllamaModelName(model)) {
       issues.push({ message: "model must be a model name", path: ["model"] });
     }
-    const engine = v.engine === undefined ? "claude" : v.engine;
-    if (engine !== "claude" && engine !== "ollama") {
-      issues.push({ message: "engine is claude or ollama", path: ["engine"] });
+    const engine = BRAIN_ENGINES.find((e) => e === (v.engine ?? "claude"));
+    if (!engine) {
+      issues.push({
+        message: `engine is one of ${BRAIN_ENGINES.join(", ")}`,
+        path: ["engine"],
+      });
     }
-    return {
-      enabled: v.enabled === true,
-      model,
-      engine: engine === "ollama" ? "ollama" : "claude",
-    };
+    return { enabled: v.enabled === true, model, engine: engine ?? "claude" };
   },
 );
+
+const keySetInput = objectSchema<{ key: string }>((v, issues) => ({
+  key: str(v, "key", issues, API_KEY_MAX + 64),
+}));
 
 const controlDoneInput = objectSchema<
   { requestId: string; ok: boolean; tileId?: string; error?: string }
@@ -1024,6 +1050,29 @@ export default defineDesktopExtension({
           engine: BrainEngine;
         };
         return requireService().companion.configure(enabled, model, engine);
+      },
+    },
+    /** Whether the API key brain's Anthropic key is in the keychain (never the key). */
+    companionKeyStatus: {
+      input: emptyInput,
+      handler: (): Promise<KeyPresence<CompanionKeyService>> =>
+        requireService().keys.presence(),
+    },
+    /** Keep the API key brain's Anthropic key in the keychain. */
+    companionKeySet: {
+      input: keySetInput,
+      handler: async (args: unknown): Promise<void> => {
+        const { key } = args as { key: string };
+        const keys = requireService().keys;
+        await asValidation(() => keys.set("anthropic", key));
+      },
+    },
+    /** Remove the API key brain's Anthropic key from the keychain. */
+    companionKeyClear: {
+      input: emptyInput,
+      handler: async (): Promise<void> => {
+        const keys = requireService().keys;
+        await asValidation(() => keys.clear("anthropic"));
       },
     },
     /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */

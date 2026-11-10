@@ -3911,6 +3911,10 @@ kbd {
 .voice-error {
   color: var(--red);
 }
+/* An API key's row (app/companion/api-key-field.tsx): where the key lives, under the field. */
+.api-key .field-hint {
+  flex-basis: 100%;
+}
 
 /* ---- The Ollama helper (app/ollama-dialog.tsx, app/ollama-settings.tsx) ------------------- */
 

@@ -74,6 +74,8 @@ import type {
   SayEvent,
 } from "./companion/protocol.ts";
 import type { BrainEngine } from "./companion/settings.ts";
+import type { CompanionKeyService } from "./companion/keys.ts";
+import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 import {
@@ -302,6 +304,15 @@ export interface PtyBackend {
     model: string,
     engine?: BrainEngine,
   ): Promise<CompanionStatus>;
+  /**
+   * Whether the API key brain's Anthropic key is saved (the hub keeps it in the OS keychain; the
+   * key itself never comes back to the page).
+   */
+  companionKeyStatus(): Promise<KeyPresence<CompanionKeyService>>;
+  /** Save the API key brain's Anthropic key (replacing any). */
+  companionKeySet(key: string): Promise<void>;
+  /** Remove the API key brain's Anthropic key. */
+  companionKeyClear(): Promise<void>;
   /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */
   companionSayDone(id: string, action: string | null): Promise<boolean>;
   /** The page carried out (or could not carry out) a companion command. */
@@ -717,6 +728,15 @@ export function createDesktopBackend(
     },
     async companionConfigure(enabled, model, engine = "claude") {
       return await hub.companionConfigure({ enabled, model, engine });
+    },
+    async companionKeyStatus() {
+      return await hub.companionKeyStatus({});
+    },
+    async companionKeySet(key) {
+      await hub.companionKeySet({ key });
+    },
+    async companionKeyClear() {
+      await hub.companionKeyClear({});
     },
     async companionSayDone(id, action) {
       return await hub.companionSayDone({ id, action });
@@ -1507,6 +1527,9 @@ export function createDemoBackend(): PtyBackend {
     companionSend: (text, via) => hub.companion.send(text, via),
     companionConfigure: (enabled, model, engine) =>
       hub.companion.configure(enabled, model, engine),
+    companionKeyStatus: () => hub.companion.keyStatus(),
+    companionKeySet: (key) => hub.companion.keySet(key),
+    companionKeyClear: () => hub.companion.keyClear(),
     companionSayDone: (id, action) => hub.companion.sayDone(id, action),
     hubControlDone: (requestId, result) =>
       hub.companion.controlDone(requestId, result),

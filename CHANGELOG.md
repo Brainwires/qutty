@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Cloud voices and an API key brain for Loopy, with the keys in the OS keychain.
+  Settings → Voice now offers Deepgram and ElevenLabs speech to text and
+  Deepgram Aura speech with your own key, and Settings → Companion → Brain runs
+  on → API key runs Loopy on Anthropic's API (Claude Opus 5.5 by default, or
+  Haiku 5.5 / Sonnet 5.5) with your key. Each key is kept in the macOS Keychain
+  (the Secret Service on Linux) by Qutty's own process, in a place the window's
+  page cannot read: Settings can save, replace or remove a key and shows whether
+  one is saved, but never shows it again. Nothing is sent to these services
+  unless you pick one and save a key. The app can now reach api.deepgram.com,
+  api.elevenlabs.io and api.anthropic.com, and no other permission was added:
+  Denext 4.15's secure store needs no `--allow-run` or `--allow-sys` on macOS
+  and Linux.
+
 ## 0.4.0 — detach and New Window, Linux packages, SSH broadcast, Loopy reacts
 
 - Broadcast input (cluster ssh). Turn it on with the bar's broadcast button or

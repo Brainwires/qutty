@@ -1,7 +1,7 @@
 /**
  * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): where
- * Loopy is drawn, which corner, whether its brain may run, which brain (Claude Code, or a local
- * Ollama model) and its model, whether Loopy is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts),
+ * Loopy is drawn, which corner, whether its brain may run, which brain (Claude Code, a local
+ * Ollama model, or Anthropic's API with the user's key) and its model, whether Loopy is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts),
  * and its reactions (sleepy at night: lib/companion/sleepy.ts; celebrate and sad over finished
  * jobs: lib/companion/reactions.ts).
  *
@@ -28,14 +28,19 @@ export const COMPANION_MODELS: readonly BrainModel[] = [
 ];
 
 /**
- * Which brain: headless Claude Code (the user's own login), or a local Ollama model through
- * `@rullama/inference` (lib/companion/inference-brain.ts). An API key brain is not offered: the
- * key would need Denext's `secureStore`, which still bakes `--allow-run=security` and
- * `--allow-sys` into the app (Denext 4.13.1).
+ * Which brain: headless Claude Code (the user's own login), a local Ollama model through
+ * `@rullama/inference` (lib/companion/inference-brain.ts), or Anthropic's Messages API with the
+ * user's API key (lib/companion/anthropic-provider.ts), which the hub extension keeps in the OS
+ * keychain (Denext 4.15's extension secure store; the page never reads it back). Claude Code and
+ * the API key brain share {@linkcode CompanionSettings.model}.
  */
-export type BrainEngine = "claude" | "ollama";
+export type BrainEngine = "claude" | "ollama" | "anthropic";
 /** Every brain, as Settings lists them. */
-export const BRAIN_ENGINES: readonly BrainEngine[] = ["claude", "ollama"];
+export const BRAIN_ENGINES: readonly BrainEngine[] = [
+  "claude",
+  "ollama",
+  "anthropic",
+];
 
 /** An Ollama model name (`qwen3.8:27b-mlx`, `user/model:tag`), or "" for none chosen. */
 export function isOllamaModelName(name: string): boolean {
@@ -50,7 +55,7 @@ export interface CompanionSettings {
   brain: boolean;
   /** Which brain runs. */
   engine: BrainEngine;
-  /** Claude Code's model. */
+  /** Claude Code's model, and the API key brain's. */
   model: BrainModel;
   /** The Ollama model (one that can call tools), when `engine` is `ollama`. */
   ollamaModel: string;
@@ -153,7 +158,7 @@ export function brainChoice(
 ): { engine: BrainEngine; model: string } {
   return s.engine === "ollama"
     ? { engine: "ollama", model: s.ollamaModel }
-    : { engine: "claude", model: s.model };
+    : { engine: s.engine, model: s.model };
 }
 
 /** How Loopy is drawn today: floating falls back to the window. */

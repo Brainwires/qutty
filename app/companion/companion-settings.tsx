@@ -2,9 +2,10 @@
 // multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner, whether
 // it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at night,
 // celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its brain may run, which
-// brain (headless Claude Code with its model, or a local Ollama model that can call tools, from the
-// Ollama helper's tracked models; an API key brain is listed but off: see BrainEngine) and the
-// brain's status, and "Companion activity": the
+// brain (headless Claude Code with its model, a local Ollama model that can call tools, from the
+// Ollama helper's tracked models, or Anthropic's API with the user's key, which the hub keeps in
+// the OS keychain: app/companion/api-key-field.tsx) and the brain's status, and "Companion
+// activity": the
 // companion's privileged actions from the audit log, newest first (the full log is
 // companion-audit.jsonl in the app-support folder).
 
@@ -23,9 +24,12 @@ import {
   COMPANION_MODELS,
   type CompanionSettings,
 } from "../../lib/companion/settings.ts";
+import { ANTHROPIC_MODELS } from "../../lib/companion/anthropic-provider.ts";
 import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
+import { detectPlatform } from "../../lib/workspace/keys.ts";
 import { ReactionSettings } from "./reaction-settings.tsx";
+import { ApiKeyField } from "./api-key-field.tsx";
 
 export interface CompanionSettingsProps {
   settings: CompanionSettings;
@@ -38,6 +42,15 @@ export interface CompanionSettingsProps {
 const ENGINE_LABEL: Record<BrainEngine, string> = {
   claude: "Claude Code",
   ollama: "Ollama",
+  anthropic: "API key",
+};
+
+const ENGINE_HINT: Record<BrainEngine, string> = {
+  claude: "Headless Claude Code with your own login.",
+  ollama:
+    "A local Ollama model on this computer; it calls the hub's tools itself.",
+  anthropic:
+    "Anthropic's API with your own API key: what you ask Loopy, and what its tools read from your tiles, is sent to api.anthropic.com and billed to that key.",
 };
 
 const MODE_LABEL: Record<CompanionMode, string> = {
@@ -52,6 +65,12 @@ const MODEL_LABEL: Record<BrainModel, string> = {
   sonnet: "Sonnet",
   opus: "Opus",
 };
+
+/** The API key brain's models, by their API id. */
+function apiModelLabel(m: BrainModel): string {
+  const id = ANTHROPIC_MODELS[m];
+  return m ? id : `${id} (default)`;
+}
 
 /** How many activity entries are listed. */
 const ACTIVITY_ROWS = 12;
@@ -168,6 +187,7 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
       </label>
       <BrainChoice
         settings={settings}
+        backend={props.backend}
         disabled={!shown || !settings.brain}
         {...(props.ollama ? { ollama: props.ollama } : {})}
         onChange={onChange}
@@ -209,9 +229,26 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
   );
 }
 
-/** The brain (Claude Code with its model, or an Ollama model that can call tools). */
+/** The API key brain's Anthropic key: kept by the hub in the OS keychain. */
+function AnthropicKey(props: { backend: PtyBackend }) {
+  const { backend } = props;
+  return (
+    <ApiKeyField
+      name="Anthropic"
+      testid="companion-key-anthropic"
+      has={async () => (await backend.companionKeyStatus()).anthropic}
+      save={(key) => backend.companionKeySet(key)}
+      remove={() => backend.companionKeyClear()}
+      demo={backend.kind !== "desktop"}
+      platform={detectPlatform()}
+    />
+  );
+}
+
+/** The brain (Claude Code with its model, an Ollama model that can call tools, or the API). */
 function BrainChoice(props: {
   settings: CompanionSettings;
+  backend: PtyBackend | null;
   disabled: boolean;
   ollama?: OllamaStatus;
   onChange(patch: Partial<CompanionSettings>): void;
@@ -250,28 +287,15 @@ function BrainChoice(props: {
               {ENGINE_LABEL[e]}
             </button>
           ))}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={false}
-            data-testid="setting-companion-engine"
-            data-value="api"
-            disabled
-            title="Needs Denext's secure store without --allow-run / --allow-sys (not yet)"
-          >
-            API key
-          </button>
         </div>
-        <span class="field-hint">
-          {settings.engine === "claude"
-            ? "Headless Claude Code with your own login."
-            : "A local Ollama model on this computer; it calls the hub's tools itself."}
-          {" "}
-          No API key brain yet: a key needs Denext's secure store, which would
-          give the app more permissions than it has.
+        <span class="field-hint" data-testid="companion-engine-hint">
+          {ENGINE_HINT[settings.engine]}
         </span>
       </div>
-      {settings.engine === "claude"
+      {settings.engine === "anthropic" && props.backend && (
+        <AnthropicKey backend={props.backend} />
+      )}
+      {settings.engine !== "ollama"
         ? (
           <label class="field">
             <span class="field-label">Model</span>
@@ -286,7 +310,11 @@ function BrainChoice(props: {
                 })}
             >
               {COMPANION_MODELS.map((m) => (
-                <option value={m} key={m || "default"}>{MODEL_LABEL[m]}</option>
+                <option value={m} key={m || "default"}>
+                  {settings.engine === "anthropic"
+                    ? apiModelLabel(m)
+                    : MODEL_LABEL[m]}
+                </option>
               ))}
             </select>
           </label>

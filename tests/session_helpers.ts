@@ -2,6 +2,7 @@
 // extension's `setup(host)` host with windows that open, close and quit, and handler contexts.
 
 import type { DesktopCapCtx, DesktopSecureStore } from "denext/desktop";
+import { memorySecretStore } from "../lib/secrets/api-keys.ts";
 
 /** The extension secure store (Denext 4.15) for hosts and contexts whose tests never use it. */
 const unusedSecureStore: DesktopSecureStore = {
@@ -9,6 +10,16 @@ const unusedSecureStore: DesktopSecureStore = {
   set: () => Promise.reject(new Error("unused")),
   delete: () => Promise.reject(new Error("unused")),
 };
+
+/**
+ * A working extension secure store in memory, for the tests of the keys an extension keeps
+ * (`items`: what it holds). It never touches the OS keychain.
+ */
+export function memorySecureStore(
+  seed: Record<string, string> = {},
+): DesktopSecureStore & { items: Map<string, string> } {
+  return memorySecretStore(seed);
+}
 
 /** One event the fake extension host was given: its name, data and target window. */
 interface HostEvent {

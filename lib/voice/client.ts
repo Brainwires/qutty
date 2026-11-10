@@ -1,9 +1,11 @@
 /**
  * The page's side of the voice extension (desktop/voice.ts): the native audio library's and the
  * Whisper model's status, the model download, push-to-talk capture with the on-device or a cloud
- * engine (with the microphone's level while it listens: lib/voice/level.ts), and cloud speech
- * played on this machine. In the browser demo a fake stands in, which the e2e suite scripts
- * (`window.__e2eVoice`).
+ * engine (with the microphone's level while it listens: lib/voice/level.ts), cloud speech played
+ * on this machine, and the cloud services' API keys, which the extension keeps in the OS keychain
+ * (lib/secrets/api-keys.ts): the page sets or clears a key and asks whether one is set, and never
+ * reads one back. In the browser demo a fake stands in, which the e2e suite scripts
+ * (`window.__e2eVoice`); its keys live in memory only.
  *
  * Client-safe: the extension is imported for its types only.
  *
@@ -15,12 +17,37 @@ import type voiceExtension from "../../desktop/voice.ts";
 import type { ModelState } from "./model.ts";
 import { formatSize, WHISPER_BASE_EN } from "./model.ts";
 import { LEVEL_MS } from "./level.ts";
+import {
+  ApiKeys,
+  type KeyPresence,
+  memorySecretStore,
+  type SecretStore,
+} from "../secrets/api-keys.ts";
 
 /** How long the page waits for a transcript. */
 const TRANSCRIBE_WAIT_MS = 135_000;
 
 /** The engines that capture through the native library. */
 export type CaptureEngine = "local" | "deepgram" | "elevenlabs";
+
+/** The cloud services an API key can be kept for. */
+export type CloudService = "deepgram" | "elevenlabs";
+/** Every cloud service. */
+export const CLOUD_SERVICES: readonly CloudService[] = [
+  "deepgram",
+  "elevenlabs",
+];
+
+/** The secure-store key of a service's API key (in the voice extension's own namespace). */
+export const cloudKeyName = (service: CloudService) =>
+  `voice.${service}.apiKey`;
+
+/** The cloud services' keys in `store` (the voice extension's secure store, or the demo's). */
+export function voiceKeys(
+  store: () => SecretStore | undefined,
+): ApiKeys<CloudService> {
+  return new ApiKeys(store, CLOUD_SERVICES, cloudKeyName);
+}
 
 /** The native library, and the model. */
 export interface VoiceStatus {
@@ -40,14 +67,20 @@ export interface VoiceBackend {
   onModel(cb: (state: ModelState) => void): () => void;
   /** The microphone's level (0–1) while capturing, about 20 times a second; 0 when it stops. */
   onLevel(cb: (level: number) => void): () => void;
-  /** Start capturing for `engine` (a cloud engine gets its key from the secure store). */
-  sttStart(engine: CaptureEngine, key?: string): Promise<void>;
+  /** Start capturing for `engine` (the extension reads a cloud engine's key itself). */
+  sttStart(engine: CaptureEngine): Promise<void>;
   /** Stop and transcribe. */
   sttStop(): Promise<string>;
   sttCancel(): Promise<void>;
   /** Cloud speech (Deepgram Aura) played here; settles when it has been said or stopped. */
-  speak(text: string, opts: { key: string; model?: string }): Promise<void>;
+  speak(text: string, opts: { model?: string }): Promise<void>;
   stopSpeaking(): Promise<void>;
+  /** Which cloud services have a key in the OS keychain (the keys themselves never come back). */
+  keyStatus(): Promise<KeyPresence<CloudService>>;
+  /** Keep `key` as `service`'s key in the OS keychain. */
+  keySet(service: CloudService, key: string): Promise<void>;
+  /** Remove `service`'s key from the OS keychain. */
+  keyClear(service: CloudService): Promise<void>;
 }
 
 /** Subscribers to one of the extension's events, which is listened to once, on first use. */
@@ -79,18 +112,23 @@ export function createDesktopVoice(): VoiceBackend {
     cancelDownload: () => voice.modelCancel({}),
     onModel: eventFanOut<ModelState>("model"),
     onLevel: (cb) => onLevel((e) => cb(e.level)),
-    sttStart: (engine, key) =>
-      voice.sttStart({ engine, ...(key ? { key } : {}) }),
+    sttStart: (engine) => voice.sttStart({ engine }),
     sttStop: async () =>
       (await voice.sttStop({}, { timeoutMs: TRANSCRIBE_WAIT_MS })).text,
     sttCancel: () => voice.sttCancel({}),
     speak: (text, opts) =>
       voice.speak({
         text,
-        key: opts.key,
         ...(opts.model ? { model: opts.model } : {}),
       }, { timeoutMs: false }),
     stopSpeaking: () => voice.speakStop({}),
+    keyStatus: () => voice.keyStatus({}),
+    keySet: async (service, key) => {
+      await voice.keySet({ service, key });
+    },
+    keyClear: async (service) => {
+      await voice.keyClear({ service });
+    },
   };
 }
 
@@ -115,12 +153,15 @@ function demoLevel(tick: number): number {
 }
 
 /**
- * The fake voice backend of the browser demo: no microphone, scripted transcripts, and a made-up
- * level ({@linkcode demoLevel}) while it "listens".
+ * The fake voice backend of the browser demo: no microphone, scripted transcripts, a made-up
+ * level ({@linkcode demoLevel}) while it "listens", and cloud keys kept in memory (`store`) the
+ * way the extension keeps them in the keychain: set, cleared and asked about, never read back.
  */
 export function createDemoVoice(
   script: DemoVoiceScript = demoVoiceScript(),
+  store: SecretStore = memorySecretStore(),
 ): VoiceBackend {
+  const keys = voiceKeys(() => store);
   let capturing: string | undefined;
   const levelSubs = new Set<(level: number) => void>();
   let meter: ReturnType<typeof setInterval> | undefined;
@@ -177,6 +218,9 @@ export function createDemoVoice(
     },
     speak: () => Promise.reject(new Error("cloud voices need the desktop app")),
     stopSpeaking: () => Promise.resolve(),
+    keyStatus: () => keys.presence(),
+    keySet: (service, key) => keys.set(service, key),
+    keyClear: (service) => keys.clear(service),
   };
 }
 

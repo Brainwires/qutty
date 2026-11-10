@@ -2,7 +2,7 @@
 // uses for scp/sftp. The packaged app has no `--allow-run`, so the process is started through the
 // PTY host's node-pty fork, in a PtyHost of its own that is never shown in a tile (and not tapped
 // by the hub: it has no tile socket). It uses the user's own Claude Code login: Qutty holds no API
-// keys.
+// key for it.
 //
 // The protocol (lib/companion/brain.ts): bash puts the terminal in raw mode, prints a ready line
 // and runs `claude -p --input-format stream-json --output-format stream-json --verbose
@@ -16,8 +16,21 @@
 // (the app's one `netConnect` permission). It does the whole tool round trip (native
 // `tool_calls`, results as `role: "tool"` messages) and takes `ChatOptions.signal`, so stopping
 // the companion closes the request and Ollama stops generating.
+//
+// The third, the API key brain (`anthropicCompanionBrain`): the same loop over Anthropic's
+// Messages API (lib/companion/anthropic-provider.ts, api.anthropic.com) with the user's API key,
+// which the hub extension keeps in the OS keychain (its own namespace of Denext's secure store)
+// and reads for each request; the page never sees it.
 
 import { OllamaChatProvider } from "@rullama/provider";
+import {
+  ANTHROPIC_MODELS,
+  AnthropicApiProvider,
+} from "../lib/companion/anthropic-provider.ts";
+import {
+  type BrainModel,
+  COMPANION_MODELS,
+} from "../lib/companion/settings.ts";
 import { PtyHost, resolveProgram } from "./pty.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
 import { detectOllama, OLLAMA_URL } from "./shell-agent.ts";
@@ -165,6 +178,36 @@ export function ollamaHasModel(
 ): boolean {
   return models.includes(model) ||
     (!model.includes(":") && models.includes(`${model}:latest`));
+}
+
+/**
+ * The companion on Anthropic's API with the user's key (`key()`: the hub's keychain entry, read
+ * for every request), `model` one of Settings' aliases (`""`: the default model).
+ */
+export function anthropicCompanionBrain(
+  model: string,
+  key: () => Promise<string | null>,
+  tools: CompanionTools,
+  fetchFn?: typeof fetch,
+): BrainAdapter {
+  const alias: BrainModel = COMPANION_MODELS.includes(model as BrainModel)
+    ? model as BrainModel
+    : "";
+  const id = ANTHROPIC_MODELS[alias];
+  return new InferenceBrain({
+    label: `Anthropic API (${id})`,
+    provider: new AnthropicApiProvider({
+      key,
+      model: id,
+      ...(fetchFn ? { fetch: fetchFn } : {}),
+    }),
+    tools,
+    async check() {
+      if (!await key()) {
+        throw new Error("no Anthropic API key is saved (Settings → Companion)");
+      }
+    },
+  });
 }
 
 /** The companion on a local Ollama model, with the hub's tools as `tools`. */
