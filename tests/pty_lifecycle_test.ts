@@ -174,10 +174,17 @@ Deno.test({
         shell: SH,
         cwd: "/tmp",
       });
-      const info0 = await host.info(t.id);
+      const shellNames = ["sh", "bash", "dash", "zsh"];
+      // Right after the spawn the child can still be the forked app process (named `deno`) that has
+      // not yet exec'd the shell: wait for the shell's own name.
+      let info0 = await host.info(t.id);
+      const execBy = Date.now() + 5_000;
+      while (!shellNames.includes(info0.process) && Date.now() < execBy) {
+        await new Promise((r) => setTimeout(r, 20));
+        info0 = await host.info(t.id);
+      }
       assertEquals(info0.id, t.id);
       assertEquals(info0.pid, t.pid);
-      const shellNames = ["sh", "bash", "dash", "zsh"];
       assert(shellNames.includes(info0.process), info0.process);
       const real = (p: string) => Deno.realPathSync(p);
       await host.write(t.id, "cd /usr/bin\r");
