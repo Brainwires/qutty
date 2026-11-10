@@ -1,7 +1,14 @@
 // Shared helpers for the detachable-session tests (not a test module itself): a stand-in for an
 // extension's `setup(host)` host with windows that open, close and quit, and handler contexts.
 
-import type { DesktopCapCtx } from "denext/desktop";
+import type { DesktopCapCtx, DesktopSecureStore } from "denext/desktop";
+
+/** The extension secure store (Denext 4.15) for hosts and contexts whose tests never use it. */
+const unusedSecureStore: DesktopSecureStore = {
+  get: () => Promise.reject(new Error("unused")),
+  set: () => Promise.reject(new Error("unused")),
+  delete: () => Promise.reject(new Error("unused")),
+};
 
 /** One event the fake extension host was given: its name, data and target window. */
 interface HostEvent {
@@ -51,6 +58,12 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     onAppQuit: on(quits),
     onBeforeQuit: () => () => {},
     windows: () => windows,
+    // Denext 4.15's host additions; these tests never reach them.
+    secureStore: unusedSecureStore,
+    confirm: (): Promise<number | null> => Promise.reject(new Error("unused")),
+    openWindow: (): never => {
+      throw new Error("unused");
+    },
   };
   const fake = {
     host,
@@ -102,6 +115,7 @@ export function ctxOf(windowId: string | undefined): DesktopCapCtx {
     pickedPath: () => {
       throw new Error("unused");
     },
+    secureStore: unusedSecureStore,
   } as DesktopCapCtx;
 }
 
