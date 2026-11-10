@@ -315,3 +315,62 @@ Dock handling live there rather than in its extension).
   CONTRIBUTING said `export` was enough).
 - Detach that outlives the app process is still a separate design (a PTY daemon
   the app reconnects to). Qutty's terminals survive a closed window, not a quit.
+
+## After 4.15: what Qutty adopted, and what is still missing
+
+Denext 4.15.0 (runtime 3.0.0-denext.16) shipped gaps 7 to 12. Qutty uses:
+
+- **7, the Dock.** `runDesktop({ onDockReopen })` in desktop.ts
+  (`dockReopenWindow` in `desktop/windows.ts`) reopens the workspace detached
+  last, else a fresh one. The `Deno.dock` `reopen` listener is gone.
+- **8, the title bar.** Opened windows inherit `desktop.titleBar`, so the page
+  no longer calls `setTitleBarStyle("hiddenInset")` after it loads. Qutty never
+  moved the traffic lights, so `windowButtonPosition` deletes nothing and is not
+  used.
+- **10, the reopen list.** `desktop.menu.window.reopenClosed: "list"`, with the
+  window titles the page sets (`document.title` and `setWindowTitle`: "Qutty —
+  Workspace 2"). An ended workspace's key goes through `windows.forget`
+  (`forgetEndedWorkspaces` in `desktop/windows.ts`). A window whose workspace is
+  ended (the Window menu's "Close Window and End Its Shells", the Workspaces
+  menu's "End workspace") is closed first and its workspace ended after that
+  (`WorkspaceRegistry.endOnClose`), because Denext remembers a closed key as it
+  closes: forgetting before the close would not stick.
+- **12, asking with no window open.** The quit guard moved into the `session`
+  extension: `host.onBeforeQuit` plus `host.confirm`, the OS's message box. The
+  page's quit dialog, the `quit` event and the "open the busy workspace's window
+  to ask there" path are gone. "Close Window and End Its Shells" asks the same
+  way.
+- **App-wide menu clicks.** With runtime denext.16 Denext takes the application
+  menu's clicks from `Deno.desktop`'s `menuclick`, so New Window, Reopen Closed
+  Window and the window list answer with no window open. Qutty has no menu
+  handling of its own in the app's process.
+
+Not adopted yet: gap 9 (`defaultWidth` / `defaultHeight`, which would replace
+the `fresh` size in `lib/workspace/windows.ts`) and gap 11 (the replay's
+`dropped` / `truncated`, which `lib/workspace/replay.ts` detects by `seq`).
+
+### 13. No custom item in the backend's Window menu
+
+`desktop.menu.window` takes only Denext's own items. Qutty adds "Close Window
+and End Its Shells" with the page's `setAppMenu` (a "Window" submenu, which
+Denext's items join after a separator). A page menu click is queued for every
+window, though, not for the key window, so every page hears it and the `session`
+extension lets only the window used last act (and ignores the other copies for a
+second). The item does nothing with no window open, which is fine for this item.
+
+**Proposal:** `desktop.menu.window.items: [{ id, label, accelerator? }]` whose
+clicks reach the backend
+(`runDesktop({ onWindowMenuItem: (id, { keyWindow })
+=> … })`) with the key
+window's id, or a page click carrying the key window.
+
+### 14. A quit guard cannot wait for the user
+
+Every `onBeforeQuit` guard gets 5 seconds together, and then the quit goes on. A
+guard that awaits `host.confirm` would quit under a box the user has not
+answered yet. Qutty's guard cancels the quit at once, asks, and on "Quit Anyway"
+confirms and issues the quit again (`Deno.desktop.quit()`, an untyped runtime
+call).
+
+**Proposal:** pause the guards' deadline while a `host.confirm` box is up, or
+give the host a typed `quit()` that runs the guards again.

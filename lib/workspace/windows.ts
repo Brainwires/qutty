@@ -7,6 +7,8 @@
  * @module
  */
 
+import type { AppMenuItem } from "denext/desktop/app";
+
 /** What a workspace window opens with (denext's `windows.open` / `openWindow`). */
 export interface WorkspaceWindowOptions {
   url: string;
@@ -38,4 +40,29 @@ export function workspaceWindow(
   fresh = false,
 ): WorkspaceWindowOptions {
   return { url: "/", key, title: "Qutty", ...(fresh ? NEW_WINDOW_SIZE : {}) };
+}
+
+/** The id of the Window menu's "Close Window and End Its Shells" item. */
+export const CLOSE_AND_END_ITEM = "qutty:window:close-end";
+
+/**
+ * The page's application menu: a "Window" submenu with "Close Window and End Its Shells" (no
+ * keyboard shortcut), which Denext's own Window items (`desktop.menu.window`: New Window, Reopen
+ * Closed Window, the open windows) join after a separator. `desktop.menu.window` takes no custom
+ * items, so the page adds this one through `setAppMenu`.
+ */
+export function windowMenu(): AppMenuItem[] {
+  return [{
+    label: "Window",
+    submenu: [{
+      id: CLOSE_AND_END_ITEM,
+      label: "Close Window and End Its Shells",
+      destructive: true,
+    }],
+  }];
+}
+
+/** A workspace window's title (its label in the Window menu's lists). */
+export function workspaceTitle(name: string): string {
+  return `Qutty — ${name}`;
 }

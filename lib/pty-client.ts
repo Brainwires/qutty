@@ -82,13 +82,8 @@ import {
   type SessionBackend,
   type SessionWindowDeps,
 } from "./session-client.ts";
-import {
-  closeWindow,
-  openWindow,
-  quitApp,
-  setTitleBarStyle,
-  setWindowTitle,
-} from "denext/desktop/window";
+import { closeWindow, openWindow, setWindowTitle } from "denext/desktop/window";
+import { onAppMenuItem, setAppMenu } from "denext/desktop/app";
 
 export type {
   SshCommand,
@@ -444,7 +439,7 @@ export class PtyEvents {
 export interface DesktopBridgeDeps {
   desktopExtension: typeof desktopExtension;
   onDesktopEvent: typeof onDesktopEvent;
-  /** The window calls of the workspaces (default `denext/desktop/window`'s). */
+  /** The window and menu calls (default: `denext/desktop/window`'s and `denext/desktop/app`'s). */
   window?: SessionWindowDeps;
 }
 
@@ -460,7 +455,7 @@ export function createDesktopBackend(
 ): PtyBackend {
   const { desktopExtension, onDesktopEvent } = deps;
   const windowDeps = deps.window ??
-    { openWindow, closeWindow, quitApp, setWindowTitle, setTitleBarStyle };
+    { openWindow, closeWindow, setWindowTitle, setAppMenu, onAppMenuItem };
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");

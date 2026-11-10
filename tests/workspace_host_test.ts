@@ -1,6 +1,8 @@
 // The workspace host's state machine (desktop/workspace-host.ts), without windows or PTYs:
-// join / detach / reattach / drop, the PTY ↔ workspace ↔ window mapping, ending, the list, the
-// quit guard, and where the hub's events go with several windows.
+// join / detach / reattach / drop, the PTY ↔ workspace ↔ window mapping, ending (at once, or once
+// the window has closed), the list, the quit guard's decision, where the hub's events go with
+// several windows, and what desktop.ts hands Denext (desktop/windows.ts: the Dock's reopen, the
+// forgotten window keys).
 
 import { assert, assertEquals } from "@std/assert";
 import {
@@ -8,6 +10,9 @@ import {
   hubEventTarget,
   WorkspaceRegistry,
 } from "../desktop/workspace-host.ts";
+import { dockReopenWindow, forgetEndedWorkspaces } from "../desktop/windows.ts";
+import { workspaceWindow } from "../lib/workspace/windows.ts";
+import { fakeRuntimeWindows } from "./session_helpers.ts";
 
 function registry() {
   let now = 1000;
@@ -148,24 +153,20 @@ Deno.test("workspaces: the quit goes ahead with no busy agent", () => {
   assertEquals(r.beforeQuit(), { allow: true });
 });
 
-Deno.test("workspaces: a busy agent cancels the quit and asks in its window", () => {
+Deno.test("workspaces: a busy agent cancels the quit, with the agents to ask about", () => {
   const { r, tick } = registry();
   r.join("main", "main");
   r.join("w2", "ws-2");
   r.addPty("ws-2", "p2");
   r.setBusyProvider(() => [{ ptyId: "p2", name: "codex" }]);
-  const d = r.beforeQuit();
-  assertEquals(d, {
+  assertEquals(r.beforeQuit(), {
     allow: false,
-    window: "w2",
-    request: { busy: [{ ptyId: "p2", name: "codex" }], at: 1000 },
+    busy: [{ ptyId: "p2", name: "codex" }],
   });
-  assertEquals(r.pendingQuit()?.busy.length, 1);
   // Cancel: the next quit asks again.
   r.answerQuit(false);
-  assertEquals(r.pendingQuit(), undefined);
   assertEquals(r.beforeQuit().allow, false);
-  // Quit anyway: the next quit (the page's quitApp) goes through, once.
+  // Quit anyway: the next quit (issued again right after) goes through, once.
   r.answerQuit(true);
   assertEquals(r.beforeQuit(), { allow: true });
   assertEquals(r.beforeQuit().allow, false);
@@ -173,26 +174,120 @@ Deno.test("workspaces: a busy agent cancels the quit and asks in its window", ()
   r.answerQuit(true);
   tick(60_000);
   assertEquals(r.beforeQuit().allow, false);
-  // An unanswered question is forgotten after a while.
-  tick(10 * 60_000);
-  assertEquals(r.pendingQuit(), undefined);
+  // A busy agent in a detached workspace counts too.
+  r.windowClosed("w2");
+  assertEquals(r.beforeQuit().allow, false);
 });
 
-Deno.test("workspaces: a busy agent in a detached workspace asks in the active window, else reopens it", () => {
+Deno.test("workspaces: busyIn names the busy agents of one workspace", () => {
   const { r } = registry();
   r.join("w1", "ws-1");
   r.addPty("ws-1", "p1");
   r.join("w2", "ws-2");
   r.addPty("ws-2", "p2");
-  r.setBusyProvider(() => [{ ptyId: "p1", name: "claude" }]);
-  r.windowClosed("w1");
-  const d1 = r.beforeQuit();
-  assert(!d1.allow && d1.window === "w2");
-  r.windowClosed("w2");
-  const d2 = r.beforeQuit();
-  assert(!d2.allow && d2.window === undefined && d2.open === "ws-1");
+  r.addPty("ws-2", "p3");
+  r.setBusyProvider(() => [
+    { ptyId: "p1", name: "claude" },
+    { ptyId: "p3", name: "codex" },
+    { ptyId: "p9", name: "gone" },
+  ]);
+  assertEquals(r.busyIn("ws-2"), [{ ptyId: "p3", name: "codex" }]);
+  assertEquals(r.busyIn("ws-1").map((t) => t.name), ["claude"]);
+  assertEquals(r.busyIn("nope"), []);
 });
 
+Deno.test("workspaces: endOnClose ends the workspace when its window closes, not before", () => {
+  const { r } = registry();
+  const ended: [string, string[]][] = [];
+  r.onEnded((id, ptys) => ended.push([id, ptys]));
+  r.join("w1", "ws-1");
+  r.addPty("ws-1", "p1");
+  r.join("w2", "ws-2");
+  r.addPty("ws-2", "p2");
+  assert(r.endOnClose("ws-1"));
+  // Still shown: nothing is ended until the page has closed its window.
+  assertEquals(ended, []);
+  assertEquals(r.windowOf("ws-1"), "w1");
+  assertEquals(r.windowClosed("w1"), "ws-1");
+  assertEquals(ended, [["ws-1", ["p1"]]]);
+  assert(!r.has("ws-1"), "ended, not detached");
+  assertEquals(r.workspaceOfPty("p1"), undefined);
+  // Another window's close still detaches.
+  r.windowClosed("w2");
+  assertEquals(r.list().map((w) => [w.id, w.state]), [["ws-2", "detached"]]);
+  // A detached workspace is ended at once; an unknown one is refused.
+  assert(r.endOnClose("ws-2"));
+  assertEquals(ended.map(([id]) => id), ["ws-1", "ws-2"]);
+  assert(!r.endOnClose("ws-2"));
+  assertEquals(r.list(), []);
+});
+
+Deno.test("workspaces: an endOnClose mark goes with the workspace", () => {
+  const { r } = registry();
+  r.join("w1", "ws-1");
+  r.addPty("ws-1", "p1");
+  r.endOnClose("ws-1");
+  // Ended another way first (the Workspaces menu), then shown again in a new window: the new
+  // window's close detaches as usual.
+  r.end("ws-1");
+  r.join("w3", "ws-1");
+  r.addPty("ws-1", "p2");
+  r.windowClosed("w3");
+  assertEquals(r.list().map((w) => [w.id, w.state]), [["ws-1", "detached"]]);
+});
+
+Deno.test("windows: a Dock click with no window reopens the workspace detached last, else a new one", () => {
+  const { r, tick } = registry();
+  const none = fakeRuntimeWindows();
+  // No workspace at all: a fresh one, with a size.
+  const fresh = dockReopenWindow(r, none)!;
+  assert(fresh.key?.startsWith("ws-") && fresh.width !== undefined);
+  r.join("w1", "ws-1");
+  r.addPty("ws-1", "p1");
+  r.join("w2", "ws-2");
+  r.addPty("ws-2", "p2");
+  r.windowClosed("w2");
+  tick(10);
+  r.windowClosed("w1");
+  // The last detached one, with no size (its frame comes back).
+  assertEquals(dockReopenWindow(r, none), workspaceWindow("ws-1"));
+  // A workspace window still open (hidden or minimized): nothing new opens.
+  const hidden = fakeRuntimeWindows([{ id: "w3", kind: "window", key: "x" }]);
+  assertEquals(dockReopenWindow(r, hidden), undefined);
+  // The tray panel does not count.
+  const panel = fakeRuntimeWindows([{ id: "panel", kind: "panel" }]);
+  assertEquals(dockReopenWindow(r, panel), workspaceWindow("ws-1"));
+});
+
+Deno.test("windows: an ended workspace's key is forgotten, a closed one's is not", () => {
+  const { r } = registry();
+  const windows = fakeRuntimeWindows();
+  const off = forgetEndedWorkspaces(r, windows);
+  r.join("w1", "ws-1");
+  r.addPty("ws-1", "p1");
+  r.join("w2", "ws-2");
+  r.addPty("ws-2", "p2");
+  r.join("w3", "ws-3");
+  r.addPty("ws-3", "p3");
+  // Closing detaches: the key stays for Reopen Closed Window and the Dock.
+  r.windowClosed("w1");
+  assertEquals(windows.forgotten, []);
+  // Ending a detached workspace (the Workspaces menu) forgets it.
+  r.end("ws-1");
+  assertEquals(windows.forgotten, ["ws-1"]);
+  // "Close Window and End Its Shells": forgotten once the window has closed.
+  r.endOnClose("ws-2");
+  assertEquals(windows.forgotten, ["ws-1"]);
+  r.windowClosed("w2");
+  assertEquals(windows.forgotten, ["ws-1", "ws-2"]);
+  // The quit clears the registry without ending: the keys stay for the restored session.
+  r.clear();
+  assertEquals(windows.forgotten, ["ws-1", "ws-2"]);
+  off();
+  r.join("w4", "ws-4");
+  r.end("ws-4");
+  assertEquals(windows.forgotten, ["ws-1", "ws-2"]);
+});
 Deno.test("workspaces: a failing busy provider or listener never breaks the host", () => {
   const { r } = registry();
   r.setBusyProvider(() => {

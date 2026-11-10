@@ -35,11 +35,16 @@ export default {
     // page's own CSS paints the dark background.
     // Its key is the first workspace's id, so its frame comes back too.
     window: { width: 1600, height: 1000, title: "Qutty", key: "main" },
-    // New Window (Cmd+N: a new workspace, its key chosen in desktop.ts), Reopen Closed Window
-    // (Cmd+Shift+T: the workspace detached last) and the open windows, as the Window menu.
-    menu: { window: { newWindow: "/", reopenClosed: true, list: true } },
+    // New Window (Cmd+N: a new workspace, its key chosen in desktop.ts), Reopen Closed Window (a
+    // submenu of the closed workspace windows by title, most recent first; the first keeps
+    // Cmd+Shift+T) and the open windows, as the Window menu. Denext serves these items with no
+    // window open. An ended workspace's key is forgotten (desktop/windows.ts), so it is never
+    // listed. The page adds "Close Window and End Its Shells" (no shortcut) to the same menu
+    // through `setAppMenu` (lib/session-client.ts): `menu.window` takes no custom items.
+    menu: { window: { newWindow: "/", reopenClosed: "list", list: true } },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned
-    // runtime). The page must give itself a drag region (`makeWindowDraggable`).
+    // runtime). The page must give itself a drag region (`makeWindowDraggable`). Every opened
+    // window (New Window, Reopen Closed Window, the restored session) inherits it (Denext 4.15).
     titleBar: "hiddenInset",
     capabilities: {
       // The PTY backend (node-pty) runs in the app's Deno process: `desktop/pty.ts`. The SSH

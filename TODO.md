@@ -262,10 +262,17 @@
   - Maybe: drag a tile from one window to another (the PTY only changes owner:
     `createOwnedResources().attach` already allows it; the cross-window drag is
     the work).
-  - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.13"): a
-    Dock click after the main window closed, the title bar of opened windows, a
-    "Reopen ▸" list in the backend's Window menu, a default size for a keyed
-    window seen for the first time.
+  - Done (Denext 4.15): the Dock reopens the workspace detached last
+    (`onDockReopen`), opened windows inherit the title bar, Reopen Closed Window
+    is a list by title, an ended workspace's key is forgotten, the ⌘Q guard asks
+    with the OS's message box (works with no window open), and the Window menu
+    has "Close Window and End Its Shells" (no shortcut; asks when an agent there
+    is busy).
+  - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
+    the replay's `dropped` / `truncated` (Denext 4.15 has both).
+  - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.15"): no
+    custom item in the backend's Window menu (the page's menu click reaches
+    every window), and a quit guard cannot wait for the user's answer.
 
 - [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).

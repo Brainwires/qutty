@@ -1,31 +1,34 @@
 // The page side of the workspaces (desktop/session.ts): join the window's workspace (its snapshot
 // and its terminals with their replay), save the snapshot, list / reopen / end workspaces, and the
-// quit question. `createDesktopSession` talks to the `session` extension; `createDemoSession` is
-// the in-browser stand-in (one workspace, kept while the page lives), so a remount of the
-// workspace (the e2e suite's stand-in for a closed and reopened window) goes through the same
-// restore path.
+// Window menu's "Close Window and End Its Shells" (the quit question is the app process's own,
+// a native message box). `createDesktopSession` talks to the `session` extension;
+// `createDemoSession` is the in-browser stand-in (one workspace, kept while the page lives), so a
+// remount of the workspace (the e2e suite's stand-in for a closed and reopened window) goes
+// through the same restore path.
 //
 // Client-safe: the extension is imported for its types only.
 
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
+import type { AppMenuItem } from "denext/desktop/app";
 import type sessionExtension from "../desktop/session.ts";
-import type {
-  QuitRequest,
-  SessionJoin,
-  WorkspaceInfo,
-} from "../desktop/session.ts";
+import type { SessionJoin, WorkspaceInfo } from "../desktop/session.ts";
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
-import { newWorkspaceId, workspaceWindow } from "./workspace/windows.ts";
+import {
+  CLOSE_AND_END_ITEM,
+  newWorkspaceId,
+  windowMenu,
+  workspaceTitle,
+  workspaceWindow,
+} from "./workspace/windows.ts";
 
-export type { QuitRequest, WorkspaceInfo };
+export type { WorkspaceInfo };
 
 /** What `join` gives the page. */
 export interface SessionJoined {
   workspace: { id: string; name: string };
   snapshot: unknown;
   ptys: JoinedPty[];
-  quit?: QuitRequest;
 }
 
 /** The workspaces as one window sees them. */
@@ -43,26 +46,28 @@ export interface SessionBackend {
   newWindow(): Promise<void>;
   /** End workspace `id` for real: its terminals are killed (and its sandbox stopped). */
   end(id: string): Promise<void>;
-  /** Close this window (its workspace detaches, or is gone once ended). */
-  closeWindow(): Promise<void>;
+  /**
+   * Close this window and end its workspace for real (the user confirmed it already): the
+   * workspace is ended once the window has closed, so it is not offered for reopening.
+   */
+  endWindow(): Promise<void>;
   /** This window took the focus. */
   focus(): Promise<void>;
-  /** Answer the quit question; `true` quits the app. */
-  answerQuit(quit: boolean): Promise<void>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
-  onQuit(cb: (request: QuitRequest) => void): () => void;
 }
 
-/** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
+/**
+ * The window and menu calls the desktop session uses (`denext/desktop/window`,
+ * `denext/desktop/app`), injectable for tests.
+ */
 export interface SessionWindowDeps {
   openWindow(
     options: { url: string; key: string; title?: string },
   ): Promise<unknown>;
   closeWindow(): Promise<void>;
-  quitApp(): Promise<boolean>;
   setWindowTitle(title: string): Promise<void>;
-  /** A window opened from desktop.ts or a page gets the default title bar: match the main one. */
-  setTitleBarStyle(style: "hiddenInset"): Promise<boolean>;
+  setAppMenu(menu: readonly AppMenuItem[]): Promise<void>;
+  onAppMenuItem(handler: (id: string) => void): () => void;
 }
 
 /**
@@ -79,17 +84,41 @@ export function createDesktopSession(deps: {
   adopt(id: string, seq: number): void;
 }): SessionBackend {
   const ext = deps.desktopExtension<typeof sessionExtension>("session");
-  const loadedAt = Date.now();
+  const win = deps.window;
+  /**
+   * Have this window's workspace ended once the window has closed, then close the window
+   * (`menu`: the Window menu's click, which the extension may decline; see its `endWindow`).
+   */
+  const endWindow = async (menu: boolean) => {
+    if ((await ext.endWindow({ menu })).close) await win.closeWindow();
+  };
+  let menuSet = false;
+  /**
+   * The Window menu's "Close Window and End Its Shells". Denext queues an application-menu click
+   * for every window, even with the main window closed (runtime 3.0.0-denext.16 takes it from
+   * `Deno.desktop`'s app-wide `menuclick`); the `session` extension acts for the window used last
+   * only.
+   */
+  const installMenu = () => {
+    if (menuSet) return;
+    menuSet = true;
+    void win.setAppMenu(windowMenu()).catch(() => {});
+    win.onAppMenuItem((id) => {
+      if (id === CLOSE_AND_END_ITEM) void endWindow(true).catch(() => {});
+    });
+  };
   return {
     multiWindow: true,
     async join() {
       deps.listen();
       const joined: SessionJoin = await ext.join({});
       for (const p of joined.ptys) deps.adopt(p.id, p.seq);
-      // The Window menu lists the windows by title.
-      void deps.window.setWindowTitle(`Qutty — ${joined.workspace.name}`)
-        .catch(() => {});
-      void deps.window.setTitleBarStyle("hiddenInset").catch(() => false);
+      // The Window menu lists the windows (and Reopen Closed Window the closed ones) by title:
+      // Denext follows `document.title`, and `setWindowTitle` sets the window's own.
+      const title = workspaceTitle(joined.workspace.name);
+      if (typeof document !== "undefined") document.title = title;
+      void win.setWindowTitle(title).catch(() => {});
+      installMenu();
       return joined;
     },
     save: (snapshot) => ext.save({ snapshot }),
@@ -103,24 +132,14 @@ export function createDesktopSession(deps: {
     async end(id) {
       await ext.end({ id });
     },
-    closeWindow: () => deps.window.closeWindow(),
+    endWindow: () => endWindow(false),
     focus: () => ext.focus({}),
-    async answerQuit(quit) {
-      await ext.answerQuit({ quit });
-      if (quit) await deps.window.quitApp();
-    },
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
         "changed",
         (e) => cb(e.workspaces),
       ),
-    // The event stream replays its buffer to a new page: an old question is not asked again
-    // (`join` brings the one still open).
-    onQuit: (cb) =>
-      deps.onDesktopEvent<QuitRequest>("session", "quit", (r) => {
-        if (r.at >= loadedAt - 1000) cb(r);
-      }),
   };
 }
 
@@ -175,11 +194,9 @@ export function createDemoSession(): SessionBackend & {
     reopen: () => Promise.resolve(),
     newWindow: () => Promise.resolve(),
     end: () => Promise.resolve(),
-    closeWindow: () => Promise.resolve(),
+    endWindow: () => Promise.resolve(),
     focus: () => Promise.resolve(),
-    answerQuit: () => Promise.resolve(),
     onChanged: none,
-    onQuit: none,
     recordSpawn(id, cols, rows) {
       records.set(id, { chunks: [], size: 0, seq: 0, cols, rows });
     },
