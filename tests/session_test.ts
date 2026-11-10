@@ -362,3 +362,51 @@ Deno.test("session: Close Window and End Its Shells asks first when an agent the
     workspaces.clear();
   }
 });
+
+Deno.test("session: the close button set to end the shells asks about a busy agent, in any window", async () => {
+  workspaces.clear();
+  const fake = fakeExtensionHost([]);
+  let now = 10_000;
+  const endWindow = createEndWindow(fake.host, () => now);
+  try {
+    workspaces.join("w1", "ws-1");
+    workspaces.addPty("ws-1", "p1");
+    workspaces.join("w2", "ws-2");
+    workspaces.addPty("ws-2", "p2");
+    workspaces.join("w3", "ws-3");
+    workspaces.addPty("ws-3", "p3");
+    // w1 was used last; the close button of w2 (behind it) still acts for w2.
+    workspaces.focused("w1");
+    workspaces.setBusyProvider(() => [{ ptyId: "p2", name: "claude" }]);
+    fake.reply = () => Promise.resolve(1);
+    assertEquals(await endWindow("w2", false, true), { close: false });
+    assertEquals(fake.confirms, [
+      closeQuestion([{ ptyId: "p2", name: "claude" }]),
+    ]);
+    // Asked again at once (no menu-click dedupe): "Close and End" ends it once it has closed.
+    fake.reply = () => Promise.resolve(0);
+    assertEquals(await endWindow("w2", false, true), { close: true });
+    assertEquals(fake.confirms.length, 2);
+    // Nothing busy in w3: no question.
+    assertEquals(await endWindow("w3", false, true), { close: true });
+    assertEquals(fake.confirms.length, 2);
+    // While a box is up, another confirmed end is turned down rather than stacking a second box.
+    workspaces.setBusyProvider(() => [{ ptyId: "p1", name: "codex" }]);
+    let press: (n: number | null) => void = () => {};
+    fake.reply = () => new Promise((r) => press = r);
+    const asking = endWindow("w1", false, true);
+    assertEquals(await endWindow("w1", false, true), { close: false });
+    press(0);
+    assertEquals(await asking, { close: true });
+    // Without `confirm`, the page asked already: no box.
+    now += 5000;
+    workspaces.join("w4", "ws-4");
+    workspaces.addPty("ws-4", "p4");
+    workspaces.setBusyProvider(() => [{ ptyId: "p4", name: "codex" }]);
+    assertEquals(await endWindow("w4", false), { close: true });
+    assertEquals(fake.confirms.length, 3);
+  } finally {
+    workspaces.setBusyProvider(undefined);
+    workspaces.clear();
+  }
+});

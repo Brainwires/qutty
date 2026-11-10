@@ -1591,6 +1591,36 @@ kbd {
   width: min(560px, 100%);
   height: min(480px, 100%);
 }
+/* "Close this window?" (app/close-window-dialog.tsx) */
+.modal.close-window {
+  width: min(420px, 100%);
+}
+.close-window-text {
+  padding: 0 16px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.close-window-text p {
+  margin: 0 0 10px;
+}
+.close-window-text .field-check {
+  margin-top: 4px;
+  color: var(--text);
+}
+.close-window-text .field-hint {
+  margin: 4px 0 0;
+}
+.close-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+.close-window-gap {
+  flex: 1;
+}
 .modal-head {
   flex: none;
   display: flex;

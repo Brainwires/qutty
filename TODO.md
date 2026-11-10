@@ -295,6 +295,9 @@
     with the OS's message box (works with no window open), and the Window menu
     has "Close Window and End Its Shells" (no shortcut; asks when an agent there
     is busy).
+  - Done: the close button asks whether to keep the window's shells running or
+    end them (`onCloseRequested`; app/use-window-close.ts), with "Remember my
+    choice" and Settings → Windows → "When a window closes" (ask / keep / end).
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
   - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.15"): no

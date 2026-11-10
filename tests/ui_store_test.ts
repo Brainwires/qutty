@@ -273,6 +273,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     "ollama",
     "links",
     "monitor",
+    "windows",
     "integration",
   ]);
 
@@ -436,4 +437,44 @@ Deno.test("settings: the system monitor defaults (meter off, hot Loopy on), redu
     sanitizeSettings({ monitor: { hotAt: "x", meter: 1 } }).monitor,
     DEFAULT_SETTINGS.monitor,
   );
+});
+
+Deno.test("settings: what a window's close button does defaults to asking, reduces and persists", () => {
+  assertEquals(DEFAULT_SETTINGS.windowClose, "ask");
+  // Settings stored before the choice existed get the default.
+  assertEquals(sanitizeSettings({ theme: "plum" }).windowClose, "ask");
+  for (const junk of ["", "close", "ASK", 1, null, {}, ["end"], true]) {
+    assertEquals(sanitizeSettings({ windowClose: junk }).windowClose, "ask");
+  }
+  for (const choice of ["ask", "keep", "end"] as const) {
+    assertEquals(sanitizeSettings({ windowClose: choice }).windowClose, choice);
+  }
+  // A stored choice survives a junk-free hydrate on top of another base.
+  assertEquals(
+    sanitizeSettings({}, { ...DEFAULT_SETTINGS, windowClose: "end" })
+      .windowClose,
+    "end",
+  );
+
+  let s = initialState();
+  s = reduce(s, { type: "setWindowClose", windowClose: "keep" });
+  assertEquals(s.settings.windowClose, "keep");
+  assertStrictEquals(
+    reduce(s, { type: "setWindowClose", windowClose: "keep" }),
+    s,
+  );
+  assertEquals(
+    reduce(s, { type: "setWindowClose", windowClose: "bogus" as never })
+      .settings.windowClose,
+    "ask",
+  );
+  s = reduce(s, { type: "setWindowClose", windowClose: "end" });
+  const { storage, mem } = memoryStorage();
+  assert(saveSettings(s.settings, storage));
+  assertEquals(JSON.parse(mem.get(SETTINGS_STORAGE_KEY)!).windowClose, "end");
+  const back = reduce(initialState(), {
+    type: "hydrateSettings",
+    settings: loadSettings(storage)!,
+  });
+  assertEquals(back.settings.windowClose, "end");
 });

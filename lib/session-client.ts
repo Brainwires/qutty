@@ -31,6 +31,11 @@ export interface SessionJoined {
   ptys: JoinedPty[];
 }
 
+/** A close-request handler: `true` lets the window close (see {@linkcode SessionBackend.guardClose}). */
+export type CloseGuard = (
+  reason: "close" | "quit",
+) => boolean | Promise<boolean>;
+
 /** The workspaces as one window sees them. */
 export interface SessionBackend {
   /** Several windows and detached workspaces (the desktop app); the demo has one workspace. */
@@ -47,10 +52,22 @@ export interface SessionBackend {
   /** End workspace `id` for real: its terminals are killed (and its sandbox stopped). */
   end(id: string): Promise<void>;
   /**
-   * Close this window and end its workspace for real (the user confirmed it already): the
-   * workspace is ended once the window has closed, so it is not offered for reopening.
+   * Close this window and end its workspace for real: the workspace is ended once the window has
+   * closed, so it is not offered for reopening. `confirm`: the OS's message box asks first when an
+   * agent there is busy (without it the user confirmed already).
    */
-  endWindow(): Promise<void>;
+  endWindow(options?: { confirm?: boolean }): Promise<void>;
+  /**
+   * Close this window without asking the close guard: its workspace detaches (its shells keep
+   * running for Reopen Closed Window, the Dock and the next launch).
+   */
+  closeWindow(): Promise<void>;
+  /**
+   * Hold this window's close requests (its close button) for `handler`, which answers whether
+   * the window may close. Resolves to the unregistration, or `null` where there is no close guard
+   * (the demo, an older runtime): the window then just closes.
+   */
+  guardClose(handler: CloseGuard): Promise<(() => void) | null>;
   /** This window took the focus. */
   focus(): Promise<void>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
@@ -68,6 +85,14 @@ export interface SessionWindowDeps {
   setWindowTitle(title: string): Promise<void>;
   setAppMenu(menu: readonly AppMenuItem[]): Promise<void>;
   onAppMenuItem(handler: (id: string) => void): () => void;
+  /** `denext/desktop/window`'s `onCloseRequested`. */
+  onCloseRequested(
+    handler: (
+      event: { reason: "close" | "quit" },
+    ) => boolean | Promise<boolean>,
+  ): () => void;
+  /** `denext/desktop/window`'s `windowCapabilities` (its `closeGuard` only). */
+  windowCapabilities(): Promise<{ closeGuard: boolean }>;
 }
 
 /**
@@ -89,8 +114,8 @@ export function createDesktopSession(deps: {
    * Have this window's workspace ended once the window has closed, then close the window
    * (`menu`: the Window menu's click, which the extension may decline; see its `endWindow`).
    */
-  const endWindow = async (menu: boolean) => {
-    if ((await ext.endWindow({ menu })).close) await win.closeWindow();
+  const endWindow = async (menu: boolean, confirm = false) => {
+    if ((await ext.endWindow({ menu, confirm })).close) await win.closeWindow();
   };
   let menuSet = false;
   /**
@@ -132,7 +157,13 @@ export function createDesktopSession(deps: {
     async end(id) {
       await ext.end({ id });
     },
-    endWindow: () => endWindow(false),
+    endWindow: (options) => endWindow(false, options?.confirm === true),
+    closeWindow: () => win.closeWindow(),
+    async guardClose(handler) {
+      const caps = await win.windowCapabilities().catch(() => null);
+      if (caps?.closeGuard !== true) return null;
+      return win.onCloseRequested(({ reason }) => handler(reason));
+    },
     focus: () => ext.focus({}),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
@@ -195,6 +226,8 @@ export function createDemoSession(): SessionBackend & {
     newWindow: () => Promise.resolve(),
     end: () => Promise.resolve(),
     endWindow: () => Promise.resolve(),
+    closeWindow: () => Promise.resolve(),
+    guardClose: () => Promise.resolve(null),
     focus: () => Promise.resolve(),
     onChanged: none,
     recordSpawn(id, cols, rows) {

@@ -31,9 +31,9 @@ import { computeLayout, type Rect } from "../lib/layout/mod.ts";
 import { getPtyBackend, isDesktop } from "../lib/pty-client.ts";
 import { TerminalManager } from "../lib/terminal-manager.ts";
 import {
-  type BackendSpy,
   installE2eHooks,
   isTestMode,
+  newBackendSpy,
   withBackendSpy,
 } from "../lib/test-hooks.ts";
 import { makeTitle } from "../lib/workspace/format.ts";
@@ -59,6 +59,9 @@ import {
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
 import { useSession } from "./use-session.ts";
+import { useWindowClose } from "./use-window-close.ts";
+import { CloseWindowDialog } from "./close-window-dialog.tsx";
+import type { WindowClose } from "../lib/workspace/windows.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -266,8 +269,6 @@ function WorkspaceView() {
   }, [openTile, ollama.status.path]);
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
-  const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
-    ollamaOpen || forwardsFor !== null;
   const hubTileOf = useHub(managerRef.current, state.terminals);
 
   const closeTerminal = useCallback((id: string) => {
@@ -318,6 +319,25 @@ function WorkspaceView() {
     const id = stateRef.current.focusedId;
     if (id) managerRef.current?.focus(id);
   }, []);
+  // The close button (Settings → Windows). A remembered choice is saved at once: Keep Running
+  // closes the window before the settings effect would run.
+  const rememberClose = useCallback((windowClose: WindowClose) => {
+    const action: WorkspaceAction = { type: "setWindowClose", windowClose };
+    saveSettings(reduce(stateRef.current, action).settings);
+    dispatch(action);
+  }, []);
+  const windowClose = useWindowClose({
+    session: ready ? managerRef.current?.backend.session : undefined,
+    setting: state.settings.windowClose,
+    onRemember: rememberClose,
+    onCancel: refocus,
+  });
+  const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
+    ollamaOpen || forwardsFor !== null || windowClose.asking;
+  // The close question takes Escape: the settings popover (which would swallow it) goes.
+  useEffect(() => {
+    if (windowClose.asking) setSettingsOpen(false);
+  }, [windowClose.asking]);
   const broadcast = useBroadcast({
     manager: managerRef.current,
     terminals: state.terminals,
@@ -438,7 +458,7 @@ function WorkspaceView() {
     // `?test=1` (the e2e suite): record PTY kills and resizes and expose terminal state on
     // `window.__e2e`.
     const testMode = isTestMode();
-    const spy: BackendSpy = { kills: [], resizes: [], links: [] };
+    const spy = newBackendSpy();
     const backend = testMode
       ? withBackendSpy(getPtyBackend(), spy)
       : getPtyBackend();
@@ -806,6 +826,12 @@ function WorkspaceView() {
           onOllama={(patch) => run({ type: "setOllama", patch })}
           onLinks={(patch) => run({ type: "setLinks", patch })}
           onMonitor={(patch) => run({ type: "setMonitor", patch })}
+          {...(windowClose.guarded
+            ? {
+              onWindowClose: (choice: WindowClose) =>
+                run({ type: "setWindowClose", windowClose: choice }),
+            }
+            : {})}
           backend={manager?.backend ?? null}
           onClose={() => setSettingsOpen(false)}
         />
@@ -824,6 +850,12 @@ function WorkspaceView() {
             setOllamaOpen(false);
             refocus();
           }}
+        />
+      )}
+      {windowClose.asking && (
+        <CloseWindowDialog
+          terminals={state.terminals.length}
+          onAnswer={windowClose.answer}
         />
       )}
       {manager && effectiveMode(settings.companion.mode) === "off" && (

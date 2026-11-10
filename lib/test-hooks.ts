@@ -8,6 +8,9 @@
 // - `window.__e2e.links`: every link the backend was asked to open or edit, in order, and
 //   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
 // - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for Loopy's night.
+// - `window.__e2e.requestClose(reason)`: a click on the window's close button (or a quit), asked
+//   of the page's close guard; `window.__e2e.windowCalls`: the session's `closeWindow` /
+//   `endWindow` calls, in order.
 
 import type { PtyBackend } from "./pty-client.ts";
 import type { LinkEditRequest, LinkOpenRequest } from "./links.ts";
@@ -16,6 +19,7 @@ import type {
   TerminalManager,
 } from "./terminal-manager.ts";
 import type { LinkHoverState } from "./terminal-links.ts";
+import type { CloseGuard, SessionBackend } from "./session-client.ts";
 
 /** One `resize` call the backend received. */
 interface PtyResize {
@@ -30,14 +34,59 @@ export interface BackendSpy {
   resizes: PtyResize[];
   /** `linkOpen` and `linkEdit` calls (`kind: "edit"` marks the latter). */
   links: (LinkOpenRequest | ({ kind: "edit" } & LinkEditRequest))[];
+  /** The session's window calls: `close` (`closeWindow`), `end` / `end:confirm` (`endWindow`). */
+  windowCalls: string[];
+  /** The page's close guards (the session's `guardClose`, held here instead of by Denext). */
+  closeGuards: Set<CloseGuard>;
+}
+
+/** An empty spy. */
+export function newBackendSpy(): BackendSpy {
+  return {
+    kills: [],
+    resizes: [],
+    links: [],
+    windowCalls: [],
+    closeGuards: new Set(),
+  };
 }
 
 /** What the e2e suite reads from `window.__e2e`. */
-interface E2eHooks extends BackendSpy {
+interface E2eHooks extends Omit<BackendSpy, "closeGuards"> {
   terminal(id: string): TerminalDebugState | null;
   linkState(id: string): LinkHoverState | null;
   /** Move the app's clock ({@linkcode clockNow}) to `ms`, or back (`null`). */
   setClock(ms: number | null): void;
+  /**
+   * A click on the window's close button (`"close"`) or a quit, as Denext asks the page's close
+   * guards: whether the window may close.
+   */
+  requestClose(reason: "close" | "quit"): Promise<boolean>;
+}
+
+/**
+ * The session with its window calls recorded and its close guard held by `spy` (the demo has no
+ * window to close: `window.__e2e.requestClose` stands in for the close button).
+ */
+function withSessionSpy(
+  session: SessionBackend,
+  spy: BackendSpy,
+): SessionBackend {
+  return {
+    ...session,
+    endWindow: (options) => {
+      spy.windowCalls.push(options?.confirm ? "end:confirm" : "end");
+      return session.endWindow(options);
+    },
+    closeWindow: () => {
+      spy.windowCalls.push("close");
+      return session.closeWindow();
+    },
+    guardClose: (handler) => {
+      spy.closeGuards.add(handler);
+      return Promise.resolve(() => void spy.closeGuards.delete(handler));
+    },
+  };
 }
 
 /** Whether the page was opened in test mode (`?test=1`). */
@@ -58,7 +107,7 @@ export function withBackendSpy(
 ): PtyBackend {
   return {
     kind: backend.kind,
-    session: backend.session,
+    session: withSessionSpy(backend.session, spy),
     spawn: (o) => backend.spawn(o),
     write: (id, data, options) => backend.write(id, data, options),
     resize: (id, cols, rows) => {
@@ -143,7 +192,15 @@ export function installE2eHooks(
     kills: spy.kills,
     resizes: spy.resizes,
     links: spy.links,
+    windowCalls: spy.windowCalls,
     setClock,
+    async requestClose(reason) {
+      let close = true;
+      for (const guard of [...spy.closeGuards]) {
+        if ((await guard(reason)) === false) close = false;
+      }
+      return close;
+    },
   };
   (globalThis as { __e2e?: E2eHooks }).__e2e = hooks;
 }

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Closing a window with its close button now asks what to do with its shells:
+  Keep Running (the default, Return) closes the window and leaves them running,
+  so Window → Reopen Closed Window, the Dock or the next launch brings them
+  back; End Shells ends them (if an agent there is busy, Qutty asks first);
+  Cancel (Escape) keeps the window open. Tick "Remember my choice" to stop being
+  asked. Change it any time in Settings → Windows → "When a window closes": Ask
+  each time, Keep shells running or End shells. Quitting, ⌘W (which closes the
+  focused terminal) and the Window menu's "Close Window and End Its Shells" are
+  unchanged.
+
 - The companion's API key brain now sends its requests through Rullama's
   `AnthropicChatProvider` (`@rullama/provider` 0.12.5) instead of Qutty's own
   Anthropic client. It still reads the key from the keychain for every request,

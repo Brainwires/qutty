@@ -53,6 +53,11 @@ import {
   type MonitorSettings,
   sanitizeMonitor,
 } from "../sysstats.ts";
+import {
+  DEFAULT_WINDOW_CLOSE,
+  sanitizeWindowClose,
+  type WindowClose,
+} from "./windows.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -88,6 +93,7 @@ export type SettingsSection =
   | "ollama"
   | "links"
   | "monitor"
+  | "windows"
   | "integration";
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -100,6 +106,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "ollama",
   "links",
   "monitor",
+  "windows",
   "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
@@ -165,6 +172,8 @@ export interface Settings extends FontSettings {
   links: LinkSettings;
   /** Settings → System monitor (the bar meter, hot Loopy; lib/sysstats.ts). */
   monitor: MonitorSettings;
+  /** Settings → Windows: what a window's close button does (lib/workspace/windows.ts). */
+  windowClose: WindowClose;
 }
 
 /** The whole workspace. */
@@ -228,6 +237,7 @@ export type WorkspaceAction =
   | { type: "setOllama"; patch: Partial<OllamaSettings> }
   | { type: "setLinks"; patch: Partial<LinkSettings> }
   | { type: "setMonitor"; patch: Partial<MonitorSettings> }
+  | { type: "setWindowClose"; windowClose: WindowClose }
   | { type: "launched"; entryId: string }
   | { type: "toggleSection"; section: SettingsSection }
   | { type: "setFont"; patch: Partial<FontSettings> }
@@ -260,6 +270,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollama: { ...DEFAULT_OLLAMA, recents: [] },
   links: { ...DEFAULT_LINKS },
   monitor: { ...DEFAULT_MONITOR },
+  windowClose: DEFAULT_WINDOW_CLOSE,
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -402,6 +413,9 @@ export function sanitizeSettings(
   if (r.links !== undefined) out.links = sanitizeLinks(r.links, out.links);
   if (r.monitor !== undefined) {
     out.monitor = sanitizeMonitor(r.monitor, out.monitor);
+  }
+  if (r.windowClose !== undefined) {
+    out.windowClose = sanitizeWindowClose(r.windowClose);
   }
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
@@ -659,6 +673,11 @@ export function reduce(
       const theme = sanitizeThemeId(action.theme);
       if (state.settings.theme === theme) return state;
       return { ...state, settings: { ...state.settings, theme } };
+    }
+    case "setWindowClose": {
+      const windowClose = sanitizeWindowClose(action.windowClose);
+      if (state.settings.windowClose === windowClose) return state;
+      return { ...state, settings: { ...state.settings, windowClose } };
     }
     case "setPlusOpens": {
       const plusOpens = sanitizePlusOpens(action.plusOpens);
