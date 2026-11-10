@@ -1,6 +1,7 @@
 // Settings → System monitor: the CPU / GPU meter in the switcher bar (off by default), and Loopy
 // looking hot while the machine is busy (on, with Lively), with its thresholds (lib/sysstats.ts).
-// The figures come from desktop/sysstats.ts every few seconds, only while one of the two is on.
+// The figures come from Denext's `system.stats()` every few seconds, only while one of the two
+// is on.
 
 import { MONITOR_RANGES, type MonitorSettings } from "../lib/sysstats.ts";
 

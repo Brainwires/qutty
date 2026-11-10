@@ -4167,20 +4167,3 @@ kbd {
   border-top: 1px solid var(--line);
   margin-top: 4px;
 }
-.quit-busy {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  font: 11.5px/1.5 var(--mono);
-  color: var(--text-2);
-}
-.modal.quit {
-  width: min(440px, 100%);
-}
-.quit-body {
-  padding: 0 16px 14px;
-  font: 12px/1.45 var(--sans);
-  color: var(--text-2);
-}
-.quit-body p {
-  margin: 0;
-}

@@ -1,7 +1,8 @@
 // The page's side of detachable sessions: folding a terminal's replay (lib/workspace/replay.ts),
 // the workspace snapshot and the plan that rebuilds it (lib/workspace/session.ts), the store's
 // `restore`, the per-workspace layout across launches, the bounded replay ring with a real shell
-// (desktop/terminal-sessions.ts), and the desktop client's join (lib/session-client.ts).
+// (desktop/terminal-sessions.ts), and the desktop client's join and Window menu item
+// (lib/session-client.ts).
 
 import { assert, assertEquals } from "@std/assert";
 import { foldReplay } from "../lib/workspace/replay.ts";
@@ -14,7 +15,12 @@ import {
   workspaceLayoutKey,
 } from "../lib/workspace/session.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
-import { newWorkspaceId, workspaceWindow } from "../lib/workspace/windows.ts";
+import {
+  CLOSE_AND_END_ITEM,
+  newWorkspaceId,
+  windowMenu,
+  workspaceWindow,
+} from "../lib/workspace/windows.ts";
 import { createDesktopSession } from "../lib/session-client.ts";
 import { PtyHost } from "../desktop/pty.ts";
 import { TerminalSessions } from "../desktop/terminal-sessions.ts";
@@ -248,12 +254,17 @@ Deno.test({
 
 Deno.test("session client: join attaches the PTY events first and adopts every terminal", async () => {
   const calls: string[] = [];
-  const handlers = new Map<string, (d: unknown) => void>();
+  let close = true;
+  const menuItems: ((id: string) => void)[] = [];
+  const menus: unknown[] = [];
   const session = createDesktopSession({
     desktopExtension: (() =>
       new Proxy({}, {
         get: (_t, method: string) => (args: unknown) => {
-          calls.push(`session.${method}`);
+          const menu = (args as { menu?: boolean } | undefined)?.menu;
+          calls.push(
+            `session.${method}${menu === undefined ? "" : `:${menu}`}`,
+          );
           if (method === "join") {
             return Promise.resolve({
               workspace: { id: "ws-1", name: "Workspace 2" },
@@ -261,19 +272,17 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
               ptys: [pty("pty-7", { seq: 41 })],
             });
           }
+          if (method === "endWindow") return Promise.resolve({ close });
           return Promise.resolve(args);
         },
       })) as never,
-    onDesktopEvent: ((cap: string, event: string, cb: (d: unknown) => void) => {
-      handlers.set(`${cap}:${event}`, cb);
-      return () => {};
-    }) as never,
+    onDesktopEvent: (() => () => {}) as never,
     window: {
       openWindow: (o) => (calls.push(`open:${o.key}`), Promise.resolve()),
       closeWindow: () => (calls.push("close"), Promise.resolve()),
-      quitApp: () => (calls.push("quit"), Promise.resolve(true)),
       setWindowTitle: (t) => (calls.push(`title:${t}`), Promise.resolve()),
-      setTitleBarStyle: () => Promise.resolve(true),
+      setAppMenu: (m) => (menus.push(m), Promise.resolve()),
+      onAppMenuItem: (fn) => (menuItems.push(fn), () => {}),
     },
     listen: () => calls.push("listen"),
     adopt: (id, seq) => calls.push(`adopt:${id}@${seq}`),
@@ -286,13 +295,38 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
     "adopt:pty-7@41",
     "title:Qutty — Workspace 2",
   ]);
+  // The Window menu gets "Close Window and End Its Shells", with no shortcut, once.
+  await session.join();
+  assertEquals(menus, [windowMenu()]);
+  assertEquals(menuItems.length, 1);
+  const item = (windowMenu()[0] as unknown as {
+    submenu: { id: string; accelerator?: string }[];
+  })
+    .submenu[0];
+  assertEquals([item.id, item.accelerator], [CLOSE_AND_END_ITEM, undefined]);
+
   await session.reopen("ws-9");
-  await session.answerQuit(true);
-  assertEquals(calls.slice(-3), ["open:ws-9", "session.answerQuit", "quit"]);
-  // An old quit question replayed by the event stream is not asked again.
-  const asked: unknown[] = [];
-  session.onQuit((r) => asked.push(r));
-  handlers.get("session:quit")!({ busy: [], at: 0 });
-  handlers.get("session:quit")!({ busy: [], at: Date.now() });
-  assertEquals(asked.length, 1);
+  assertEquals(calls.at(-1), "open:ws-9");
+
+  // A click on it: the extension decides (the window used last, after asking); then it closes.
+  calls.length = 0;
+  menuItems[0](CLOSE_AND_END_ITEM);
+  await until("the close", () => calls.includes("close"));
+  assertEquals(calls, ["session.endWindow:true", "close"]);
+  // Another window's copy of the click: the extension says no, nothing closes.
+  calls.length = 0;
+  close = false;
+  menuItems[0](CLOSE_AND_END_ITEM);
+  await until("the answer", () => calls.length > 0);
+  await new Promise((r) => setTimeout(r, 10));
+  assertEquals(calls, ["session.endWindow:true"]);
+  // Other menu items are not Qutty's business.
+  calls.length = 0;
+  menuItems[0]("something-else");
+  assertEquals(calls, []);
+
+  // "End workspace" for this window (asked in the page): ended once the window closes.
+  close = true;
+  await session.endWindow();
+  assertEquals(calls, ["session.endWindow:false", "close"]);
 });

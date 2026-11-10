@@ -3,15 +3,11 @@
 // layout, MRU order and focus it had — or, for a new workspace, opens its first shell. As the
 // workspace changes its snapshot is saved in the app's process (debounced, and flushed when the
 // page goes away), and its layout in localStorage for the next launch. Also: the workspace list
-// for the Workspaces menu, and the quit question.
+// for the Workspaces menu.
 
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
-import type {
-  QuitRequest,
-  SessionJoined,
-  WorkspaceInfo,
-} from "../lib/session-client.ts";
+import type { SessionJoined, WorkspaceInfo } from "../lib/session-client.ts";
 import {
   loadWorkspaceLayout,
   planRestore,
@@ -36,12 +32,9 @@ export interface SessionView {
   /** Every workspace (the Workspaces menu), freshest first. */
   workspaces: WorkspaceInfo[];
   multiWindow: boolean;
-  /** The "agents are busy, quit anyway?" question, when one is open. */
-  quit: QuitRequest | null;
-  answerQuit(quit: boolean): void;
   reopen(id: string): void;
   newWindow(): void;
-  /** End workspace `id` for real (this window's: then the window closes too). */
+  /** End workspace `id` for real (this window's: the window closes, then it is ended). */
   end(id: string): void;
 }
 
@@ -67,7 +60,6 @@ export function useSession(opts: {
   const { manager } = opts;
   const [workspace, setWorkspace] = useState<SessionView["workspace"]>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
-  const [quit, setQuit] = useState<QuitRequest | null>(null);
   const [booted, setBooted] = useState(false);
   const optsRef = useRef(opts);
   optsRef.current = opts;
@@ -111,14 +103,12 @@ export function useSession(opts: {
     if (!manager) return;
     const session = manager.backend.session;
     let live = true;
-    const offQuit = session.onQuit((r) => setQuit(r));
     const offChanged = session.onChanged(setWorkspaces);
     session.join().then((joined) => {
       if (!live) return;
       apply(manager, joined);
       setBooted(true);
       setWorkspace(joined.workspace);
-      if (joined.quit) setQuit(joined.quit);
       void session.list().then((l) => live && setWorkspaces(l), () => {});
     }, (err) => {
       // No workspace (an old backend): the page works as a plain window.
@@ -131,7 +121,6 @@ export function useSession(opts: {
     globalThis.addEventListener("focus", onFocus);
     return () => {
       live = false;
-      offQuit();
       offChanged();
       globalThis.removeEventListener("focus", onFocus);
     };
@@ -170,18 +159,16 @@ export function useSession(opts: {
     workspace,
     workspaces,
     multiWindow: session?.multiWindow === true,
-    quit,
-    answerQuit: (yes) => {
-      setQuit(null);
-      void session?.answerQuit(yes).catch(() => {});
-    },
     reopen: (id) => void session?.reopen(id).catch(() => {}),
     newWindow: () => void session?.newWindow().catch(() => {}),
+    // This window's own workspace is ended once its window has closed (so the close does not
+    // offer it in Reopen Closed Window); another one at once.
     end: (id) => {
       if (!session) return;
-      void session.end(id).then(() => {
-        if (id === workspace?.id) return session.closeWindow();
-      }).catch(() => {});
+      const ending = id === workspace?.id
+        ? session.endWindow()
+        : session.end(id);
+      void ending.catch(() => {});
     },
   };
 }

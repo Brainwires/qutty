@@ -1,7 +1,11 @@
 // Shared helpers for the detachable-session tests (not a test module itself): a stand-in for an
 // extension's `setup(host)` host with windows that open, close and quit, and handler contexts.
 
-import type { DesktopCapCtx, DesktopSecureStore } from "denext/desktop";
+import type {
+  DesktopCapCtx,
+  DesktopConfirmOptions,
+  DesktopSecureStore,
+} from "denext/desktop";
 import { memorySecretStore } from "../lib/secrets/api-keys.ts";
 
 /** The extension secure store (Denext 4.15) for hosts and contexts whose tests never use it. */
@@ -39,13 +43,17 @@ type ClosedFn = (info: WindowInfo & { appQuitting: boolean }) => unknown;
 
 /**
  * A fake extension host: records every emit (with its target window), keeps the open windows,
- * and fires the window lifecycle hooks on `close` / `quit`.
+ * fires the window lifecycle hooks on `close` / `quit`, runs the quit guards on `beforeQuit`, and
+ * records each `confirm` (the OS message box), answering it with `reply`.
  */
 export function fakeExtensionHost(open: WindowInfo[] = []) {
   const events: HostEvent[] = [];
   const windows = [...open];
   const closed = new Set<ClosedFn>();
   const quits = new Set<() => unknown>();
+  const guards = new Set<() => boolean | Promise<boolean>>();
+  /** Every `host.confirm` call's options, in order. */
+  const confirms: DesktopConfirmOptions[] = [];
   function on<T>(set: Set<T>) {
     return (fn: T) => {
       set.add(fn);
@@ -67,11 +75,14 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     onWindowOpened: () => () => {},
     onWindowClosed: on(closed),
     onAppQuit: on(quits),
-    onBeforeQuit: () => () => {},
+    onBeforeQuit: on(guards),
     windows: () => windows,
-    // Denext 4.15's host additions; these tests never reach them.
+    // Denext 4.15's host additions. `confirm` records the box and answers with `fake.reply`.
     secureStore: unusedSecureStore,
-    confirm: (): Promise<number | null> => Promise.reject(new Error("unused")),
+    confirm: (options: DesktopConfirmOptions): Promise<number | null> => {
+      confirms.push(options);
+      return fake.reply(options);
+    },
     openWindow: (): never => {
       throw new Error("unused");
     },
@@ -79,6 +90,18 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
   const fake = {
     host,
     events,
+    confirms,
+    /**
+     * What the next message box answers: the pressed button's index, `null` (dismissed), or a
+     * rejection (an older runtime's `unsupported`). By default no button is pressed yet.
+     */
+    reply: (_options: DesktopConfirmOptions): Promise<number | null> =>
+      new Promise<number | null>(() => {}),
+    /** A quit: the `onBeforeQuit` guards (`false` from any of them cancels it). */
+    async beforeQuit(): Promise<boolean> {
+      const answers = await Promise.all([...guards].map((fn) => fn()));
+      return answers.every((ok) => ok !== false);
+    },
     /** Open a window (as `windows.open({ key })`). */
     open(info: WindowInfo) {
       windows.push(info);
@@ -110,6 +133,21 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     },
   };
   return fake;
+}
+
+/**
+ * A fake of desktop.ts's `DesktopRuntime.windows` slice Qutty uses: the open windows (`list`) and
+ * `forget(key)`, which records the keys it was given.
+ */
+export function fakeRuntimeWindows(open: WindowInfo[] = []) {
+  const forgotten: string[] = [];
+  const windows = [...open];
+  return {
+    forgotten,
+    windows,
+    list: () => windows as never[],
+    forget: (key: string) => void forgotten.push(key),
+  };
 }
 
 /** A handler context for window `windowId` (the extensions emit through their host). */
