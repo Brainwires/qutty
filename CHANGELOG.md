@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — Denext 4.15: native quit dialog, Dock reopen, Close Window and End Its Shells, keychain keys
 
 - The system monitor (the bar's CPU / GPU meter and Loopy's hot face) reads its
   figures from Denext's `system.stats()` (the `systemStats` capability, which
