@@ -72,7 +72,19 @@ class FakeBridge {
       set.add(handler);
       return () => set!.delete(handler);
     }) as unknown as DesktopBridgeDeps["onDesktopEvent"];
-    return { desktopExtension, onDesktopEvent };
+    // Denext's `system` (the `systemStats` capability), not an extension.
+    const system: DesktopBridgeDeps["system"] = {
+      stats: (options) => {
+        this.calls.push({ method: "system.stats", args: options });
+        return Promise.resolve({
+          at: 1234,
+          cpu: { total: 23.5 },
+          gpu: { utilization: null },
+          memory: { pressure: 41 },
+        });
+      },
+    };
+    return { desktopExtension, onDesktopEvent, system };
   }
 
   fire(event: "data" | "exit", data: unknown): void {
@@ -134,7 +146,6 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
-    "sysstats",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -157,10 +168,15 @@ Deno.test("desktop: the links methods go to the links extension as they are", as
   ]);
 });
 
-Deno.test("desktop: a system monitor sample is one call to the sysstats extension", async () => {
+Deno.test("desktop: a system monitor sample is one system.stats() call, as the monitor's figures", async () => {
   const { bridge, backend } = setup();
-  await backend.sysSample();
-  assertEquals(bridge.calls, [{ method: "sample", args: {} }]);
+  assertEquals(await backend.sysSample(), {
+    cpu: 23.5,
+    gpu: null,
+    mem: 41,
+    at: 1234,
+  });
+  assertEquals(bridge.calls, [{ method: "system.stats", args: undefined }]);
 });
 
 Deno.test("desktop: spawn subscribes to data and exit before calling the extension", async () => {

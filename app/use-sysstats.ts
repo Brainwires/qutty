@@ -1,5 +1,5 @@
 // The lite system monitor in the page (Settings → System monitor): asks the backend for a sample
-// (desktop/sysstats.ts) every few seconds while the bar meter or Loopy's hot face wants one, and
+// (Denext's `system.stats()` in the app, lib/sysstats-demo.ts in the demo) every few seconds while the bar meter or Loopy's hot face wants one, and
 // works out the smoothed figures and whether the machine is hot (lib/sysstats.ts). Kept light:
 //
 // - one timer chain, no interval: the next sample is asked for only once the last one is in;
