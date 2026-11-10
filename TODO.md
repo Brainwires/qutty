@@ -365,6 +365,9 @@
 - [x] v0.3.1: Codex, Ollama helper, more harnesses, shell agent, lively Loopy.
 - [x] v0.4.0: detachable sessions and New Window, Linux packages, SSH broadcast
       input and port forwards, clickable links, CPU / GPU meter, Loopy reacts.
+- [x] v0.5.0: Denext 4.15 (system.stats meter, native quit dialog, Dock reopen,
+      Reopen Closed Window list, Close Window and End Its Shells, Linux
+      metainfo), cloud voices and the API key brain with keys in the keychain.
 - [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
       doesn't run, so the focused chip (first in the strip) can stay scrolled
       out of view on the left (seen while hardening the e2e chip clicks, #43).
