@@ -26,10 +26,12 @@ export default {
     // What the Linux packages say about the app (scripts/package-linux.ts; the release builds
     // `--format tar.gz,deb,appimage`). The window is WebKitGTK (the `webview` backend): the .deb
     // depends on libwebkit2gtk-4.1-0 and libgtk-3-0; the AppImage and the tarball need them too.
-    // The .deb Maintainer is the publisher alone: Qutty has no public contact address yet
-    // (SECURITY.md sends reports to GitHub's private advisories), so no `email`.
+    // The .deb Maintainer is "Brainwires <155631428+Brainwires@users.noreply.github.com>": the Brainwires GitHub org's no-reply address,
+    // which receives no mail (questions go to GitHub issues; SECURITY.md sends reports to
+    // GitHub's private advisories).
     installers: {
       publisher: "Brainwires",
+      email: "155631428+Brainwires@users.noreply.github.com",
       description:
         "A tiling terminal: the terminal you are using gets the most space",
     },

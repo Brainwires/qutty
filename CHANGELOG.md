@@ -17,7 +17,9 @@
   Qutty's windows (`StartupWMClass=org.qutty.Qutty`). The `.deb` and the
   AppImage install AppStream metainfo, so software centres list Qutty, and the
   AppImage's runtime is a pinned, SHA-256-checked type2 build. The package
-  script no longer patches the entries or repacks the `.deb`.
+  script no longer patches the entries or repacks the `.deb`. The `.deb`'s
+  Maintainer carries the Brainwires GitHub org's no-reply address
+  (`155631428+Brainwires@users.noreply.github.com`); report problems on GitHub.
 - Window menu: "Close Window and End Its Shells" closes the current window and
   kills its terminals instead of keeping them running. It has no keyboard
   shortcut. If an agent in that window is busy, Qutty asks first. A workspace
