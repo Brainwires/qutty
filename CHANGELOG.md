@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The system monitor (the bar's CPU / GPU meter and Loopy's hot face) reads its
+  figures from Denext's `system.stats()` (the `systemStats` capability, which
+  bakes no Deno permission) instead of Qutty's own Mach / IOKit FFI and `/proc`
+  readers, which are gone with the `sysstats` extension and
+  `scripts/sysstats-probe.ts`. It still samples only while the meter or the hot
+  face is on: every 4 s focused, 12 s in the background, never while the window
+  is hidden. Each window now has its own CPU figure. An NVIDIA GPU on Linux is
+  read through NVML (where the driver provides it) instead of `nvidia-smi`.
+
 ## 0.4.0 — detach and New Window, Linux packages, SSH broadcast, Loopy reacts
 
 - Broadcast input (cluster ssh). Turn it on with the bar's broadcast button or
