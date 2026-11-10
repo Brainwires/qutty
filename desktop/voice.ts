@@ -12,17 +12,29 @@
 //   libc call.
 // - Push-to-talk: `sttStart` opens the microphone (the library's capture), `sttStop` stops it and
 //   answers with the transcript: on-device Whisper, or the audio sent to the cloud engine the user
-//   picked (Deepgram, ElevenLabs; `@rullama/provider-speech`) with the key the page read from the
-//   OS keychain. Nothing is sent anywhere else. While it listens, the microphone's level goes to
-//   the page as `level` events, 20 a second at most (lib/voice/level.ts), for Loopy's pulse.
+//   picked (Deepgram, ElevenLabs; `@rullama/provider-speech`) with the user's key. Nothing is
+//   sent anywhere else. While it listens, the microphone's level goes to the page as `level`
+//   events, 20 a second at most (lib/voice/level.ts), for Loopy's pulse.
 // - Cloud speech: Deepgram Aura's WAV, played by the library (`speak` / `speakStop`).
+// - The cloud keys: kept in the OS keychain through this extension's own secure store
+//   (`host.secureStore`, Denext's `<app identifier>/ext/voice` namespace, which no page can read;
+//   lib/secrets/api-keys.ts). The page sets or clears a key and asks which are set
+//   (`keyStatus` / `keySet` / `keyClear`); the key is read here, when a cloud engine is used, and
+//   never goes back to the page.
 //
 // Nothing here may throw into the app's startup: the library and the model are found lazily.
 
 import { defineDesktopExtension, DesktopCapError } from "denext/desktop";
 import { DeepgramClient } from "@rullama/provider-speech/deepgram";
 import { ElevenLabsClient } from "@rullama/provider-speech/elevenlabs";
-import { emptyInput, objectSchema, optStr, str } from "./schema.ts";
+import {
+  asValidation,
+  emptyInput,
+  type Issue,
+  objectSchema,
+  optStr,
+  str,
+} from "./schema.ts";
 import {
   ensureDir,
   PtyHost,
@@ -46,7 +58,18 @@ import {
   type ModelState,
   ModelStore,
 } from "../lib/voice/model.ts";
-import type { CaptureEngine, VoiceStatus } from "../lib/voice/client.ts";
+import {
+  type CaptureEngine,
+  CLOUD_SERVICES,
+  type CloudService,
+  voiceKeys,
+  type VoiceStatus,
+} from "../lib/voice/client.ts";
+import {
+  API_KEY_MAX,
+  type KeyPresence,
+  type SecretStore,
+} from "../lib/secrets/api-keys.ts";
 import { LEVEL_MS, levelGate, normalizeLevel } from "../lib/voice/level.ts";
 
 /** How long a transcription may take. */
@@ -140,6 +163,7 @@ class VoiceService {
   #libPath = "";
   #libError: { reason: string; searched: string[] } | undefined;
   #capture: { engine: CaptureEngine; key?: string } | undefined;
+  #keys: (service: CloudService) => Promise<string | null>;
   #speaking = 0;
   #emitLevel: (level: number) => void;
   #meter: ReturnType<typeof setInterval> | undefined;
@@ -148,8 +172,10 @@ class VoiceService {
     appSupportDir: string,
     emit: (state: ModelState) => void,
     emitLevel: (level: number) => void,
+    keys: (service: CloudService) => Promise<string | null>,
   ) {
     this.#appSupportDir = appSupportDir;
+    this.#keys = keys;
     this.#emitLevel = emitLevel;
     this.model = new ModelStore({
       appSupportDir,
@@ -212,7 +238,22 @@ class VoiceService {
     };
   }
 
-  async start(engine: CaptureEngine, key?: string): Promise<void> {
+  /** A cloud service's key from the keychain, or a `validation` error naming where to set it. */
+  async #key(service: CloudService): Promise<string> {
+    const key = await this.#keys(service);
+    if (!key) {
+      throw new DesktopCapError(
+        "validation",
+        `no ${
+          service === "deepgram" ? "Deepgram" : "ElevenLabs"
+        } key (Settings → Voice)`,
+      );
+    }
+    return key;
+  }
+
+  async start(engine: CaptureEngine): Promise<void> {
+    const key = engine === "local" ? undefined : await this.#key(engine);
     const lib = this.lib();
     if (this.#capture) {
       this.#stopMeter();
@@ -227,8 +268,6 @@ class VoiceService {
         );
       }
       if (!lib.modelLoaded()) lib.loadModel(this.model.path);
-    } else if (!key) {
-      throw new DesktopCapError("validation", `${engine} needs an API key`);
     }
     // A finished transcript nobody took (a page reload) would block the next capture.
     if (lib.state() !== CaptureState.idle) lib.cancel();
@@ -299,7 +338,8 @@ class VoiceService {
   }
 
   /** Deepgram Aura's speech, played here; resolves once said (or stopped). */
-  async speak(text: string, key: string, model?: string): Promise<void> {
+  async speak(text: string, model?: string): Promise<void> {
+    const key = await this.#key("deepgram");
     const lib = this.lib();
     const turn = ++this.#speaking;
     const wavBytes = await new DeepgramClient(key).speak({
@@ -376,6 +416,9 @@ async function selfTest(voice: VoiceService, wav: string): Promise<void> {
 }
 
 let service: VoiceService | undefined;
+/** This extension's own secure store (`host.secureStore`), once set up. */
+let store: SecretStore | undefined;
+const keys = voiceKeys(() => store);
 let emitModel: (state: ModelState) => void = () => {};
 let emitLevel: (level: number) => void = () => {};
 
@@ -386,7 +429,7 @@ function requireService(): VoiceService {
 
 const ENGINES: readonly CaptureEngine[] = ["local", "deepgram", "elevenlabs"];
 
-const startInput = objectSchema<{ engine: CaptureEngine; key?: string }>(
+const startInput = objectSchema<{ engine: CaptureEngine }>(
   (v, issues) => {
     if (!ENGINES.includes(v.engine as CaptureEngine)) {
       issues.push({
@@ -394,30 +437,53 @@ const startInput = objectSchema<{ engine: CaptureEngine; key?: string }>(
         path: ["engine"],
       });
     }
-    const key = optStr(v, "key", issues, 512);
-    return { engine: v.engine as CaptureEngine, ...(key ? { key } : {}) };
+    return { engine: v.engine as CaptureEngine };
   },
 );
 
-const speakInput = objectSchema<{ text: string; key: string; model?: string }>(
+const speakInput = objectSchema<{ text: string; model?: string }>(
   (v, issues) => {
     const model = optStr(v, "model", issues, 64);
     return {
       text: str(v, "text", issues, 4000),
-      key: str(v, "key", issues, 512),
       ...(model ? { model } : {}),
     };
   },
+);
+
+/** A cloud service named in a key method's input. */
+function serviceOf(v: Record<string, unknown>, issues: Issue[]): CloudService {
+  const service = CLOUD_SERVICES.find((s) => s === v.service);
+  if (!service) {
+    issues.push({
+      message: `service is one of ${CLOUD_SERVICES.join(", ")}`,
+      path: ["service"],
+    });
+  }
+  return service ?? "deepgram";
+}
+
+const keySetInput = objectSchema<{ service: CloudService; key: string }>(
+  (v, issues) => ({
+    service: serviceOf(v, issues),
+    key: str(v, "key", issues, API_KEY_MAX + 64),
+  }),
+);
+
+const keyClearInput = objectSchema<{ service: CloudService }>(
+  (v, issues) => ({ service: serviceOf(v, issues) }),
 );
 
 export default defineDesktopExtension({
   name: "voice",
   events: ["model", "level"],
   setup: (host) => {
+    store = host.secureStore;
     service = new VoiceService(
       host.appSupportDir,
       (s) => emitModel(s),
       (level) => emitLevel(level),
+      (s) => keys.get(s),
     );
     emitModel = (state) => host.emit("model", state);
     emitLevel = (level) => host.emit("level", { level });
@@ -456,8 +522,8 @@ export default defineDesktopExtension({
     sttStart: {
       input: startInput,
       handler: async (args: unknown): Promise<void> => {
-        const { engine, key } = args as { engine: CaptureEngine; key?: string };
-        await requireService().start(engine, key);
+        const { engine } = args as { engine: CaptureEngine };
+        await requireService().start(engine);
       },
     },
     /** Push-to-talk released: the transcript. */
@@ -477,17 +543,34 @@ export default defineDesktopExtension({
       input: speakInput,
       timeoutMs: false,
       handler: async (args: unknown): Promise<void> => {
-        const { text, key, model } = args as {
-          text: string;
-          key: string;
-          model?: string;
-        };
-        await requireService().speak(text, key, model);
+        const { text, model } = args as { text: string; model?: string };
+        await requireService().speak(text, model);
       },
     },
     speakStop: {
       input: emptyInput,
       handler: (): void => service?.stopSpeaking(),
+    },
+    /** Which cloud services have a key in the keychain (never the keys). */
+    keyStatus: {
+      input: emptyInput,
+      handler: (): Promise<KeyPresence<CloudService>> => keys.presence(),
+    },
+    /** Keep a cloud service's key in the keychain. */
+    keySet: {
+      input: keySetInput,
+      handler: async (args: unknown): Promise<void> => {
+        const { service, key } = args as { service: CloudService; key: string };
+        await asValidation(() => keys.set(service, key));
+      },
+    },
+    /** Remove a cloud service's key from the keychain. */
+    keyClear: {
+      input: keyClearInput,
+      handler: async (args: unknown): Promise<void> => {
+        const { service } = args as { service: CloudService };
+        await asValidation(() => keys.clear(service));
+      },
     },
   },
 });

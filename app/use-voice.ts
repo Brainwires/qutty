@@ -25,10 +25,9 @@ import {
   type VoiceState,
 } from "../lib/voice/controller.ts";
 import {
-  CLOUD_KEYS_UNAVAILABLE,
+  backendKeys,
   cloudTts,
   demoTts,
-  keychain,
   type KeyStore,
   sttEngine,
   systemTts,
@@ -61,7 +60,8 @@ export interface VoiceApi {
   /** The microphone's level (0–1) while listening; 0 otherwise. */
   level: number;
   voice: VoiceBackend | undefined;
-  keys: KeyStore;
+  /** The cloud keys (set / clear / whether set; kept by the voice extension in the OS keychain). */
+  keys: KeyStore | undefined;
   press(): void;
   release(heldMs: number): void;
   cancel(): void;
@@ -95,17 +95,15 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     }
     return { voice: createDemoVoice(script), script };
   }, [backend]);
+  const keys = useMemo(() => voice ? backendKeys(voice) : undefined, [voice]);
 
   const queue = useMemo(() =>
     new SpeechQueue({
       engine: () => {
         const s = optsRef.current.settings;
         if (script && isTestMode()) return demoTts(script);
-        if (
-          s.ttsEngine === "deepgram" && voice?.kind === "desktop" &&
-          !CLOUD_KEYS_UNAVAILABLE
-        ) {
-          return cloudTts(voice, keychain);
+        if (s.ttsEngine === "deepgram" && voice?.kind === "desktop" && keys) {
+          return cloudTts(voice, keys);
         }
         return systemTts();
       },
@@ -119,13 +117,12 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       },
       onSpeaking: (on) => setSpeaking(on),
       onError: (e) => console.warn("voice: speech failed", e),
-    }), [voice, script]);
+    }), [voice, script, keys]);
 
   const controller = useMemo(() => {
-    if (!voice || !backend) return undefined;
+    if (!voice || !backend || !keys) return undefined;
     return new VoiceController({
-      engine: () =>
-        sttEngine(optsRef.current.settings.sttEngine, voice, keychain),
+      engine: () => sttEngine(optsRef.current.settings.sttEngine, voice, keys),
       settings: () => optsRef.current.settings,
       bargeIn: () => void queue.interrupt(),
       toCompanion: (text) =>
@@ -135,7 +132,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       dictate: (text) => optsRef.current.typeIntoFocused(text),
       onState: setState,
     });
-  }, [voice, backend, queue]);
+  }, [voice, backend, queue, keys]);
 
   // The microphone's level while listening (the pulse); back to 0 once it stops.
   const listening = state.phase === "starting" || state.phase === "listening";
@@ -227,7 +224,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     speaking,
     level: listening ? level : 0,
     voice,
-    keys: keychain,
+    keys,
     press: () => void controller?.press(),
     release: (heldMs) => void controller?.release(heldMs),
     cancel: () => void controller?.cancel(),

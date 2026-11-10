@@ -120,6 +120,9 @@ export function withBackendSpy(
     companionSend: (text, via) => backend.companionSend(text, via),
     companionConfigure: (enabled, model, engine) =>
       backend.companionConfigure(enabled, model, engine),
+    companionKeyStatus: () => backend.companionKeyStatus(),
+    companionKeySet: (key) => backend.companionKeySet(key),
+    companionKeyClear: () => backend.companionKeyClear(),
     companionSayDone: (id, action) => backend.companionSayDone(id, action),
     hubControlDone: (requestId, result) =>
       backend.hubControlDone(requestId, result),

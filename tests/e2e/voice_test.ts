@@ -309,6 +309,87 @@ suite("voice", (test) => {
     assertStringIncludes(said, "claude");
   });
 
+  test("Settings → Voice: a cloud engine's key is saved out of the page, then push-to-talk uses that engine", async (app) => {
+    const KEY = "[data-testid=voice-key-deepgram]";
+    await app.openSettings();
+    await waitFor(
+      () => app.exists("[data-testid=voice-settings]"),
+      2000,
+      "the section",
+    );
+    // The cloud engines are offered (no longer greyed out).
+    assertEquals(
+      await app.eval(() =>
+        [
+          ...document.querySelectorAll<HTMLOptionElement>(
+            "[data-testid=setting-voice-stt] option",
+          ),
+        ].filter((o) => o.disabled).map((o) => o.value)
+      ).then((d) => d.filter((v) => v !== "web")),
+      [],
+    );
+    await app.eval(() => {
+      const s = document.querySelector<HTMLSelectElement>(
+        "[data-testid=setting-voice-stt]",
+      )!;
+      s.value = "deepgram";
+      s.dispatchEvent(new Event("input", { bubbles: true }));
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitFor(
+      async () => (await app.attr(KEY, "data-saved")) === "false",
+      2000,
+      "the Deepgram key row, no key yet",
+    );
+    assertStringIncludes(
+      await app.eval(
+        () =>
+          document.querySelector("[data-testid=voice-key-deepgram-where]")
+            ?.textContent ?? "",
+      ),
+      "OS keychain",
+    );
+    const secret = "dg-e2e-secret-42";
+    await app.click("[data-testid=voice-key-deepgram-input]");
+    await app.page.keyboard.type(secret);
+    await app.click("[data-testid=voice-key-deepgram-save]");
+    await waitFor(
+      async () => (await app.attr(KEY, "data-saved")) === "true",
+      2000,
+      "the key saved",
+    );
+    assertEquals(
+      await app.eval(
+        (k: string) => document.documentElement.outerHTML.includes(k),
+        secret,
+      ),
+      false,
+    );
+    assertEquals((await app.settings()).voice.sttEngine, "deepgram");
+
+    // Push-to-talk now captures for Deepgram (the page passes only the engine).
+    await app.closeSettings();
+    await willHear(app, "from the cloud");
+    await holdMic(app);
+    await waitFor(() => app.exists(REVIEW), 3000, "the review box");
+    assertEquals((await script(app)).starts, ["deepgram"]);
+    await app.click("[data-testid=voice-review-cancel]");
+
+    // Remove: the row says no key again.
+    await app.openSettings();
+    await waitFor(
+      async () => (await app.attr(KEY, "data-saved")) === "true",
+      2000,
+      "the row",
+    );
+    await app.click("[data-testid=voice-key-deepgram-remove]");
+    await waitFor(
+      async () => (await app.attr(KEY, "data-saved")) === "false",
+      2000,
+      "the key removed",
+    );
+  });
+
   test("Settings → Voice: toggles persist; the engine status shows", async (app) => {
     await app.openSettings();
     await waitFor(

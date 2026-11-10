@@ -1,6 +1,8 @@
 // Tiny Standard Schema validators for the desktop extensions' method inputs (no schema library
 // dependency). Shared by desktop/pty.ts and desktop/ssh.ts.
 
+import { DesktopCapError } from "denext/desktop";
+
 export type Issue = { message: string; path?: PropertyKey[] };
 
 /** A Standard Schema v1 (structurally what `DesktopCapabilityMethod.input` takes), typed for the page. */
@@ -163,4 +165,20 @@ export function optInt(
     return undefined;
   }
   return n;
+}
+
+/**
+ * Run `work`, turning a plain error (a key refused by lib/secrets/api-keys.ts `checkApiKey`) into
+ * a `validation` error, whose message reaches the page; the store's own errors pass as they are.
+ */
+export async function asValidation<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (e) {
+    if (e instanceof DesktopCapError) throw e;
+    throw new DesktopCapError(
+      "validation",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
 }

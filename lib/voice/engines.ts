@@ -9,57 +9,44 @@
  * - STT `deepgram` / `elevenlabs`: the native library records, the extension sends the audio.
  * - STT `web`: the webview's own `SpeechRecognition`, only where it really has one.
  *
- * Cloud keys live in the OS keychain (Denext's `secureStore` capability), only in the desktop app,
- * and are read when they are used. Nothing is sent to a cloud service unless the user picked it.
+ * Cloud keys live in the OS keychain, in the voice extension's own namespace of Denext's secure
+ * store (desktop/voice.ts, lib/secrets/api-keys.ts), and only the extension reads them, when it
+ * calls the service. The page sets or clears a key and asks whether one is set
+ * ({@linkcode KeyStore}); it never reads one back. Nothing is sent to a cloud service unless the
+ * user picked it and saved a key.
  *
  * @module
  */
 
-import { secureStore, speak, stopSpeaking } from "denext/mobile";
-import type { CaptureEngine, DemoVoiceScript, VoiceBackend } from "./client.ts";
+import { speak, stopSpeaking } from "denext/mobile";
+import type {
+  CaptureEngine,
+  CloudService,
+  DemoVoiceScript,
+  VoiceBackend,
+} from "./client.ts";
 import type { SttEngine, SttUnavailable } from "./controller.ts";
 import type { SpeakOptions, TtsEngine } from "./tts.ts";
 import type { SttEngineId } from "./settings.ts";
 
-/** The cloud services a key can be kept for. */
-export type CloudService = "deepgram" | "elevenlabs";
-
-/** The secure-store key of a service's API key. */
-export const cloudKeyName = (service: CloudService) =>
-  `voice.${service}.apiKey`;
-
-/** Keeping cloud keys: in the OS keychain, desktop only (the web has no secret store). */
+/**
+ * The cloud keys as the page sees them: set, clear, and whether one is set. The key itself stays
+ * in the voice extension (the OS keychain); there is no way to read it back from here.
+ */
 export interface KeyStore {
-  get(service: CloudService): Promise<string | null>;
+  has(service: CloudService): Promise<boolean>;
   set(service: CloudService, key: string): Promise<void>;
   remove(service: CloudService): Promise<void>;
 }
 
-/**
- * Why cloud keys cannot be kept in this build, or `undefined` once they can. Denext's `secureStore`
- * capability makes the packager bake `--allow-run=security` and `--allow-sys` (its fallback for
- * runtimes without their own keychain store), which Qutty's packaged permissions rule out (no
- * run, write or sys). Until Denext drops those for its pinned runtime, the cloud engines stay
- * off: no key is ever asked for or stored, and nothing goes to a cloud service. Turning them on
- * is this constant plus `secureStore` and the two `netConnect` hosts in denext.config.ts.
- */
-export const CLOUD_KEYS_UNAVAILABLE: string | undefined =
-  "cloud voices are off in this build: keeping their keys needs Denext's secure store, which would add run and sys permissions to the app";
-
-/** The OS keychain through Denext's `secureStore` capability (refused while it is off). */
-export const keychain: KeyStore = CLOUD_KEYS_UNAVAILABLE
-  ? {
-    get: () => Promise.reject(new Error(CLOUD_KEYS_UNAVAILABLE)),
-    set: () => Promise.reject(new Error(CLOUD_KEYS_UNAVAILABLE)),
-    remove: () => Promise.resolve(),
-  }
-  : {
-    get: (service) => secureStore.get(cloudKeyName(service)),
-    async set(service, key) {
-      await secureStore.set(cloudKeyName(service), key);
-    },
-    remove: (service) => secureStore.delete(cloudKeyName(service)),
+/** The {@linkcode KeyStore} over a voice backend (the extension, or the demo's memory). */
+export function backendKeys(voice: VoiceBackend): KeyStore {
+  return {
+    has: async (service) => (await voice.keyStatus())[service] === true,
+    set: (service, key) => voice.keySet(service, key),
+    remove: (service) => voice.keyClear(service),
   };
+}
 
 /** The OS's speech: `speak()` from denext/mobile. */
 export function systemTts(): TtsEngine {
@@ -75,14 +62,15 @@ export function systemTts(): TtsEngine {
   };
 }
 
-/** Deepgram Aura (cloud), played on this machine. */
+/** Deepgram Aura (cloud), played on this machine; the extension reads the key. */
 export function cloudTts(voice: VoiceBackend, keys: KeyStore): TtsEngine {
   return {
     id: "deepgram",
     async speak(text: string, o: SpeakOptions) {
-      const key = await keys.get("deepgram");
-      if (!key) throw new Error("no Deepgram key (Settings → Voice)");
-      await voice.speak(text, { key, ...(o.voice ? { model: o.voice } : {}) });
+      if (!await keys.has("deepgram")) {
+        throw new Error("no Deepgram key (Settings → Voice)");
+      }
+      await voice.speak(text, o.voice ? { model: o.voice } : {});
     },
     stop: () => voice.stopSpeaking(),
   };
@@ -140,30 +128,31 @@ function libProblem(
   return undefined;
 }
 
-/** Push-to-talk through the native library: on-device Whisper, or a cloud engine's upload. */
+/**
+ * Push-to-talk through the native library: on-device Whisper, or a cloud engine's upload (the
+ * extension reads the key; the probe only asks whether one is set).
+ */
 export function nativeStt(
   voice: VoiceBackend,
   engine: CaptureEngine,
   keys?: KeyStore,
 ): SttEngine {
-  let key: string | undefined;
   return {
     id: engine,
     async probe() {
       const problem = libProblem(await voice.status(), engine === "local");
       if (problem) return problem;
       if (engine !== "local") {
+        let set: boolean;
         try {
-          key = (voice.kind === "desktop" && keys)
-            ? await keys.get(engine) ?? undefined
-            : undefined;
+          set = keys ? await keys.has(engine) : false;
         } catch (e) {
           return {
             ok: false,
             reason: e instanceof Error ? e.message : String(e),
           };
         }
-        if (!key) {
+        if (!set) {
           return {
             ok: false,
             reason: `no ${
@@ -175,7 +164,7 @@ export function nativeStt(
       }
       return { ok: true };
     },
-    start: () => voice.sttStart(engine, key),
+    start: () => voice.sttStart(engine),
     stop: () => voice.sttStop(),
     cancel: () => voice.sttCancel(),
   };

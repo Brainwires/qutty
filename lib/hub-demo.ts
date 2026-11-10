@@ -16,7 +16,8 @@
 //   `--wait` is printed).
 //
 // The companion's chat box talks to that same fake brain; its privileged actions go to the
-// audit list in Settings like the desktop app's.
+// audit list in Settings like the desktop app's. The API key brain's key is kept in memory
+// (the desktop app keeps it in the OS keychain), set, cleared and asked about, never read back.
 //
 // Settings → Agent integration runs the real installer (lib/hub/integration.ts) over an in-memory
 // home folder (`/Users/demo`) that starts with small agent configs of its own, so Install and
@@ -34,6 +35,8 @@ import {
   uninstallIntegration,
 } from "./hub/integration.ts";
 import { hubPaths } from "./hub/launch.ts";
+import { companionKeys } from "./companion/keys.ts";
+import { memorySecretStore } from "./secrets/api-keys.ts";
 import { codexTrustWarning } from "./hub/codex-trust.ts";
 import { CODEX_HOOK_EVENTS } from "./hub/hooks.ts";
 import type {
@@ -140,6 +143,9 @@ export function createDemoHub(
       runtime.mailArrived();
     }
   });
+  // The API key brain's key, in memory (the desktop app's hub keeps it in the OS keychain).
+  const keyStore = memorySecretStore();
+  const keys = companionKeys(() => keyStore);
   const audit = new AuditLog(
     undefined,
     (entry) => emit.companion({ kind: "activity", entry }),
@@ -344,6 +350,9 @@ export function createDemoHub(
     },
     /** The companion's page half (the `hub` extension's companion methods). */
     companion: {
+      keyStatus: () => keys.presence(),
+      keySet: (key: string) => keys.set("anthropic", key),
+      keyClear: () => keys.clear("anthropic"),
       status: () =>
         Promise.resolve({
           status: runtime.status(),
@@ -356,6 +365,8 @@ export function createDemoHub(
         runtime.setAdapter(
           engine === "ollama"
             ? `Demo brain (Ollama ${model || "?"})`
+            : engine === "anthropic"
+            ? `Demo brain (Anthropic API ${model || "default"})`
             : "Demo brain",
         );
         runtime.setEnabled(enabled);

@@ -6,18 +6,18 @@
 //   with your key; the webview's Web Speech only where it exists), the native library's and the
 //   model's status with the first-use download (its size said before it starts), the hold-to-talk
 //   key, transcript review, and "Dictate into focused tile".
-// - Cloud keys go to the OS keychain (Denext's secureStore), in the desktop app only. Nothing goes
-//   to a cloud service unless one is picked here.
+// - Cloud keys go to the voice extension, which keeps them in the OS keychain (its own namespace
+//   of Denext's secure store); this page can save, replace or remove a key and see whether one is
+//   saved, never read it back (app/companion/api-key-field.tsx). Nothing goes to a cloud service
+//   unless one is picked here.
 
 import { useEffect, useState } from "denext";
 import type { VoiceApi } from "../use-voice.ts";
 import type { VoiceStatus } from "../../lib/voice/client.ts";
 import type { ModelState } from "../../lib/voice/model.ts";
-import {
-  CLOUD_KEYS_UNAVAILABLE,
-  type CloudService,
-  webRecognition,
-} from "../../lib/voice/engines.ts";
+import { webRecognition } from "../../lib/voice/engines.ts";
+import type { CloudService } from "../../lib/voice/client.ts";
+import { ApiKeyField } from "./api-key-field.tsx";
 import {
   isCloudEngine,
   PTT_KEYS,
@@ -112,69 +112,23 @@ function useVoiceStatus(voice: VoiceApi | null) {
   return { status, model, download, cancel };
 }
 
-/** A cloud service's key: saved in the OS keychain (desktop), or not. */
-function KeyField(props: { voice: VoiceApi; service: CloudService }) {
+/** A cloud service's key: kept by the voice extension in the OS keychain. */
+function KeyField(
+  props: { voice: VoiceApi; service: CloudService; platform: KeyPlatform },
+) {
   const { voice, service } = props;
-  const desktop = voice.voice?.kind === "desktop";
-  const [saved, setSaved] = useState<boolean | null>(null);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (!desktop || CLOUD_KEYS_UNAVAILABLE) return;
-    voice.keys.get(service).then((k) => setSaved(!!k), () => setSaved(false));
-  }, [desktop, service]);
-  const name = service === "deepgram" ? "Deepgram" : "ElevenLabs";
-  if (CLOUD_KEYS_UNAVAILABLE) {
-    return (
-      <span class="field-hint" data-testid={`voice-key-${service}`}>
-        {CLOUD_KEYS_UNAVAILABLE[0].toUpperCase() +
-          CLOUD_KEYS_UNAVAILABLE.slice(1)}.
-      </span>
-    );
-  }
-  if (!desktop) {
-    return (
-      <span class="field-hint" data-testid={`voice-key-${service}`}>
-        {name} keys are kept in the OS keychain, in the desktop app only.
-      </span>
-    );
-  }
+  const keys = voice.keys;
+  if (!keys) return null;
   return (
-    <div class="voice-key" data-testid={`voice-key-${service}`}>
-      <input
-        type="password"
-        class="font-custom"
-        placeholder={saved ? `${name} key saved` : `${name} API key`}
-        aria-label={`${name} API key`}
-        value={draft}
-        autocomplete="off"
-        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-      />
-      <button
-        type="button"
-        class="btn-quiet"
-        disabled={!draft.trim()}
-        onClick={() =>
-          voice.keys.set(service, draft.trim()).then(() => {
-            setDraft("");
-            setSaved(true);
-            setError("");
-          }, (e) => setError(String(e?.message ?? e)))}
-      >
-        Save
-      </button>
-      {saved && (
-        <button
-          type="button"
-          class="btn-quiet"
-          onClick={() =>
-            voice.keys.remove(service).then(() => setSaved(false), () => {})}
-        >
-          Remove
-        </button>
-      )}
-      {error && <span class="field-hint voice-error">{error}</span>}
-    </div>
+    <ApiKeyField
+      name={service === "deepgram" ? "Deepgram" : "ElevenLabs"}
+      testid={`voice-key-${service}`}
+      has={() => keys.has(service)}
+      save={(key) => keys.set(service, key)}
+      remove={() => keys.remove(service)}
+      demo={voice.voice?.kind !== "desktop"}
+      platform={props.platform}
+    />
   );
 }
 
@@ -282,12 +236,7 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
             })}
         >
           {TTS_ENGINES.map((t) => (
-            <option
-              value={t}
-              key={t}
-              disabled={isCloudEngine(t) && !!CLOUD_KEYS_UNAVAILABLE &&
-                settings.ttsEngine !== t}
-            >
+            <option value={t} key={t}>
               {TTS_LABEL[t]}
             </option>
           ))}
@@ -298,7 +247,9 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
           </span>
         )}
       </label>
-      {cloudTts && voice && <KeyField voice={voice} service="deepgram" />}
+      {cloudTts && voice && (
+        <KeyField voice={voice} service="deepgram" platform={platform} />
+      )}
       <label class="field">
         <span class="field-label">Voice</span>
         {!cloudTts && voices.length > 0
@@ -393,9 +344,8 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
             <option
               value={t}
               key={t}
-              disabled={settings.sttEngine !== t &&
-                ((t === "web" && !hasWebSpeech) ||
-                  (isCloudEngine(t) && !!CLOUD_KEYS_UNAVAILABLE))}
+              disabled={settings.sttEngine !== t && t === "web" &&
+                !hasWebSpeech}
             >
               {STT_LABEL[t]}
               {t === "web" && !hasWebSpeech ? " (not in this window)" : ""}
@@ -417,7 +367,11 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
         (settings.sttEngine === "deepgram" ||
           settings.sttEngine === "elevenlabs") &&
         (settings.sttEngine !== "deepgram" || !cloudTts) && (
-        <KeyField voice={voice} service={settings.sttEngine} />
+        <KeyField
+          voice={voice}
+          service={settings.sttEngine}
+          platform={platform}
+        />
       )}
       <label class="field">
         <span class="field-label">Hold to talk</span>

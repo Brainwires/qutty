@@ -8,8 +8,12 @@
  * goes through the same permission check and audit log as the Claude Code brain's calls over the
  * companion socket, without a socket, a shim process or an MCP handshake.
  *
- * One instance is one session: the conversation is kept across turns (trimmed to the last
- * {@linkcode MAX_MESSAGES} messages, at a user turn so a tool call never loses its result). The
+ * One instance is one session: the conversation is kept across turns. By default it is trimmed
+ * to the last {@linkcode MAX_MESSAGES} messages, at a user turn so a tool call never loses its
+ * result (a local model's context is small). With `history: { fresh: n }` it is never edited:
+ * once it holds more than `n` characters, the next turn starts a fresh conversation (the system
+ * prompt kept), because a model with preserved thinking (Claude Opus 5.5 / Sonnet 5.5) only takes
+ * its thinking blocks back in an unedited, append-only history. The
  * provider is not streamed (a tool round needs the whole reply anyway), so each assistant
  * message's text arrives in one `text` event.
  *
@@ -65,6 +69,30 @@ export interface InferenceBrainOptions {
   systemPrompt?: string;
   /** Model calls per turn (default 12). */
   maxIterations?: number;
+  /**
+   * How the conversation is bounded: `"trim"` (the default) drops the oldest turns
+   * ({@linkcode trimConversation}); `{ fresh: n }` never edits it, and starts over at the next
+   * turn once it is longer than `n` characters ({@linkcode historySize}).
+   */
+  history?: "trim" | { fresh: number };
+}
+
+/** How long a conversation is: its messages serialized, each reply's own blocks included. */
+export function historySize(messages: readonly Message[]): number {
+  return messages.reduce((n, m) => n + JSON.stringify(m).length, 0);
+}
+
+/**
+ * `messages` with the user's `next` turn appended, unless that passes `maxChars`: then a fresh
+ * conversation holding only `next`. Never a shortened copy of the old one.
+ */
+export function appendOrFresh(
+  messages: readonly Message[],
+  next: Message,
+  maxChars: number,
+): Message[] {
+  const grown = [...messages, next];
+  return historySize(grown) > maxChars ? [next] : grown;
 }
 
 /** How many messages a session keeps. */
@@ -179,7 +207,10 @@ export class InferenceBrain implements BrainAdapter {
 
   async #turn(sink: BrainSink, text: string): Promise<void> {
     const signal = this.#stop.signal;
-    this.#messages = trimConversation([...this.#messages, Message.user(text)]);
+    const history = this.#opts.history ?? "trim";
+    this.#messages = history === "trim"
+      ? trimConversation([...this.#messages, Message.user(text)])
+      : appendOrFresh(this.#messages, Message.user(text), history.fresh);
     const texts: string[] = [];
     const say = (t: string) => {
       if (!t || signal.aborted) return;

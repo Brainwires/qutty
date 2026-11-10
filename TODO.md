@@ -67,15 +67,22 @@
     recognizer (`SFSpeechRecognizer`) waits on the Denext proposal in the same
     doc. ElevenLabs text to speech needs `output_format` sent as a query
     parameter in `@rullama/provider-speech` (it is ignored today, so the reply
-    is mp3, which the library cannot play); Deepgram Aura is used instead. The
-    cloud engines are implemented but off (`CLOUD_KEYS_UNAVAILABLE` in
-    lib/voice/engines.ts): Denext's `secureStore` makes the packager bake
-    `--allow-run=security` and `--allow-sys`. Fix in Denext (no CLI fallback
-    under the pinned runtime), or keep the key out of the page as Denext's Loopy
-    branch does (`feat/loopy-voice-tools`: the secure store handed to the voice
-    backend alone), then turn them on with `secureStore` and the two
-    `netConnect` hosts. OpenAI Realtime (that branch's Loopy voice) can be one
+    is mp3, which the library cannot play); Deepgram Aura is used instead.
+    OpenAI Realtime (Denext's `feat/loopy-voice-tools` Loopy voice) can be one
     more optional cloud engine behind the same adapters.
+  - Done (Denext 4.15): the cloud engines (Deepgram, ElevenLabs) are on. Their
+    keys live in the voice extension's own secure store (`host.secureStore`,
+    `org.qutty.Qutty/ext/voice` in the OS keychain), which no page can read;
+    Settings → Voice saves, replaces or removes a key and only learns whether
+    one is set (lib/secrets/api-keys.ts, app/companion/api-key-field.tsx).
+    `desktop.secureStore: { legacy: false }` and runtime denext.16 bake neither
+    `--allow-run=security` nor `--allow-sys`; `netConnect` gained
+    api.deepgram.com and api.elevenlabs.io.
+  - Secure store, open: Windows bakes `--allow-run=powershell.exe` for it (the
+    PasswordVault); the hub (and so the API key brain) does not run on Windows
+    yet, but the cloud voices would. Not checked against a packaged build: a key
+    saved in the real Keychain from the signed app (the tests use an in-memory
+    store only).
   - Voice, Denext: the microphone's Info.plist text and audio-input entitlement
     come from Denext's `microphone` capability (denext.config.ts).
     Packaged-build checks without the UI, each under a temporary `HOME` so the
@@ -112,9 +119,29 @@
     0.12.3: native `tool_calls` and tool results, and `ChatOptions.signal`, so
     stopping the companion closes the request and Ollama stops generating), its
     tools the hub's handler called in process as the companion
-    (`companionToolbox`); Settings → Companion → Brain runs on. An API key brain
-    waits on Denext: `secureStore` still bakes `--allow-run=security` and
-    `--allow-sys` (4.13.1).
+    (`companionToolbox`); Settings → Companion → Brain runs on.
+  - Done (Denext 4.15): the API key brain, the same loop over Anthropic's
+    Messages API (lib/companion/anthropic-provider.ts, api.anthropic.com) with
+    the user's key, kept in the hub extension's own secure store
+    (`org.qutty.Qutty/ext/hub`) and read for each request; Settings → Companion
+    → Brain runs on → API key, with the key row and Haiku / Sonnet / Opus as
+    `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` (default). Not
+    `@rullama/provider`'s `AnthropicChatProvider`: it drops `thinking` blocks
+    from the history and always sends `temperature`, which the current models
+    refuse. The server-side refusal fallback (`fallbacks: "default"`) is on for
+    Opus and Sonnet.
+  - API key brain: its history is never trimmed (the Ollama brain keeps its
+    60-message trim). Preserved thinking (Opus 5.5, Sonnet 5.5) accepts thinking
+    blocks only in an unedited, append-only history, and dropping the oldest
+    turns is an edit (a 400 for newer accounts). So once the serialized history
+    passes `ANTHROPIC_HISTORY_CHARS` (1.6M characters, about 400k tokens), the
+    next turn starts a fresh session with the same system prompt
+    (`InferenceBrain` `history: { fresh }`, lib/companion/inference-brain.ts).
+  - API key brain, open: never run against the real API (the tests use a fake
+    `fetch`). A fresh session forgets the earlier turns without a summary; Loopy
+    does not say so yet. The limit is checked at a turn's start, so one turn's
+    tool rounds can grow past it. An OpenAI key brain (`OpenAiChatProvider`,
+    api.openai.com) would be one more engine and host.
   - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
     setting) and the mic level driving its listening pulse (`level` events from
     desktop/voice.ts, ~20 Hz while capturing).
