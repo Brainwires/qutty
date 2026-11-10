@@ -191,6 +191,7 @@ export function anthropicCompanionBrain(
   model: string,
   key: () => Promise<string | null>,
   tools: CompanionTools,
+  fetchFn?: typeof fetch,
   historyChars = ANTHROPIC_HISTORY_CHARS,
 ): BrainAdapter {
   const alias: BrainModel = COMPANION_MODELS.includes(model as BrainModel)
@@ -199,7 +200,11 @@ export function anthropicCompanionBrain(
   const id = ANTHROPIC_MODELS[alias];
   return new InferenceBrain({
     label: `Anthropic API (${id})`,
-    provider: new AnthropicApiProvider({ key, model: id }),
+    provider: new AnthropicApiProvider({
+      key,
+      model: id,
+      ...(fetchFn ? { fetch: fetchFn } : {}),
+    }),
     tools,
     history: { fresh: historyChars },
     async check() {

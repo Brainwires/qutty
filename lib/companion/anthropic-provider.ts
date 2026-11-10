@@ -1,21 +1,23 @@
 /**
  * The companion's API key brain: Anthropic's Messages API (`https://api.anthropic.com/v1/messages`)
  * as a `@rullama/core` `Provider`, for lib/companion/inference-brain.ts. A thin layer over
- * `@rullama/provider`'s `AnthropicChatProvider`, which does the request: it keeps each reply's own
- * content blocks (thinking included) in `Message.metadata` and sends them back unchanged, sends no
- * sampling option the caller did not set, and passes the abort signal to `fetch`.
+ * `@rullama/provider`'s `AnthropicChatProvider`, which does the request: it reads the key on every
+ * request, keeps each reply's own content blocks (thinking included) in `Message.metadata` and
+ * sends them back unchanged, leaves out empty text and joins consecutive user and tool turns,
+ * sends no sampling option the caller did not set, and passes the abort signal to `fetch`.
  *
  * What this layer adds:
- * - The key is asked for on every request (`key()`, the hub extension's secure store), and a
- *   provider is made for that request with it, so a key the user removes in Settings is not used
- *   again. The endpoint is always {@linkcode ANTHROPIC_URL}.
+ * - The key comes from `key()` (the hub extension's secure store) on every request, so a key the
+ *   user removes in Settings is not used again; with none saved, no request is made. The endpoint
+ *   is always {@linkcode ANTHROPIC_URL}.
+ * - Claude Opus 5.5 and Sonnet 5.5 get the server-side refusal fallback (the `anthropic-beta`
+ *   header and `fallbacks: "default"`).
  * - The options sent are only the system prompt, the stop sequences, the signal and
  *   {@linkcode MAX_TOKENS}: never a temperature (current models refuse sampling options).
- * - The conversation is tidied first ({@linkcode joinTurns}): empty text is left out and
- *   consecutive non-assistant turns are joined, so parallel tool results arrive together.
- * - A `refusal` stop reason is an error, and the API's errors read as a line a user can act on.
+ * - A `refusal` stop reason is an error naming its category, and the API's errors read as a line
+ *   a user can act on.
  *
- * Pure apart from the injected key (and the global `fetch` the library calls).
+ * Pure apart from the injected key and `fetch`.
  *
  * @module
  */
@@ -23,15 +25,15 @@
 import {
   ChatOptions,
   type ChatResponse,
-  type ContentBlock,
-  Message,
+  type Message,
   type Provider,
   type StreamChunk,
   type Tool,
 } from "@rullama/core";
 import {
-  ANTHROPIC_CONTENT_KEY,
+  ANTHROPIC_STOP_DETAILS_KEY,
   AnthropicChatProvider,
+  type AnthropicStopDetails,
 } from "@rullama/provider";
 import type { BrainModel } from "./settings.ts";
 
@@ -45,6 +47,11 @@ export const ANTHROPIC_MODELS: Readonly<Record<BrainModel, string>> = {
   sonnet: "claude-sonnet-5-5",
   opus: "claude-opus-5-5",
 };
+
+/** Server-side refusal fallback ("default": the API picks the fallback model per refusal). */
+const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** Models that take the server-side refusal fallback (Haiku has none). */
+const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 
 /** The longest reply per request (thinking included); plenty for a companion's turn. */
 const MAX_TOKENS = 16_000;
@@ -63,51 +70,8 @@ export interface AnthropicProviderOptions {
   key(): Promise<string | null>;
   /** The model id ({@linkcode ANTHROPIC_MODELS}). */
   model: string;
-}
-
-/** A message's content as blocks, without empty text. */
-function blocksOf(m: Message): ContentBlock[] {
-  const blocks: ContentBlock[] = typeof m.content === "string"
-    ? [{ type: "text", text: m.content }]
-    : m.content;
-  return blocks.filter((b) => b.type !== "text" || b.text !== "");
-}
-
-/** Whether `m` is a reply carrying its own blocks (sent back exactly as they came). */
-function hasRawBlocks(m: Message): boolean {
-  const raw = (m.metadata as Record<string, unknown> | undefined)?.[
-    ANTHROPIC_CONTENT_KEY
-  ];
-  return m.role === "assistant" && Array.isArray(raw) && raw.length > 0;
-}
-
-/**
- * The conversation as it is sent: system messages left out (the system prompt goes in
- * `system`), empty text and empty turns left out, a reply with its own blocks kept as it is, and
- * consecutive user and tool turns joined into one user turn (so the results of parallel tool
- * calls arrive together).
- */
-export function joinTurns(messages: readonly Message[]): Message[] {
-  const out: Message[] = [];
-  for (const m of messages) {
-    if (m.role === "system") continue;
-    if (hasRawBlocks(m)) {
-      out.push(m);
-      continue;
-    }
-    const content = blocksOf(m);
-    if (content.length === 0) continue;
-    const last = out.at(-1);
-    if (m.role === "assistant") {
-      out.push(new Message({ role: "assistant", content }));
-    } else if (last && last.role === "user") {
-      out[out.length - 1] = new Message({
-        role: "user",
-        content: [...blocksOf(last), ...content],
-      });
-    } else out.push(new Message({ role: "user", content }));
-  }
-  return out;
+  /** `fetch` (tests). */
+  fetch?: typeof fetch;
 }
 
 /** The API's error in a line: its `error.message` (else the text, shortened), a 401 explained. */
@@ -130,26 +94,51 @@ function readable(e: unknown): unknown {
   return m ? new Error(errorLine(Number(m[1]), m[2])) : e;
 }
 
+/** A refusal as an error, naming its category when the API gave one. */
+function refusal(response: ChatResponse): Error {
+  const metadata = response.message.metadata as
+    | Record<string, unknown>
+    | undefined;
+  const details = metadata?.[ANTHROPIC_STOP_DETAILS_KEY] as
+    | AnthropicStopDetails
+    | undefined;
+  const category = details?.category;
+  return new Error(
+    `Claude declined to answer${category ? ` (${category})` : ""}`,
+  );
+}
+
 /** Anthropic's Messages API with the user's key, keeping replies intact. */
 export class AnthropicApiProvider implements Provider {
   readonly name = "anthropic";
   readonly model: string;
-  #key: () => Promise<string | null>;
+  #provider: AnthropicChatProvider;
 
   constructor(opts: AnthropicProviderOptions) {
-    this.#key = opts.key;
     this.model = opts.model;
+    const fallback = FALLBACK_MODELS.has(opts.model);
+    this.#provider = new AnthropicChatProvider({
+      apiKey: async () => {
+        const key = await opts.key();
+        if (!key) {
+          throw new Error("no Anthropic API key (Settings → Companion)");
+        }
+        return key;
+      },
+      model: opts.model,
+      baseUrl: ANTHROPIC_URL,
+      ...(fallback
+        ? {
+          extraHeaders: { "anthropic-beta": FALLBACK_BETA },
+          extraBody: { fallbacks: "default" },
+        }
+        : {}),
+      ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    });
   }
 
   maxOutputTokens(): number {
     return MAX_TOKENS;
-  }
-
-  /** A provider with the key as it is now (none saved: an error, before any request). */
-  async #provider(): Promise<AnthropicChatProvider> {
-    const key = await this.#key();
-    if (!key) throw new Error("no Anthropic API key (Settings → Companion)");
-    return new AnthropicChatProvider(key, this.model, this.name, ANTHROPIC_URL);
   }
 
   /** The options sent: no sampling options, this provider's reply length. */
@@ -167,13 +156,10 @@ export class AnthropicApiProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const provider = await this.#provider();
-    const response = await provider
-      .chat(joinTurns(messages), tools, this.#options(options))
+    const response = await this.#provider
+      .chat(messages, tools, this.#options(options))
       .catch((e) => Promise.reject(readable(e)));
-    if (response.finish_reason === "refusal") {
-      throw new Error("Claude declined to answer");
-    }
+    if (response.finish_reason === "refusal") throw refusal(response);
     return response;
   }
 
@@ -182,13 +168,8 @@ export class AnthropicApiProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): AsyncIterable<StreamChunk> {
-    const provider = await this.#provider();
     try {
-      yield* provider.streamChat(
-        joinTurns(messages),
-        tools,
-        this.#options(options),
-      );
+      yield* this.#provider.streamChat(messages, tools, this.#options(options));
     } catch (e) {
       throw readable(e);
     }
