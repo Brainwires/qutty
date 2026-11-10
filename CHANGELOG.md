@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Linux packages: the launchers, metainfo and AppImage now come from Denext
+  4.15. Every `.desktop` entry (the `.deb`'s, and the one the tarball and the
+  AppImage carry) is named Qutty, shows Qutty's icon, is listed with the
+  terminal emulators (`GenericName=Terminal`, search keywords) and matches
+  Qutty's windows (`StartupWMClass=org.qutty.Qutty`). The `.deb` and the
+  AppImage install AppStream metainfo, so software centres list Qutty, and the
+  AppImage's runtime is a pinned, SHA-256-checked type2 build. The package
+  script no longer patches the entries or repacks the `.deb`.
+
 ## 0.4.0 — detach and New Window, Linux packages, SSH broadcast, Loopy reacts
 
 - Broadcast input (cluster ssh). Turn it on with the bar's broadcast button or
