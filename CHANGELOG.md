@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The companion's API key brain now sends its requests through Rullama's
+  `AnthropicChatProvider` (`@rullama/provider` 0.12.4) instead of Qutty's own
+  Anthropic client. It still reads the key from the keychain for every request,
+  calls only `api.anthropic.com`, sends replies back with their thinking blocks
+  unchanged, sends no temperature, joins consecutive tool results into one turn,
+  treats a refusal as an error and stops the request when the companion stops.
+  Only the Ollama brain still asks for temperature 0.2. Claude Opus 5.5 and
+  Sonnet 5.5 no longer get the server-side refusal fallback, because the library
+  cannot add its header or body field yet.
 - The system monitor (the bar's CPU / GPU meter and Loopy's hot face) reads its
   figures from Denext's `system.stats()` (the `systemStats` capability, which
   bakes no Deno permission) instead of Qutty's own Mach / IOKit FFI and `/proc`

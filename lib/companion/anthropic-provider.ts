@@ -1,25 +1,27 @@
 /**
  * The companion's API key brain: Anthropic's Messages API (`https://api.anthropic.com/v1/messages`)
- * as a `@rullama/core` `Provider`, for lib/companion/inference-brain.ts.
+ * as a `@rullama/core` `Provider`, for lib/companion/inference-brain.ts. A thin layer over
+ * `@rullama/provider`'s `AnthropicChatProvider`, which does the request: it keeps each reply's own
+ * content blocks (thinking included) in `Message.metadata` and sends them back unchanged, sends no
+ * sampling option the caller did not set, and passes the abort signal to `fetch`.
  *
- * Why not `@rullama/provider`'s `AnthropicChatProvider`: its reply parser keeps only text and
- * tool calls, so a current model's `thinking` blocks would be dropped from the conversation sent
- * back (and Claude Opus 5.5 / Sonnet 5.5 expect them back unchanged); it always sends
- * `temperature` (`ChatOptions` defaults it), which those models refuse; and it does not pass the
- * abort signal to `fetch`. This one keeps each reply's content blocks exactly as they came
- * (`Message.metadata`, which other providers ignore) and sends them back as they were, sends no
- * sampling options, and aborts the request when the companion is stopped.
+ * What this layer adds:
+ * - The key is asked for on every request (`key()`, the hub extension's secure store), and a
+ *   provider is made for that request with it, so a key the user removes in Settings is not used
+ *   again. The endpoint is always {@linkcode ANTHROPIC_URL}.
+ * - The options sent are only the system prompt, the stop sequences, the signal and
+ *   {@linkcode MAX_TOKENS}: never a temperature (current models refuse sampling options).
+ * - The conversation is tidied first ({@linkcode joinTurns}): empty text is left out and
+ *   consecutive non-assistant turns are joined, so parallel tool results arrive together.
+ * - A `refusal` stop reason is an error, and the API's errors read as a line a user can act on.
  *
- * The key is asked for on every request (`key()`, the hub extension's secure store), so a key the
- * user removes in Settings is not used again. It is sent only to {@linkcode ANTHROPIC_URL}.
- *
- * Pure apart from the injected `fetch` and key.
+ * Pure apart from the injected key (and the global `fetch` the library calls).
  *
  * @module
  */
 
 import {
-  type ChatOptions,
+  ChatOptions,
   type ChatResponse,
   type ContentBlock,
   Message,
@@ -27,15 +29,14 @@ import {
   type StreamChunk,
   type Tool,
 } from "@rullama/core";
+import {
+  ANTHROPIC_CONTENT_KEY,
+  AnthropicChatProvider,
+} from "@rullama/provider";
 import type { BrainModel } from "./settings.ts";
 
-/** The host the API key brain calls (denext.config.ts `netConnect`). */
-const ANTHROPIC_HOST = "api.anthropic.com";
-/** The Messages endpoint. */
-export const ANTHROPIC_URL = `https://${ANTHROPIC_HOST}/v1/messages`;
-const ANTHROPIC_VERSION = "2023-06-01";
-/** Server-side refusal fallback ("default": the API picks the fallback model per refusal). */
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** The Messages endpoint (denext.config.ts `netConnect`: api.anthropic.com). */
+export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 /** Settings' model choice as an API model id (`""`: Claude Opus 5.5). */
 export const ANTHROPIC_MODELS: Readonly<Record<BrainModel, string>> = {
@@ -44,9 +45,6 @@ export const ANTHROPIC_MODELS: Readonly<Record<BrainModel, string>> = {
   sonnet: "claude-sonnet-5-5",
   opus: "claude-opus-5-5",
 };
-
-/** Models that take the server-side refusal fallback (Haiku has none). */
-const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 
 /** The longest reply per request (thinking included); plenty for a companion's turn. */
 const MAX_TOKENS = 16_000;
@@ -60,93 +58,59 @@ const MAX_TOKENS = 16_000;
  */
 export const ANTHROPIC_HISTORY_CHARS = 1_600_000;
 
-/** A content block as the API sends and takes it. */
-type WireBlock = { type: string; [field: string]: unknown };
-interface WireMessage {
-  role: "user" | "assistant";
-  content: WireBlock[];
-}
-interface WireResponse {
-  content?: WireBlock[];
-  stop_reason?: string;
-  stop_details?: { category?: string | null; explanation?: string } | null;
-  usage?: { input_tokens?: number; output_tokens?: number };
-}
-
-/** Where a reply's own blocks are kept on its message. */
-const RAW = "anthropicContent";
-
 export interface AnthropicProviderOptions {
   /** The API key (asked for on every request); `null` when none is saved. */
   key(): Promise<string | null>;
   /** The model id ({@linkcode ANTHROPIC_MODELS}). */
   model: string;
-  /** `fetch` (tests). */
-  fetch?: typeof fetch;
 }
 
-/** One core block as the API takes it (`null`: not sent, e.g. an image the hub never makes). */
-function wireBlock(block: ContentBlock): WireBlock | null {
-  switch (block.type) {
-    case "text":
-      return { type: "text", text: block.text };
-    case "tool_use":
-      return {
-        type: "tool_use",
-        id: block.id,
-        name: block.name,
-        input: block.input ?? {},
-      };
-    case "tool_result":
-      return {
-        type: "tool_result",
-        tool_use_id: block.tool_use_id,
-        content: block.content,
-        ...(block.is_error ? { is_error: true } : {}),
-      };
-    default:
-      return null;
-  }
+/** A message's content as blocks, without empty text. */
+function blocksOf(m: Message): ContentBlock[] {
+  const blocks: ContentBlock[] = typeof m.content === "string"
+    ? [{ type: "text", text: m.content }]
+    : m.content;
+  return blocks.filter((b) => b.type !== "text" || b.text !== "");
+}
+
+/** Whether `m` is a reply carrying its own blocks (sent back exactly as they came). */
+function hasRawBlocks(m: Message): boolean {
+  const raw = (m.metadata as Record<string, unknown> | undefined)?.[
+    ANTHROPIC_CONTENT_KEY
+  ];
+  return m.role === "assistant" && Array.isArray(raw) && raw.length > 0;
 }
 
 /**
- * The conversation as the API takes it: system messages left out (the system prompt goes in
- * `system`), tool results as user turns, a reply this provider made sent back exactly as it came,
- * and consecutive turns of one role joined (so the results of parallel tool calls arrive
- * together).
+ * The conversation as it is sent: system messages left out (the system prompt goes in
+ * `system`), empty text and empty turns left out, a reply with its own blocks kept as it is, and
+ * consecutive user and tool turns joined into one user turn (so the results of parallel tool
+ * calls arrive together).
  */
-export function wireMessages(messages: readonly Message[]): WireMessage[] {
-  const out: WireMessage[] = [];
+export function joinTurns(messages: readonly Message[]): Message[] {
+  const out: Message[] = [];
   for (const m of messages) {
     if (m.role === "system") continue;
-    const role = m.role === "assistant" ? "assistant" : "user";
-    const raw = (m.metadata as Record<string, unknown> | undefined)?.[RAW];
-    const content: WireBlock[] = role === "assistant" && Array.isArray(raw)
-      ? raw as WireBlock[]
-      : typeof m.content === "string"
-      ? (m.content ? [{ type: "text", text: m.content }] : [])
-      : m.content.map(wireBlock).filter((b): b is WireBlock => b !== null);
+    if (hasRawBlocks(m)) {
+      out.push(m);
+      continue;
+    }
+    const content = blocksOf(m);
     if (content.length === 0) continue;
     const last = out.at(-1);
-    if (last?.role === role) last.content = [...last.content, ...content];
-    else out.push({ role, content });
+    if (m.role === "assistant") {
+      out.push(new Message({ role: "assistant", content }));
+    } else if (last && last.role === "user") {
+      out[out.length - 1] = new Message({
+        role: "user",
+        content: [...blocksOf(last), ...content],
+      });
+    } else out.push(new Message({ role: "user", content }));
   }
   return out;
 }
 
-/** The core content of a reply: its text and tool calls (thinking stays in the raw blocks). */
-function coreContent(blocks: readonly WireBlock[]): ContentBlock[] {
-  return blocks.flatMap((b): ContentBlock[] =>
-    b.type === "text" && typeof b.text === "string"
-      ? [{ type: "text", text: b.text }]
-      : b.type === "tool_use" && typeof b.id === "string" &&
-          typeof b.name === "string"
-      ? [{ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} }]
-      : []
-  );
-}
-
-/** The API's error body in a line (its `error.message`, else the text, shortened). */
+/** The API's error in a line: its `error.message` (else the text, shortened), a 401 explained. */
 function errorLine(status: number, text: string): string {
   let message = text.trim();
   try {
@@ -159,14 +123,21 @@ function errorLine(status: number, text: string): string {
   return message ? `${why}: ${message.slice(0, 300)}` : why;
 }
 
+/** The library's `Anthropic API error (<status>): <body>` as {@linkcode errorLine}. */
+function readable(e: unknown): unknown {
+  const m = e instanceof Error &&
+    /^Anthropic API error \((\d+)\): ([\s\S]*)$/.exec(e.message);
+  return m ? new Error(errorLine(Number(m[1]), m[2])) : e;
+}
+
 /** Anthropic's Messages API with the user's key, keeping replies intact. */
 export class AnthropicApiProvider implements Provider {
   readonly name = "anthropic";
   readonly model: string;
-  #opts: AnthropicProviderOptions;
+  #key: () => Promise<string | null>;
 
   constructor(opts: AnthropicProviderOptions) {
-    this.#opts = opts;
+    this.#key = opts.key;
     this.model = opts.model;
   }
 
@@ -174,28 +145,21 @@ export class AnthropicApiProvider implements Provider {
     return MAX_TOKENS;
   }
 
-  /** The request body (exported for the tests through {@linkcode AnthropicApiProvider.body}). */
-  body(
-    messages: readonly Message[],
-    tools: readonly Tool[] | undefined,
-    options: Pick<ChatOptions, "system">,
-  ): Record<string, unknown> {
-    return {
-      model: this.model,
+  /** A provider with the key as it is now (none saved: an error, before any request). */
+  async #provider(): Promise<AnthropicChatProvider> {
+    const key = await this.#key();
+    if (!key) throw new Error("no Anthropic API key (Settings → Companion)");
+    return new AnthropicChatProvider(key, this.model, this.name, ANTHROPIC_URL);
+  }
+
+  /** The options sent: no sampling options, this provider's reply length. */
+  #options(options: ChatOptions): ChatOptions {
+    return new ChatOptions({
       max_tokens: MAX_TOKENS,
       ...(options.system ? { system: options.system } : {}),
-      messages: wireMessages(messages),
-      ...(tools && tools.length > 0
-        ? {
-          tools: tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.input_schema,
-          })),
-        }
-        : {}),
-      ...(FALLBACK_MODELS.has(this.model) ? { fallbacks: "default" } : {}),
-    };
+      ...(options.stop ? { stop: options.stop } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   }
 
   async chat(
@@ -203,50 +167,30 @@ export class AnthropicApiProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const key = await this.#opts.key();
-    if (!key) throw new Error("no Anthropic API key (Settings → Companion)");
-    const response = await (this.#opts.fetch ?? fetch)(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": ANTHROPIC_VERSION,
-        ...(FALLBACK_MODELS.has(this.model)
-          ? { "anthropic-beta": FALLBACK_BETA }
-          : {}),
-      },
-      body: JSON.stringify(this.body(messages, tools, options)),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(errorLine(response.status, text));
-    const reply = JSON.parse(text) as WireResponse;
-    if (reply.stop_reason === "refusal") {
-      const category = reply.stop_details?.category;
-      throw new Error(
-        `Claude declined to answer${category ? ` (${category})` : ""}`,
-      );
+    const provider = await this.#provider();
+    const response = await provider
+      .chat(joinTurns(messages), tools, this.#options(options))
+      .catch((e) => Promise.reject(readable(e)));
+    if (response.finish_reason === "refusal") {
+      throw new Error("Claude declined to answer");
     }
-    const blocks = Array.isArray(reply.content) ? reply.content : [];
-    const input = reply.usage?.input_tokens ?? 0;
-    const output = reply.usage?.output_tokens ?? 0;
-    return {
-      message: new Message({
-        role: "assistant",
-        content: coreContent(blocks),
-        metadata: { [RAW]: blocks },
-      }),
-      usage: {
-        prompt_tokens: input,
-        completion_tokens: output,
-        total_tokens: input + output,
-      },
-      finish_reason: reply.stop_reason,
-    };
+    return response;
   }
 
-  // deno-lint-ignore require-yield
-  async *streamChat(): AsyncIterable<StreamChunk> {
-    throw new Error("the companion's API key brain does not stream");
+  async *streamChat(
+    messages: Message[],
+    tools: Tool[] | undefined,
+    options: ChatOptions,
+  ): AsyncIterable<StreamChunk> {
+    const provider = await this.#provider();
+    try {
+      yield* provider.streamChat(
+        joinTurns(messages),
+        tools,
+        this.#options(options),
+      );
+    } catch (e) {
+      throw readable(e);
+    }
   }
 }

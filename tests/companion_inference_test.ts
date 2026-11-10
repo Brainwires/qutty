@@ -330,6 +330,7 @@ Deno.test("brain choice: Ollama's model lookup; Settings switches the adapter an
 type OllamaBody = {
   model: string;
   stream: boolean;
+  options?: { temperature?: number };
   tools?: { type: string; function: { name: string } }[];
   messages: {
     role: string;
@@ -405,6 +406,8 @@ Deno.test("Ollama brain: native /api/chat tool calls run the hub's tools; result
     const [first, second] = ollama.bodies;
     assertEquals(first.model, "m");
     assertEquals(first.stream, false);
+    // The Ollama brain asks for a low temperature (the API key brain sends none).
+    assertEquals(first.options?.temperature, 0.2);
     assert(first.tools!.some((t) => t.function.name === "list_peers"));
     assertEquals(first.messages[0].role, "system");
     // The call went back as the assistant's native tool_calls, its result as a tool message.
