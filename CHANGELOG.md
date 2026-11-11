@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Denext 4.16 (runtime 3.0.0-denext.17). Window → "Close Window and End Its
+  Shells" now acts on the window in front, once, even when several windows are
+  open, and still asks first when an agent there is busy. The quit question
+  (Cmd+Q, or "Quit Qutty" in the menu-bar / tray icon, with an agent busy) can
+  now stay on screen as long as you need: the quit waits for your answer instead
+  of being cancelled and issued again. Opening Qutty again on Linux and Windows
+  while it lives in the tray brings back the workspace you left last.
+
 - Qutty now has a menu-bar icon (a tray icon on Linux and Windows). Its menu
   opens a new window, lists the workspaces that have running terminals
   ("Workspace 2 — 3 terminals", the open ones checked) to reopen or focus one,

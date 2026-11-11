@@ -4,12 +4,15 @@
 // (desktop/terminal-sessions.ts), and saves its snapshot as it changes. The page's Workspaces menu
 // lists the workspaces, reopens a detached one (it opens a window with that key itself) and ends
 // one for real; `endWindow` ends the calling window's own workspace once the page has closed the
-// window (the Window menu's "Close Window and End Its Shells", the Workspaces menu's "End
-// workspace").
+// window (the Workspaces menu's "End workspace", the close button set to end its shells).
 //
-// The quit guard lives here too: Cmd+Q kills every terminal, so with an agent at work the quit is
-// cancelled and the OS's own message box asks first (`host.confirm`, app-modal: it works with no
-// window open); "Quit Anyway" quits again.
+// The Window menu's "Close Window and End Its Shells" (`desktop.menu.window.items`) arrives here
+// once per click with the key window (`host.onWindowMenuItem`): its workspace is ended and the
+// window closed, after asking when an agent there is busy.
+//
+// The quit guard lives here too: Cmd+Q kills every terminal, so with an agent at work the OS's own
+// message box asks first (`host.confirm`, app-modal: it works with no window open), and the guard
+// answers with the user's choice.
 //
 // The window lifecycle goes to tray mode (desktop/tray.ts): closing the last window leaves the app
 // in the menu bar / tray while terminals run, and quits when none does.
@@ -29,7 +32,9 @@ import {
   workspaces,
 } from "./workspace-host.ts";
 import { terminalSessions } from "./pty.ts";
-import { quitApp, type TrayMode, trayMode } from "./tray.ts";
+import { type TrayMode, trayMode } from "./tray.ts";
+import { closeAppWindow } from "./windows.ts";
+import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 
 export type { PtyReplay, WorkspaceInfo };
@@ -73,17 +78,12 @@ const idInput = objectSchema<{ id: string }>((v, issues) => ({
   id: str(v, "id", issues, 64),
 }));
 
-const endWindowInput = objectSchema<{ menu: boolean; confirm: boolean }>(
-  (v, issues) => {
-    if (typeof v.menu !== "boolean") {
-      issues.push({ message: "menu must be a boolean", path: ["menu"] });
-    }
-    if (v.confirm !== undefined && typeof v.confirm !== "boolean") {
-      issues.push({ message: "confirm must be a boolean", path: ["confirm"] });
-    }
-    return { menu: v.menu === true, confirm: v.confirm === true };
-  },
-);
+const endWindowInput = objectSchema<{ confirm: boolean }>((v, issues) => {
+  if (v.confirm !== undefined && typeof v.confirm !== "boolean") {
+    issues.push({ message: "confirm must be a boolean", path: ["confirm"] });
+  }
+  return { confirm: v.confirm === true };
+});
 
 const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
 
@@ -174,72 +174,50 @@ export function closeQuestion(
 }
 
 /**
- * The quit guard: a quit with a busy agent is cancelled, and the OS's message box asks (it is
- * app-modal, so it works with no window open). The guard does not wait for the answer, since
- * Denext lets a quit go on once its guards took 5 seconds: "Quit Anyway" confirms the quit and
- * issues it again (`quit`), which the guard then lets through. A second quit while the box is up
- * is cancelled too. Under a runtime without message boxes (`host.confirm` rejects `unsupported`)
- * the quit is cancelled once and the next one, within a few seconds, goes through.
+ * The quit guard: with a busy agent the OS's message box asks (it is app-modal, so it works with no
+ * window open) and the guard answers with the user's choice: "Quit Anyway" lets the quit go on,
+ * Cancel (or Escape) cancels it. Denext stops the guards' 5 seconds while the box is up (4.16), so
+ * the guard waits for the answer. A second quit while the box is up is cancelled without a second
+ * box. Under a runtime without message boxes (`host.confirm` rejects `unsupported`) the quit is
+ * cancelled once and the next one, within a few seconds, goes through.
  */
 export function guardQuit(
   host: Pick<DesktopExtensionHost, "onBeforeQuit" | "confirm">,
-  quit: () => void = quitApp,
 ): () => void {
   let asking = false;
-  const ask = async (busy: BusyTile[]) => {
+  return host.onBeforeQuit(async () => {
+    const decision = workspaces.beforeQuit();
+    if (decision.allow) return true;
+    if (asking) return false;
+    asking = true;
     try {
-      const choice = await host.confirm(quitQuestion(busy));
-      workspaces.answerQuit(choice === 0);
-      if (choice === 0) quit();
+      return await host.confirm(quitQuestion(decision.busy)) === 0;
     } catch (err) {
       console.warn(
         "session: could not ask before quitting (quit again to quit)",
         err,
       );
       workspaces.answerQuit(true);
+      return false;
+    } finally {
+      asking = false;
     }
-  };
-  return host.onBeforeQuit(() => {
-    const decision = workspaces.beforeQuit();
-    if (decision.allow) return true;
-    if (!asking) {
-      asking = true;
-      void ask(decision.busy).finally(() => asking = false);
-    }
-    return false;
   });
 }
 
-/** How long after a Window-menu close the other windows' copies of that click are ignored. */
-const MENU_CLICK_MS = 1000;
-
 /**
- * `endWindow` for one window: whether its page should close it now. `menu`: the Window menu's
- * click; `confirm`: ask first when an agent there is busy (the menu always does).
+ * Whether workspace `id` may be ended: yes when no agent there is busy, else the OS's message box
+ * asks ({@linkcode closeQuestion}). One box at a time: while one is up, the answer is no.
  */
-export type EndWindow = (
-  window: string,
-  menu: boolean,
-  confirm?: boolean,
-) => Promise<SessionEndWindow>;
+export type AskEnd = (id: string) => Promise<boolean>;
 
-/**
- * `endWindow`. From the Window menu ("Close Window and End Its Shells", no shortcut) every
- * window's page hears the click (Denext queues an application-menu click for every window), so
- * only the window used last acts, once per click; with a busy agent in its workspace the OS's
- * message box asks first. `confirm` (the window's close button set to end its shells, or the
- * page's own close question answered "End Shells") asks the same about busy agents, for the
- * calling window whichever was used last. The workspace is ended once the page has closed the
- * window (`endOnClose`), so the close does not offer it in Reopen Closed Window again.
- */
-export function createEndWindow(
+/** The {@linkcode AskEnd} that asks through `host`. */
+export function createAskEnd(
   host: Pick<DesktopExtensionHost, "confirm">,
-  now: () => number = Date.now,
-): EndWindow {
+): AskEnd {
   let asking = false;
-  let acceptedAt = -Infinity;
-  /** Whether workspace `id` may be ended: yes, unless a busy agent there and the user says no. */
-  const askIfBusy = async (id: string): Promise<boolean> => {
+  return async (id) => {
+    if (asking) return false;
     const busy = workspaces.busyIn(id);
     if (busy.length === 0) return true;
     asking = true;
@@ -252,25 +230,51 @@ export function createEndWindow(
       asking = false;
     }
   };
-  const fromMenu = (window: string, id: string): Promise<boolean> => {
-    if (
-      asking || window !== workspaces.activeWindow() ||
-      now() - acceptedAt < MENU_CLICK_MS
-    ) {
-      return Promise.resolve(false);
-    }
-    acceptedAt = now();
-    return askIfBusy(id);
-  };
-  return async (window, menu, confirm = false) => {
+}
+
+/**
+ * `endWindow` for one window: whether its page should close it now. `confirm`: ask first when an
+ * agent there is busy.
+ */
+export type EndWindow = (
+  window: string,
+  confirm?: boolean,
+) => Promise<SessionEndWindow>;
+
+/**
+ * `endWindow`, from the window's page: the Workspaces menu's "End workspace" (asked in the page)
+ * or, with `confirm`, the close button set to end its shells (or the page's close question answered
+ * "End Shells"), which asks about busy agents first. The workspace is ended once the page has
+ * closed the window (`endOnClose`), so the close does not offer it in Reopen Closed Window again.
+ */
+export function createEndWindow(ask: AskEnd): EndWindow {
+  return async (window, confirm = false) => {
     const id = workspaces.workspaceOfWindow(window);
     if (id === undefined) return { close: false };
-    if (menu && !(await fromMenu(window, id))) return { close: false };
-    if (!menu && confirm && (asking || !(await askIfBusy(id)))) {
-      return { close: false };
-    }
+    if (confirm && !(await ask(id))) return { close: false };
     return { close: workspaces.endOnClose(id) };
   };
+}
+
+/**
+ * The Window menu's "Close Window and End Its Shells" (`desktop.menu.window.items`): each click
+ * arrives once, with the key window. Its workspace is ended (after asking when an agent there is
+ * busy) once `close` has closed the window, without its page's close guard. With no window open,
+ * or a window that shows no workspace, nothing happens. Returns the unsubscribe.
+ */
+export function closeAndEndFromMenu(
+  host: Pick<DesktopExtensionHost, "onWindowMenuItem">,
+  ask: AskEnd,
+  close: (windowId: string) => void = closeAppWindow,
+): () => void {
+  return host.onWindowMenuItem(async (item, { keyWindow }) => {
+    if (item !== CLOSE_AND_END_ITEM || !keyWindow) return;
+    const id = workspaces.workspaceOfWindow(keyWindow.id);
+    if (id === undefined || !(await ask(id))) return;
+    // The window may have closed, or come to show another workspace, while the box was up.
+    if (workspaces.workspaceOfWindow(keyWindow.id) !== id) return;
+    if (workspaces.endOnClose(id)) close(keyWindow.id);
+  });
 }
 
 let endWindow: EndWindow | undefined;
@@ -289,7 +293,9 @@ export default defineDesktopExtension({
     });
     followWindows(host);
     guardQuit(host);
-    endWindow = createEndWindow(host);
+    const ask = createAskEnd(host);
+    endWindow = createEndWindow(ask);
+    closeAndEndFromMenu(host, ask);
   },
   methods: {
     /** Show the calling window's workspace: its snapshot and its terminals, attached here. */
@@ -339,10 +345,9 @@ export default defineDesktopExtension({
     },
     /**
      * End the calling window's workspace once the page has closed the window (`close: true`: close
-     * it now). `menu`: the Window menu's "Close Window and End Its Shells", heard by every window;
-     * only the window used last acts, and a busy agent there is asked about first. Without it the
-     * page asked already (the Workspaces menu's "End workspace"); `confirm` still asks about a busy
-     * agent (the window's close button, set to end its shells or answered "End Shells").
+     * it now). The page asked already (the Workspaces menu's "End workspace"); `confirm` still asks
+     * about a busy agent (the window's close button, set to end its shells or answered "End
+     * Shells").
      */
     endWindow: {
       input: endWindowInput,
@@ -350,8 +355,8 @@ export default defineDesktopExtension({
         if (!endWindow) {
           throw new DesktopCapError("unavailable", "session is not set up");
         }
-        const { menu, confirm } = args as { menu: boolean; confirm: boolean };
-        return endWindow(windowOf(ctx), menu, confirm);
+        const { confirm } = args as { confirm: boolean };
+        return endWindow(windowOf(ctx), confirm);
       },
     },
   },

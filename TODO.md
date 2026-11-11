@@ -305,14 +305,16 @@
     `"accessory"` policy, no Dock icon, until a window opens); with none left it
     quits. Without a tray host the old behaviour stays. Opening Qutty again
     while it runs brings a window back (macOS: the Dock's reopen; Linux /
-    Windows: `desktop.app.singleInstance` and `secondinstance`).
-  - Denext gap: no `runDesktop({ onSecondInstance })`; desktop.ts listens to the
-    runtime's `Deno.desktop` `secondinstance` itself.
+    Windows: `desktop.app.singleInstance` and
+    `runDesktop({ onSecondInstance })`).
+  - Done (Denext 4.16): "Close Window and End Its Shells" is a
+    `desktop.menu.window.items` entry handled once, for the key window, by the
+    `session` extension; the quit guard waits for the user's answer; the tray
+    quits through the typed `DesktopRuntime.quit()`; a second launch is
+    `runDesktop({ onSecondInstance })` (docs/denext-multi-window-proposal.md,
+    "After 4.16").
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
-  - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.15"): no
-    custom item in the backend's Window menu (the page's menu click reaches
-    every window), and a quit guard cannot wait for the user's answer.
 
 - [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).

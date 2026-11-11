@@ -349,7 +349,7 @@ Not adopted yet: gap 9 (`defaultWidth` / `defaultHeight`, which would replace
 the `fresh` size in `lib/workspace/windows.ts`) and gap 11 (the replay's
 `dropped` / `truncated`, which `lib/workspace/replay.ts` detects by `seq`).
 
-### 13. No custom item in the backend's Window menu
+### 13. No custom item in the backend's Window menu (resolved in 4.16)
 
 `desktop.menu.window` takes only Denext's own items. Qutty adds "Close Window
 and End Its Shells" with the page's `setAppMenu` (a "Window" submenu, which
@@ -364,7 +364,7 @@ clicks reach the backend
 => … })`) with the key
 window's id, or a page click carrying the key window.
 
-### 14. A quit guard cannot wait for the user
+### 14. A quit guard cannot wait for the user (resolved in 4.16)
 
 Every `onBeforeQuit` guard gets 5 seconds together, and then the quit goes on. A
 guard that awaits `host.confirm` would quit under a box the user has not
@@ -374,3 +374,37 @@ call).
 
 **Proposal:** pause the guards' deadline while a `host.confirm` box is up, or
 give the host a typed `quit()` that runs the guards again.
+
+## After 4.16: what Qutty replaced
+
+Denext 4.16.0 (runtime 3.0.0-denext.17) shipped both proposals, and a
+`runDesktop({ onSecondInstance })`. Qutty dropped three workarounds:
+
+- **13, the Window menu item.** "Close Window and End Its Shells" is one of the
+  app's own items, `desktop.menu.window.items` in `denext.config.ts`. Its click
+  reaches the `session` extension once, with the key window
+  (`host.onWindowMenuItem`, `closeAndEndFromMenu` in `desktop/session.ts`): it
+  asks about busy agents there with `host.confirm`, marks the window's workspace
+  to end on close, and closes that window through `DesktopRuntime.windows` (no
+  close guard; desktop.ts shares the runtime's windows with
+  `shareRuntimeWindows`). With no window open it does nothing. The page's
+  `setAppMenu` "Window" submenu, its `onAppMenuItem` handler and the extension's
+  "window used last, ignore copies for a second" de-duplication are gone; the
+  page sets no application menu at all now.
+- **14, the quit guard.** `guardQuit` awaits `host.confirm` inside the guard and
+  returns the answer, since Denext stops the guards' 5 seconds while the box is
+  up. The untyped `Deno.desktop.quit()` is gone: the tray's "Quit Qutty" and the
+  quit once nothing runs in the tray go through the typed
+  `DesktopRuntime.quit()`, whose caller (desktop.ts) has no guards of its own,
+  so the `session` extension's guard still asks about busy agents.
+  (`host.quit()` from the `session` extension would skip that extension's own
+  guard, so it is not used there.)
+- **The second launch.** desktop.ts no longer listens to `Deno.desktop`'s raw
+  `secondinstance`. `runDesktop({ onSecondInstance })` answers the same window
+  as the Dock (`dockReopenWindow`): Denext's default reopens the last closed
+  key, which may be a workspace with no terminal left, so Qutty keeps its own
+  choice. The window's opening takes tray mode back to a regular app through
+  `followWindows`. On macOS a Finder or Spotlight relaunch is still the Dock's
+  reopen (`onDockReopen`).
+
+Still not adopted: gaps 9 and 11, as above.

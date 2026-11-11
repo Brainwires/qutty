@@ -4,7 +4,9 @@
 import type {
   DesktopCapCtx,
   DesktopConfirmOptions,
+  DesktopSecondInstanceEvent,
   DesktopSecureStore,
+  DesktopWindowMenuItemHandler,
 } from "denext/desktop";
 import { memorySecretStore } from "../lib/secrets/api-keys.ts";
 
@@ -43,8 +45,9 @@ type ClosedFn = (info: WindowInfo & { appQuitting: boolean }) => unknown;
 
 /**
  * A fake extension host: records every emit (with its target window), keeps the open windows,
- * fires the window lifecycle hooks on `close` / `quit`, runs the quit guards on `beforeQuit`, and
- * records each `confirm` (the OS message box), answering it with `reply`.
+ * fires the window lifecycle hooks on `close` / `quit`, runs the quit guards on `beforeQuit`,
+ * records each `confirm` (the OS message box), answering it with `reply`, hands a Window-menu
+ * click to its subscribers on `menuItem`, and counts the extension's own `quit()` calls.
  */
 export function fakeExtensionHost(open: WindowInfo[] = []) {
   const events: HostEvent[] = [];
@@ -53,6 +56,10 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
   const closed = new Set<ClosedFn>();
   const quits = new Set<() => unknown>();
   const guards = new Set<() => boolean | Promise<boolean>>();
+  const menuItems = new Set<DesktopWindowMenuItemHandler>();
+  const relaunches = new Set<
+    (event: DesktopSecondInstanceEvent) => void | Promise<void>
+  >();
   /** Every `host.confirm` call's options, in order. */
   const confirms: DesktopConfirmOptions[] = [];
   function on<T>(set: Set<T>) {
@@ -91,6 +98,13 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     openWindow: (): never => {
       throw new Error("unused");
     },
+    // Denext 4.16's: the extension's own quit, the app's Window-menu items, a second launch.
+    quit: (): Promise<boolean> => {
+      fake.quits++;
+      return Promise.resolve(true);
+    },
+    onWindowMenuItem: on(menuItems),
+    onSecondInstance: on(relaunches),
   };
   const fake = {
     host,
@@ -102,6 +116,18 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
      */
     reply: (_options: DesktopConfirmOptions): Promise<number | null> =>
       new Promise<number | null>(() => {}),
+    /** How many times the extension called `host.quit()`. */
+    quits: 0,
+    /**
+     * A click on the app's Window-menu item `id` with `keyWindow` (`null`: no window open), as
+     * Denext hands it over: once to each subscriber. Resolves once they all have.
+     */
+    async menuItem(
+      id: string,
+      keyWindow: { id: string; key?: string } | null,
+    ): Promise<void> {
+      for (const fn of [...menuItems]) await fn(id, { keyWindow });
+    },
     /** A quit: the `onBeforeQuit` guards (`false` from any of them cancels it). */
     async beforeQuit(): Promise<boolean> {
       const answers = await Promise.all([...guards].map((fn) => fn()));
