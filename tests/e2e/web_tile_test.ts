@@ -182,7 +182,7 @@ suite("web tiles", (test) => {
 
   test("the toolbar: address, back, forward, reload, open in the browser", async (app) => {
     await withPages(async (pages) => {
-      const { term, web, url: a } = await openPageA(app, pages);
+      const { web, url: a } = await openPageA(app, pages);
       const b = `${pages.origin}/b`;
       assert(await disabled(app, web, "web-back"));
       assert(await disabled(app, web, "web-forward"));
@@ -257,7 +257,7 @@ suite("web tiles", (test) => {
 
   test("restore: the web tile comes back at its last page when the window reopens", async (app) => {
     await withPages(async (pages) => {
-      const { term, web, url: a } = await openPageA(app, pages);
+      const { term, web } = await openPageA(app, pages);
       const b = `${pages.origin}/b`;
       await goTo(app, web, b);
       await shows(app, pages, web, b);
