@@ -69,7 +69,10 @@ export function useSession(opts: {
     const o = optsRef.current;
     const plan = planRestore(joined.snapshot, joined.ptys);
     if (plan) {
-      for (const t of plan.tiles) m.adopt(t.id, t.profile, t.pty, t.home);
+      // A web tile has no terminal: its page is in its entry (app/web-tile.tsx opens it).
+      for (const t of plan.tiles) {
+        if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
+      }
       o.seqRef.current = Math.max(o.seqRef.current, plan.seq);
       o.dispatch({
         type: "restore",

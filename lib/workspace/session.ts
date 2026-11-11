@@ -21,13 +21,22 @@ import {
   type TerminalEntry,
   type WorkspaceState,
 } from "./store.ts";
+import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 
 /** One tile's terminal: its PTY now (`null` while none runs), what it runs, its home folder. */
-export interface TileSnapshot {
+export interface TerminalTileSnapshot {
   ptyId: string | null;
   profile: TerminalProfile;
   home?: string;
 }
+
+/** A web tile: the page it shows (it has no PTY; restoring it reopens that page). */
+export interface WebTileSnapshot {
+  web: WebPage;
+}
+
+/** One tile as saved: a terminal or a web tile. */
+export type TileSnapshot = TerminalTileSnapshot | WebTileSnapshot;
 
 /** What the page saves of its workspace. */
 export interface WorkspaceSnapshot {
@@ -48,14 +57,23 @@ export interface JoinedPty extends FoldedReplay {
   rows: number;
 }
 
-/** One tile to rebuild. */
-export interface RestoredTile {
+/** One terminal tile to rebuild. */
+export interface RestoredTerminalTile {
   id: string;
   profile: TerminalProfile;
   home?: string;
   /** Its terminal, with the replay to redraw; absent when it is gone (the tile shows it ended). */
   pty?: JoinedPty;
 }
+
+/** One web tile to rebuild (its page is in its entry: nothing for the terminal manager). */
+export interface RestoredWebTile {
+  id: string;
+  web: WebPage;
+}
+
+/** One tile to rebuild. */
+export type RestoredTile = RestoredTerminalTile | RestoredWebTile;
 
 /** How to rebuild a workspace. */
 export interface RestorePlan {
@@ -67,15 +85,18 @@ export interface RestorePlan {
   tiles: RestoredTile[];
 }
 
-/** The snapshot of `state`, with the terminal manager's view of each tile. */
+/**
+ * The snapshot of `state`, with the terminal manager's view of each terminal tile (a web tile
+ * saves its page, from its entry).
+ */
 export function snapshotOf(
   state: WorkspaceState,
   seq: number,
-  tile: (id: string) => TileSnapshot | undefined,
+  tile: (id: string) => TerminalTileSnapshot | undefined,
 ): WorkspaceSnapshot {
   const tiles: Record<string, TileSnapshot> = {};
   for (const t of state.terminals) {
-    const s = tile(t.id);
+    const s = t.web ? { web: { ...t.web } } : tile(t.id);
     if (s) tiles[t.id] = s;
   }
   return {
@@ -136,6 +157,11 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
   }
   const tiles: Record<string, TileSnapshot> = {};
   for (const [id, t] of Object.entries(isObject(raw.tiles) ? raw.tiles : {})) {
+    const web = isObject(t) ? sanitizeWebPage(t.web) : undefined;
+    if (web) {
+      tiles[id] = { web };
+      continue;
+    }
     const profile = isObject(t) ? profileOf(t.profile) : undefined;
     if (!profile || !isObject(t)) continue;
     tiles[id] = {
@@ -186,12 +212,28 @@ export function planRestore(
   for (const entry of snap?.terminals ?? []) {
     const tile = snap!.tiles[entry.id];
     if (!tile || terminals.some((t) => t.id === entry.id)) continue;
+    if ("web" in tile) {
+      // A web tile reopens at its last page; it has no PTY, so it never ended.
+      const { ssh: _s, agent: _a, sandbox: _b, exitMessage: _m, ...rest } =
+        entry;
+      terminals.push({
+        ...rest,
+        web: tile.web,
+        title: webTitle(tile.web),
+        exited: false,
+        exitCode: null,
+      });
+      tiles.push({ id: entry.id, web: tile.web });
+      continue;
+    }
     const pty = tile.ptyId !== null ? byId.get(tile.ptyId) : undefined;
     if (pty) claimed.add(pty.id);
     const exit = pty ? pty.exit : undefined;
+    // A terminal's entry never carries a page (a web tile is known by its tile snapshot).
+    const { web: _web, ...term } = entry;
     terminals.push(
-      pty && !exit ? { ...entry, exited: false, exitCode: null } : {
-        ...entry,
+      pty && !exit ? { ...term, exited: false, exitCode: null } : {
+        ...term,
         exited: true,
         exitCode: exit?.exitCode ?? entry.exitCode,
         exitSignal: exit?.signal ?? entry.exitSignal ?? null,

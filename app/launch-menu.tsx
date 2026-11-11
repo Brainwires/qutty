@@ -13,6 +13,7 @@
 // in the sandbox or on the host; it starts from Settings' "new tiles open in the sandbox".
 
 import { useEffect, useRef } from "denext";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 import {
   type LaunchEntry,
   type LaunchSection,
@@ -45,6 +46,7 @@ const ITEM = "[role=menuitem],[role=menuitemcheckbox]";
 
 export function LaunchMenu(props: LaunchMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  useHtmlOverlay(props.open);
 
   // Opening puts the keyboard on the first entry, so ↑/↓ work right away (mouse or keys); if
   // the entries were still loading, once they arrive.

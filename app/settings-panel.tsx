@@ -49,6 +49,7 @@ import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
 import { WindowSettingsSection } from "./window-settings.tsx";
 import type { WindowClose } from "../lib/workspace/windows.ts";
@@ -128,6 +129,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const { settings } = props;
   const { layout } = settings;
   const panelRef = useRef<HTMLDivElement | null>(null);
+  useHtmlOverlay();
   const installed = useInstalledFonts();
   // The custom family as typed (the store keeps the sanitised, trimmed form, which would eat a
   // space mid-word if it drove the input).

@@ -280,7 +280,10 @@ Deno.test("sanitizeLinks and editorChoice", () => {
   assertEquals(sanitizeLinks({ editor: "zed", command: "x\ny" }), {
     editor: "zed",
     command: "xy",
+    web: "tile",
   });
+  assertEquals(sanitizeLinks({ web: "browser" }).web, "browser");
+  assertEquals(sanitizeLinks({ web: "tab" }).web, "tile");
   assertEquals(sanitizeLinks({ editor: "rm -rf", command: 3 }), DEFAULT_LINKS);
   assertEquals(sanitizeLinks(null), DEFAULT_LINKS);
   const s = (editor: string, command = "") => ({ editor, command });

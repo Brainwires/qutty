@@ -364,6 +364,24 @@
   - Open (watch): the library is read from ollama.com's HTML (it has no search
     API): if the markup changes, the parser returns less, never junk. Watch the
     fixtures.
+- [x] **Web tiles.** ⌘-click a URL in a terminal to open it in a tile beside it
+      (`lib/web/`, `app/web-tile.tsx`): back, forward, reload / stop, an address
+      field and "Open in default browser"; saved and restored with the workspace
+      (`TileSnapshot` `{ web: { url, title? } }`), no PTY.
+  - Today's engine is a sandboxed iframe (`IframeEngine`, `lib/web/engine.ts`).
+    It shows loopback and local dev pages only (most public sites refuse to be
+    framed), and it cannot read a cross-origin page's title or the navigations
+    the page makes itself (the tile keeps its own back/forward list).
+  - [ ] The native engine replaces the iframe when Denext ships its embedded web
+        view (`createWebView` + `attachWebView`, denext.22 or later): write
+        `NativeEngine` (`lib/web/native-engine.ts`) and return it from
+        `webEngine()` when `webViewCapabilities().supported`. Then public sites
+        open in a tile too, titles and in-page navigations are reported, and the
+        HTML overlay count (`lib/web/overlays.ts`) hides the view under menus
+        and dialogs.
+  - [ ] `[::1]` pages open in the default browser: a CSP host-source has no IPv6
+        literal, so the page's `frame-src` cannot allow them (the native engine
+        is not bound by the page's CSP).
 
 ## Pending
 

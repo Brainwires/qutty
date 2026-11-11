@@ -4197,3 +4197,93 @@ kbd {
   border-top: 1px solid var(--line);
   margin-top: 4px;
 }
+
+/* ---- Web tiles (app/web-tile.tsx) ------------------------------------------------------- */
+
+/* The header: the page's title (or host), then the toolbar with the address field. */
+.tile.is-web .tile-title {
+  flex: 0 1 auto;
+  max-width: 28%;
+}
+.web-toolbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.web-btn {
+  appearance: none;
+  flex: none;
+  width: 20px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font: 14px/1 var(--sans);
+  cursor: pointer;
+}
+.web-btn:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--text);
+}
+.web-btn:disabled {
+  color: var(--text-3);
+  opacity: 0.5;
+  cursor: default;
+}
+.web-address {
+  flex: 1;
+  min-width: 60px;
+  height: 18px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--text);
+  font: 11px/1 var(--mono);
+}
+.web-address:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* The body: the engine's element fills it; the page brings its own background. */
+.tile-body.web-body {
+  padding: 0;
+  background: var(--ink);
+}
+.web-body:focus {
+  outline: none;
+}
+.web-view {
+  position: absolute;
+  inset: 0;
+}
+.web-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.web-notice {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-2);
+  font: 13px/1.5 var(--sans);
+}
+.web-notice p {
+  max-width: 420px;
+  margin: 0;
+}
+.web-notice strong {
+  color: var(--text);
+}

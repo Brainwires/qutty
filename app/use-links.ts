@@ -1,13 +1,17 @@
 // What a click on a link in a terminal does (lib/terminal-links.ts finds them; the terminal
 // manager hands the clicks over):
 //
-// - ⌘-click (Ctrl-click elsewhere) on a URL opens it in the default browser; on a local folder
+// - ⌘-click (Ctrl-click elsewhere) on an http(s) URL opens it in a web tile beside the terminal
+//   when Settings → Links says "A Qutty tile" and the engine can show the page (lib/web/engine.ts:
+//   today loopback and local dev hosts), else in the default browser; any other URL opens in the
+//   default browser. OSC 8 hyperlinks behave the same; `file:` links are files. On a local folder
 //   reveals it in Finder (the Linux file manager); on a local file opens it in its default app,
 //   or, when it was printed with a line (`src/x.ts:42:7`), in the editor Settings → Links picks
 //   (an installed preset, a custom command template, or `$EDITOR` in a new tile).
 // - ⌘-click on a path in an SSH tile's output (or an OSC 8 `file:` link there) is on the remote
 //   machine: it offers Download (the SSH download flow) instead.
-// - Right-click on a link: a menu with Open / Open in editor / Reveal / Download / Copy.
+// - Right-click on a link: a menu with Open / Open in editor / Reveal / Download / Copy; an
+//   http(s) URL's offers Open in Qutty tile and Open in default browser (both always), and Copy.
 //
 // The opening itself is the backend's (desktop/links.ts); a failure is logged, not shown.
 
@@ -21,6 +25,8 @@ import {
 import type { LinkHit } from "../lib/terminal-links.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import { baseName, type TerminalProfile } from "../lib/ssh-ui.ts";
+import { parseWebUrl } from "../lib/web/url.ts";
+import { webEngine } from "../lib/web/engine.ts";
 import type { LinkMenuItem } from "./link-menu.tsx";
 
 export interface UseLinksOptions {
@@ -28,6 +34,8 @@ export interface UseLinksOptions {
   settings: LinkSettings;
   platform: "mac" | "other";
   openTile(profile: TerminalProfile): string | null;
+  /** A web tile showing `url`, beside the focused tile. */
+  openWebTile(url: string): void;
   /** Download a remote path over SSH tile `id`'s connection. */
   download(id: string, remotePath: string): void;
   refocus(): void;
@@ -88,8 +96,19 @@ export function useLinks(opts: UseLinksOptions) {
       : null;
   };
 
+  /** A URL in the default browser. */
   const openUrl = (url: string) =>
     void backend()?.linkOpen({ kind: "url", url }).catch(warn("open"));
+  /**
+   * A ⌘-clicked URL: an http(s) page the engine can show goes to a web tile (Settings → Links →
+   * "Open web links in": a Qutty tile), anything else to the default browser.
+   */
+  const openLink = (url: string) => {
+    const o = optsRef.current;
+    if (o.settings.web === "tile" && webEngine().canEmbed(url)) {
+      o.openWebTile(url);
+    } else openUrl(url);
+  };
   const reveal = (path: string) =>
     void backend()?.linkOpen({ kind: "reveal", path }).catch(warn("reveal"));
   const openFile = (path: string) =>
@@ -136,7 +155,21 @@ export function useLinks(opts: UseLinksOptions) {
     switch (hit.kind) {
       case "url":
         return [
-          { action: "open", label: "Open link", run: () => openUrl(hit.url) },
+          ...(parseWebUrl(hit.url)
+            ? [{
+              action: "tile",
+              label: "Open in Qutty tile",
+              run: () => optsRef.current.openWebTile(hit.url),
+            }, {
+              action: "browser",
+              label: "Open in default browser",
+              run: () => openUrl(hit.url),
+            }]
+            : [{
+              action: "open",
+              label: "Open link",
+              run: () => openUrl(hit.url),
+            }]),
           { action: "copy", label: "Copy link", run: () => copy(hit.url) },
         ];
       case "remote":
@@ -179,7 +212,7 @@ export function useLinks(opts: UseLinksOptions) {
       if (how === "menu") return showMenu(id, hit, e);
       switch (hit.kind) {
         case "url":
-          return openUrl(hit.url);
+          return openLink(hit.url);
         case "remote":
           // Cannot open on this machine: offer the download.
           return showMenu(id, hit, e);
@@ -197,6 +230,8 @@ export function useLinks(opts: UseLinksOptions) {
   return {
     menu,
     onLink,
+    /** Open `url` in the default browser (a web tile's "Open in default browser"). */
+    openInBrowser: openUrl,
     closeMenu() {
       setMenu(null);
       optsRef.current.refocus();

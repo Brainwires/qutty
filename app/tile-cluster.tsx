@@ -29,6 +29,12 @@ import type { TileInfo } from "../lib/hub/protocol.ts";
 import { formatAge } from "../lib/workspace/format.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
+import {
+  useWebTile,
+  WebBody,
+  type WebTileHooks,
+  WebToolbar,
+} from "./web-tile.tsx";
 
 /** The workspace's additions to a tile (SSH tiles, agent badges). */
 interface TileExtras {
@@ -42,6 +48,8 @@ interface TileExtras {
   renderOverlay?(entry: TerminalEntry, focused: boolean): ReactNode;
   /** The tiles typing is broadcast to (marked loudly; empty when broadcast is off). */
   broadcastIds?: ReadonlySet<string>;
+  /** What web tiles (an entry with `web`) drive their page through (app/web-tile.tsx). */
+  web?: WebTileHooks;
 }
 
 export interface TileClusterProps extends TileExtras {
@@ -86,6 +94,7 @@ export function TileCluster(props: TileClusterProps) {
           renderHeadLead={props.renderHeadLead}
           renderOverlay={props.renderOverlay}
           broadcastIds={props.broadcastIds}
+          web={props.web}
         />
       ))}
     </div>
@@ -139,6 +148,15 @@ function TerminalTile(props: TerminalTileProps) {
   }
   const rect = lastRectRef.current;
   const rank = lastRankRef.current;
+  // A web tile: its toolbar and its page instead of a terminal (the manager never knows its id,
+  // so the manager calls below do nothing for it).
+  const web = useWebTile(
+    entry,
+    focused,
+    phase !== "parked",
+    props.web,
+    props.onFocus,
+  );
 
   // Phase machine driven by visibility.
   useEffect(() => {
@@ -210,7 +228,8 @@ function TerminalTile(props: TerminalTileProps) {
     "--rank-dim": String(dim),
   };
 
-  const { full } = props;
+  // A web tile's body is never scaled: it has no terminal to keep at one size.
+  const full = web ? null : props.full;
   const classes = ["tile", `is-${phase}`];
   if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
@@ -223,6 +242,7 @@ function TerminalTile(props: TerminalTileProps) {
     ? SANDBOX_TINT
     : undefined;
   if (entry.ssh) classes.push("is-ssh");
+  if (web) classes.push("is-web");
   if (entry.sandbox) classes.push("is-sandbox");
   if (tint) classes.push("has-tint");
   if (props.dropTargetId === id) classes.push("is-drop-target");
@@ -241,6 +261,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-focused={focused ? "true" : "false"}
       data-exited={entry.exited ? "true" : "false"}
       data-ssh={entry.ssh ? "true" : undefined}
+      data-web={web ? "true" : undefined}
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
       data-broadcast={broadcasting ? "true" : undefined}
@@ -264,8 +285,13 @@ function TerminalTile(props: TerminalTileProps) {
           class="tile-head"
           onDoubleClick={() => props.onFocus(id)}
           // The header is not focusable: without this the mousedown's default action moves
-          // keyboard focus to <body> right after pointerdown focused the terminal.
-          onMouseDown={(e) => e.preventDefault()}
+          // keyboard focus to <body> right after pointerdown focused the terminal. A web tile's
+          // address field takes the click as any field does.
+          onMouseDown={(e) => {
+            if (!(e.target as Element | null)?.closest?.("input")) {
+              e.preventDefault();
+            }
+          }}
         >
           {props.renderHeadLead?.(entry)}
           {entry.ssh && (
@@ -284,6 +310,7 @@ function TerminalTile(props: TerminalTileProps) {
           <span class="tile-title" data-testid="tile-title" title={entry.title}>
             {entry.title}
           </span>
+          {web && <WebToolbar view={web} />}
           <span class="tile-meta">
             {props.renderHeadActions?.(entry)}
             {entry.exited && (
@@ -305,7 +332,7 @@ function TerminalTile(props: TerminalTileProps) {
               type="button"
               class="tile-close"
               data-testid="tile-close"
-              aria-label="Close terminal"
+              aria-label={web ? "Close web tile" : "Close terminal"}
               title="Close"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -317,12 +344,14 @@ function TerminalTile(props: TerminalTileProps) {
             </button>
           </span>
         </header>
-        <div
-          class="tile-body"
-          data-testid="tile-body"
-          ref={hostRef}
-          style={full ? scaledBodyStyle(full, rect, focused) : undefined}
-        />
+        {web ? <WebBody view={web} /> : (
+          <div
+            class="tile-body"
+            data-testid="tile-body"
+            ref={hostRef}
+            style={full ? scaledBodyStyle(full, rect, focused) : undefined}
+          />
+        )}
         {full && (
           // Hidden (CSS) rather than unmounted once focused: the pointerdown that focuses the
           // tile re-renders it, and the mousedown that follows must still land here so its

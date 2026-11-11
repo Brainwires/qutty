@@ -48,6 +48,7 @@ import {
   type VoiceSettings,
 } from "../voice/settings.ts";
 import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
+import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import {
   DEFAULT_MONITOR,
   type MonitorSettings,
@@ -114,7 +115,11 @@ export const PATTERNS: readonly LayoutPattern[] = Object.keys(
   PATTERN_INFO,
 ) as LayoutPattern[];
 
-/** One terminal as the workspace sees it (the xterm/PTY side lives in the terminal manager). */
+/**
+ * One tile as the workspace sees it. Most are terminals (the xterm/PTY side lives in the
+ * terminal manager); a web tile (`web` set) shows a page instead and has no PTY: the terminal
+ * manager never hears of its id.
+ */
 export interface TerminalEntry {
   id: string;
   /** "zsh — ~/Source"; starts as a placeholder until the first `info` poll. */
@@ -133,6 +138,8 @@ export interface TerminalEntry {
   agent?: TerminalAgent;
   /** It runs in the window's shared Docker sandbox (badge and tint). */
   sandbox?: boolean;
+  /** Set for a web tile: the page it shows (lib/web/). Its title is the page's, else the host. */
+  web?: WebPage;
   /** Output arrived while the terminal was not focused (cleared on focus). */
   activity: boolean;
 }
@@ -205,8 +212,12 @@ export type WorkspaceAction =
     ssh?: SshProfile;
     agent?: TerminalAgent;
     sandbox?: boolean;
+    /** A web tile showing this page (no PTY). */
+    web?: WebPage;
   }
   | { type: "remove"; id: string }
+  /** A web tile's page changed: where it went, and its title when the engine knows it. */
+  | { type: "webPage"; id: string; page: WebPage }
   | { type: "focus"; id: string; now: number }
   | { type: "focusPrevious"; now: number }
   | { type: "focusOrdinal"; ordinal: number; now: number }
@@ -518,10 +529,11 @@ export function reduce(
   switch (action.type) {
     case "add": {
       if (state.terminals.some((t) => t.id === action.id)) return state;
+      const web = sanitizeWebPage(action.web);
       const entry: TerminalEntry = {
         id: action.id,
         title: action.title ?? action.ssh?.label ?? action.agent?.name ??
-          "shell",
+          (web ? webTitle(web) : "shell"),
         createdAt: action.now,
         lastUsedAt: action.now,
         exited: false,
@@ -530,6 +542,7 @@ export function reduce(
         ...(action.ssh ? { ssh: action.ssh } : {}),
         ...(action.agent ? { agent: action.agent } : {}),
         ...(action.sandbox ? { sandbox: true } : {}),
+        ...(web ? { web } : {}),
       };
       return {
         ...state,
@@ -587,11 +600,28 @@ export function reduce(
         lastUsedAt: action.now,
       });
     case "title":
-      // An SSH tile keeps its host label (the foreground process there is always `ssh`).
-      if (state.terminals.some((t) => t.id === action.id && t.ssh)) {
+      // An SSH tile keeps its host label (the foreground process there is always `ssh`); a web
+      // tile's title is its page's.
+      if (
+        state.terminals.some((t) => t.id === action.id && (t.ssh || t.web))
+      ) {
         return state;
       }
       return updateTerminal(state, action.id, { title: action.title });
+    case "webPage": {
+      const entry = state.terminals.find((t) => t.id === action.id);
+      const page = sanitizeWebPage(action.page);
+      if (!entry?.web || !page) return state;
+      if (entry.web.url === page.url && entry.web.title === page.title) {
+        return state;
+      }
+      return {
+        ...state,
+        terminals: state.terminals.map((t) =>
+          t.id === action.id ? { ...t, web: page, title: webTitle(page) } : t
+        ),
+      };
+    }
     case "activity":
       if (action.id === state.focusedId) return state;
       return updateTerminal(state, action.id, { activity: true });
@@ -719,7 +749,10 @@ export function reduce(
     case "setLinks": {
       const links = sanitizeLinks(action.patch, state.settings.links);
       const before = state.settings.links;
-      if (links.editor === before.editor && links.command === before.command) {
+      if (
+        links.editor === before.editor && links.command === before.command &&
+        links.web === before.web
+      ) {
         return state;
       }
       return { ...state, settings: { ...state.settings, links } };

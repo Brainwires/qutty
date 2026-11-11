@@ -385,11 +385,20 @@ Deno.test("settings: inactive tiles default to resize, sanitise, reduce and pers
 });
 
 Deno.test("settings: links default to auto, sanitise, reduce and persist", () => {
-  assertEquals(DEFAULT_SETTINGS.links, { editor: "auto", command: "" });
+  assertEquals(DEFAULT_SETTINGS.links, {
+    editor: "auto",
+    command: "",
+    web: "tile",
+  });
   assertEquals(
-    sanitizeSettings({ links: { editor: "bogus", command: "zed {file}" } })
-      .links,
-    { editor: "auto", command: "zed {file}" },
+    sanitizeSettings({
+      links: { editor: "bogus", command: "zed {file}", web: "tab" },
+    }).links,
+    { editor: "auto", command: "zed {file}", web: "tile" },
+  );
+  assertEquals(
+    sanitizeSettings({ links: { web: "browser" } }).links.web,
+    "browser",
   );
   let s = initialState();
   s = reduce(s, { type: "setLinks", patch: { editor: "zed" } });
@@ -402,13 +411,19 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     type: "setLinks",
     patch: { editor: "custom", command: "hx {file}" },
   });
+  s = reduce(s, { type: "setLinks", patch: { web: "browser" } });
+  assertEquals(s.settings.links.web, "browser");
   const { storage } = memoryStorage();
   assert(saveSettings(s.settings, storage));
   const back = reduce(initialState(), {
     type: "hydrateSettings",
     settings: loadSettings(storage)!,
   });
-  assertEquals(back.settings.links, { editor: "custom", command: "hx {file}" });
+  assertEquals(back.settings.links, {
+    editor: "custom",
+    command: "hx {file}",
+    web: "browser",
+  });
 });
 
 Deno.test("settings: the system monitor defaults (meter off, hot Loopy on), reduces and persists", () => {

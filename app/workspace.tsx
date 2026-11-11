@@ -96,6 +96,8 @@ import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
+import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
+import { webEngine } from "../lib/web/engine.ts";
 import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
 import {
   type OllamaPair,
@@ -163,10 +165,25 @@ function WorkspaceView() {
     const before = stateRef.current;
     const after = reduce(before, action);
     dispatch(action);
-    if (after.focusedId && after.focusedId !== before.focusedId) {
-      managerRef.current?.focus(after.focusedId);
+    // A web tile takes the keyboard itself once it renders (app/web-tile.tsx).
+    const id = after.focusedId;
+    if (id && id !== before.focusedId && !isWebTile(after.terminals, id)) {
+      managerRef.current?.focus(id);
     }
   }, []);
+
+  /** Give tile `id` the keyboard: its terminal, or a web tile's body. */
+  const focusKeyboard = useCallback((id: string) => {
+    if (isWebTile(stateRef.current.terminals, id)) focusWebTile(id);
+    else managerRef.current?.focus(id);
+  }, []);
+
+  /** A web tile showing `url`, beside the focused tile (it becomes the focused one). */
+  const openWebTile = useCallback((url: string) => {
+    const id = `t${++seqRef.current}`;
+    run({ type: "add", id, now: Date.now(), web: { url } });
+    return id;
+  }, [run]);
 
   /** A new tile running `profile` (the login shell by default); returns its id. */
   const openTile = useCallback((asked: TerminalProfile = SHELL_PROFILE) => {
@@ -211,7 +228,7 @@ function WorkspaceView() {
     openTile,
     refocus: () => {
       const id = stateRef.current.focusedId;
-      if (id) managerRef.current?.focus(id);
+      if (id) focusKeyboard(id);
     },
     cluster: clusterRef,
   });
@@ -223,10 +240,11 @@ function WorkspaceView() {
     settings: state.settings.links,
     platform,
     openTile,
+    openWebTile,
     download: (id, remotePath) => void sshRef.current.download(id, remotePath),
     refocus: () => {
       const id = stateRef.current.focusedId;
-      if (id) managerRef.current?.focus(id);
+      if (id) focusKeyboard(id);
     },
   });
   const linksRef = useRef(links);
@@ -281,15 +299,22 @@ function WorkspaceView() {
 
   const focusTerminal = useCallback((id: string) => {
     run({ type: "focus", id, now: Date.now() });
-    managerRef.current?.focus(id);
-  }, [run]);
+    focusKeyboard(id);
+  }, [run, focusKeyboard]);
+
+  // What web tiles drive their page through.
+  const webHooks = useMemo<WebTileHooks>(() => ({
+    engine: webEngine(),
+    onPage: (id, page) => dispatch({ type: "webPage", id, page }),
+    openExternal: (url) => linksRef.current.openInBrowser(url),
+  }), []);
 
   const session = useSession({
     manager: ready ? managerRef.current : null,
     state,
     seqRef,
     dispatch,
-    focus: (id) => managerRef.current?.focus(id),
+    focus: (id) => focusKeyboard(id),
     // A new workspace starts with the default shell on the host, whatever plain `+` opens.
     fresh: () => {
       if (stateRef.current.terminals.length === 0) {
@@ -317,7 +342,7 @@ function WorkspaceView() {
   });
   const refocus = useCallback(() => {
     const id = stateRef.current.focusedId;
-    if (id) managerRef.current?.focus(id);
+    if (id) focusKeyboard(id);
   }, []);
   // The close button (Settings → Windows). A remembered choice is saved at once: Keep Running
   // closes the window before the settings effect would run.
@@ -693,7 +718,7 @@ function WorkspaceView() {
         }}
         onRefocus={() => {
           const id = stateRef.current.focusedId;
-          if (id) managerRef.current?.focus(id);
+          if (id) focusKeyboard(id);
         }}
         connectionsOpen={ssh.dialog !== null}
         onConnections={ssh.toggleDialog}
@@ -725,6 +750,7 @@ function WorkspaceView() {
             onClose={closeTerminal}
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
+            web={webHooks}
             renderHeadActions={(entry) =>
               entry.ssh && (
                 <SshHeadActions
@@ -734,7 +760,7 @@ function WorkspaceView() {
                 />
               )}
             renderHeadLead={(entry) =>
-              broadcast.on && (
+              broadcast.on && !entry.web && (
                 <BroadcastCheck
                   checked={broadcast.members.has(entry.id)}
                   ssh={entry.ssh !== undefined}
@@ -854,7 +880,7 @@ function WorkspaceView() {
       )}
       {windowClose.asking && (
         <CloseWindowDialog
-          terminals={state.terminals.length}
+          terminals={state.terminals.filter((t) => !t.web).length}
           onAnswer={windowClose.answer}
         />
       )}
@@ -937,4 +963,12 @@ function BrowserFor(props: {
       onClose={props.onClose}
     />
   );
+}
+
+/** Whether tile `id` is a web tile (it has no terminal). */
+function isWebTile(
+  terminals: readonly { id: string; web?: unknown }[],
+  id: string,
+): boolean {
+  return terminals.some((t) => t.id === id && t.web !== undefined);
 }

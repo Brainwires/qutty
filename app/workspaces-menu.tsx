@@ -4,6 +4,7 @@
 // on the same button, since it kills the workspace's terminals.
 
 import { useEffect, useRef, useState } from "denext";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 import type { WorkspaceInfo } from "../lib/session-client.ts";
 import type { SessionView } from "./use-session.ts";
 import { formatAge } from "../lib/workspace/format.ts";
@@ -48,6 +49,7 @@ export function WorkspacesMenu(props: {
 }) {
   const { session } = props;
   const [open, setOpen] = useState(false);
+  useHtmlOverlay(open);
   const ref = useRef<HTMLDivElement | null>(null);
   const detached = session.workspaces.filter((w) => w.state === "detached");
   const self = session.workspaces.find((w) => w.id === session.workspace?.id);

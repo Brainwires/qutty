@@ -1,5 +1,5 @@
-// Settings → Links: what opens a file printed with a line number (`src/x.ts:42:7`), when it is
-// ⌘-clicked (Ctrl-clicked elsewhere). The editors whose command is installed are found by the
+// Settings → Links: where a ⌘-clicked (Ctrl-clicked elsewhere) web link opens (a Qutty web tile or
+// the default browser), and what opens a file printed with a line number (`src/x.ts:42:7`). The editors whose command is installed are found by the
 // backend (desktop/links.ts `editors`) and listed first; a custom command is a template with
 // `{file}`, `{line}` and `{col}` (lib/links.ts `editorArgv`: run as an argv, never a shell).
 
@@ -10,6 +10,7 @@ import {
   editorChoice,
   editorPreset,
   type LinkSettings,
+  type WebLinkTarget,
 } from "../lib/links.ts";
 
 export interface LinksSettingsProps {
@@ -48,6 +49,28 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
   return (
     <div class="links-settings" data-testid="links-settings">
       <label class="field">
+        <span class="field-label">Open web links in</span>
+        <select
+          class="field-select"
+          data-testid="setting-links-web"
+          value={settings.web}
+          onChange={(e) =>
+            onChange({
+              web: (e.target as HTMLSelectElement).value as WebLinkTarget,
+            })}
+        >
+          <option value="tile">A Qutty tile</option>
+          <option value="browser">Default browser</option>
+        </select>
+        <span class="field-hint">
+          {mod}-click a URL to open it in a tile beside its terminal. For now
+          tiles show local development pages (localhost, 127.0.0.1, *.localhost,
+          *.test); other sites open in the default browser until Qutty's native
+          web view lands, then they open in a tile too. Right-click a link to
+          choose each time.
+        </span>
+      </label>
+      <label class="field">
         <span class="field-label">Open files with a line in</span>
         <select
           class="field-select"
@@ -71,8 +94,7 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
           {mod}-click a path printed as <code>file:line:col</code>{" "}
           (compilers, test runners, stack traces). Other files open in their
           default app, folders in{" "}
-          {props.platform === "mac" ? "Finder" : "the file manager"}, URLs in
-          the browser.
+          {props.platform === "mac" ? "Finder" : "the file manager"}.
         </span>
       </label>
       {settings.editor === "custom" && (
