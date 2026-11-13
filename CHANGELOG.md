@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Tiles now have Minimize and Maximize buttons next to the close button, on
+  terminals and web tiles alike. Maximize shows the tile alone (the monocle
+  layout, as ⌘Enter does), and its button then reads Restore, which brings back
+  the layout you had. Minimize puts the tile away in the switcher bar: its shell
+  keeps running (it still counts when Qutty asks about closing or quitting, and
+  for the menu-bar icon), it leaves the layout and ⌘] / ⌘[ cycling, and the next
+  tile takes the focus. A minimized tile's chip has its own look; clicking it
+  restores the tile, focused, in the tiled layout. Minimized tiles stay
+  minimized when the workspace is shown again, and a web tile keeps its page
+  loaded while minimized. With every tile minimized the tile area just says "All
+  tiles minimized". Double-clicking a tile's header does what double-clicking a
+  window's title bar does in System Settings (zoom, minimize, or nothing). The
+  Window menu has "Minimize Tile" and "Zoom Tile" for the focused tile. None of
+  these has a keyboard shortcut: ⌘M stays the window's.
+
 - Web tiles: ⌘-click (Ctrl-click on Linux and Windows) a local development URL
   in a terminal (localhost, 127.0.0.1, *.localhost, *.test, any port) and it
   opens in a tile beside that terminal. The tile takes part in the layout, the

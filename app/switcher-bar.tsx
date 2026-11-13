@@ -1,6 +1,6 @@
 // The switcher bar: every terminal as a chip, on any edge of the window. It is the overflow
 // surface — terminals the cluster cannot show live here — so chips say whether their terminal
-// is tiled or not. The chip strip scrolls on wheel and reports the chips scrolled out of view
+// is tiled or not, or minimized (put there by the user; a click restores it). The chip strip scrolls on wheel and reports the chips scrolled out of view
 // in a "+N" menu. Chip moves animate with FLIP; new chips fade in.
 
 import {
@@ -353,60 +353,72 @@ export function SwitcherBar(props: SwitcherBarProps) {
           }
         }}
       >
-        {chips.map(({ id, entry: t, ordinal, rank, tiled, focused }) => {
-          const cls = ["chip", tiled ? "is-tiled" : "is-overflow"];
-          if (focused) cls.push("is-focused");
-          if (t.exited) cls.push("is-exited");
-          if (t.activity) cls.push("has-activity");
-          return (
-            <div
-              key={id}
-              ref={(el: HTMLDivElement | null) => {
-                if (el) chipEls.current.set(id, el);
-                else chipEls.current.delete(id);
-              }}
-              class={cls.join(" ")}
-              data-testid="chip"
-              data-id={id}
-              data-ordinal={ordinal}
-              data-rank={rank}
-              data-tiled={tiled ? "true" : "false"}
-              data-focused={focused ? "true" : "false"}
-              data-exited={t.exited ? "true" : "false"}
-              data-activity={t.activity ? "true" : "false"}
-              data-tint={isTintId(t.ssh?.tint) ? t.ssh.tint : undefined}
-              role="button"
-              tabIndex={0}
-              data-no-window-drag
-              title={`${t.title}${tiled ? "" : " (not tiled)"} — rank ${rank}`}
-              onClick={() => props.onFocus(id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  props.onFocus(id);
-                }
-              }}
-            >
-              {ordinal <= 9 && <span class="chip-ordinal">{ordinal}</span>}
-              <span class="chip-dot" aria-hidden="true" />
-              <span class="chip-title">{t.title}</span>
-              {t.exited && <span class="chip-exit">exited</span>}
-              <button
-                type="button"
-                class="chip-close"
-                data-testid="chip-close"
-                aria-label={`Close ${t.title}`}
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  props.onClose(id);
+        {chips.map(
+          ({ id, entry: t, ordinal, rank, tiled, minimized, focused }) => {
+            const cls = [
+              "chip",
+              minimized ? "is-minimized" : tiled ? "is-tiled" : "is-overflow",
+            ];
+            if (focused) cls.push("is-focused");
+            if (t.exited) cls.push("is-exited");
+            if (t.activity) cls.push("has-activity");
+            return (
+              <div
+                key={id}
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) chipEls.current.set(id, el);
+                  else chipEls.current.delete(id);
+                }}
+                class={cls.join(" ")}
+                data-testid="chip"
+                data-id={id}
+                data-ordinal={ordinal}
+                data-rank={rank}
+                data-tiled={tiled ? "true" : "false"}
+                data-minimized={minimized ? "true" : undefined}
+                data-focused={focused ? "true" : "false"}
+                data-exited={t.exited ? "true" : "false"}
+                data-activity={t.activity ? "true" : "false"}
+                data-tint={isTintId(t.ssh?.tint) ? t.ssh.tint : undefined}
+                role="button"
+                tabIndex={0}
+                data-no-window-drag
+                title={`${t.title}${
+                  minimized
+                    ? " (minimized: click to restore)"
+                    : tiled
+                    ? ""
+                    : " (not tiled)"
+                } — rank ${rank}`}
+                onClick={() => props.onFocus(id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    props.onFocus(id);
+                  }
                 }}
               >
-                ×
-              </button>
-            </div>
-          );
-        })}
+                {ordinal <= 9 && <span class="chip-ordinal">{ordinal}</span>}
+                <span class="chip-dot" aria-hidden="true" />
+                <span class="chip-title">{t.title}</span>
+                {t.exited && <span class="chip-exit">exited</span>}
+                <button
+                  type="button"
+                  class="chip-close"
+                  data-testid="chip-close"
+                  aria-label={`Close ${t.title}`}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onClose(id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          },
+        )}
       </div>
       <div class="bar-tail" data-no-window-drag>
         {hiddenIds.length > 0 && (

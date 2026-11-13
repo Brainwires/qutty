@@ -259,6 +259,8 @@ export interface ChipInfo {
   ordinal: number;
   rank: number;
   tiled: boolean;
+  /** Minimized to the bar (not tiled, not overflow). */
+  minimized: boolean;
   focused: boolean;
   exited: boolean;
   activity: boolean;
@@ -451,6 +453,7 @@ export class App {
         ordinal: Number(el.dataset.ordinal),
         rank: Number(el.dataset.rank),
         tiled: el.dataset.tiled === "true",
+        minimized: el.dataset.minimized === "true",
         focused: el.dataset.focused === "true",
         exited: el.dataset.exited === "true",
         activity: el.dataset.activity === "true",
@@ -607,13 +610,19 @@ export class App {
     });
   }
 
-  /** What the layout engine says the tiles should be for the app's current MRU and settings. */
+  /**
+   * What the layout engine says the tiles should be for the app's current MRU (without the
+   * minimized tiles, which are never laid out) and settings.
+   */
   async expectedLayout(): Promise<ReturnType<typeof computeLayout>> {
-    const [mru, settings, bounds] = await Promise.all([
-      this.mru(),
+    const [chips, settings, bounds] = await Promise.all([
+      this.chips(),
       this.settings(),
       this.clusterBounds(),
     ]);
+    const mru = chips.filter((c) => !c.minimized).sort((a, b) =>
+      a.rank - b.rank
+    ).map((c) => c.id);
     return computeLayout(mru, bounds, settings.layout as LayoutOptions);
   }
 

@@ -51,6 +51,14 @@
           {
             "id": "qutty:window:close-end",
             "label": "Close Window and End Its Shells"
+          },
+          {
+            "id": "qutty:tile:minimize",
+            "label": "Minimize Tile"
+          },
+          {
+            "id": "qutty:tile:zoom",
+            "label": "Zoom Tile"
           }
         ]
       }

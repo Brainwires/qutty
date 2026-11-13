@@ -14,10 +14,11 @@ import {
   saveWorkspaceLayout,
   snapshotOf,
 } from "../lib/workspace/session.ts";
-import type {
-  SettingsStorage,
-  WorkspaceAction,
-  WorkspaceState,
+import {
+  type SettingsStorage,
+  shownFocus,
+  type WorkspaceAction,
+  type WorkspaceState,
 } from "../lib/workspace/store.ts";
 import { SHELL_PROFILE } from "../lib/ssh-ui.ts";
 
@@ -81,7 +82,8 @@ export function useSession(opts: {
         ...(plan.layout ? { layout: plan.layout } : {}),
         previousPattern: plan.previousPattern,
       });
-      if (plan.mru[0]) o.focus(plan.mru[0]);
+      const focused = shownFocus(plan.terminals, plan.mru);
+      if (focused) o.focus(focused);
       return;
     }
     // A workspace window an earlier launch had open gets its layout back (with a fresh shell).

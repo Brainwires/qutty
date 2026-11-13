@@ -20,6 +20,11 @@
 // ResizeObserver do not see) under a transparent click-catcher: xterm's mouse maths does not
 // survive a transform, so a scaled terminal takes no selection or mouse reports, and a click
 // only focuses the tile.
+//
+// Window controls: every tile's header has Minimize, Maximize (Restore on the tile shown alone in
+// monocle) and Close. A minimized tile is out of the layout, so it parks like an overflow one (a
+// web tile's page stays loaded). A double click on the header (not on its controls or a web
+// tile's address field) does what the workspace says the OS title-bar double click does.
 
 import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
@@ -64,6 +69,13 @@ export interface TileClusterProps extends TileExtras {
   scaleInactive: boolean;
   onFocus(id: string): void;
   onClose(id: string): void;
+  /** The layout shows one tile (monocle): the focused tile's header offers Restore. */
+  monocle: boolean;
+  onMinimize(id: string): void;
+  onMaximize(id: string): void;
+  onRestore(id: string): void;
+  /** A double click on a header's empty part (the OS title-bar double-click action). */
+  onHeadDoubleClick(id: string): void;
 }
 
 export function TileCluster(props: TileClusterProps) {
@@ -88,6 +100,11 @@ export function TileCluster(props: TileClusterProps) {
           full={full}
           onFocus={props.onFocus}
           onClose={props.onClose}
+          maximized={props.monocle && entry.id === props.focusedId}
+          onMinimize={props.onMinimize}
+          onMaximize={props.onMaximize}
+          onRestore={props.onRestore}
+          onHeadDoubleClick={props.onHeadDoubleClick}
           dropTargetId={props.dropTargetId}
           agentOf={props.agentOf}
           renderHeadActions={props.renderHeadActions}
@@ -118,6 +135,12 @@ interface TerminalTileProps extends TileExtras {
   full: Size | null;
   onFocus(id: string): void;
   onClose(id: string): void;
+  /** Shown alone in monocle: the toggle reads Restore. */
+  maximized: boolean;
+  onMinimize(id: string): void;
+  onMaximize(id: string): void;
+  onRestore(id: string): void;
+  onHeadDoubleClick(id: string): void;
 }
 
 /** Scale mode: the body at the full size, letterboxed into the tile's own body unless focused. */
@@ -283,7 +306,12 @@ function TerminalTile(props: TerminalTileProps) {
       <div class="tile-inner">
         <header
           class="tile-head"
-          onDoubleClick={() => props.onFocus(id)}
+          onDoubleClick={(e) => {
+            // Not on a control (the window buttons, a web tile's toolbar and address field).
+            const t = e.target as Element | null;
+            if (t?.closest?.(HEAD_CONTROLS)) return;
+            props.onHeadDoubleClick(id);
+          }}
           // The header is not focusable: without this the mousedown's default action moves
           // keyboard focus to <body> right after pointerdown focused the terminal. A web tile's
           // address field takes the click as any field does.
@@ -328,6 +356,13 @@ function TerminalTile(props: TerminalTileProps) {
                 {rank}
               </span>
             )}
+            <WindowControls
+              maximized={props.maximized}
+              web={!!web}
+              onMinimize={() => props.onMinimize(id)}
+              onMaximize={() => props.onMaximize(id)}
+              onRestore={() => props.onRestore(id)}
+            />
             <button
               type="button"
               class="tile-close"
@@ -366,6 +401,74 @@ function TerminalTile(props: TerminalTileProps) {
         {props.renderOverlay?.(entry, focused)}
       </div>
     </div>
+  );
+}
+
+/** What a header double click leaves alone: its buttons, fields and links. */
+const HEAD_CONTROLS =
+  "button, input, select, textarea, a, [data-no-head-dblclick]";
+
+/** A tile's Minimize and Maximize / Restore buttons (beside its close button). */
+function WindowControls(props: {
+  maximized: boolean;
+  web: boolean;
+  onMinimize(): void;
+  onMaximize(): void;
+  onRestore(): void;
+}) {
+  const what = props.web ? "web tile" : "terminal";
+  // The tile's own pointerdown focus is skipped (`data-keep-focus`): each action focuses (or moves
+  // the focus away) itself.
+  const button = (
+    testid: string,
+    label: string,
+    title: string,
+    act: () => void,
+    glyph: ReactNode,
+  ) => (
+    <button
+      type="button"
+      class="tile-ctl"
+      data-testid={testid}
+      data-keep-focus
+      aria-label={label}
+      title={title}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        act();
+      }}
+    >
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        {glyph}
+      </svg>
+    </button>
+  );
+  return (
+    <>
+      {button(
+        "tile-minimize",
+        `Minimize ${what}`,
+        "Minimize",
+        props.onMinimize,
+        <path d="M1.5 7.5h7" />,
+      )}
+      {props.maximized
+        ? button(
+          "tile-restore",
+          `Restore ${what}`,
+          "Restore",
+          props.onRestore,
+          <path d="M1.5 3.5h5v5h-5zM3.5 3.5v-2h5v5h-2" />,
+        )
+        : button(
+          "tile-maximize",
+          `Maximize ${what}`,
+          "Maximize",
+          props.onMaximize,
+          <path d="M1.5 1.5h7v7h-7z" />,
+        )}
+    </>
   );
 }
 

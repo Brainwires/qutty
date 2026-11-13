@@ -10,11 +10,17 @@
 
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
 import type sessionExtension from "../desktop/session.ts";
-import type { SessionJoin, WorkspaceInfo } from "../desktop/session.ts";
+import type {
+  SessionJoin,
+  TileMenuEvent,
+  WorkspaceInfo,
+} from "../desktop/session.ts";
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
+  isTileMenuItem,
   newWorkspaceId,
+  type TileMenuItem,
   workspaceTitle,
   workspaceWindow,
 } from "./workspace/windows.ts";
@@ -68,6 +74,8 @@ export interface SessionBackend {
   /** This window took the focus. */
   focus(): Promise<void>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
+  /** The Window menu's tile items ("Minimize Tile", "Zoom Tile"), chosen with this window key. */
+  onTileMenu(cb: (item: TileMenuItem) => void): () => void;
 }
 
 /** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
@@ -144,6 +152,10 @@ export function createDesktopSession(deps: {
         "changed",
         (e) => cb(e.workspaces),
       ),
+    onTileMenu: (cb) =>
+      deps.onDesktopEvent<TileMenuEvent>("session", "tileMenu", (e) => {
+        if (isTileMenuItem(e.item)) cb(e.item);
+      }),
   };
 }
 
@@ -203,6 +215,7 @@ export function createDemoSession(): SessionBackend & {
     guardClose: () => Promise.resolve(null),
     focus: () => Promise.resolve(),
     onChanged: none,
+    onTileMenu: none,
     recordSpawn(id, cols, rows) {
       records.set(id, { chunks: [], size: 0, seq: 0, cols, rows });
     },

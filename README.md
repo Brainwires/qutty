@@ -19,6 +19,8 @@ Website: <https://qutty.org>
   rows, grid and monocle, with animated transitions.
 - **Switcher bar**, horizontal or vertical, holding the terminals that overflow
   the cluster.
+- **Minimize, Maximize and Restore** on every tile: a minimized tile waits in
+  the switcher bar with its shell running.
 - **Six themes**, three dark and three light, switched live.
 - **Adjustable font** typeface and size.
 - **Your macOS key bindings** (`DefaultKeyBinding.dict`) work inside the
