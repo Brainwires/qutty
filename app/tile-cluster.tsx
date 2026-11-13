@@ -316,9 +316,12 @@ function TerminalTile(props: TerminalTileProps) {
         ) manager.fitNow(id);
       }}
       onPointerDownCapture={(e: { target: EventTarget | null }) => {
-        // A header control that must not move the focus (the broadcast checkbox) opts out.
+        // Focusing an unfocused tile moves it to the top slot, so a press that focused it first
+        // would have its button slide away before the release and the click would miss. Header
+        // buttons (close, minimize, the web toolbar…) and anything marked `data-keep-focus` (the
+        // broadcast checkbox) act without it; each focuses afterwards where that makes sense.
         const t = e.target as Element | null;
-        if (!focused && !t?.closest?.("[data-keep-focus]")) props.onFocus(id);
+        if (!focused && !t?.closest?.(KEEP_FOCUS)) props.onFocus(id);
       }}
     >
       <div class="tile-inner">
@@ -389,9 +392,11 @@ function TerminalTile(props: TerminalTileProps) {
               type="button"
               class="tile-close"
               data-testid="tile-close"
+              // Not focused first (the tile's capture-phase pointerdown): focusing an unfocused
+              // tile moves it to the top slot, so the click would land on whatever is there now.
+              data-keep-focus
               aria-label={web ? "Close web tile" : "Close terminal"}
               title="Close"
-              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onClose(id);
@@ -427,6 +432,9 @@ function TerminalTile(props: TerminalTileProps) {
 }
 
 /** What a header double click leaves alone: its buttons, fields and links. */
+/** What a press may land on without focusing the tile first (see the tile's pointerdown). */
+const KEEP_FOCUS = "[data-keep-focus], .tile-head button";
+
 const HEAD_CONTROLS =
   "button, input, select, textarea, a, [data-no-head-dblclick]";
 
