@@ -112,6 +112,22 @@ async function reopen(app: App): Promise<void> {
   );
 }
 
+/** Wait for the shown tiles' rects to satisfy `ok` (an arrangement's transition), and return them. */
+function arranged(
+  app: App,
+  what: string,
+  ok: (r: Record<string, Rect>) => boolean,
+): Promise<Record<string, Rect>> {
+  return waitFor(
+    async () => {
+      const r = await app.tileRects();
+      return ok(r) ? r : null;
+    },
+    4000,
+    what,
+  );
+}
+
 suite("free-form view", (test) => {
   test("switch views: no jump into free-form; Settings switches back to the layout", async (app) => {
     await app.ensureTerminals(3);
@@ -173,6 +189,42 @@ suite("free-form view", (test) => {
     await hand.up();
     await app.settle();
     await becomes(app, a, moved, "not dragged from a button");
+  });
+
+  test("a header button on a tile behind acts on the first (held) click", async (app) => {
+    const [a, b, c] = await app.ensureTerminals(3);
+    await freeform(app);
+    await menuItem(app, MDI_ITEM_IDS.cascade);
+    await app.settle();
+    assertEquals(await app.focusedId(), c);
+    // a and b sit behind c; their headers show above it. A held press on a button must not
+    // raise the tile first and lose the click.
+    await app.slowClick(`${tileSel(b)} [data-testid=tile-maximize]`);
+    await waitFor(
+      () => app.exists(`${tileSel(b)}[data-maximized=true]`),
+      3000,
+      "b maximized on the first click",
+    );
+    await app.slowClick(`${tileSel(b)} [data-testid=tile-restore]`);
+    await waitFor(
+      async () => !(await app.exists(`${tileSel(b)}[data-maximized=true]`)),
+      3000,
+      "b restored",
+    );
+    await app.settle();
+    await app.focusChip(c);
+    await app.settle();
+    await app.slowClick(`${tileSel(a)} [data-testid=tile-close]`);
+    await waitFor(
+      async () => !(await app.exists(tileSel(a))),
+      3000,
+      "a closed on the first click",
+    );
+    // The header's empty part still drags (and raises) the tile.
+    const rb = await rectOf(app, b);
+    await dragBy(app, `${tileSel(b)} [data-testid=tile-title]`, 20, 10);
+    await becomes(app, b, { ...rb, x: rb.x + 20, y: rb.y + 10 }, "b dragged");
+    assertEquals(await app.focusedId(), b);
   });
 
   test("resize from a corner and an edge; the minimum size holds; the PTY follows", async (app) => {
@@ -274,21 +326,32 @@ suite("free-form view", (test) => {
     );
     await app.click("[data-testid=bar-pattern]");
     await freeform(app);
-    await menuItem(app, MDI_ITEM_IDS.tileHorizontally);
-    let r = await app.tileRects();
     // Rows, the focused tile (c) on top, all full width.
-    assert(r[c].y < r[b].y && r[b].y < r[a].y, "rows top to bottom");
-    assert(near(r[a].w, r[c].w) && near(r[a].x, r[c].x));
+    await menuItem(app, MDI_ITEM_IDS.tileHorizontally);
+    await arranged(
+      app,
+      "rows top to bottom",
+      (r) =>
+        r[c].y < r[b].y && r[b].y < r[a].y && near(r[a].w, r[c].w) &&
+        near(r[a].x, r[c].x),
+    );
     await menuItem(app, MDI_ITEM_IDS.tileVertically);
-    r = await app.tileRects();
-    assert(r[c].x < r[b].x && r[b].x < r[a].x, "columns left to right");
-    assert(near(r[a].h, r[c].h) && near(r[a].y, r[c].y));
-    await menuItem(app, MDI_ITEM_IDS.cascade);
-    r = await app.tileRects();
+    await arranged(
+      app,
+      "columns left to right",
+      (r) =>
+        r[c].x < r[b].x && r[b].x < r[a].x && near(r[a].h, r[c].h) &&
+        near(r[a].y, r[c].y),
+    );
     // Cascade in z-order: the front tile (c) lowest and rightmost, all one size.
-    assert(r[a].x < r[b].x && r[b].x < r[c].x);
-    assert(r[a].y < r[b].y && r[b].y < r[c].y);
-    assert(near(r[a].w, r[c].w) && near(r[a].h, r[c].h));
+    await menuItem(app, MDI_ITEM_IDS.cascade);
+    const r = await arranged(
+      app,
+      "cascade",
+      (r) =>
+        r[a].x < r[b].x && r[b].x < r[c].x && r[a].y < r[b].y &&
+        r[b].y < r[c].y && near(r[a].w, r[c].w) && near(r[a].h, r[c].h),
+    );
     // The tiles stay free: a drag after an arrangement moves just that tile.
     await dragBy(app, `${tileSel(c)} [data-testid=tile-title]`, -40, 30);
     const after = await app.tileRects();
