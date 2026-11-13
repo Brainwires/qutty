@@ -67,17 +67,17 @@
   these has a keyboard shortcut: ⌘M stays the window's.
 
 - Web tiles: ⌘-click (Ctrl-click on Linux and Windows) a local development URL
-  in a terminal (localhost, 127.0.0.1, *.localhost, *.test, any port) and it
-  opens in a tile beside that terminal. The tile takes part in the layout, the
-  switcher bar, focus and the workspace like any other tile, and comes back at
-  its last page when the workspace is shown again. Its header has back, forward,
-  reload / stop, an address field (Enter goes) and "Open in default browser".
-  Other sites still open in the default browser for now (they refuse to be shown
-  inside another app's page); they will open in a tile once Qutty's native web
-  view lands. Right-click a link for "Open in Qutty tile", "Open in default
-  browser" and "Copy link". Settings → Links → "Open web links in" picks A Qutty
-  tile (the default) or Default browser. Web tiles have no shell, so they never
-  count as running terminals.
+  in a terminal (localhost or 127.0.0.1 on any port, or https on *.localhost or
+  *.test) and it opens in a tile beside that terminal. The tile takes part in
+  the layout, the switcher bar, focus and the workspace like any other tile, and
+  comes back at its last page when the workspace is shown again. Its header has
+  back, forward, reload / stop, an address field (Enter goes) and "Open in
+  default browser". Other sites still open in the default browser for now (they
+  refuse to be shown inside another app's page); they will open in a tile once
+  Qutty's native web view lands. Right-click a link for "Open in Qutty tile",
+  "Open in default browser" and "Copy link". Settings → Links → "Open web links
+  in" picks A Qutty tile (the default) or Default browser. Web tiles have no
+  shell, so they never count as running terminals.
 
 - Denext 4.16 (runtime 3.0.0-denext.17). Window → "Close Window and End Its
   Shells" now acts on the window in front, once, even when several windows are
