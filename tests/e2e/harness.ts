@@ -741,6 +741,26 @@ export class App {
 
   /** A real mouse click at the centre of the element (scrolled into view first). */
   async click(selector: string): Promise<void> {
+    const pt = await this.#clickablePoint(selector);
+    await this.page.mouse.click(pt.x, pt.y);
+  }
+
+  /**
+   * A click held as a person holds one: press on `selector` once it is clickable, wait `holdMs`
+   * (whatever the press set off, such as a tile moving, happens meanwhile), then release at the
+   * same point. `click()` presses and releases at once, before anything can move.
+   */
+  async slowClick(selector: string, holdMs = 250): Promise<void> {
+    const pt = await this.#clickablePoint(selector);
+    const mouse = this.page.mouse;
+    await mouse.move(pt.x, pt.y);
+    await mouse.down();
+    await new Promise((r) => setTimeout(r, holdMs));
+    await mouse.up();
+  }
+
+  /** Where to click `selector`: its centre, once it has stopped moving and nothing covers it. */
+  async #clickablePoint(selector: string): Promise<{ x: number; y: number }> {
     // Wait until the element stops moving (chips glide with FLIP, tiles transition) so the
     // click lands on it and not on whatever is passing under that point.
     const pt = await waitFor(
@@ -801,7 +821,7 @@ export class App {
       4000,
       `${selector} to be clickable`,
     );
-    await this.page.mouse.click(pt.x, pt.y);
+    return pt;
   }
 
   /** Pick `value` in the `<select>` at `selector` (as the user would: input, then change). */

@@ -237,6 +237,28 @@ suite("web tiles", (test) => {
     });
   });
 
+  test("an unfocused web tile's toolbar acts on the first click (the tile does not move away)", async (app) => {
+    await withPages(async (pages) => {
+      const { term, web, url } = await openPageA(app, pages);
+      await app.focusChip(term);
+      await waitFor(
+        async () => (await app.focusedId()) === term,
+        3000,
+        "terminal focused",
+      );
+      const served = pages.hits.filter((p) => p === "/a").length;
+      // Held like a real click: a press that focused the tile first would move it before the
+      // release, and the click would miss Reload.
+      await app.slowClick(`${tileSel(web)} [data-testid=web-reload]`);
+      await waitFor(
+        () => pages.hits.filter((p) => p === "/a").length === served + 1,
+        3000,
+        "reloaded",
+      );
+      await shows(app, pages, web, url);
+    });
+  });
+
   test("a page the engine cannot show offers the default browser", async (app) => {
     await withPages(async (pages) => {
       const { web, url: a } = await openPageA(app, pages);
