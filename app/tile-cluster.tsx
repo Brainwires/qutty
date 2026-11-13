@@ -431,10 +431,10 @@ function TerminalTile(props: TerminalTileProps) {
   );
 }
 
-/** What a header double click leaves alone: its buttons, fields and links. */
 /** What a press may land on without focusing the tile first (see the tile's pointerdown). */
 const KEEP_FOCUS = "[data-keep-focus], .tile-head button";
 
+/** What a header double click leaves alone: its buttons, fields and links. */
 const HEAD_CONTROLS =
   "button, input, select, textarea, a, [data-no-head-dblclick]";
 
