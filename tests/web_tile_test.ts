@@ -34,9 +34,9 @@ Deno.test("web: canEmbed takes http(s) on loopback and dev hosts only", () => {
       "http://localhost/",
       "https://localhost:8443/app?x=1#y",
       "http://127.0.0.1:5173/",
-      "http://app.localhost:8080/",
+      "https://app.localhost:8080/",
       "https://shop.test/",
-      "http://a.b.test:9000/x",
+      "https://a.b.test:9000/x",
       "HTTP://LOCALHOST:3000/",
     ]
   ) assert(canEmbedInFrame(url), url);
@@ -50,6 +50,9 @@ Deno.test("web: canEmbed takes http(s) on loopback and dev hosts only", () => {
       "http://[::1]:3000/", // no CSP host-source for an IPv6 literal (lib/web/url.ts)
       "http://test/",
       "http://.localhost/",
+      // mixed content in the secure app page (lib/web/url.ts): https only off loopback
+      "http://app.localhost:8080/",
+      "http://a.b.test:9000/x",
       "file:///Users/me/index.html",
       "ftp://localhost/",
       "javascript:alert(1)",
@@ -86,9 +89,8 @@ Deno.test("web: the page's CSP frame-src covers exactly what canEmbed takes", ()
       "https://localhost/",
       "http://127.0.0.1:1/",
       "https://127.0.0.1:2/",
-      "http://x.localhost:3/",
-      "https://x.localhost/",
-      "http://x.test:4/",
+      "https://x.localhost:3/",
+      "https://x.test:4/",
       "https://y.x.test/",
     ]
   ) {
