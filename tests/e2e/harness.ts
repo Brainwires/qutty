@@ -263,7 +263,8 @@ export interface ChipInfo {
   minimized: boolean;
   focused: boolean;
   exited: boolean;
-  activity: boolean;
+  /** Its tile's activity state (`none`, `output`, `busy`, `attention`, `failed`, `done`). */
+  activity: string;
 }
 
 export interface TileInfo {
@@ -456,7 +457,7 @@ export class App {
         minimized: el.dataset.minimized === "true",
         focused: el.dataset.focused === "true",
         exited: el.dataset.exited === "true",
-        activity: el.dataset.activity === "true",
+        activity: el.dataset.activity ?? "none",
       }))
     );
   }
@@ -750,12 +751,19 @@ export class App {
               const el = document.querySelector(s);
               if (!el) return resolve(null);
               // A running transition/animation on the element or an ancestor (a chip's FLIP glide,
-              // a tile's re-layout) means it is about to move, even if two frames look alike.
+              // a tile's re-layout) means it is about to move, even if two frames look alike. One
+              // that only paints (a tile's activity shimmer or fading tint) moves nothing.
+              const MOVES =
+                /^(transform|translate|scale|rotate|width|height|top|left|right|bottom|opacity)$/;
               const moving = () =>
                 document.getAnimations().some((a) => {
-                  const t = (a.effect as KeyframeEffect | null)?.target;
+                  const fx = a.effect as KeyframeEffect | null;
+                  const t = fx?.target;
                   return a.playState === "running" && !!t &&
-                    (t === el || t.contains(el));
+                    (t === el || t.contains(el)) &&
+                    fx!.getKeyframes().some((k) =>
+                      Object.keys(k).some((p) => MOVES.test(p))
+                    );
                 });
               if (moving()) return resolve(null);
               // Instant: the chip strip scrolls smoothly, and re-polling would restart that.
@@ -794,6 +802,20 @@ export class App {
       `${selector} to be clickable`,
     );
     await this.page.mouse.click(pt.x, pt.y);
+  }
+
+  /** Pick `value` in the `<select>` at `selector` (as the user would: input, then change). */
+  async choose(selector: string, value: string): Promise<void> {
+    await this.eval(
+      (s: string, v: string) => {
+        const el = document.querySelector<HTMLSelectElement>(s)!;
+        el.value = v;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      selector,
+      value,
+    );
   }
 
   /** A real click at a viewport point. */

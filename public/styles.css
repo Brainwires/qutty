@@ -314,14 +314,118 @@ kbd {
 .tile.is-focused .tile-catcher {
   display: none;
 }
-.tile.has-activity:not(.is-focused) .tile-head::before {
+
+/* ---- Tile activity ---------------------------------------------------------------------- */
+
+/* An unfocused tile's one activity state (lib/workspace/activity.ts), as `data-activity` on the
+   tile, its chip and its "+N" menu item. `--act` is the state's colour, from the theme's palette:
+   the accent for output and busy, the ANSI yellow / red / green host tints (applyChromeTheme)
+   for attention, failed and done, which every theme tunes for its own background. Full mode
+   (`data-activity-mode` on the app) tints the header and shimmers along its bottom edge; Subtle
+   shows a dot instead; both colour the border of a tile that needs you. Header tints are mixed
+   into --head (a unit test keeps the header's text legible on every one of them). */
+[data-activity="output"],
+[data-activity="busy"] {
+  --act: var(--accent);
+}
+[data-activity="attention"] {
+  --act: var(--tint-yellow, var(--amber));
+}
+[data-activity="failed"] {
+  --act: var(--tint-red, var(--red));
+}
+[data-activity="done"] {
+  --act: var(--tint-green, var(--accent));
+}
+.tile-head {
+  position: relative;
+}
+.tile-head::after {
   content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+  opacity: 0;
+}
+.tiles > .tile:not(.is-broadcast)[data-activity="attention"],
+.tiles > .tile:not(.is-broadcast)[data-activity="failed"] {
+  border-color: var(--act);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--act) 30%, transparent),
+    0 8px 28px rgba(var(--shadow-rgb), calc(0.32 * var(--shadow-a)));
+}
+[data-activity-mode="full"] .tile[data-activity="output"] .tile-head {
+  background-color: color-mix(in srgb, var(--act) 9%, var(--head));
+}
+/* The states that need a look also brighten the header text. */
+[data-activity-mode="full"] .tile[data-activity="attention"] .tile-head,
+[data-activity-mode="full"] .tile[data-activity="failed"] .tile-head,
+[data-activity-mode="full"] .tile[data-activity="done"] .tile-head {
+  color: var(--text);
+}
+[data-activity-mode="full"] .tile[data-activity="attention"] .tile-head {
+  background-color: color-mix(in srgb, var(--act) 12%, var(--head));
+}
+[data-activity-mode="full"] .tile[data-activity="failed"] .tile-head {
+  background-color: color-mix(in srgb, var(--act) 10%, var(--head));
+}
+/* Done: a green tint that fades over DONE_MS (then the tile shows output or nothing). */
+[data-activity-mode="full"] .tile[data-activity="done"] .tile-head {
+  background-color: color-mix(in srgb, var(--act) 4%, var(--head));
+  animation: tile-done 4s ease-out;
+}
+@keyframes tile-done {
+  from {
+    background-color: color-mix(in srgb, var(--act) 12%, var(--head));
+  }
+}
+/* Busy: a slow highlight gliding along the header's bottom edge. */
+[data-activity-mode="full"] .tile[data-activity="busy"] .tile-head::after {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent, var(--act), transparent)
+    no-repeat;
+  background-size: 40% 100%;
+  animation: tile-busy 2.4s ease-in-out infinite;
+}
+@keyframes tile-busy {
+  from {
+    background-position: -70% 0;
+  }
+  to {
+    background-position: 170% 0;
+  }
+}
+/* Subtle: a dot in the header, no tint, no shimmer. */
+[data-activity-mode="subtle"] .tile:not([data-activity="none"]) .tile-head::before {
+  content: "";
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 8px var(--amber);
+  background: var(--act);
   margin-right: -2px;
+}
+/* Reduced motion: busy is a still accent line, done a still tint. */
+@media (prefers-reduced-motion: reduce) {
+  [data-activity-mode="full"] .tile[data-activity="busy"] .tile-head::after {
+    animation: none;
+    background: color-mix(in srgb, var(--act) 70%, transparent);
+  }
+  [data-activity-mode="full"] .tile[data-activity="done"] .tile-head {
+    animation: none;
+    background-color: color-mix(in srgb, var(--act) 8%, var(--head));
+  }
+}
+.app.reduced-motion[data-activity-mode="full"] .tile[data-activity="busy"] .tile-head::after {
+  animation: none;
+  background: color-mix(in srgb, var(--act) 70%, transparent);
+}
+.app.reduced-motion[data-activity-mode="full"] .tile[data-activity="done"] .tile-head {
+  animation: none;
+  background-color: color-mix(in srgb, var(--act) 8%, var(--head));
 }
 
 /* ---- Switcher bar ---------------------------------------------------------------------- */
@@ -571,10 +675,14 @@ kbd {
   flex: none;
   transition: background 160ms ease, box-shadow 160ms ease;
 }
-.chip.has-activity .chip-dot,
-.chip-dot.on {
-  background: var(--amber);
-  box-shadow: 0 0 8px var(--amber);
+/* A chip (and a "+N" menu item) in its tile's activity colour; one that needs you underlined. */
+[data-activity]:not([data-activity="none"]) > .chip-dot {
+  background: var(--act);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--act) 60%, transparent);
+}
+.chip[data-activity="attention"],
+.chip[data-activity="failed"] {
+  box-shadow: inset 0 -2px 0 var(--act);
 }
 .chip.is-exited .chip-dot {
   background: var(--red);

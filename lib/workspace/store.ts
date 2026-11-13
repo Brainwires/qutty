@@ -59,6 +59,15 @@ import {
   sanitizeWindowClose,
   type WindowClose,
 } from "./windows.ts";
+import {
+  type ActivitySettings,
+  DEFAULT_ACTIVITY,
+  sanitizeActivity,
+  sanitizeProgramTitle,
+  sanitizeTileTitle,
+  type TileSignals,
+  type TileTitle,
+} from "./activity.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -86,6 +95,7 @@ export const BAR_POSITIONS: readonly BarPosition[] = [
 /** A collapsible section of the settings panel. */
 export type SettingsSection =
   | "layout"
+  | "tiles"
   | "theme"
   | "font"
   | "companion"
@@ -99,6 +109,7 @@ export type SettingsSection =
 /** Every settings-panel section, top to bottom. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "layout",
+  "tiles",
   "theme",
   "font",
   "companion",
@@ -118,9 +129,10 @@ export const PATTERNS: readonly LayoutPattern[] = Object.keys(
 /**
  * One tile as the workspace sees it. Most are terminals (the xterm/PTY side lives in the
  * terminal manager); a web tile (`web` set) shows a page instead and has no PTY: the terminal
- * manager never hears of its id.
+ * manager never hears of its id. Its activity signals (output, a bell, a command running or ended,
+ * the program's own title) come from {@linkcode TileSignals} (lib/workspace/activity.ts).
  */
-export interface TerminalEntry {
+export interface TerminalEntry extends TileSignals {
   id: string;
   /** "zsh — ~/Source"; starts as a placeholder until the first `info` poll. */
   title: string;
@@ -140,8 +152,6 @@ export interface TerminalEntry {
   sandbox?: boolean;
   /** Set for a web tile: the page it shows (lib/web/). Its title is the page's, else the host. */
   web?: WebPage;
-  /** Output arrived while the terminal was not focused (cleared on focus). */
-  activity: boolean;
   /**
    * Minimized to the switcher bar: left out of the layout and of focus cycling, its shell (or
    * page) still running. Restoring it (its chip, `focus`, `restoreTile`) tiles it again.
@@ -186,6 +196,10 @@ export interface Settings extends FontSettings {
   monitor: MonitorSettings;
   /** Settings → Windows: what a window's close button does (lib/workspace/windows.ts). */
   windowClose: WindowClose;
+  /** Settings → Tiles: the activity indicators (lib/workspace/activity.ts). */
+  activity: ActivitySettings;
+  /** Settings → Tiles: what a tile's header shows, the program's title or the process's. */
+  tileTitle: TileTitle;
 }
 
 /** The whole workspace. */
@@ -241,6 +255,16 @@ export type WorkspaceAction =
   | { type: "restarted"; id: string; now: number }
   | { type: "title"; id: string; title: string }
   | { type: "activity"; id: string }
+  /** A bell rang in tile `id` (or its agent started waiting for the user). */
+  | { type: "bell"; id: string }
+  /** A command started (`true`) or was dropped without an end (`false`) in tile `id`. */
+  | { type: "commandRunning"; id: string; running: boolean }
+  /** A command ended in tile `id` (OSC 133 `D`), with its exit status. */
+  | { type: "commandDone"; id: string; exitCode: number | null; now: number }
+  /** The program in tile `id` set its title (OSC 0 / 2); empty clears it. */
+  | { type: "programTitle"; id: string; title: string }
+  | { type: "setActivity"; patch: Partial<ActivitySettings> }
+  | { type: "setTileTitle"; tileTitle: TileTitle }
   | { type: "setLayout"; patch: Partial<LayoutOptions> }
   | { type: "cyclePattern"; dir?: 1 | -1 }
   | { type: "toggleMonocle" }
@@ -299,6 +323,8 @@ export const DEFAULT_SETTINGS: Settings = {
   links: { ...DEFAULT_LINKS },
   monitor: { ...DEFAULT_MONITOR },
   windowClose: DEFAULT_WINDOW_CLOSE,
+  activity: { ...DEFAULT_ACTIVITY },
+  tileTitle: "program",
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -326,6 +352,7 @@ function cloneSettings(s: Settings): Settings {
     sandbox: { ...s.sandbox },
     links: { ...s.links },
     monitor: { ...s.monitor },
+    activity: { ...s.activity },
     ollama: {
       ...s.ollama,
       recents: s.ollama.recents.map((p) => ({ ...p })),
@@ -448,6 +475,10 @@ export function sanitizeSettings(
   if (r.companion !== undefined) {
     out.companion = sanitizeCompanion(r.companion, out.companion);
   }
+  if (r.activity !== undefined) {
+    out.activity = sanitizeActivity(r.activity, out.activity);
+  }
+  if (r.tileTitle !== undefined) out.tileTitle = sanitizeTileTitle(r.tileTitle);
   if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
   if (Array.isArray(r.collapsedSections)) {
     out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
@@ -543,12 +574,44 @@ function withFocus(
     cycle: keepCycle ? state.cycle : null,
     terminals: state.terminals.map((t) =>
       t.id === id
-        ? (t.lastUsedAt === now && !t.activity
-          ? t
-          : { ...t, lastUsedAt: now, activity: false })
+        ? (t.lastUsedAt === now && !hasLatched(t) ? t : seen(t, now))
         : t
     ),
   };
+}
+
+/** Whether `t` carries a signal focusing it clears. */
+function hasLatched(t: TerminalEntry): boolean {
+  return t.activity || t.bell === true || t.failed === true ||
+    t.doneAt !== undefined;
+}
+
+/** `t` looked at, at `now`: used then, its latched signals clear (a running command stays). */
+function seen(t: TerminalEntry, now: number): TerminalEntry {
+  const { bell: _b, failed: _f, doneAt: _d, ...rest } = t;
+  return { ...rest, lastUsedAt: now, activity: false };
+}
+
+/** A command in tile `id` ended with `exitCode`: failed or done when it was not looked at. */
+function commandDone(
+  state: WorkspaceState,
+  id: string,
+  exitCode: number | null,
+  now: number,
+): WorkspaceState {
+  const entry = state.terminals.find((t) => t.id === id);
+  if (!entry || entry.web) return state;
+  if (id === state.focusedId) {
+    return updateTerminal(state, id, { running: undefined });
+  }
+  const failed = exitCode !== null && exitCode !== 0;
+  return updateTerminal(
+    state,
+    id,
+    failed
+      ? { running: undefined, failed: true }
+      : { running: undefined, doneAt: now },
+  );
 }
 
 /** The pattern monocle goes back to when nothing (or monocle itself) was remembered. */
@@ -640,6 +703,11 @@ function updateTerminal(
   return changed ? { ...state, terminals } : state;
 }
 
+/** Whether tile `id` is a web tile (no PTY, so no terminal signals). */
+function isWeb(state: WorkspaceState, id: string): boolean {
+  return state.terminals.some((t) => t.id === id && t.web !== undefined);
+}
+
 /** `focus`: a shown tile is focused; a minimized one is restored (as its chip does). */
 function focusOrRestore(
   state: WorkspaceState,
@@ -721,6 +789,7 @@ export function reduce(
       return state.cycle === null ? state : { ...state, cycle: null };
     case "exited":
       return updateTerminal(state, action.id, {
+        running: undefined,
         exited: true,
         exitCode: action.exitCode,
         exitSignal: action.signal ?? null,
@@ -728,6 +797,8 @@ export function reduce(
       });
     case "restarted":
       return updateTerminal(state, action.id, {
+        running: undefined,
+        programTitle: undefined,
         exited: false,
         exitCode: null,
         exitSignal: null,
@@ -760,6 +831,37 @@ export function reduce(
     case "activity":
       if (action.id === state.focusedId) return state;
       return updateTerminal(state, action.id, { activity: true });
+    case "bell":
+      if (action.id === state.focusedId || isWeb(state, action.id)) {
+        return state;
+      }
+      return updateTerminal(state, action.id, { bell: true });
+    case "commandRunning":
+      if (isWeb(state, action.id)) return state;
+      return updateTerminal(state, action.id, {
+        running: action.running ? true : undefined,
+      });
+    case "commandDone":
+      return commandDone(state, action.id, action.exitCode, action.now);
+    case "programTitle":
+      if (isWeb(state, action.id)) return state;
+      return updateTerminal(state, action.id, {
+        programTitle: sanitizeProgramTitle(action.title),
+      });
+    case "setActivity": {
+      const activity = sanitizeActivity(action.patch, state.settings.activity);
+      if (
+        JSON.stringify(activity) === JSON.stringify(state.settings.activity)
+      ) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, activity } };
+    }
+    case "setTileTitle": {
+      const tileTitle = sanitizeTileTitle(action.tileTitle);
+      if (state.settings.tileTitle === tileTitle) return state;
+      return { ...state, settings: { ...state.settings, tileTitle } };
+    }
     case "setLayout": {
       const layout = sanitizeLayout(state.settings.layout, action.patch);
       const picked = action.patch.pattern;

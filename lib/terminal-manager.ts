@@ -1,7 +1,7 @@
 // Owns every xterm.js instance and its PTY session, outside React: a terminal is created once,
 // opened into a host element the tile component hands over, and lives there across every
 // layout change (tiles are never remounted — see TileCluster). The workspace store only hears
-// about the facts it renders: exit, restart, output activity.
+// about the facts it renders: exit, restart, output activity, bells, commands, program titles.
 //
 // Fitting: `scheduleFit` is debounced (the tile's ResizeObserver fires on every animation
 // frame of a CSS size transition) and the tile also asks for one on `transitionend`. A hidden
@@ -32,6 +32,10 @@
 // marked on the terminal's element (capture phase, before xterm handles them) and the next data
 // chunk claims the mark; xterm's own replies and mouse reports carry none and stay in their tile.
 // A big paste waits for the workspace to confirm it (`onBroadcastPaste`, then `sendHeldPaste`).
+//
+// Tile signals (lib/workspace/activity.ts): output (throttled), a bell, a command starting and
+// ending (OSC 133 marks) and the program's own title (OSC 0 / 2, throttled) reach the workspace
+// as events; a replay's marks and bells are old news and stay quiet, its titles do not.
 //
 // xterm.css is linked from app/layout.tsx as public/xterm.css (a copy of
 // @xterm/xterm/css/xterm.css): denext's CSS pipeline does not accept an `npm:` stylesheet import.
@@ -123,6 +127,18 @@ export interface TerminalManagerEvents {
    * lib/shell-marks.ts): its line, exit status and how long it ran.
    */
   onCommandDone?(id: string, done: CommandDone): void;
+  /**
+   * A command started (`true`, OSC 133 `C`) or was dropped without an end (`false`: a new prompt
+   * came first) in terminal `id`. A command's end comes as `onCommandDone`.
+   */
+  onCommandRunning?(id: string, running: boolean): void;
+  /** The program in terminal `id` rang the bell (BEL), not while a replay is drawn. */
+  onBell?(id: string): void;
+  /**
+   * The program in terminal `id` set its title (OSC 0 / 2), raw; at most one call per
+   * `TITLE_THROTTLE_MS` per terminal, with the latest title.
+   */
+  onTitle?(id: string, title: string): void;
   /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
   platform?: "mac" | "other";
   /**
@@ -133,6 +149,8 @@ export interface TerminalManagerEvents {
 }
 
 const ACTIVITY_THROTTLE_MS = 300;
+/** A program animating its title (a spinner) is heard at most this often. */
+const TITLE_THROTTLE_MS = 250;
 /** How long a tile's directory, read for its links, is reused. */
 const LINK_CWD_TTL_MS = 1000;
 const FIT_DEBOUNCE_MS = 90;
@@ -175,6 +193,8 @@ interface Managed {
   marks: MarkState;
   /** A replay is being drawn (`adopt`): its marks are old news, not finished commands. */
   replaying: boolean;
+  /** The program's latest title not yet passed on, and the timer that passes it on. */
+  title: { text: string; timer: ReturnType<typeof setTimeout> } | null;
 }
 
 /** A terminal's state as the e2e test hooks read it (see lib/test-hooks.ts). */
@@ -379,6 +399,7 @@ export class TerminalManager {
       originTimer: undefined,
       marks: NO_MARKS,
       replaying: false,
+      title: null,
     };
     this.#terms.set(id, m);
     // OSC 7 (`ESC ] 7 ; file://host/path BEL`): where the shell is. An SSH tile's is remote (where
@@ -395,12 +416,20 @@ export class TerminalManager {
       const mark = parseOsc133(data);
       if (!mark) return false;
       const step = stepMarks(m.marks, mark, Date.now());
+      const wasRunning = m.marks.running !== null;
       m.marks = step.state;
-      if (step.done && !m.replaying) {
-        this.#events.onCommandDone?.(m.id, step.done);
+      if (m.replaying) return true;
+      if (step.done) this.#events.onCommandDone?.(m.id, step.done);
+      else if (wasRunning !== (step.state.running !== null)) {
+        this.#events.onCommandRunning?.(m.id, !wasRunning);
       }
       return true;
     });
+    // BEL and OSC 0 / 2: the tile's attention state and the program's own title.
+    term.onBell(() => {
+      if (!m.replaying) this.#events.onBell?.(m.id);
+    });
+    term.onTitleChange((text) => this.#title(m, text));
     try {
       m.links = this.#links(m);
     } catch { /* links are a nicety: the terminal works without them */ }
@@ -441,6 +470,23 @@ export class TerminalManager {
         );
       }
     });
+  }
+
+  /** Pass a program title on, at most once per `TITLE_THROTTLE_MS` (the latest one wins). */
+  #title(m: Managed, text: string): void {
+    if (m.title) {
+      m.title.text = text;
+      return;
+    }
+    this.#events.onTitle?.(m.id, text);
+    const timer = setTimeout(() => {
+      const pending = m.title;
+      m.title = null;
+      if (pending && pending.text !== text && !m.disposed) {
+        this.#title(m, pending.text);
+      }
+    }, TITLE_THROTTLE_MS);
+    m.title = { text, timer };
   }
 
   /** Open the terminal into `host` (once) and start its PTY. */
@@ -494,7 +540,11 @@ export class TerminalManager {
     }
     if (pty.data) {
       m.replaying = true;
-      m.term.write(pty.data, () => (m.replaying = false));
+      m.term.write(pty.data, () => {
+        m.replaying = false;
+        // A command still running when the window closed is still running.
+        if (m.marks.running) this.#events.onCommandRunning?.(m.id, true);
+      });
     }
     if (pty.exit) {
       m.exited = true;
@@ -942,6 +992,7 @@ export class TerminalManager {
     this.#terms.delete(id);
     if (m.fitTimer !== undefined) clearTimeout(m.fitTimer);
     if (m.originTimer !== undefined) clearTimeout(m.originTimer);
+    if (m.title) clearTimeout(m.title.timer);
     for (const u of m.unsubs.splice(0)) u();
     m.links?.dispose();
     if (m.ptyId && !keepPty) void this.#backend.kill(m.ptyId).catch(() => {});

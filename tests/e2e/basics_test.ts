@@ -272,26 +272,30 @@ suite("basics", (test) => {
 
   // ---- Activity -----------------------------------------------------------------------------
 
-  test("activity: output in an unfocused terminal marks its chip; focus clears it", async (app) => {
+  test("activity: a command running in an unfocused terminal marks its chip; focus clears it", async (app) => {
     const a = (await app.focusedId())!;
     const b = await app.newTerminal();
-    // `top` redraws every second: delayed output that arrives after focus moves away.
+    // `top` redraws every second, and the shell marks it as a running command (busy, which
+    // outranks its output; tests/e2e/activity_test.ts covers every state).
     await app.typeInTerminal(b, "top\n");
     await app.waitForText(b, "demo top");
     await app.focusChip(a);
     const chipB = `[data-testid=chip][data-id="${b}"]`;
     await waitFor(
-      async () => (await app.attr(chipB, "data-activity")) === "true",
+      async () => (await app.attr(chipB, "data-activity")) === "busy",
       4000,
       "activity on the background chip",
     );
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${a}"]`, "data-activity"),
-      "false",
+      "none",
     );
-    assert(await app.exists(`[data-testid=tile][data-id="${b}"].has-activity`));
+    assertEquals(
+      await app.attr(`[data-testid=tile][data-id="${b}"]`, "data-activity"),
+      "busy",
+    );
     await app.focusChip(b);
-    assertEquals(await app.attr(chipB, "data-activity"), "false");
+    assertEquals(await app.attr(chipB, "data-activity"), "none");
     // Quit top; the prompt comes back.
     await app.typeInTerminal(b, "q");
     await waitFor(
@@ -308,11 +312,11 @@ suite("basics", (test) => {
     await app.waitForText(b, "line 3000");
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${b}"]`, "data-activity"),
-      "false",
+      "none",
     );
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${a}"]`, "data-activity"),
-      "false",
+      "none",
     );
   });
 });

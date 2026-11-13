@@ -51,6 +51,11 @@ import {
   shortcutLabel,
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
+import {
+  type ActivityState,
+  nextDecay,
+  tileActivity,
+} from "../lib/workspace/activity.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
 import { applyChromeTheme, themeById } from "../lib/workspace/themes.ts";
 import {
@@ -297,7 +302,11 @@ function WorkspaceView() {
   }, [openTile, ollama.status.path]);
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
-  const hubTileOf = useHub(managerRef.current, state.terminals);
+  const hubTileOf = useHub(
+    managerRef.current,
+    state.terminals,
+    state.settings.tileTitle,
+  );
 
   const closeTerminal = useCallback((id: string) => {
     managerRef.current?.dispose(id);
@@ -548,7 +557,19 @@ function WorkspaceView() {
         void linksRef.current.onLink(id, hit, e, how),
       onBroadcastPaste: (id, data, tiles) =>
         broadcastRef.current.hold(id, data, tiles),
-      onCommandDone: (id, done) => commandDoneRef.current(id, done),
+      onCommandDone: (id, done) => {
+        dispatch({
+          type: "commandDone",
+          id,
+          exitCode: done.exitCode,
+          now: Date.now(),
+        });
+        commandDoneRef.current(id, done);
+      },
+      onCommandRunning: (id, running) =>
+        dispatch({ type: "commandRunning", id, running }),
+      onBell: (id) => dispatch({ type: "bell", id }),
+      onTitle: (id, title) => dispatch({ type: "programTitle", id, title }),
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
@@ -682,6 +703,32 @@ function WorkspaceView() {
     return () => clearInterval(t);
   }, []);
 
+  // A tile's `done` shows for a few seconds: tick once more when the next one decays.
+  const decayAt = nextDecay(state.terminals, now);
+  useEffect(() => {
+    if (decayAt === null) return;
+    const t = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(0, decayAt - Date.now()) + 20,
+    );
+    return () => clearTimeout(t);
+  }, [decayAt]);
+
+  // An agent that starts waiting for the user while its tile is not focused latches attention,
+  // as a bell does (the hub's status alone shows it only while it waits).
+  const hubStatusRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    const seen = hubStatusRef.current;
+    for (const t of state.terminals) {
+      const status = hubTileOf(t.id)?.status;
+      if (status === "waiting" && seen.get(t.id) !== "waiting") {
+        dispatch({ type: "bell", id: t.id });
+      }
+      if (status) seen.set(t.id, status);
+      else seen.delete(t.id);
+    }
+  }, [hubTileOf, state.terminals]);
+
   // Persist settings.
   const settings = state.settings;
   useEffect(() => {
@@ -713,6 +760,26 @@ function WorkspaceView() {
   );
   const visibleIds = useMemo(() => visibleIdSet(layout), [layout]);
 
+  // Each tile's one activity state (its header, border and chip; lib/workspace/activity.ts).
+  const activity = useMemo(() => {
+    const out = new Map<string, ActivityState>();
+    for (const t of state.terminals) {
+      out.set(
+        t.id,
+        tileActivity(
+          {
+            ...t,
+            focused: t.id === focusedId,
+            agentStatus: hubTileOf(t.id)?.status,
+          },
+          settings.activity,
+          now,
+        ),
+      );
+    }
+    return out;
+  }, [state.terminals, focusedId, hubTileOf, settings.activity, now]);
+
   const manager = managerRef.current;
   const showStrip = desktop && barPosition !== "top";
 
@@ -725,6 +792,7 @@ function WorkspaceView() {
       data-testid="app"
       data-pattern={settings.layout.pattern}
       data-focused={focusedId ?? ""}
+      data-activity-mode={settings.activity.indicators}
     >
       {showStrip && (
         <div
@@ -735,6 +803,7 @@ function WorkspaceView() {
       )}
       <SwitcherBar
         state={state}
+        activity={activity}
         visibleIds={visibleIds}
         position={barPosition}
         pattern={settings.layout.pattern}
@@ -789,6 +858,8 @@ function WorkspaceView() {
           <TileCluster
             manager={manager}
             terminals={state.terminals}
+            activity={activity}
+            tileTitle={settings.tileTitle}
             tiles={layout.tiles}
             focusedId={focusedId}
             decay={settings.layout.decay}
@@ -900,6 +971,8 @@ function WorkspaceView() {
             run({ type: "setBarPosition", position })}
           onBarOrder={(order) => run({ type: "setBarOrder", order })}
           onInactiveTiles={(mode) => run({ type: "setInactiveTiles", mode })}
+          onActivity={(patch) => run({ type: "setActivity", patch })}
+          onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           onToggleSection={(section) => run({ type: "toggleSection", section })}

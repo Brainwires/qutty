@@ -497,14 +497,17 @@ export function isTintId(raw: unknown): raw is TintId {
     (TINT_IDS as readonly string[]).includes(raw);
 }
 
-/** The midpoint of two `#rrggbb` colours. */
-function mixHex(a: string, b: string): string {
+/**
+ * `p` (0–1, the midpoint by default) of `#rrggbb` `a` over `b`, as CSS
+ * `color-mix(in srgb, a p%, b)` mixes them (the activity tints' contrast is checked with it).
+ */
+export function mixHex(a: string, b: string, p = 0.5): string {
   const pa = parseInt(a.slice(1), 16);
   const pb = parseInt(b.slice(1), 16);
   let out = 0;
   for (const shift of [16, 8, 0]) {
-    const c = Math.round((((pa >> shift) & 255) + ((pb >> shift) & 255)) / 2);
-    out |= c << shift;
+    const c = ((pa >> shift) & 255) * p + ((pb >> shift) & 255) * (1 - p);
+    out |= Math.round(c) << shift;
   }
   return `#${out.toString(16).padStart(6, "0")}`;
 }

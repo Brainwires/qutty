@@ -21,6 +21,9 @@ Website: <https://qutty.org>
   the cluster.
 - **Minimize, Maximize and Restore** on every tile: a minimized tile waits in
   the switcher bar with its shell running.
+- **Activity at a glance**: an unfocused tile shows new output, a running
+  command, a bell, a failed or a finished command on its header and border,
+  titled by what the program calls itself.
 - **Six themes**, three dark and three light, switched live.
 - **Adjustable font** typeface and size.
 - **Your macOS key bindings** (`DefaultKeyBinding.dict`) work inside the

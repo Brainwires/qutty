@@ -25,6 +25,10 @@
 // monocle) and Close. A minimized tile is out of the layout, so it parks like an overflow one (a
 // web tile's page stays loaded). A double click on the header (not on its controls or a web
 // tile's address field) does what the workspace says the OS title-bar double click does.
+//
+// Activity (lib/workspace/activity.ts): an unfocused tile wears its one activity state as
+// `data-activity` (output, busy, attention, failed, done, none), which styles.css draws on the
+// header and the border. Its title is the program's own (OSC 0 / 2) when Settings → Tiles says so.
 
 import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
@@ -33,6 +37,11 @@ import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TileInfo } from "../lib/hub/protocol.ts";
 import { formatAge } from "../lib/workspace/format.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
+import {
+  type ActivityState,
+  displayTitle,
+  type TileTitle,
+} from "../lib/workspace/activity.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
 import {
   useWebTile,
@@ -60,6 +69,10 @@ interface TileExtras {
 export interface TileClusterProps extends TileExtras {
   manager: TerminalManager;
   terminals: TerminalEntry[];
+  /** Each tile's activity state (missing: none). */
+  activity: ReadonlyMap<string, ActivityState>;
+  /** Settings → Tiles → Tile title. */
+  tileTitle: TileTitle;
   tiles: LayoutTile[];
   focusedId: string | null;
   decay: number;
@@ -91,6 +104,8 @@ export function TileCluster(props: TileClusterProps) {
         <TerminalTile
           key={entry.id}
           entry={entry}
+          activity={props.activity.get(entry.id) ?? "none"}
+          title={displayTitle(entry, props.tileTitle)}
           tile={byId.get(entry.id)}
           focused={entry.id === props.focusedId}
           manager={props.manager}
@@ -125,6 +140,9 @@ const LEAVE_MS = 260;
 
 interface TerminalTileProps extends TileExtras {
   entry: TerminalEntry;
+  activity: ActivityState;
+  /** What the header shows (the program's title or the process's). */
+  title: string;
   tile: LayoutTile | undefined;
   focused: boolean;
   manager: TerminalManager;
@@ -257,7 +275,6 @@ function TerminalTile(props: TerminalTileProps) {
   if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
-  if (entry.activity) classes.push("has-activity");
   // A sandboxed tile wears the green tint plus a hatched header (SANDBOX_TINT).
   const tint = isTintId(entry.ssh?.tint)
     ? entry.ssh.tint
@@ -288,6 +305,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
       data-broadcast={broadcasting ? "true" : undefined}
+      data-activity={props.activity}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
         const native = e as unknown as globalThis.TransitionEvent;
@@ -335,8 +353,12 @@ function TerminalTile(props: TerminalTileProps) {
             </span>
           )}
           <AgentBadge tile={props.agentOf?.(id)} />
-          <span class="tile-title" data-testid="tile-title" title={entry.title}>
-            {entry.title}
+          <span
+            class="tile-title"
+            data-testid="tile-title"
+            title={props.title}
+          >
+            {props.title}
           </span>
           {web && <WebToolbar view={web} />}
           <span class="tile-meta">

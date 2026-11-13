@@ -223,6 +223,9 @@ Deno.test(
         "whoami",
         "exit",
         "job",
+        "bell",
+        "later",
+        "title",
       ]
     ) {
       assert(new RegExp(`\\b${c}\\b`).test(out), `help mentions ${c}`);
@@ -285,6 +288,48 @@ Deno.test(
       s.take(),
       `job soon\r\nusage: job <seconds> <exit> <command…>\r\n${PROMPT}`,
     );
+    await s.be.kill(s.id);
+  }),
+);
+
+Deno.test(
+  "demo: bell, later and title drive a tile's attention, output and program title",
+  withTime(async (time) => {
+    const s = await session(time);
+    // The output without its OSC 133 marks (which end in BEL too).
+    const bare = () => s.raw().replace(MARKS, "");
+    s.take();
+    await s.type("bell\r");
+    assert(bare().includes("bell\r\n\x07"), "BEL now");
+    s.take();
+    // A delayed bell: the prompt is back at once, the BEL comes later.
+    await s.type("bell 1.5\r");
+    assert(!bare().includes("\x07"));
+    assert(s.take().endsWith(PROMPT));
+    await time.tickAsync(1_500);
+    assertEquals(s.raw(), "\x07");
+    s.take();
+    await s.type("later 2 build finished\r");
+    assert(s.take().endsWith(PROMPT));
+    await time.tickAsync(2_000);
+    assertEquals(s.take(), "build finished\r\n");
+    // title: OSC 2 by default, OSC 0 with -0, no text clears.
+    s.take();
+    await s.type("title vim notes.md\r");
+    assert(s.raw().includes(`${ESC}]2;vim notes.md\x07`));
+    s.take();
+    await s.type("title -0 htop\r");
+    assert(s.raw().includes(`${ESC}]0;htop\x07`));
+    s.take();
+    await s.type("title\r");
+    assert(s.raw().includes(`${ESC}]2;\x07`));
+    s.take();
+    // Malformed: a usage line and exit 2.
+    await s.type("bell soon\r");
+    assert(s.raw().includes(mark("D;2")));
+    assert(s.take().includes("usage: bell [seconds]"));
+    await s.type("later 1\r");
+    assert(s.take().includes("usage: later <seconds> <text…>"));
     await s.be.kill(s.id);
   }),
 );

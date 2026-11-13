@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Tiles say what happened in them while you looked elsewhere, on the header and
+  the border instead of the old amber dot. New output tints an unfocused tile's
+  header with the accent colour; a running command (from the shell integration
+  marks) draws a slow shimmer along the header's bottom edge; a bell, or an
+  agent waiting for you, gives the tile an amber border and header; a command
+  that failed a red border; one that finished well a brief green header that
+  fades after a few seconds. The colours come from the theme, so they read in
+  every built-in theme, light and dark. Focusing the tile clears what it showed;
+  the focused tile, an exited one and web tiles show nothing. With reduced
+  motion the shimmer is a still line and the green tint does not fade. The
+  switcher bar's chips, minimized ones and the "+N" menu included, show the same
+  colours in their dot (underlined when the tile needs you). Settings → Tiles →
+  "Activity indicators": Full, Subtle (a coloured dot and the border, no tint or
+  shimmer) or Off, plus switches for bells, failed commands, finished commands
+  and new output.
+
+- Tile titles: the title a program sets for itself (a remote shell's
+  `user@host:~`, vim's file, an agent's task) now names its tile, in the header,
+  in the switcher-bar chip and in what agents see in `list_peers`. An agent
+  tool's or an SSH host's name stays in front when the title leaves it out.
+  Settings → Tiles → "Tile title": Program title (the default) or Process title
+  (the foreground process and its folder, as before). A program's title is not
+  saved: a workspace shown again shows the process title until the program sets
+  it again (one redrawn from the scrollback sets it at once).
+
 - Tiles now have Minimize and Maximize buttons next to the close button, on
   terminals and web tiles alike. Maximize shows the tile alone (the monocle
   layout, as ⌘Enter does), and its button then reads Restore, which brings back

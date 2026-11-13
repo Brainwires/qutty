@@ -1,5 +1,6 @@
 // The settings popover, in collapsible sections: Layout (pattern grid with live previews, the
-// sliders the engine understands, the bar's edge and order), Theme (preview tiles, dark and
+// sliders the engine understands, the bar's edge and order), Tiles (activity indicators and the
+// tile title: app/tile-settings.tsx), Theme (preview tiles, dark and
 // light), Fonts (the terminal font), Companion (app/companion/companion-settings.tsx), Agent
 // integration (app/agent-integration.tsx; folded by default); the shortcut list stays visible below them. Every change goes straight to the store,
 // so the cluster animates while the slider moves.
@@ -52,6 +53,8 @@ import { LinksSettingsSection } from "./links-settings.tsx";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
 import { WindowSettingsSection } from "./window-settings.tsx";
+import { TileSettingsSection } from "./tile-settings.tsx";
+import type { ActivitySettings, TileTitle } from "../lib/workspace/activity.ts";
 import type { WindowClose } from "../lib/workspace/windows.ts";
 import type { MonitorSettings } from "../lib/sysstats.ts";
 
@@ -62,6 +65,9 @@ export interface SettingsPanelProps {
   onBarPosition(position: BarPosition): void;
   onBarOrder(order: BarOrder): void;
   onInactiveTiles(mode: InactiveTiles): void;
+  /** Settings → Tiles. */
+  onActivity(patch: Partial<ActivitySettings>): void;
+  onTileTitle(tileTitle: TileTitle): void;
   onFont(patch: Partial<FontSettings>): void;
   onTheme(theme: ThemeId): void;
   onToggleSection(section: SettingsSection): void;
@@ -336,6 +342,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
             onChange={props.onPlusOpens}
           />
         </>,
+      )}
+
+      {section(
+        "tiles",
+        "Tiles",
+        <TileSettingsSection
+          activity={settings.activity}
+          tileTitle={settings.tileTitle}
+          onActivity={props.onActivity}
+          onTileTitle={props.onTileTitle}
+        />,
+        "tiles-section",
       )}
 
       {section(

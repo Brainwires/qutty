@@ -1,7 +1,9 @@
 // The switcher bar: every terminal as a chip, on any edge of the window. It is the overflow
 // surface — terminals the cluster cannot show live here — so chips say whether their terminal
 // is tiled or not, or minimized (put there by the user; a click restores it). The chip strip scrolls on wheel and reports the chips scrolled out of view
-// in a "+N" menu. Chip moves animate with FLIP; new chips fade in.
+// in a "+N" menu. Chip moves animate with FLIP; new chips fade in. Each chip (and each "+N"
+// menu item) wears its tile's activity state as `data-activity` and in its dot's colour
+// (lib/workspace/activity.ts), and shows the title the tile's header shows.
 
 import {
   type ReactNode,
@@ -21,6 +23,7 @@ import {
   type WorkspaceState,
 } from "../lib/workspace/store.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
+import { type ActivityState, displayTitle } from "../lib/workspace/activity.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
 import { LaunchMenu, type LaunchMenuProps } from "./launch-menu.tsx";
 import { SysMeter } from "./sys-meter.tsx";
@@ -28,6 +31,8 @@ import type { Smoothed } from "../lib/sysstats.ts";
 
 export interface SwitcherBarProps {
   state: WorkspaceState;
+  /** Each tile's activity state (missing: none). */
+  activity: ReadonlyMap<string, ActivityState>;
   visibleIds: Set<string>;
   position: BarPosition;
   pattern: LayoutPattern;
@@ -93,6 +98,9 @@ export function SwitcherBar(props: SwitcherBarProps) {
     props.state.terminals.map((t) => [t.id, t]),
   );
   const focusedId = props.state.focusedId;
+  const activityOf = (id: string) => props.activity.get(id) ?? "none";
+  const titleOf = (t: TerminalEntry) =>
+    displayTitle(t, props.state.settings.tileTitle);
 
   // The bar background is the window's drag region on desktop (chips and buttons opt out).
   useEffect(() => {
@@ -361,7 +369,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
             ];
             if (focused) cls.push("is-focused");
             if (t.exited) cls.push("is-exited");
-            if (t.activity) cls.push("has-activity");
+            const title = titleOf(t);
             return (
               <div
                 key={id}
@@ -378,12 +386,12 @@ export function SwitcherBar(props: SwitcherBarProps) {
                 data-minimized={minimized ? "true" : undefined}
                 data-focused={focused ? "true" : "false"}
                 data-exited={t.exited ? "true" : "false"}
-                data-activity={t.activity ? "true" : "false"}
+                data-activity={activityOf(id)}
                 data-tint={isTintId(t.ssh?.tint) ? t.ssh.tint : undefined}
                 role="button"
                 tabIndex={0}
                 data-no-window-drag
-                title={`${t.title}${
+                title={`${title}${
                   minimized
                     ? " (minimized: click to restore)"
                     : tiled
@@ -400,13 +408,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
               >
                 {ordinal <= 9 && <span class="chip-ordinal">{ordinal}</span>}
                 <span class="chip-dot" aria-hidden="true" />
-                <span class="chip-title">{t.title}</span>
+                <span class="chip-title">{title}</span>
                 {t.exited && <span class="chip-exit">exited</span>}
                 <button
                   type="button"
                   class="chip-close"
                   data-testid="chip-close"
-                  aria-label={`Close ${t.title}`}
+                  aria-label={`Close ${title}`}
                   tabIndex={-1}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -447,11 +455,12 @@ export function SwitcherBar(props: SwitcherBarProps) {
                       class="menu-item"
                       data-testid="overflow-item"
                       data-id={id}
+                      data-activity={activityOf(id)}
                       key={id}
                       onClick={() => pick(id)}
                     >
-                      <span class={`chip-dot${t.activity ? " on" : ""}`} />
-                      <span class="menu-label">{t.title}</span>
+                      <span class="chip-dot" />
+                      <span class="menu-label">{titleOf(t)}</span>
                       {t.exited && <span class="chip-exit">exited</span>}
                     </button>
                   );
