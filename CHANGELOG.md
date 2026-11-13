@@ -3,8 +3,8 @@
 ## Unreleased
 
 - Web tiles: ⌘-click (Ctrl-click on Linux and Windows) a local development URL
-  in a terminal (localhost, 127.0.0.1, *.localhost, *.test, any port) and it
-  opens in a tile beside that terminal. The tile takes part in the layout, the
+  in a terminal (localhost or 127.0.0.1 on any port, or https on *.localhost or *.test) and
+  it opens in a tile beside that terminal. The tile takes part in the layout, the
   switcher bar, focus and the workspace like any other tile, and comes back at
   its last page when the workspace is shown again. Its header has back, forward,
   reload / stop, an address field (Enter goes) and "Open in default browser".

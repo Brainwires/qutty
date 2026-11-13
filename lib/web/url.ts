@@ -2,8 +2,12 @@
  * Web tile URLs: which pages the iframe engine may embed, what the address field turns typed
  * text into, and the header's fallback label. Pure and client-safe.
  *
- * The iframe engine embeds only loopback and local development hosts: `localhost`, `127.0.0.1`,
- * `*.localhost` and `*.test`, over http or https on any port. Most public sites refuse to be
+ * The iframe engine embeds only loopback and local development hosts, on any port: `localhost`
+ * and `127.0.0.1` over http or https, and `*.localhost` and `*.test` over https only. The app page
+ * is a secure context (`app://` is registered secure on every engine), so an http frame counts as
+ * mixed content unless its host is loopback: an `http://*.test` frame is blocked on every engine,
+ * and WebKit may upgrade `http://*.localhost` to https. Those URLs open in the default browser
+ * instead (the native engine has no such limit). Most public sites refuse to be
  * framed (`X-Frame-Options`, `frame-ancestors`), so they open in the default browser until the
  * native engine lands. The page's CSP allows exactly these origins ({@linkcode FRAME_SRC}).
  *
@@ -45,6 +49,12 @@ export function isDevHost(hostname: string): boolean {
     (h.endsWith(".test") && h.length > ".test".length);
 }
 
+/** `localhost` or `127.0.0.1`: the hosts an http frame may use inside the secure app page. */
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/\.$/, "");
+  return h === "localhost" || h === "127.0.0.1";
+}
+
 /**
  * Whether the iframe engine can show `url`: http(s) on a dev host, and never the app's own
  * origin (`appOrigin`, the page's `location.origin`). The iframe is sandboxed with
@@ -57,6 +67,7 @@ export function canEmbedInFrame(raw: string, appOrigin?: string): boolean {
   const url = parseWebUrl(raw);
   if (!url || !isDevHost(url.hostname)) return false;
   if (url.username || url.password) return false;
+  if (url.protocol === "http:" && !isLoopbackHost(url.hostname)) return false;
   return appOrigin === undefined || url.origin !== appOrigin;
 }
 
@@ -66,9 +77,7 @@ export const FRAME_SRC: readonly string[] = [
   "https://localhost:*",
   "http://127.0.0.1:*",
   "https://127.0.0.1:*",
-  "http://*.localhost:*",
   "https://*.localhost:*",
-  "http://*.test:*",
   "https://*.test:*",
 ];
 
