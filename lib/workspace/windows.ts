@@ -7,6 +7,8 @@
  * @module
  */
 
+import { isMdiItem, type MdiItemId } from "./mdi-menu.ts";
+
 /** What a workspace window opens with (denext's `windows.open` / `openWindow`). */
 export interface WorkspaceWindowOptions {
   url: string;
@@ -65,6 +67,17 @@ export type TileMenuItem = typeof MINIMIZE_TILE_ITEM | typeof ZOOM_TILE_ITEM;
 /** Whether a Window-menu item id is one of the tile items. */
 export function isTileMenuItem(id: unknown): id is TileMenuItem {
   return id === MINIMIZE_TILE_ITEM || id === ZOOM_TILE_ITEM;
+}
+
+/**
+ * A Window-menu item the key window's page acts on: a tile item, or a view / arrange item of the
+ * menu model (lib/workspace/mdi-menu.ts: "Tiled View", "Free-form View", "Cascade Tiles", ...).
+ */
+export type PageMenuItem = TileMenuItem | MdiItemId;
+
+/** Whether a Window-menu item id is one the page acts on (see {@linkcode PageMenuItem}). */
+export function isPageMenuItem(id: unknown): id is PageMenuItem {
+  return isTileMenuItem(id) || isMdiItem(id);
 }
 
 /** A workspace window's title (its label in the Window menu's lists). */

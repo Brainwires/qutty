@@ -19,6 +19,9 @@ Website: <https://qutty.org>
   rows, grid and monocle, with animated transitions.
 - **Switcher bar**, horizontal or vertical, holding the terminals that overflow
   the cluster.
+- **Tiled or free-form, per workspace**: let Qutty lay the tiles out, or switch
+  to the free-form view and move, resize, overlap, cascade and arrange them as
+  windows inside the workspace.
 - **Minimize, Maximize and Restore** on every tile: a minimized tile waits in
   the switcher bar with its shell running.
 - **Activity at a glance**: an unfocused tile shows new output, a running

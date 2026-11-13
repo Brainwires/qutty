@@ -68,6 +68,18 @@ import {
   type TileSignals,
   type TileTitle,
 } from "./activity.ts";
+import {
+  dropTile,
+  EMPTY_FREEFORM,
+  type FreeformState,
+  type MinSize,
+  raise,
+  sanitizeFreeform,
+  sanitizeViewMode,
+  setMaximized,
+  type ViewMode,
+} from "./freeform.ts";
+import { reduceView, type ViewAction } from "./view.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -200,6 +212,8 @@ export interface Settings extends FontSettings {
   activity: ActivitySettings;
   /** Settings → Tiles: what a tile's header shows, the program's title or the process's. */
   tileTitle: TileTitle;
+  /** Settings → Layout: the view a new workspace starts in (each one keeps its own after). */
+  defaultView: ViewMode;
 }
 
 /** The whole workspace. */
@@ -222,6 +236,13 @@ export interface WorkspaceState {
    * than bouncing between the top two; any other focus change, or `endCycle`, drops it.
    */
   cycle: { order: string[]; index: number } | null;
+  /** How this workspace shows its tiles: tiled (the layout engine) or free-form (MDI). */
+  view: ViewMode;
+  /**
+   * The free-form view's rects, z-order and maximized tile (lib/workspace/freeform.ts). Kept
+   * while tiled, so switching back gives every tile its place; the focused tile is on top.
+   */
+  freeform: FreeformState;
 }
 
 /** Everything the UI can do to the workspace. */
@@ -277,6 +298,8 @@ export type WorkspaceAction =
    * (minimized, or maximized in monocle: monocle is left for the pattern it replaced).
    */
   | { type: "restoreTile"; id: string; now: number }
+  /** The view and free-form actions (lib/workspace/view.ts). */
+  | ViewAction
   | { type: "setBarPosition"; position: BarPosition }
   | { type: "cycleBarPosition" }
   | { type: "setBarOrder"; order: BarOrder }
@@ -303,6 +326,10 @@ export type WorkspaceAction =
     mru: string[];
     layout?: Partial<LayoutOptions>;
     previousPattern: LayoutPattern | null;
+    /** Its view (absent: tiled, as a workspace saved before the free-form view was). */
+    view?: ViewMode;
+    /** Its free-form geometry (sanitized against its tiles). */
+    freeform?: unknown;
   };
 
 /** The defaults a fresh workspace starts from. */
@@ -325,6 +352,7 @@ export const DEFAULT_SETTINGS: Settings = {
   windowClose: DEFAULT_WINDOW_CLOSE,
   activity: { ...DEFAULT_ACTIVITY },
   tileTitle: "program",
+  defaultView: "tiled",
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -339,6 +367,8 @@ export function initialState(
     settings: cloneSettings(settings),
     previousPattern: null,
     cycle: null,
+    view: "tiled",
+    freeform: EMPTY_FREEFORM,
   };
 }
 
@@ -479,6 +509,9 @@ export function sanitizeSettings(
     out.activity = sanitizeActivity(r.activity, out.activity);
   }
   if (r.tileTitle !== undefined) out.tileTitle = sanitizeTileTitle(r.tileTitle);
+  if (r.defaultView !== undefined) {
+    out.defaultView = sanitizeViewMode(r.defaultView);
+  }
   if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
   if (Array.isArray(r.collapsedSections)) {
     out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
@@ -543,9 +576,27 @@ export function shownFocus(
   return shownMru({ terminals, mru })[0] ?? null;
 }
 
-/** Whether tile `id` is the one shown alone in monocle (its header offers Restore). */
+/**
+ * Whether tile `id` is maximized (its header offers Restore): shown alone in monocle in the tiled
+ * view, filling the area (MDI maximize) in the free-form view.
+ */
 export function isMaximized(state: WorkspaceState, id: string): boolean {
+  if (state.view === "freeform") return state.freeform.maximized === id;
   return state.settings.layout.pattern === "monocle" && state.focusedId === id;
+}
+
+/** The maximized tile (see {@linkcode isMaximized}), else `null`. */
+export function maximizedId(state: WorkspaceState): string | null {
+  const id = state.view === "freeform"
+    ? state.freeform.maximized
+    : state.focusedId;
+  return id !== null && isMaximized(state, id) ? id : null;
+}
+
+/** A free-form tile's minimum size: the layout's minimum tile size. */
+export function freeformMin(state: WorkspaceState): MinSize {
+  const { minTileW, minTileH } = state.settings.layout;
+  return { w: minTileW, h: minTileH };
 }
 
 /** Terminal ids in the order the switcher bar shows them. */
@@ -674,17 +725,75 @@ function setMinimized(
     mru,
     focusedId: shownFocus(terminals, mru),
     cycle: null,
+    // A minimized free-form tile comes back at its own rect, not maximized.
+    freeform: on ? setMaximized(state.freeform, id, false) : state.freeform,
   };
 }
 
-/** Restore tile `id` into the tiled layout and focus it (leaving monocle). */
+/**
+ * Restore tile `id` and focus it: tiled, into the tiled layout (leaving monocle); free-form, to
+ * its free-form rect (no longer maximized).
+ */
 function restoreTile(
   state: WorkspaceState,
   id: string,
   now: number,
 ): WorkspaceState {
   if (!state.terminals.some((t) => t.id === id)) return state;
-  return leaveMonocle(withFocus(setMinimized(state, id, false), id, now));
+  const shown = withFocus(setMinimized(state, id, false), id, now);
+  if (state.view === "tiled") return leaveMonocle(shown);
+  return withFreeform(shown, setMaximized(shown.freeform, id, false));
+}
+
+/**
+ * Maximize tile `id`, focused: tiled, alone in monocle (remembering the pattern); free-form, over
+ * the whole area with the others behind it (MDI maximize: no pattern change).
+ */
+function maximize(
+  state: WorkspaceState,
+  id: string,
+  now: number,
+): WorkspaceState {
+  if (!state.terminals.some((t) => t.id === id)) return state;
+  // In monocle already (another tile picked from the switcher): it is just focused.
+  const focused = withFocus(setMinimized(state, id, false), id, now);
+  if (state.view === "tiled") return enterMonocle(focused);
+  return withFreeform(focused, setMaximized(focused.freeform, id, true));
+}
+
+/** Mod+Enter: monocle on / off (tiled), the focused tile maximized / restored (free-form). */
+function toggleMonocle(state: WorkspaceState): WorkspaceState {
+  if (state.view === "freeform") {
+    const id = state.focusedId;
+    if (!id) return state;
+    // The tile has the focus already: its last use stays as it is (the reducer stays pure).
+    const now = state.terminals.find((t) => t.id === id)?.lastUsedAt ?? 0;
+    return isMaximized(state, id)
+      ? restoreTile(state, id, now)
+      : maximize(state, id, now);
+  }
+  return state.settings.layout.pattern === "monocle"
+    ? leaveMonocle(state)
+    : enterMonocle(state);
+}
+
+/** `state` with free-form geometry `freeform` (the same state when it did not change). */
+function withFreeform(
+  state: WorkspaceState,
+  freeform: FreeformState,
+): WorkspaceState {
+  return freeform === state.freeform ? state : { ...state, freeform };
+}
+
+/** The focused tile drawn on top in the free-form view (clicking a tile raises it, as focus does). */
+function focusedOnTop(state: WorkspaceState): WorkspaceState {
+  const id = state.focusedId;
+  if (!id) return state;
+  const z = raise(state.freeform.z, id);
+  return z === state.freeform.z ? state : withFreeform(state, {
+    ...state.freeform,
+    z,
+  });
 }
 
 function updateTerminal(
@@ -720,8 +829,19 @@ function focusOrRestore(
     : withFocus(state, id, now);
 }
 
-/** The pure state transition. Unknown ids and no-op changes return the same state object. */
+/**
+ * The pure state transition. Unknown ids and no-op changes return the same state object. The
+ * focused tile always ends on top of the free-form z-order.
+ */
 export function reduce(
+  state: WorkspaceState,
+  action: WorkspaceAction,
+): WorkspaceState {
+  const next = reduceCore(state, action);
+  return next === state ? state : focusedOnTop(next);
+}
+
+function reduceCore(
   state: WorkspaceState,
   action: WorkspaceAction,
 ): WorkspaceState {
@@ -761,6 +881,7 @@ export function reduce(
         mru,
         focusedId: shownFocus(terminals, mru),
         cycle: null,
+        freeform: dropTile(state.freeform, action.id),
       };
     }
     case "focus":
@@ -886,23 +1007,19 @@ export function reduce(
       };
     }
     case "toggleMonocle":
-      return state.settings.layout.pattern === "monocle"
-        ? leaveMonocle(state)
-        : enterMonocle(state);
+      return toggleMonocle(state);
     case "minimize":
       return setMinimized(state, action.id, true);
-    case "maximize": {
-      if (!state.terminals.some((t) => t.id === action.id)) return state;
-      // In monocle already (another tile picked from the switcher): it is just focused.
-      const focused = withFocus(
-        setMinimized(state, action.id, false),
-        action.id,
-        action.now,
-      );
-      return enterMonocle(focused);
-    }
+    case "maximize":
+      return maximize(state, action.id, action.now);
     case "restoreTile":
       return restoreTile(state, action.id, action.now);
+    case "setView":
+    case "setDefaultView":
+    case "freeformRect":
+    case "freeformSeed":
+    case "arrange":
+      return reduceView(state, action);
     case "setBarPosition":
       if (state.settings.barPosition === action.position) return state;
       return {
@@ -1059,6 +1176,10 @@ export function reduce(
         mru,
         focusedId: shownFocus(terminals, mru),
         cycle: null,
+        view: action.view ?? state.view,
+        freeform: action.freeform === undefined
+          ? state.freeform
+          : sanitizeFreeform(action.freeform, ids),
         previousPattern: action.previousPattern,
         settings: action.layout
           ? {

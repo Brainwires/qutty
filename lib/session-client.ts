@@ -19,9 +19,9 @@ import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
   isFreshTileMenu,
-  isTileMenuItem,
+  isPageMenuItem,
   newWorkspaceId,
-  type TileMenuItem,
+  type PageMenuItem,
   workspaceTitle,
   workspaceWindow,
 } from "./workspace/windows.ts";
@@ -75,8 +75,11 @@ export interface SessionBackend {
   /** This window took the focus. */
   focus(): Promise<void>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
-  /** The Window menu's tile items ("Minimize Tile", "Zoom Tile"), chosen with this window key. */
-  onTileMenu(cb: (item: TileMenuItem) => void): () => void;
+  /**
+   * The Window menu's tile items ("Minimize Tile", "Zoom Tile") and view / arrange items ("Tiled
+   * View", "Cascade Tiles", ...), chosen with this window key.
+   */
+  onTileMenu(cb: (item: PageMenuItem) => void): () => void;
 }
 
 /** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
@@ -155,7 +158,7 @@ export function createDesktopSession(deps: {
       ),
     onTileMenu: (cb) =>
       deps.onDesktopEvent<TileMenuEvent>("session", "tileMenu", (e) => {
-        if (isTileMenuItem(e.item) && isFreshTileMenu(e.at, Date.now())) {
+        if (isPageMenuItem(e.item) && isFreshTileMenu(e.at, Date.now())) {
           cb(e.item);
         }
       }),

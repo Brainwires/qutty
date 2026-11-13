@@ -86,6 +86,17 @@ export interface WebViewHandle {
   stop(): Promise<void>;
   /** Show or hide the view (it keeps its page). */
   setVisible(visible: boolean): Promise<void>;
+  /**
+   * Another tile overlaps this view's tile and is drawn above it (the free-form view; the tile
+   * computes it with `occludedIds`, lib/workspace/freeform.ts, and calls this on each change).
+   *
+   * TODO(native engine): a native view draws above all HTML, so a terminal tile on top of a web
+   * tile would sit under its page. The native engine answers this with Denext's coming web view
+   * stacking: `capture()` the page into an `<img>` in the element and `setVisible(false)` while
+   * occluded (the snapshot swap), or `raise()` / `lower()` / `setZOrder(n)` once views can be
+   * ordered among the tiles. The iframe is ordinary HTML that stacks with the tiles: it ignores it.
+   */
+  setOccluded(occluded: boolean): Promise<void>;
   /** Give the page the keyboard. */
   focus(): Promise<void>;
   state(): Promise<WebViewState>;
@@ -267,6 +278,11 @@ class IframeView implements WebViewHandle {
 
   setVisible(visible: boolean): Promise<void> {
     if (this.#frame) this.#frame.style.visibility = visible ? "" : "hidden";
+    return Promise.resolve();
+  }
+
+  /** The iframe is HTML and stacks with the tiles (z-index): nothing to do. */
+  setOccluded(_occluded: boolean): Promise<void> {
     return Promise.resolve();
   }
 

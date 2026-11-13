@@ -1,5 +1,6 @@
-// The settings popover, in collapsible sections: Layout (pattern grid with live previews, the
-// sliders the engine understands, the bar's edge and order), Tiles (activity indicators and the
+// The settings popover, in collapsible sections: Layout (the view, tiled or free-form, for this
+// workspace and for new ones; pattern grid with live previews, the sliders the engine
+// understands, the bar's edge and order), Tiles (activity indicators and the
 // tile title: app/tile-settings.tsx), Theme (preview tiles, dark and
 // light), Fonts (the terminal font), Companion (app/companion/companion-settings.tsx), Agent
 // integration (app/agent-integration.tsx; folded by default); the shortcut list stays visible below them. Every change goes straight to the store,
@@ -34,6 +35,11 @@ import {
   stepFontSize,
 } from "../lib/workspace/fonts.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
+import {
+  VIEW_LABELS,
+  VIEW_MODES,
+  type ViewMode,
+} from "../lib/workspace/freeform.ts";
 import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
 import { AgentIntegration } from "./agent-integration.tsx";
@@ -62,6 +68,11 @@ export interface SettingsPanelProps {
   settings: Settings;
   platform: KeyPlatform;
   onLayout(patch: Partial<LayoutOptions>): void;
+  /** This workspace's view. */
+  view: ViewMode;
+  onView(view: ViewMode): void;
+  /** The view new workspaces start in (`settings.defaultView`). */
+  onDefaultView(view: ViewMode): void;
   onBarPosition(position: BarPosition): void;
   onBarOrder(order: BarOrder): void;
   onInactiveTiles(mode: InactiveTiles): void;
@@ -223,6 +234,20 @@ export function SettingsPanel(props: SettingsPanelProps) {
         "layout",
         "Layout",
         <>
+          <ViewField
+            label="View"
+            hint="This workspace: tiles laid out for you, or windows you move and resize."
+            testid="setting-view"
+            value={props.view}
+            onChange={props.onView}
+          />
+          <ViewField
+            label="New workspaces"
+            hint="The view a new workspace starts in; each workspace keeps its own."
+            testid="setting-default-view"
+            value={settings.defaultView}
+            onChange={props.onDefaultView}
+          />
           <div class="pattern-grid" role="radiogroup" aria-label="Pattern">
             {PATTERNS.map((p) => (
               <button
@@ -809,5 +834,37 @@ function FontSection(props: FontSectionProps) {
         {SAMPLE}
       </div>
     </>
+  );
+}
+
+/** A Tiled / Free-form choice (this workspace's view, or new workspaces'). */
+function ViewField(props: {
+  label: string;
+  hint: string;
+  testid: string;
+  value: ViewMode;
+  onChange(view: ViewMode): void;
+}) {
+  return (
+    <div class="field">
+      <span class="field-label">{props.label}</span>
+      <div class="segmented" role="radiogroup" aria-label={props.label}>
+        {VIEW_MODES.map((v) => (
+          <button
+            type="button"
+            key={v}
+            role="radio"
+            aria-checked={v === props.value}
+            class={v === props.value ? "is-active" : ""}
+            data-testid={props.testid}
+            data-value={v}
+            onClick={() => props.onChange(v)}
+          >
+            {VIEW_LABELS[v]}
+          </button>
+        ))}
+      </div>
+      <span class="field-hint">{props.hint}</span>
+    </div>
   );
 }
