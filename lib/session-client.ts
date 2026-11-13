@@ -18,6 +18,7 @@ import type {
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
+  isFreshTileMenu,
   isTileMenuItem,
   newWorkspaceId,
   type TileMenuItem,
@@ -154,7 +155,9 @@ export function createDesktopSession(deps: {
       ),
     onTileMenu: (cb) =>
       deps.onDesktopEvent<TileMenuEvent>("session", "tileMenu", (e) => {
-        if (isTileMenuItem(e.item)) cb(e.item);
+        if (isTileMenuItem(e.item) && isFreshTileMenu(e.at, Date.now())) {
+          cb(e.item);
+        }
       }),
   };
 }

@@ -158,3 +158,17 @@ export function createCloseGuard(deps: CloseGuardDeps): {
     },
   };
 }
+
+/**
+ * How old a Window-menu tile event may be when the page gets it. Denext replays retained events
+ * to a page that subscribes later, so after a reload an old "Minimize Tile" click would otherwise
+ * act again.
+ */
+export const TILE_MENU_MAX_AGE_MS = 2000;
+
+/** Whether a tile menu event sent at `at` is still fresh at `now` (both ms since the epoch). */
+export function isFreshTileMenu(at: unknown, now: number): boolean {
+  return typeof at === "number" && Number.isFinite(at) &&
+    now - at >= -TILE_MENU_MAX_AGE_MS &&
+    now - at <= TILE_MENU_MAX_AGE_MS;
+}

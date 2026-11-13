@@ -23,8 +23,10 @@ import {
 } from "../lib/workspace/tile-controls.ts";
 import {
   CLOSE_AND_END_ITEM,
+  isFreshTileMenu,
   isTileMenuItem,
   MINIMIZE_TILE_ITEM,
+  TILE_MENU_MAX_AGE_MS,
   ZOOM_TILE_ITEM,
 } from "../lib/workspace/windows.ts";
 import { tileMenuToPage } from "../desktop/session.ts";
@@ -299,7 +301,7 @@ Deno.test("Window menu: Minimize Tile and Zoom Tile on the focused tile", () => 
 
 Deno.test("session: the Window menu's tile items go to the key window's page only", async () => {
   const fake = fakeExtensionHost([]);
-  const off = tileMenuToPage(fake.host);
+  const off = tileMenuToPage(fake.host, () => 1000);
   try {
     await fake.menuItem(MINIMIZE_TILE_ITEM, { id: "w2", key: "ws-2" });
     await fake.menuItem(ZOOM_TILE_ITEM, { id: "w1", key: "ws-1" });
@@ -316,4 +318,22 @@ Deno.test("session: the Window menu's tile items go to the key window's page onl
   } finally {
     off();
   }
+});
+
+Deno.test("session: a tile menu event carries its send time, and a stale replay is dropped", async () => {
+  const fake = fakeExtensionHost([]);
+  const off = tileMenuToPage(fake.host, () => 5000);
+  try {
+    await fake.menuItem(MINIMIZE_TILE_ITEM, { id: "w1", key: "ws-1" });
+    const sent = fake.events.find((e) => e.event === "tileMenu");
+    assertEquals((sent?.data as { at: number }).at, 5000);
+  } finally {
+    off();
+  }
+  assertEquals(isFreshTileMenu(5000, 5000), true);
+  assertEquals(isFreshTileMenu(5000, 5000 + TILE_MENU_MAX_AGE_MS), true);
+  // A page reloaded later gets the retained event replayed: too old, ignored.
+  assertEquals(isFreshTileMenu(5000, 5001 + TILE_MENU_MAX_AGE_MS), false);
+  assertEquals(isFreshTileMenu(undefined, 5000), false);
+  assertEquals(isFreshTileMenu(Number.NaN, 5000), false);
 });

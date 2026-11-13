@@ -286,6 +286,12 @@ export function closeAndEndFromMenu(
 /** What the key window's page gets for a Window-menu tile item. */
 export interface TileMenuEvent {
   item: string;
+  /**
+   * When it was sent (ms since the epoch). Denext replays retained events to a page that
+   * subscribes later (a reload), so the page drops one older than `TILE_MENU_MAX_AGE_MS`
+   * (lib/workspace/windows.ts) rather than act on a stale click.
+   */
+  at: number;
 }
 
 /**
@@ -295,10 +301,11 @@ export interface TileMenuEvent {
  */
 export function tileMenuToPage(
   host: Pick<DesktopExtensionHost, "onWindowMenuItem" | "emit">,
+  now: () => number = Date.now,
 ): () => void {
   return host.onWindowMenuItem((item, { keyWindow }) => {
     if (!isTileMenuItem(item) || !keyWindow) return;
-    const event: TileMenuEvent = { item };
+    const event: TileMenuEvent = { item, at: now() };
     host.emit("tileMenu", event, { window: keyWindow.id });
   });
 }
