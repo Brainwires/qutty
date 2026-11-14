@@ -50,6 +50,8 @@ import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
+import { WindowSettingsSection } from "./window-settings.tsx";
+import type { WindowClose } from "../lib/workspace/windows.ts";
 import type { MonitorSettings } from "../lib/sysstats.ts";
 
 export interface SettingsPanelProps {
@@ -78,6 +80,11 @@ export interface SettingsPanelProps {
   onLinks(patch: Partial<LinkSettings>): void;
   /** Settings → System monitor. */
   onMonitor(patch: Partial<MonitorSettings>): void;
+  /**
+   * Settings → Windows: what the close button does. Left out where the window's close is not
+   * held (the demo, an older runtime).
+   */
+  onWindowClose?: (windowClose: WindowClose) => void;
   /** The voice layer (its engines' status, the model download, cloud keys). */
   voice: VoiceApi | null;
   /** For Agent integration (the section is left out without one) and the companion's status. */
@@ -420,6 +427,16 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onChange={props.onMonitor}
         />,
         "monitor-section",
+      )}
+
+      {props.onWindowClose && section(
+        "windows",
+        "Windows",
+        <WindowSettingsSection
+          windowClose={settings.windowClose}
+          onChange={props.onWindowClose}
+        />,
+        "windows-section",
       )}
 
       {props.backend && section(

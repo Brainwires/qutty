@@ -66,3 +66,90 @@ export function windowMenu(): AppMenuItem[] {
 export function workspaceTitle(name: string): string {
   return `Qutty — ${name}`;
 }
+
+/**
+ * What a click on a window's close button does (Settings → Windows → "When a window closes"):
+ * ask each time, keep its shells running for reattachment (the window detaches), or end them.
+ */
+export type WindowClose = "ask" | "keep" | "end";
+
+/** Every {@linkcode WindowClose} choice, in the order Settings lists them. */
+export const WINDOW_CLOSE_CHOICES: readonly WindowClose[] = [
+  "ask",
+  "keep",
+  "end",
+];
+
+/** The default: ask each time. */
+export const DEFAULT_WINDOW_CLOSE: WindowClose = "ask";
+
+/** A stored (untrusted) choice; anything unknown is the default. */
+export function sanitizeWindowClose(v: unknown): WindowClose {
+  return WINDOW_CLOSE_CHOICES.includes(v as WindowClose)
+    ? v as WindowClose
+    : DEFAULT_WINDOW_CLOSE;
+}
+
+/** What the page does with a close request: see {@linkcode closeDecision}. */
+export type CloseDecision = "allow" | "end" | "ask";
+
+/**
+ * What the page does with a close request (`denext/desktop/window`'s `onCloseRequested`):
+ * `"allow"` lets the window close (it detaches: its shells keep running), `"end"` keeps it open
+ * and ends its shells the way the Window menu's "Close Window and End Its Shells" does, `"ask"`
+ * keeps it open and asks in the page.
+ *
+ * A quit is always allowed (the app's quit guard asks about busy agents). While the page is
+ * already asking or ending (`busy`), another close is allowed: a second click on the close
+ * button closes the window as before, detaching it.
+ */
+export function closeDecision(
+  setting: WindowClose,
+  reason: "close" | "quit",
+  busy = false,
+): CloseDecision {
+  if (reason === "quit" || busy || setting === "keep") return "allow";
+  return setting;
+}
+
+/** What {@linkcode createCloseGuard} acts through. */
+export interface CloseGuardDeps {
+  /** The current "When a window closes" setting. */
+  setting(): WindowClose;
+  /** Show the page's close question (answered through `settle`). */
+  ask(): void;
+  /** End the window's shells as the Window menu does (it resolves once that is done or declined). */
+  end(): Promise<void>;
+}
+
+/**
+ * The window's close guard: `request` answers a close request (`true`: let the window close)
+ * after {@linkcode closeDecision}, and starts the question or the end. The guard stays busy until
+ * the question is answered (`settle`) or the end is done, so a second close meanwhile goes
+ * through.
+ */
+export function createCloseGuard(deps: CloseGuardDeps): {
+  request(reason: "close" | "quit"): boolean;
+  settle(): void;
+} {
+  let busy = false;
+  return {
+    request(reason) {
+      const decision = closeDecision(deps.setting(), reason, busy);
+      if (decision === "allow") return true;
+      busy = true;
+      if (decision === "ask") deps.ask();
+      else {
+        void deps.end()
+          .catch((err) =>
+            console.warn("could not end the window's shells", err)
+          )
+          .finally(() => busy = false);
+      }
+      return false;
+    },
+    settle() {
+      busy = false;
+    },
+  };
+}

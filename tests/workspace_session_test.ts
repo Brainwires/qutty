@@ -257,13 +257,22 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
   let close = true;
   const menuItems: ((id: string) => void)[] = [];
   const menus: unknown[] = [];
+  const guards: ((e: { reason: "close" | "quit" }) =>
+    | boolean
+    | Promise<boolean>)[] = [];
+  let closeGuard = false;
   const session = createDesktopSession({
     desktopExtension: (() =>
       new Proxy({}, {
         get: (_t, method: string) => (args: unknown) => {
-          const menu = (args as { menu?: boolean } | undefined)?.menu;
+          const { menu, confirm } = (args ?? {}) as {
+            menu?: boolean;
+            confirm?: boolean;
+          };
           calls.push(
-            `session.${method}${menu === undefined ? "" : `:${menu}`}`,
+            `session.${method}${menu === undefined ? "" : `:${menu}`}${
+              confirm ? ":confirm" : ""
+            }`,
           );
           if (method === "join") {
             return Promise.resolve({
@@ -283,6 +292,8 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
       setWindowTitle: (t) => (calls.push(`title:${t}`), Promise.resolve()),
       setAppMenu: (m) => (menus.push(m), Promise.resolve()),
       onAppMenuItem: (fn) => (menuItems.push(fn), () => {}),
+      onCloseRequested: (fn) => (guards.push(fn), () => calls.push("unguard")),
+      windowCapabilities: () => Promise.resolve({ closeGuard }),
     },
     listen: () => calls.push("listen"),
     adopt: (id, seq) => calls.push(`adopt:${id}@${seq}`),
@@ -329,4 +340,27 @@ Deno.test("session client: join attaches the PTY events first and adopts every t
   close = true;
   await session.endWindow();
   assertEquals(calls, ["session.endWindow:false", "close"]);
+
+  // The close button set to end the shells: the extension asks about a busy agent first.
+  calls.length = 0;
+  await session.endWindow({ confirm: true });
+  assertEquals(calls, ["session.endWindow:false:confirm", "close"]);
+  // Keep Running: the window closes (and detaches) without asking anything.
+  calls.length = 0;
+  await session.closeWindow();
+  assertEquals(calls, ["close"]);
+
+  // No close guard in this runtime: nothing is registered, the window just closes.
+  assertEquals(await session.guardClose(() => false), null);
+  assertEquals(guards.length, 0);
+  // With one, the handler gets the reason and answers for the window.
+  closeGuard = true;
+  const off = await session.guardClose((reason) => reason === "quit");
+  assert(off);
+  assertEquals(guards.length, 1);
+  assertEquals(await guards[0]({ reason: "close" }), false);
+  assertEquals(await guards[0]({ reason: "quit" }), true);
+  calls.length = 0;
+  off();
+  assertEquals(calls, ["unguard"]);
 });

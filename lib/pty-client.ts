@@ -85,7 +85,13 @@ import {
   type SessionBackend,
   type SessionWindowDeps,
 } from "./session-client.ts";
-import { closeWindow, openWindow, setWindowTitle } from "denext/desktop/window";
+import {
+  closeWindow,
+  onCloseRequested,
+  openWindow,
+  setWindowTitle,
+  windowCapabilities,
+} from "denext/desktop/window";
 import { onAppMenuItem, setAppMenu } from "denext/desktop/app";
 
 export type {
@@ -469,7 +475,15 @@ export function createDesktopBackend(
 ): PtyBackend {
   const { desktopExtension, onDesktopEvent } = deps;
   const windowDeps = deps.window ??
-    { openWindow, closeWindow, setWindowTitle, setAppMenu, onAppMenuItem };
+    {
+      openWindow,
+      closeWindow,
+      setWindowTitle,
+      setAppMenu,
+      onAppMenuItem,
+      onCloseRequested,
+      windowCapabilities,
+    };
   const pty = desktopExtension<typeof ptyExtension>("pty");
   const ssh = desktopExtension<typeof sshExtension>("ssh");
   const hub = desktopExtension<typeof hubExtension>("hub");
