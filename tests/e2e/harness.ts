@@ -316,10 +316,66 @@ export interface OpenOptions {
 const DEFAULT_W = 1400;
 const DEFAULT_H = 900;
 
+/** What `App.click` reads back after a press: where it landed while armed for a selector. */
+interface ClickGuard {
+  /** The element the next press is aimed at (null: not armed, every press goes through). */
+  selector: string | null;
+  /** `"ok"` (the press landed on it), a description of what it landed on instead, or null. */
+  landed: string | null;
+}
+
+/**
+ * Installed in every page before the app's own scripts (so its capture listeners run before any
+ * of the app's): while `App.click` has it armed for a selector, a press that lands on anything
+ * but that element is swallowed whole (pointerdown through click), so it sets nothing off, and
+ * `click` aims again. Between the point check and the press arriving the element can still move:
+ * the chip strip's smooth scroll (`scroll-behavior: smooth`, started by the switcher bar after a
+ * focus change) sits still for a frame or more before it moves, so it passes the stillness check.
+ */
+function clickGuardScript(): void {
+  const g: ClickGuard = { selector: null, landed: null };
+  Object.defineProperty(globalThis, "__clickGuard", { value: g });
+  let swallow = false;
+  const block = (e: Event) => {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  };
+  addEventListener("pointerdown", (e) => {
+    swallow = false;
+    if (g.selector === null) return;
+    const el = document.querySelector(g.selector);
+    const t = e.target;
+    if (el && t instanceof Node && el.contains(t)) {
+      g.landed = "ok";
+      return;
+    }
+    const at = t instanceof Element
+      ? `${t.tagName.toLowerCase()}.${[...t.classList].join(".")}${
+        (t.closest("[data-id]") as HTMLElement | null)?.dataset.id
+          ? ` in ${(t.closest("[data-id]") as HTMLElement).dataset.id}`
+          : ""
+      }`
+      : String(t);
+    g.landed = `${at} at ${e.clientX},${e.clientY}`;
+    swallow = true;
+    block(e);
+  }, true);
+  for (const type of ["mousedown", "pointerup", "mouseup", "click"]) {
+    addEventListener(type, (e) => {
+      if (swallow) block(e);
+    }, true);
+  }
+}
+
 /** One page of the app with helpers. Created by `suite` for every case. */
 export class App {
   readonly errors: string[] = [];
   platform: "mac" | "other" = "mac";
+  /**
+   * How long `click` waits between aiming and pressing: a loaded CI runner's round trip, so a
+   * test can make something that moves in that gap move every time.
+   */
+  pressDelayMs = 0;
 
   constructor(
     readonly page: Page,
@@ -365,6 +421,9 @@ export class App {
         value: "reduce",
       }]);
     }
+    await this.cdp.Page.addScriptToEvaluateOnNewDocument({
+      source: `(${clickGuardScript.toString()})();`,
+    });
     await this.page.goto(this.url, { waitUntil: "load" });
     await this.waitReady();
   }
@@ -739,10 +798,41 @@ export class App {
 
   // ---- Input ------------------------------------------------------------------------------
 
-  /** A real mouse click at the centre of the element (scrolled into view first). */
+  /**
+   * A real mouse click at the centre of the element (scrolled into view first). The press must
+   * land on that element: one that lands elsewhere because something moved under the point after
+   * it was checked is swallowed by the page's click guard (`clickGuardScript`) and aimed again.
+   */
   async click(selector: string): Promise<void> {
-    const pt = await this.#clickablePoint(selector);
-    await this.page.mouse.click(pt.x, pt.y);
+    let landed: string | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const pt = await this.#clickablePoint(selector);
+      const armed = await this.eval((s: string) => {
+        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+        if (!g) return false;
+        g.selector = s;
+        g.landed = null;
+        return true;
+      }, selector);
+      if (this.pressDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, this.pressDelayMs));
+      }
+      await this.page.mouse.click(pt.x, pt.y);
+      if (!armed) return;
+      landed = await this.eval(() => {
+        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+        if (!g) return "ok";
+        g.selector = null;
+        return g.landed ?? "nothing";
+      });
+      if (landed === "ok") return;
+      console.warn(
+        `e2e: a click on ${selector} landed on ${landed}; aiming again`,
+      );
+    }
+    throw new Error(
+      `clicking ${selector}: the press kept landing elsewhere (last on ${landed})`,
+    );
   }
 
   /**
