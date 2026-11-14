@@ -440,9 +440,21 @@ export interface LinkSettings {
   editor: string;
   /** The custom command template (`custom`). */
   command: string;
+  /**
+   * Where a ⌘-clicked web link opens: `tile` (a Qutty web tile beside the terminal, when the
+   * engine can show the page; lib/web/engine.ts) or `browser` (always the default browser).
+   */
+  web: WebLinkTarget;
 }
 
-export const DEFAULT_LINKS: LinkSettings = { editor: "auto", command: "" };
+/** Settings → Links → "Open web links in". */
+export type WebLinkTarget = "tile" | "browser";
+
+export const DEFAULT_LINKS: LinkSettings = {
+  editor: "auto",
+  command: "",
+  web: "tile",
+};
 
 const EDITOR_CHOICES = new Set(["auto", "default", "tile", "custom"]);
 
@@ -464,6 +476,7 @@ export function sanitizeLinks(
       MAX_EDITOR_COMMAND,
     );
   }
+  if (r.web === "tile" || r.web === "browser") out.web = r.web;
   return out;
 }
 
@@ -474,7 +487,7 @@ export type EditorChoice =
   | { kind: "default" };
 
 export function editorChoice(
-  settings: LinkSettings,
+  settings: Pick<LinkSettings, "editor" | "command">,
   installed: readonly string[],
 ): EditorChoice {
   switch (settings.editor) {

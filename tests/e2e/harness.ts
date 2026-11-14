@@ -115,6 +115,59 @@ async function serve(dir: string): Promise<Server> {
   };
 }
 
+/** The test pages web tiles load (`serveWebPages`), and every path they were asked for. */
+export interface WebPages extends Server {
+  /** `http://localhost:<port>`: a dev host the iframe engine embeds, not the app's origin. */
+  origin: string;
+  hits: string[];
+}
+
+/**
+ * A tiny site for the web tile tests, on its own port (so its origin is never the app's): `/a`
+ * and `/b` (titled "Page A" / "Page B", each linking to the other) and `/slow` (answers after
+ * `?ms=`). Every request's path is recorded in `hits`, which is how a test knows a page loaded
+ * (the frame is cross-origin: the app cannot look inside it, and neither can the test).
+ */
+export async function serveWebPages(): Promise<WebPages> {
+  const ac = new AbortController();
+  const hits: string[] = [];
+  let resolvePort: (port: number) => void;
+  const port = new Promise<number>((r) => resolvePort = r);
+  const page = (title: string, next: string) =>
+    new Response(
+      `<!doctype html><title>${title}</title><body><h1>${title}</h1>` +
+        `<a href="${next}">next</a></body>`,
+      { headers: { "content-type": "text/html", "cache-control": "no-store" } },
+    );
+  const server = Deno.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    signal: ac.signal,
+    onListen: (addr) => resolvePort(addr.port),
+  }, async (req) => {
+    const url = new URL(req.url);
+    hits.push(url.pathname);
+    if (url.pathname === "/a") return page("Page A", "/b");
+    if (url.pathname === "/b") return page("Page B", "/a");
+    if (url.pathname === "/slow") {
+      await new Promise((r) =>
+        setTimeout(r, Number(url.searchParams.get("ms")))
+      );
+      return page("Slow", "/a");
+    }
+    return new Response("not found", { status: 404 });
+  });
+  return {
+    // `localhost` resolves to 127.0.0.1 in Chromium (it falls back from ::1 to IPv4).
+    origin: `http://localhost:${await port}`,
+    hits,
+    close: async () => {
+      ac.abort();
+      await server.finished;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Polling
 // ---------------------------------------------------------------------------------------------

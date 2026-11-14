@@ -10,8 +10,11 @@ import {
   type JoinedPty,
   loadWorkspaceLayout,
   planRestore,
+  type RestoredTerminalTile,
+  type RestoredTile,
   saveWorkspaceLayout,
   snapshotOf,
+  type TerminalTileSnapshot,
   workspaceLayoutKey,
 } from "../lib/workspace/session.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
@@ -61,6 +64,9 @@ Deno.test("replay: a ring that dropped its start begins at a line break", () => 
   assertEquals([gap.truncated, gap.data, gap.seq], [true, "new\r\n", 4]);
 });
 
+/** A restored tile known to be a terminal's. */
+const term = (t: RestoredTile) => t as RestoredTerminalTile;
+
 const pty = (id: string, extra: Partial<JoinedPty> = {}): JoinedPty => ({
   id,
   cols: 100,
@@ -105,7 +111,7 @@ Deno.test("session: the snapshot carries tiles, order, layout; activity starts c
   assertEquals(snap.seq, 3);
   assertEquals(snap.mru, ["t2", "t3", "t1"]);
   assertEquals(snap.layout.pattern, "columns");
-  assertEquals(snap.tiles.t1.ptyId, "pty-1");
+  assertEquals((snap.tiles.t1 as TerminalTileSnapshot).ptyId, "pty-1");
   assert(snap.terminals.every((t) => !t.activity));
   // It is JSON (it crosses the bridge).
   assertEquals(JSON.parse(JSON.stringify(snap)), snap);
@@ -117,12 +123,15 @@ Deno.test("session: every tile comes back on its PTY, with its order and layout"
     pty("pty-2"),
     pty("pty-3", { exit: { exitCode: 255, signal: null } }),
   ])!;
-  assertEquals(plan.tiles.map((t) => [t.id, t.pty?.id, t.profile.kind]), [
-    ["t1", "pty-1", "shell"],
-    ["t2", "pty-2", "agent"],
-    ["t3", "pty-3", "ssh"],
-  ]);
-  assertEquals(plan.tiles[0].home, "/Users/me");
+  assertEquals(
+    plan.tiles.map(term).map((t) => [t.id, t.pty?.id, t.profile.kind]),
+    [
+      ["t1", "pty-1", "shell"],
+      ["t2", "pty-2", "agent"],
+      ["t3", "pty-3", "ssh"],
+    ],
+  );
+  assertEquals(term(plan.tiles[0]).home, "/Users/me");
   assertEquals(plan.mru, ["t2", "t3", "t1"]);
   assertEquals(plan.layout?.pattern, "columns");
   assertEquals(plan.seq, 3);
@@ -147,9 +156,9 @@ Deno.test("session: a gone PTY leaves its tile ended; an unknown PTY gets a tile
   const plan = planRestore(snapshot(), [pty("pty-1"), pty("pty-9")])!;
   const byId = new Map(plan.terminals.map((t) => [t.id, t]));
   assertEquals(byId.get("t2")?.exited, true);
-  assertEquals(plan.tiles.find((t) => t.id === "t2")?.pty, undefined);
+  assertEquals(plan.tiles.map(term).find((t) => t.id === "t2")?.pty, undefined);
   // pty-9 (started after the last save) gets t4: never a reused id.
-  const t4 = plan.tiles.find((t) => t.pty?.id === "pty-9")!;
+  const t4 = plan.tiles.map(term).find((t) => t.pty?.id === "pty-9")!;
   assertEquals([t4.id, t4.profile.kind, plan.seq], ["t4", "shell", 4]);
   assertEquals(plan.mru.at(-1), "t4");
 });

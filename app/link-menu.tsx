@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from "denext";
 import { moveIndex } from "../lib/launcher.ts";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 
 export interface LinkMenuItem {
   /** `open`, `edit`, `reveal`, `download`, `copy`. */
@@ -24,6 +25,7 @@ export interface LinkMenuProps {
 
 export function LinkMenu(props: LinkMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  useHtmlOverlay();
 
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();

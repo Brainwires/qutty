@@ -6,6 +6,7 @@
 // form going back to the detail view) stops its propagation first.
 
 import type { ReactNode } from "denext";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 
 export interface ModalProps {
   label: string;
@@ -41,6 +42,7 @@ function trapTab(
 }
 
 export function Modal(props: ModalProps) {
+  useHtmlOverlay();
   return (
     <div
       class="modal-backdrop"
