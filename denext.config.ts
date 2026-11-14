@@ -1,4 +1,5 @@
 import type { DenextConfig } from "denext/server";
+import { CLOSE_AND_END_ITEM } from "./lib/workspace/windows.ts";
 
 export default {
   desktop: {
@@ -20,8 +21,8 @@ export default {
       // (desktop/tray.ts).
       keepAlive: true,
       // One running Qutty: launching it again while it runs (in the tray, say) hands the launch
-      // to the running one, which opens a window (desktop.ts, `secondinstance`). macOS does this
-      // itself (the Dock's reopen).
+      // to the running one, which opens a window (desktop.ts, `runDesktop({ onSecondInstance })`).
+      // On macOS a relaunch from Finder or Spotlight is the Dock's reopen (`onDockReopen`).
       singleInstance: true,
       // The workspace windows open at the last quit come back at launch, at their frames (each
       // window's key is its workspace's id; their terminals start afresh, a quit ended them).
@@ -69,9 +70,20 @@ export default {
     // submenu of the closed workspace windows by title, most recent first; the first keeps
     // Cmd+Shift+T) and the open windows, as the Window menu. Denext serves these items with no
     // window open. An ended workspace's key is forgotten (desktop/windows.ts), so it is never
-    // listed. The page adds "Close Window and End Its Shells" (no shortcut) to the same menu
-    // through `setAppMenu` (lib/session-client.ts): `menu.window` takes no custom items.
-    menu: { window: { newWindow: "/", reopenClosed: "list", list: true } },
+    // listed. Qutty's own item, "Close Window and End Its Shells" (no shortcut), reaches the
+    // `session` extension once per click with the key window (`host.onWindowMenuItem`,
+    // desktop/session.ts), never the pages (Denext 4.16).
+    menu: {
+      window: {
+        newWindow: "/",
+        reopenClosed: "list",
+        list: true,
+        items: [{
+          id: CLOSE_AND_END_ITEM,
+          label: "Close Window and End Its Shells",
+        }],
+      },
+    },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned
     // runtime). The page must give itself a drag region (`makeWindowDraggable`). Every opened
     // window (New Window, Reopen Closed Window, the restored session) inherits it (Denext 4.15).
@@ -122,7 +134,7 @@ export default {
       // the extensions use it, each through its own namespace (`ctx.secureStore` /
       // `host.secureStore`: `org.qutty.Qutty/ext/voice`, `org.qutty.Qutty/ext/hub`), which no page
       // can read; the page only sets, clears and asks whether a key is set
-      // (lib/secrets/api-keys.ts). With `secureStore.legacy: false` below and runtime denext.16
+      // (lib/secrets/api-keys.ts). With `secureStore.legacy: false` below and runtime denext.16+
       // (the capability list baked into .deno-desktop/app.json) it bakes no Deno permission on
       // macOS or Linux: no `--allow-run=security`, no `--allow-sys` (Windows, whose store is the
       // PasswordVault through PowerShell, gets `--allow-run=powershell.exe`).

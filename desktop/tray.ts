@@ -20,7 +20,6 @@ import type {
   DesktopWindows,
 } from "denext/desktop";
 import type { WorkspaceInfo, WorkspaceRegistry } from "./workspace-host.ts";
-import { dockReopenWindow } from "./windows.ts";
 import { newWorkspaceId, workspaceWindow } from "../lib/workspace/windows.ts";
 
 type Os = "darwin" | "windows" | "linux";
@@ -135,22 +134,23 @@ export function trayIcons(
   return { icon: "/tray.png", iconDark: "/tray-dark.png" };
 }
 
-/** Quit the app (`Deno.desktop.quit()`): the quit guards run, so a busy agent still asks. */
-export function quitApp(): void {
-  const desktop = (Deno as unknown as { desktop?: { quit?: () => void } })
-    .desktop;
-  try {
-    desktop?.quit?.();
-  } catch (err) {
-    console.error("tray: could not quit", err);
-  }
-}
-
 /** The slice of `DesktopRuntime` tray mode drives. */
 export interface TrayRuntime {
   readonly tray?: Pick<DesktopTrayHandle, "update" | "onMenuItem">;
   readonly windows: Pick<DesktopWindows, "open" | "byKey" | "list">;
   setActivationPolicy(policy: "regular" | "accessory"): boolean;
+  /**
+   * Quit the app (`DesktopRuntime.quit()`): every extension's quit guard runs (desktop.ts adds
+   * none of its own), so the `session` extension still asks about a busy agent.
+   */
+  quit(): Promise<boolean>;
+}
+
+/** Quit through `rt` (see {@linkcode TrayRuntime.quit}); a failure is logged. */
+function quitThrough(rt: Pick<TrayRuntime, "quit">): () => void {
+  return () => {
+    rt.quit().catch((err) => console.error("tray: could not quit", err));
+  };
 }
 
 /** How long a burst of workspace changes is coalesced into one menu update. */
@@ -168,7 +168,7 @@ export class TrayMode {
     | Pick<WorkspaceRegistry, "list" | "lastDetached" | "onChanged">
     | undefined;
   #os: Os = Deno.build.os as Os;
-  #quit: () => void = quitApp;
+  #quit: () => void = () => {};
   /** The app lives in the tray: the last window closed with terminals running. */
   #background = false;
   #menu = "";
@@ -198,7 +198,7 @@ export class TrayMode {
     this.#rt = rt;
     this.#registry = registry;
     this.#os = opts.os ?? (Deno.build.os as Os);
-    this.#quit = opts.quit ?? quitApp;
+    this.#quit = opts.quit ?? quitThrough(rt);
     const tray = rt.tray;
     if (tray) {
       this.#refreshMenu();
@@ -270,17 +270,6 @@ export class TrayMode {
     open.focus();
   }
 
-  /**
-   * A later launch of the app while it runs (Linux and Windows' single-instance lock): with no
-   * window showing, reopen the workspace detached last (or a fresh one), as the Dock does.
-   */
-  relaunched(): void {
-    const rt = this.#rt;
-    if (!rt || !this.#registry) return;
-    const options = dockReopenWindow(this.#registry, rt.windows);
-    if (options) this.#open(options);
-  }
-
   #open(options: DesktopOpenWindowOptions): void {
     this.#regular();
     try {
@@ -301,7 +290,10 @@ export class TrayMode {
     }
   }
 
-  /** A window opened (the tray, the Dock, Reopen Closed Window, New Window, a page). */
+  /**
+   * A window opened (the tray, the Dock, a second launch, Reopen Closed Window, New Window, a
+   * page).
+   */
   windowOpened(): void {
     if (this.#background) this.#regular();
   }

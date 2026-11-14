@@ -189,6 +189,11 @@ function fakeRuntime(opts: { tray?: boolean } = {}) {
       calls.push(`policy ${p}`);
       return true;
     },
+    // `DesktopRuntime.quit()`: the whole quit, every extension's guard included.
+    quit: () => {
+      calls.push("quit");
+      return Promise.resolve(true);
+    },
   };
   return {
     rt,
@@ -339,18 +344,20 @@ Deno.test("TrayMode: the menu follows the workspaces; its items open, focus, reo
   }
 });
 
-Deno.test("TrayMode: a later launch with no window reopens the workspace detached last", () => {
+Deno.test("TrayMode: Quit Qutty and the quit with nothing running go through the runtime's quit (the guards run)", async () => {
   const reg = new WorkspaceRegistry();
   const fake = fakeRuntime();
   const mode = new TrayMode();
-  mode.install(fake.rt, reg, { os: "linux", quit: () => {} });
+  mode.install(fake.rt, reg, { os: "linux" });
   try {
-    withWorkspace(reg, "main", "main", 1);
+    fake.click(TRAY_QUIT);
+    assertEquals(fake.calls, ["quit"]);
+    // The last window closed with nothing running: quit, the same way.
+    withWorkspace(reg, "main", "main", 0);
     reg.windowClosed("main");
-    mode.relaunched();
-    assertEquals(fake.calls, ["open main"]);
-    mode.relaunched(); // a window shows now: nothing new
-    assertEquals(fake.calls, ["open main"]);
+    assertEquals(mode.lastWindowClosed(), "quit");
+    assertEquals(fake.calls, ["quit", "quit"]);
+    await turn();
   } finally {
     mode.uninstall();
   }

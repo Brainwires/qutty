@@ -9,8 +9,32 @@
         "linux": "./icons/app.png"
       },
       "keepAlive": true,
+      "singleInstance": true,
       "restoreWindows": true,
       "maxWindows": 16
+    },
+    "installers": {
+      "publisher": "Brainwires",
+      "email": "155631428+Brainwires@users.noreply.github.com",
+      "description": "A tiling terminal: the terminal you are using gets the most space"
+    },
+    "linux": {
+      "desktopEntry": {
+        "categories": [
+          "System",
+          "TerminalEmulator"
+        ],
+        "keywords": [
+          "terminal",
+          "shell",
+          "console",
+          "command line",
+          "tiling",
+          "ssh"
+        ],
+        "genericName": "Terminal",
+        "startupWMClass": "org.qutty.Qutty"
+      }
     },
     "window": {
       "width": 1600,
@@ -22,7 +46,13 @@
       "window": {
         "newWindow": "/",
         "reopenClosed": "list",
-        "list": true
+        "list": true,
+        "items": [
+          {
+            "id": "qutty:window:close-end",
+            "label": "Close Window and End Its Shells"
+          }
+        ]
       }
     },
     "titleBar": "hiddenInset",
@@ -37,16 +67,24 @@
         "./desktop/ollama.ts",
         "./desktop/links.ts"
       ],
+      "systemStats": true,
       "microphone": {
         "usageDescription": "Qutty listens only while you hold the talk key or the mic button, to turn your speech into text for the companion or the focused tile."
-      }
+      },
+      "secureStore": true
+    },
+    "secureStore": {
+      "legacy": false
     },
     "extraPermissions": {
       "ffi": [
         "*"
       ],
       "netConnect": [
-        "127.0.0.1:11434"
+        "127.0.0.1:11434",
+        "api.deepgram.com",
+        "api.elevenlabs.io",
+        "api.anthropic.com"
       ]
     }
   }

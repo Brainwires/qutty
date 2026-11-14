@@ -3,9 +3,8 @@
   "specifiers": {
     "jsr:@astral/astral@~0.5.3": "0.5.6",
     "jsr:@denext/avif@0.2": "0.2.0",
-    "jsr:@denext/denext@4.15.0": "4.15.0",
-    "jsr:@denext/denext@^4.15.0": "4.15.0",
-    "jsr:@denext/docs-corpus@4.15.0": "4.15.0",
+    "jsr:@denext/denext@^4.16.0": "4.16.0",
+    "jsr:@denext/docs-corpus@4.16.0": "4.16.0",
     "jsr:@denext/lightningcss@^1.0.0-rc.72": "1.0.0-rc.72.1",
     "jsr:@denext/og@~0.1.2": "0.1.2",
     "jsr:@denext/photon@~0.3.6": "0.3.6",
@@ -89,10 +88,9 @@
     "@denext/avif@0.2.0": {
       "integrity": "862466c78ba3bf4c60a24b45fc8c9bfdd9153f6deff0e0846f3eddb56e5661ee"
     },
-    "@denext/denext@4.15.0": {
-      "integrity": "1202a74b7b778dfad4ea4f82e3d492ad9b4cdf60421ba0a222d2e77e93567703",
+    "@denext/denext@4.16.0": {
+      "integrity": "7760234ab2b92e9a00867336c14f5c1c6057fff23b26b6348a8b46f428418561",
       "dependencies": [
-        "jsr:@astral/astral",
         "jsr:@denext/avif",
         "jsr:@denext/docs-corpus",
         "jsr:@denext/lightningcss",
@@ -113,8 +111,8 @@
         "npm:ws"
       ]
     },
-    "@denext/docs-corpus@4.15.0": {
-      "integrity": "1450e385c864fe3859c3a82f7a22302a8f24e93a7e41a3201c3aec0a039343ad"
+    "@denext/docs-corpus@4.16.0": {
+      "integrity": "2c02fb19ecaa1b4ece752ce06b65423e2c8e6e97d215464eedba21affd6ac33e"
     },
     "@denext/lightningcss@1.0.0-rc.72.1": {
       "integrity": "3c719d7987f85f8c35e129cddbc715ad5ca159c209ea9f2e739dea9a33beafb8"
@@ -1675,7 +1673,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
-      "jsr:@denext/denext@^4.15.0",
+      "jsr:@denext/denext@^4.16.0",
       "jsr:@rullama/agent@~0.12.1",
       "jsr:@rullama/core@~0.12.4",
       "jsr:@rullama/inference@~0.12.2",

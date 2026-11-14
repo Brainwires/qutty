@@ -42,3 +42,29 @@ export function forgetEndedWorkspaces(
     }
   });
 }
+
+const WINDOWS_KEY = Symbol.for("qutty.runtimeWindows");
+type RuntimeWindows = Pick<DesktopWindows, "get">;
+const shared = globalThis as Record<symbol, RuntimeWindows | undefined>;
+
+/**
+ * Hand desktop.ts's `DesktopRuntime.windows` to the extensions that close a window themselves (the
+ * `session` extension's "Close Window and End Its Shells"). Kept on `globalThis`, as
+ * desktop/workspace-host.ts's `workspaces` is, in case the loader gave the entry and the extensions
+ * two copies of this module.
+ */
+export function shareRuntimeWindows(windows: RuntimeWindows): void {
+  shared[WINDOWS_KEY] = windows;
+}
+
+/**
+ * Close window `id` for good, without asking its page's close guard (`DesktopWindowRef.close`).
+ * Nothing happens when it is gone, or before desktop.ts shared the runtime's windows.
+ */
+export function closeAppWindow(id: string): void {
+  try {
+    shared[WINDOWS_KEY]?.get(id)?.close();
+  } catch (err) {
+    console.error(`window ${id}: could not close it`, err);
+  }
+}

@@ -92,7 +92,6 @@ import {
   setWindowTitle,
   windowCapabilities,
 } from "denext/desktop/window";
-import { onAppMenuItem, setAppMenu } from "denext/desktop/app";
 
 export type {
   SshCommand,
@@ -479,8 +478,6 @@ export function createDesktopBackend(
       openWindow,
       closeWindow,
       setWindowTitle,
-      setAppMenu,
-      onAppMenuItem,
       onCloseRequested,
       windowCapabilities,
     };

@@ -1,23 +1,20 @@
 // The page side of the workspaces (desktop/session.ts): join the window's workspace (its snapshot
-// and its terminals with their replay), save the snapshot, list / reopen / end workspaces, and the
-// Window menu's "Close Window and End Its Shells" (the quit question is the app process's own,
-// a native message box). `createDesktopSession` talks to the `session` extension;
-// `createDemoSession` is the in-browser stand-in (one workspace, kept while the page lives), so a
+// and its terminals with their replay), save the snapshot, list / reopen / end workspaces, and
+// close this window and end its shells (the Window menu's "Close Window and End Its Shells" and
+// the quit question are the app process's own: desktop/session.ts). `createDesktopSession` talks
+// to the `session` extension; `createDemoSession` is the in-browser stand-in (one workspace, kept while the page lives), so a
 // remount of the workspace (the e2e suite's stand-in for a closed and reopened window) goes
 // through the same restore path.
 //
 // Client-safe: the extension is imported for its types only.
 
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
-import type { AppMenuItem } from "denext/desktop/app";
 import type sessionExtension from "../desktop/session.ts";
 import type { SessionJoin, WorkspaceInfo } from "../desktop/session.ts";
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
-  CLOSE_AND_END_ITEM,
   newWorkspaceId,
-  windowMenu,
   workspaceTitle,
   workspaceWindow,
 } from "./workspace/windows.ts";
@@ -73,18 +70,13 @@ export interface SessionBackend {
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
 }
 
-/**
- * The window and menu calls the desktop session uses (`denext/desktop/window`,
- * `denext/desktop/app`), injectable for tests.
- */
+/** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
 export interface SessionWindowDeps {
   openWindow(
     options: { url: string; key: string; title?: string },
   ): Promise<unknown>;
   closeWindow(): Promise<void>;
   setWindowTitle(title: string): Promise<void>;
-  setAppMenu(menu: readonly AppMenuItem[]): Promise<void>;
-  onAppMenuItem(handler: (id: string) => void): () => void;
   /** `denext/desktop/window`'s `onCloseRequested`. */
   onCloseRequested(
     handler: (
@@ -110,28 +102,6 @@ export function createDesktopSession(deps: {
 }): SessionBackend {
   const ext = deps.desktopExtension<typeof sessionExtension>("session");
   const win = deps.window;
-  /**
-   * Have this window's workspace ended once the window has closed, then close the window
-   * (`menu`: the Window menu's click, which the extension may decline; see its `endWindow`).
-   */
-  const endWindow = async (menu: boolean, confirm = false) => {
-    if ((await ext.endWindow({ menu, confirm })).close) await win.closeWindow();
-  };
-  let menuSet = false;
-  /**
-   * The Window menu's "Close Window and End Its Shells". Denext queues an application-menu click
-   * for every window, even with the main window closed (runtime 3.0.0-denext.16 takes it from
-   * `Deno.desktop`'s app-wide `menuclick`); the `session` extension acts for the window used last
-   * only.
-   */
-  const installMenu = () => {
-    if (menuSet) return;
-    menuSet = true;
-    void win.setAppMenu(windowMenu()).catch(() => {});
-    win.onAppMenuItem((id) => {
-      if (id === CLOSE_AND_END_ITEM) void endWindow(true).catch(() => {});
-    });
-  };
   return {
     multiWindow: true,
     async join() {
@@ -143,7 +113,6 @@ export function createDesktopSession(deps: {
       const title = workspaceTitle(joined.workspace.name);
       if (typeof document !== "undefined") document.title = title;
       void win.setWindowTitle(title).catch(() => {});
-      installMenu();
       return joined;
     },
     save: (snapshot) => ext.save({ snapshot }),
@@ -157,7 +126,11 @@ export function createDesktopSession(deps: {
     async end(id) {
       await ext.end({ id });
     },
-    endWindow: (options) => endWindow(false, options?.confirm === true),
+    // Have this window's workspace ended once the window has closed, then close the window.
+    async endWindow(options) {
+      const confirm = options?.confirm === true;
+      if ((await ext.endWindow({ confirm })).close) await win.closeWindow();
+    },
     closeWindow: () => win.closeWindow(),
     async guardClose(handler) {
       const caps = await win.windowCapabilities().catch(() => null);

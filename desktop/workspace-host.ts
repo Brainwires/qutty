@@ -375,9 +375,9 @@ export class WorkspaceRegistry {
   }
 
   /**
-   * The quit guard: a quit goes ahead when no agent is busy (or the user confirmed it just now).
-   * Otherwise it is cancelled, with the busy agents to ask about (desktop/session.ts asks with
-   * the OS's message box, then answers with {@linkcode answerQuit} and quits again).
+   * The quit guard: a quit goes ahead when no agent is busy (or {@linkcode answerQuit} let it
+   * through just now). Otherwise it is not decided yet, with the busy agents to ask about
+   * (desktop/session.ts asks with the OS's message box and answers the quit with the choice).
    */
   beforeQuit(): QuitDecision {
     const now = this.#now();
@@ -393,7 +393,10 @@ export class WorkspaceRegistry {
     return busy.length === 0 ? { allow: true } : { allow: false, busy };
   }
 
-  /** The user answered the quit question: `true` lets the next quit through. */
+  /**
+   * `true` lets the next quit through without asking (desktop/session.ts, when the question could
+   * not be asked: a runtime without message boxes); `false` takes that back.
+   */
   answerQuit(quit: boolean): void {
     this.#confirmedAt = quit ? this.#now() : undefined;
   }
