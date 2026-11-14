@@ -49,6 +49,7 @@ type ClosedFn = (info: WindowInfo & { appQuitting: boolean }) => unknown;
 export function fakeExtensionHost(open: WindowInfo[] = []) {
   const events: HostEvent[] = [];
   const windows = [...open];
+  const opened = new Set<(info: WindowInfo) => unknown>();
   const closed = new Set<ClosedFn>();
   const quits = new Set<() => unknown>();
   const guards = new Set<() => boolean | Promise<boolean>>();
@@ -72,7 +73,11 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     },
     appSupportDir: "",
     os: Deno.build.os as "darwin" | "linux",
-    onWindowOpened: () => () => {},
+    // As Denext's: first for each window open now, then for each that opens.
+    onWindowOpened: (fn: (info: WindowInfo) => unknown) => {
+      for (const w of windows) fn(w);
+      return on(opened)(fn);
+    },
     onWindowClosed: on(closed),
     onAppQuit: on(quits),
     onBeforeQuit: on(guards),
@@ -102,9 +107,10 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
       const answers = await Promise.all([...guards].map((fn) => fn()));
       return answers.every((ok) => ok !== false);
     },
-    /** Open a window (as `windows.open({ key })`). */
+    /** Open a window (as `windows.open({ key })`): the `onWindowOpened` hooks hear of it. */
     open(info: WindowInfo) {
       windows.push(info);
+      for (const fn of [...opened]) fn(info);
     },
     /** Close window `id` for good (`appQuitting` when the app quits). */
     async close(id: string, appQuitting = false) {

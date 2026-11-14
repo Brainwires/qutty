@@ -18,6 +18,11 @@
 //   (`endOnClose`), so the close never brings it back to Reopen Closed Window. Quitting the app
 //   (Cmd+Q) ends every workspace; when an agent is busy the quit asks first (`beforeQuit`, asked by
 //   desktop/session.ts).
+// - With no window open the app lives in the menu bar / tray (desktop/tray.ts): its menu lists the
+//   workspaces that have terminals and reopens (or focuses) one. Closing the last window keeps the
+//   app there while any terminal runs (macOS hides the Dock icon until a window opens again), and
+//   quits once none does: the last window's "End Shells", or the last detached terminal exiting.
+//   Where there is no tray, the last window's close quits off macOS and leaves a Dock app on macOS.
 //
 // No runtime API is used here (no `Deno.*`), so the whole state machine is tested without a
 // window (tests/workspace_host_test.ts). The singleton {@linkcode workspaces} is shared by the
@@ -31,6 +36,8 @@ export interface WorkspaceInfo {
   state: "attached" | "detached";
   /** How many terminals it has (running, or ended but not closed yet). */
   terminals: number;
+  /** How many of them still run (their shell has not exited). */
+  running: number;
   /** How many of them run an agent that is busy right now. */
   busy: number;
   /** When it was detached (ms since the epoch). */
@@ -72,6 +79,8 @@ export class WorkspaceRegistry {
   readonly #workspaces = new Map<string, Workspace>();
   readonly #byWindow = new Map<string, string>();
   readonly #ptyOwner = new Map<string, string>();
+  /** Terminals whose shell exited (their tile still shows them). */
+  readonly #exited = new Set<string>();
   /** Open windows, most recently focused first. */
   #focus: string[] = [];
   #named = 0;
@@ -206,6 +215,7 @@ export class WorkspaceRegistry {
   removePty(ptyId: string): void {
     const id = this.#ptyOwner.get(ptyId);
     this.#ptyOwner.delete(ptyId);
+    this.#exited.delete(ptyId);
     const ws = id === undefined ? undefined : this.#workspaces.get(id);
     if (!ws) return;
     ws.ptys.delete(ptyId);
@@ -213,6 +223,13 @@ export class WorkspaceRegistry {
     if (ws.ptys.size === 0 && ws.window === undefined) {
       this.#workspaces.delete(ws.id);
     }
+    this.#notify();
+  }
+
+  /** Terminal `ptyId`'s shell exited (its tile keeps it until closed): it no longer runs. */
+  ptyExited(ptyId: string): void {
+    if (!this.#ptyOwner.has(ptyId) || this.#exited.has(ptyId)) return;
+    this.#exited.add(ptyId);
     this.#notify();
   }
 
@@ -259,7 +276,10 @@ export class WorkspaceRegistry {
     this.#endOnClose.delete(id);
     if (ws.window !== undefined) this.#byWindow.delete(ws.window);
     const ptys = [...ws.ptys];
-    for (const p of ptys) this.#ptyOwner.delete(p);
+    for (const p of ptys) {
+      this.#ptyOwner.delete(p);
+      this.#exited.delete(p);
+    }
     for (const fn of [...this.#ended]) {
       try {
         fn(id, ptys);
@@ -328,6 +348,7 @@ export class WorkspaceRegistry {
         name: ws.name,
         state: ws.window === undefined ? "detached" : "attached",
         terminals: ws.ptys.size,
+        running: [...ws.ptys].filter((p) => !this.#exited.has(p)).length,
         busy: [...ws.ptys].filter((p) => busy.has(p)).length,
         ...(ws.detachedAt !== undefined ? { detachedAt: ws.detachedAt } : {}),
       }));
@@ -382,6 +403,7 @@ export class WorkspaceRegistry {
     this.#workspaces.clear();
     this.#byWindow.clear();
     this.#ptyOwner.clear();
+    this.#exited.clear();
     this.#focus = [];
     this.#endOnClose.clear();
     this.#confirmedAt = undefined;

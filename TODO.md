@@ -298,6 +298,16 @@
   - Done: the close button asks whether to keep the window's shells running or
     end them (`onCloseRequested`; app/use-window-close.ts), with "Remember my
     choice" and Settings → Windows → "When a window closes" (ask / keep / end).
+  - Done: tray mode (desktop/tray.ts, Denext's backend tray). The menu-bar /
+    tray icon is always there; its menu has New Window, the workspaces with
+    terminals (open ones checked; the first 15) and Quit Qutty. With the last
+    window closed and terminals running the app lives there (macOS: the
+    `"accessory"` policy, no Dock icon, until a window opens); with none left it
+    quits. Without a tray host the old behaviour stays. Opening Qutty again
+    while it runs brings a window back (macOS: the Dock's reopen; Linux /
+    Windows: `desktop.app.singleInstance` and `secondinstance`).
+  - Denext gap: no `runDesktop({ onSecondInstance })`; desktop.ts listens to the
+    runtime's `Deno.desktop` `secondinstance` itself.
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
   - Denext gaps left (docs/denext-multi-window-proposal.md, "After 4.15"): no

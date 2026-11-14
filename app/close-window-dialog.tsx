@@ -57,7 +57,8 @@ export function CloseWindowDialog(props: CloseWindowDialogProps) {
           </p>
           <p>
             Its shells can keep running in the background (reattach them later
-            with Window → Reopen Closed Window), or end now.
+            with Window → Reopen Closed Window or Qutty's menu-bar / tray icon),
+            or end now.
           </p>
           <label class="field field-check">
             <input
