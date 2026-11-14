@@ -5,12 +5,15 @@
 //
 // It also keeps the hub's labels in step with the tiles' titles (agents see them in
 // `list_peers`): a title that differs from the hub's label is sent after a short pause, so a
-// title that changes on every poll does not flood the bridge.
+// title that changes on every poll does not flood the bridge. The title is the one the tile's
+// header shows (lib/workspace/activity.ts `displayTitle`: the program's own when it set one and
+// Settings → Tiles allows, an agent tool's name kept in front); the hub's names are its own.
 
 import { useCallback, useEffect, useMemo, useState } from "denext";
 import type { TileInfo } from "../lib/hub/protocol.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
+import { displayTitle, type TileTitle } from "../lib/workspace/activity.ts";
 
 /** How long a new title must hold before it is sent to the hub. */
 const LABEL_DEBOUNCE_MS = 500;
@@ -23,6 +26,7 @@ export type HubTileOf = (id: string) => TileInfo | undefined;
 export function useHub(
   manager: TerminalManager | null,
   terminals: TerminalEntry[],
+  tileTitle: TileTitle,
 ): HubTileOf {
   const [tiles, setTiles] = useState<TileInfo[]>([]);
 
@@ -53,14 +57,16 @@ export function useHub(
   );
 
   // Send titles the hub does not have yet (keyed on the titles, not on every activity flag).
-  const titles = terminals.map((t) => `${t.id}\u0000${t.title}`).join("\u0001");
+  const titles = terminals.map((t) =>
+    `${t.id}\u0000${displayTitle(t, tileTitle)}`
+  ).join("\u0001");
   useEffect(() => {
     if (!manager) return;
     const stale: [string, string][] = [];
     for (const entry of terminals) {
       const ptyId = manager.ptyId(entry.id);
       const tile = ptyId ? byPty.get(ptyId) : undefined;
-      const label = entry.title.slice(0, MAX_LABEL);
+      const label = displayTitle(entry, tileTitle).slice(0, MAX_LABEL);
       if (ptyId && tile && label !== "" && tile.label !== label) {
         stale.push([ptyId, label]);
       }

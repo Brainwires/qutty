@@ -6,6 +6,7 @@ import {
   type ColorTheme,
   DEFAULT_THEME_ID,
   isTintId,
+  mixHex,
   RGB_TOKENS,
   rgbTriplet,
   sanitizeThemeId,
@@ -261,4 +262,43 @@ Deno.test("themes: tints map onto the palette, orange between red and yellow", (
   assert(isTintId("green"));
   assert(!isTintId("pink"));
   assert(!isTintId(undefined));
+});
+
+Deno.test("themes: a tile's header text stays legible on every activity tint", async () => {
+  const css = await Deno.readTextFile(
+    join(import.meta.dirname!, "../public/styles.css"),
+  );
+  // Every header tint the stylesheet mixes from an activity colour (`--act`) into --head.
+  const tints = [
+    ...css.matchAll(
+      /color-mix\(in srgb, var\(--act\) (\d+)%, var\(--head\)\)/g,
+    ),
+  ].map((m) => Number(m[1]) / 100);
+  assert(tints.length >= 5, `found ${tints.length} header tints`);
+  for (const theme of THEMES) {
+    const head = theme.chrome["--head"];
+    // The activity colours: the accent (output, busy) and the ANSI yellow, red and green host
+    // tints (attention, failed, done).
+    const colours = [
+      theme.chrome["--accent"],
+      tintColor(theme, "yellow"),
+      tintColor(theme, "red"),
+      tintColor(theme, "green"),
+    ];
+    for (const colour of colours) {
+      // The state colour itself (a border, a dot, the busy line) reads on the header.
+      assertContrast(theme, `activity ${colour}`, colour, head, 3);
+      for (const p of tints) {
+        const bg = mixHex(colour, head, p);
+        assertContrast(theme, `--text on ${bg}`, theme.chrome["--text"], bg, 7);
+        assertContrast(
+          theme,
+          `--text-2 on ${bg}`,
+          theme.chrome["--text-2"],
+          bg,
+          4.5,
+        );
+      }
+    }
+  }
 });

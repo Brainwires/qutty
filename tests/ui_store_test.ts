@@ -265,6 +265,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
   );
   assertEquals(SETTINGS_SECTIONS, [
     "layout",
+    "tiles",
     "theme",
     "font",
     "companion",

@@ -33,7 +33,15 @@ import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
 import { createDemoLinks } from "./links-demo.ts";
 import { fromSystemStats, type SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
-import { demoJob, markedCommand, osc133, runMark } from "./shell-marks-demo.ts";
+import {
+  demoBellDelay,
+  demoJob,
+  demoLater,
+  demoTitle,
+  markedCommand,
+  osc133,
+  runMark,
+} from "./shell-marks-demo.ts";
 import type { OllamaStatus } from "./ollama/cli.ts";
 import type {
   LibraryOrder,
@@ -812,6 +820,12 @@ const DEMO_HELP = [
   `  ${
     fg(81)
   }job${RESET} <s> <exit> <cmd…>  pretend to run cmd for s seconds (Loopy reacts)`,
+  // A tile's activity and program title (lib/shell-marks-demo.ts): a bell now or in s seconds,
+  // text printed in s seconds, the title set (OSC 2, or OSC 0) or cleared.
+  `  ${
+    [["bell", "[s]"], ["later", "<s> <text>"], ["title", "[-0] [text]"]]
+      .map(([c, a]) => `${fg(81)}${c}${RESET} ${a}`).join(", ")
+  }`,
   `  ${
     fg(81)
   }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
@@ -922,6 +936,8 @@ class DemoShell {
   idleTimer: ReturnType<typeof setTimeout> | undefined;
   /** A `job` running (lib/shell-marks-demo.ts): it ends on this timer. */
   jobTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A `bell <seconds>` or `later <seconds> …` waiting to go off. */
+  laterTimer: ReturnType<typeof setTimeout> | undefined;
   /** A command was marked as started (OSC 133 `C`) and not yet as ended. */
   marked = false;
   /** The exit status the running command will end with. */
@@ -1054,6 +1070,27 @@ class DemoShell {
       );
       this.prompt();
     }, job.ms);
+  }
+
+  /**
+   * `bell [seconds]` (BEL) and `later <seconds> <text…>` (a line): `data` written now, or after
+   * `ms` while the prompt is back at once, as a background job's would be. `null`: malformed.
+   */
+  later(ms: number | null, data: string, usage: string): void {
+    if (ms === null) {
+      this.out(`usage: ${usage}\r\n`);
+      this.status = 2;
+      return;
+    }
+    if (ms === 0) {
+      this.out(data);
+      return;
+    }
+    clearTimeout(this.laterTimer);
+    this.laterTimer = setTimeout(() => {
+      this.laterTimer = undefined;
+      if (!this.exited) this.out(data);
+    }, ms);
   }
 
   input(data: string): void {
@@ -1276,6 +1313,19 @@ class DemoShell {
         return;
       case "job":
         return this.startJob(args);
+      case "bell":
+        return this.later(demoBellDelay(args), "\x07", "bell [seconds]");
+      case "later": {
+        const later = demoLater(args);
+        return this.later(
+          later?.ms ?? null,
+          `${later?.text}\r\n`,
+          "later <seconds> <text…>",
+        );
+      }
+      case "title":
+        this.out(demoTitle(args));
+        return;
       case "qutty-hook":
         if (args[0] !== "say") {
           println(
@@ -1357,6 +1407,8 @@ class DemoShell {
     clearTimeout(this.idleTimer);
     clearTimeout(this.jobTimer);
     this.jobTimer = undefined;
+    clearTimeout(this.laterTimer);
+    this.laterTimer = undefined;
   }
 }
 

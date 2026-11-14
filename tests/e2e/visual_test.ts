@@ -125,13 +125,51 @@ suite("visual", (test) => {
         (await app.attr(
           `[data-testid=chip][data-id="${b}"]`,
           "data-activity",
-        )) === "true",
+        )) === "busy",
       4000,
       "activity",
     );
     await app.typeInTerminal(a, "exit\n");
     await app.waitForText(a, "process exited");
     await shot(app, "06-exited-and-activity");
+  }, { width: W, height: H });
+
+  test("screenshot: every activity state, in every theme", async (app) => {
+    const ids = await app.ensureTerminals(5);
+    // One unfocused tile per state (the last one, focused, shows none).
+    const states: [string, string][] = [
+      ["later 1.5 build finished", "output"],
+      ["job 60 0 make all", "busy"],
+      ["bell 1.5", "attention"],
+      ["job 1.5 2 make test", "failed"],
+    ];
+    for (const [i, [command]] of states.entries()) {
+      await app.typeInTerminal(ids[i], `${command}\n`);
+    }
+    await app.focusChip(ids[4]);
+    for (const [i, [, state]] of states.entries()) {
+      await waitFor(
+        async () =>
+          (await app.attr(tileSel(ids[i]), "data-activity")) === state,
+        6000,
+        `${ids[i]} ${state}`,
+      );
+    }
+    for (const theme of THEME_IDS) {
+      await app.openSettings();
+      await app.click(`[data-testid=setting-theme][data-value="${theme}"]`);
+      await waitFor(
+        () =>
+          app.eval(
+            (t: string) => document.documentElement.dataset.theme === t,
+            theme,
+          ),
+        2000,
+        `theme ${theme}`,
+      );
+      await app.closeSettings();
+      await shot(app, `12-activity-${theme}`);
+    }
   }, { width: W, height: H });
 
   test("screenshot: SSH connection manager", async (app) => {

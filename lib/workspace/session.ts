@@ -15,6 +15,7 @@
 import type { LayoutOptions, LayoutPattern } from "../layout/mod.ts";
 import { SHELL_PROFILE, type TerminalProfile } from "../ssh-ui.ts";
 import type { FoldedReplay } from "./replay.ts";
+import { clearSignals } from "./activity.ts";
 import {
   PATTERNS,
   type SettingsStorage,
@@ -102,8 +103,9 @@ export function snapshotOf(
   return {
     v: 1,
     seq,
-    // Activity is a "since you looked" hint: it starts clear when the workspace is shown again.
-    terminals: state.terminals.map((t) => ({ ...t, activity: false })),
+    // Activity is a "since you looked" hint: it starts clear when the workspace is shown again,
+    // and a program's title comes back only if its replay sets it again.
+    terminals: state.terminals.map(clearSignals),
     mru: [...state.mru],
     layout: { ...state.settings.layout },
     previousPattern: state.previousPattern,
@@ -142,7 +144,7 @@ function entryOf(v: unknown): TerminalEntry | undefined {
     typeof x === "number" && Number.isFinite(x) ? x : d;
   const { minimized: _m, ...entry } = v as unknown as TerminalEntry;
   return {
-    ...entry,
+    ...clearSignals(entry),
     createdAt: num(v.createdAt, 0),
     lastUsedAt: num(v.lastUsedAt, 0),
     exited: v.exited === true,

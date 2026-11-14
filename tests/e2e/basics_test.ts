@@ -144,6 +144,33 @@ suite("basics", (test) => {
 
   // ---- Close --------------------------------------------------------------------------------
 
+  test("close: the close button of an unfocused tile closes it (it is not focused first)", async (app) => {
+    await app.ensureTerminals(3);
+    const focused = (await app.focusedId())!;
+    const target = (await app.mru())[1];
+    assert(target && target !== focused);
+    const ptyId = (await app.terminal(target))!.ptyId!;
+    // Held like a real click: focusing the tile on press would move it to the top slot before
+    // the release, so the click would miss the button.
+    await app.slowClick(
+      `[data-testid=tile][data-id="${target}"] [data-testid=tile-close]`,
+    );
+    await waitFor(
+      async () => !(await app.tiles()).some((t) => t.id === target),
+      3000,
+      "the unfocused tile closed",
+    );
+    assertEquals(await app.terminal(target), null);
+    // The focused tile keeps the focus: closing another tile does not move it.
+    assertEquals(await app.focusedId(), focused);
+    await waitFor(
+      async () => (await app.kills()).includes(ptyId),
+      3000,
+      "its PTY killed",
+    );
+    await app.assertLayoutMatches();
+  });
+
   test("close: via the tile close button kills the PTY and re-tiles", async (app) => {
     await app.ensureTerminals(3);
     const target = (await app.focusedId())!;
@@ -272,26 +299,30 @@ suite("basics", (test) => {
 
   // ---- Activity -----------------------------------------------------------------------------
 
-  test("activity: output in an unfocused terminal marks its chip; focus clears it", async (app) => {
+  test("activity: a command running in an unfocused terminal marks its chip; focus clears it", async (app) => {
     const a = (await app.focusedId())!;
     const b = await app.newTerminal();
-    // `top` redraws every second: delayed output that arrives after focus moves away.
+    // `top` redraws every second, and the shell marks it as a running command (busy, which
+    // outranks its output; tests/e2e/activity_test.ts covers every state).
     await app.typeInTerminal(b, "top\n");
     await app.waitForText(b, "demo top");
     await app.focusChip(a);
     const chipB = `[data-testid=chip][data-id="${b}"]`;
     await waitFor(
-      async () => (await app.attr(chipB, "data-activity")) === "true",
+      async () => (await app.attr(chipB, "data-activity")) === "busy",
       4000,
       "activity on the background chip",
     );
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${a}"]`, "data-activity"),
-      "false",
+      "none",
     );
-    assert(await app.exists(`[data-testid=tile][data-id="${b}"].has-activity`));
+    assertEquals(
+      await app.attr(`[data-testid=tile][data-id="${b}"]`, "data-activity"),
+      "busy",
+    );
     await app.focusChip(b);
-    assertEquals(await app.attr(chipB, "data-activity"), "false");
+    assertEquals(await app.attr(chipB, "data-activity"), "none");
     // Quit top; the prompt comes back.
     await app.typeInTerminal(b, "q");
     await waitFor(
@@ -308,11 +339,11 @@ suite("basics", (test) => {
     await app.waitForText(b, "line 3000");
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${b}"]`, "data-activity"),
-      "false",
+      "none",
     );
     assertEquals(
       await app.attr(`[data-testid=chip][data-id="${a}"]`, "data-activity"),
-      "false",
+      "none",
     );
   });
 });

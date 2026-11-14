@@ -263,7 +263,8 @@ export interface ChipInfo {
   minimized: boolean;
   focused: boolean;
   exited: boolean;
-  activity: boolean;
+  /** Its tile's activity state (`none`, `output`, `busy`, `attention`, `failed`, `done`). */
+  activity: string;
 }
 
 export interface TileInfo {
@@ -456,7 +457,7 @@ export class App {
         minimized: el.dataset.minimized === "true",
         focused: el.dataset.focused === "true",
         exited: el.dataset.exited === "true",
-        activity: el.dataset.activity === "true",
+        activity: el.dataset.activity ?? "none",
       }))
     );
   }
@@ -740,6 +741,26 @@ export class App {
 
   /** A real mouse click at the centre of the element (scrolled into view first). */
   async click(selector: string): Promise<void> {
+    const pt = await this.#clickablePoint(selector);
+    await this.page.mouse.click(pt.x, pt.y);
+  }
+
+  /**
+   * A click held as a person holds one: press on `selector` once it is clickable, wait `holdMs`
+   * (whatever the press set off, such as a tile moving, happens meanwhile), then release at the
+   * same point. `click()` presses and releases at once, before anything can move.
+   */
+  async slowClick(selector: string, holdMs = 250): Promise<void> {
+    const pt = await this.#clickablePoint(selector);
+    const mouse = this.page.mouse;
+    await mouse.move(pt.x, pt.y);
+    await mouse.down();
+    await new Promise((r) => setTimeout(r, holdMs));
+    await mouse.up();
+  }
+
+  /** Where to click `selector`: its centre, once it has stopped moving and nothing covers it. */
+  async #clickablePoint(selector: string): Promise<{ x: number; y: number }> {
     // Wait until the element stops moving (chips glide with FLIP, tiles transition) so the
     // click lands on it and not on whatever is passing under that point.
     const pt = await waitFor(
@@ -750,12 +771,19 @@ export class App {
               const el = document.querySelector(s);
               if (!el) return resolve(null);
               // A running transition/animation on the element or an ancestor (a chip's FLIP glide,
-              // a tile's re-layout) means it is about to move, even if two frames look alike.
+              // a tile's re-layout) means it is about to move, even if two frames look alike. One
+              // that only paints (a tile's activity shimmer or fading tint) moves nothing.
+              const MOVES =
+                /^(transform|translate|scale|rotate|width|height|top|left|right|bottom|opacity)$/;
               const moving = () =>
                 document.getAnimations().some((a) => {
-                  const t = (a.effect as KeyframeEffect | null)?.target;
+                  const fx = a.effect as KeyframeEffect | null;
+                  const t = fx?.target;
                   return a.playState === "running" && !!t &&
-                    (t === el || t.contains(el));
+                    (t === el || t.contains(el)) &&
+                    fx!.getKeyframes().some((k) =>
+                      Object.keys(k).some((p) => MOVES.test(p))
+                    );
                 });
               if (moving()) return resolve(null);
               // Instant: the chip strip scrolls smoothly, and re-polling would restart that.
@@ -793,7 +821,21 @@ export class App {
       4000,
       `${selector} to be clickable`,
     );
-    await this.page.mouse.click(pt.x, pt.y);
+    return pt;
+  }
+
+  /** Pick `value` in the `<select>` at `selector` (as the user would: input, then change). */
+  async choose(selector: string, value: string): Promise<void> {
+    await this.eval(
+      (s: string, v: string) => {
+        const el = document.querySelector<HTMLSelectElement>(s)!;
+        el.value = v;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      selector,
+      value,
+    );
   }
 
   /** A real click at a viewport point. */
