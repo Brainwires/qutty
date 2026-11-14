@@ -142,6 +142,11 @@ export interface TerminalEntry {
   web?: WebPage;
   /** Output arrived while the terminal was not focused (cleared on focus). */
   activity: boolean;
+  /**
+   * Minimized to the switcher bar: left out of the layout and of focus cycling, its shell (or
+   * page) still running. Restoring it (its chip, `focus`, `restoreTile`) tiles it again.
+   */
+  minimized?: boolean;
 }
 
 /** An agent tool a tile runs (lib/launcher.ts). */
@@ -187,9 +192,12 @@ export interface Settings extends FontSettings {
 export interface WorkspaceState {
   /** In creation order. */
   terminals: TerminalEntry[];
-  /** Most recently used first; `mru[0]` is the focused terminal. */
+  /**
+   * Most recently used first, the shown tiles ahead of the minimized ones; `mru[0]` is the
+   * focused terminal unless every tile is minimized.
+   */
   mru: string[];
-  /** Always `mru[0] ?? null` (kept as a field for readability at call sites). */
+  /** The first tile in `mru` that is not minimized, else `null` ({@linkcode shownFocus}). */
   focusedId: string | null;
   settings: Settings;
   /** The pattern to return to when monocle is toggled off; `null` when monocle was picked directly. */
@@ -236,6 +244,15 @@ export type WorkspaceAction =
   | { type: "setLayout"; patch: Partial<LayoutOptions> }
   | { type: "cyclePattern"; dir?: 1 | -1 }
   | { type: "toggleMonocle" }
+  /** A tile's Minimize: out of the layout, into the switcher bar (its shell keeps running). */
+  | { type: "minimize"; id: string; now: number }
+  /** A tile's Maximize: focus it and show it alone (monocle, remembering the pattern). */
+  | { type: "maximize"; id: string; now: number }
+  /**
+   * A tile's Restore: back into the tiled layout, focused, from whichever state it is in
+   * (minimized, or maximized in monocle: monocle is left for the pattern it replaced).
+   */
+  | { type: "restoreTile"; id: string; now: number }
   | { type: "setBarPosition"; position: BarPosition }
   | { type: "cycleBarPosition" }
   | { type: "setBarOrder"; order: BarOrder }
@@ -471,6 +488,35 @@ function withFont(
 // Selectors
 // ---------------------------------------------------------------------------------------------
 
+/** The ids of the minimized tiles. */
+function minimizedIds(terminals: readonly TerminalEntry[]): Set<string> {
+  return new Set(terminals.filter((t) => t.minimized).map((t) => t.id));
+}
+
+/** The MRU order of the tiles that are not minimized: what the layout tiles and cycling walks. */
+export function shownMru(
+  state: {
+    readonly terminals: readonly TerminalEntry[];
+    readonly mru: readonly string[];
+  },
+): string[] {
+  const min = minimizedIds(state.terminals);
+  return state.mru.filter((id) => !min.has(id));
+}
+
+/** The tile that has the focus: the most recently used one not minimized (`null`: none). */
+export function shownFocus(
+  terminals: readonly TerminalEntry[],
+  mru: readonly string[],
+): string | null {
+  return shownMru({ terminals, mru })[0] ?? null;
+}
+
+/** Whether tile `id` is the one shown alone in monocle (its header offers Restore). */
+export function isMaximized(state: WorkspaceState, id: string): boolean {
+  return state.settings.layout.pattern === "monocle" && state.focusedId === id;
+}
+
 /** Terminal ids in the order the switcher bar shows them. */
 export function barOrderIds(state: WorkspaceState): string[] {
   return state.settings.barOrder === "mru"
@@ -505,6 +551,79 @@ function withFocus(
   };
 }
 
+/** The pattern monocle goes back to when nothing (or monocle itself) was remembered. */
+const DEFAULT_TILED_PATTERN: LayoutPattern =
+  DEFAULT_LAYOUT_OPTIONS.pattern === "monocle"
+    ? "cascade"
+    : DEFAULT_LAYOUT_OPTIONS.pattern;
+
+function withPattern(
+  state: WorkspaceState,
+  pattern: LayoutPattern,
+  previousPattern: LayoutPattern | null,
+): WorkspaceState {
+  return {
+    ...state,
+    settings: {
+      ...state.settings,
+      layout: { ...state.settings.layout, pattern },
+    },
+    previousPattern,
+  };
+}
+
+/** Show the focused tile alone, remembering the pattern to go back to (Mod+Enter, Maximize). */
+function enterMonocle(state: WorkspaceState): WorkspaceState {
+  const { pattern } = state.settings.layout;
+  if (pattern === "monocle") return state;
+  return withPattern(state, "monocle", pattern);
+}
+
+/** Back to the remembered tiled pattern (else the default one): Mod+Enter, Restore. */
+function leaveMonocle(state: WorkspaceState): WorkspaceState {
+  if (state.settings.layout.pattern !== "monocle") return state;
+  const prev = state.previousPattern;
+  return withPattern(
+    state,
+    prev && prev !== "monocle" ? prev : DEFAULT_TILED_PATTERN,
+    null,
+  );
+}
+
+/** Tile `id` with `minimized` set to `on`, moved to the end of the MRU when minimized. */
+function setMinimized(
+  state: WorkspaceState,
+  id: string,
+  on: boolean,
+): WorkspaceState {
+  const entry = state.terminals.find((t) => t.id === id);
+  if (!entry || (entry.minimized === true) === on) return state;
+  const terminals = state.terminals.map((t) => {
+    if (t.id !== id) return t;
+    if (on) return { ...t, minimized: true };
+    const { minimized: _m, ...rest } = t;
+    return rest;
+  });
+  const mru = on ? [...state.mru.filter((x) => x !== id), id] : state.mru;
+  return {
+    ...state,
+    terminals,
+    mru,
+    focusedId: shownFocus(terminals, mru),
+    cycle: null,
+  };
+}
+
+/** Restore tile `id` into the tiled layout and focus it (leaving monocle). */
+function restoreTile(
+  state: WorkspaceState,
+  id: string,
+  now: number,
+): WorkspaceState {
+  if (!state.terminals.some((t) => t.id === id)) return state;
+  return leaveMonocle(withFocus(setMinimized(state, id, false), id, now));
+}
+
 function updateTerminal(
   state: WorkspaceState,
   id: string,
@@ -519,6 +638,18 @@ function updateTerminal(
     return changed ? { ...t, ...patch } : t;
   });
   return changed ? { ...state, terminals } : state;
+}
+
+/** `focus`: a shown tile is focused; a minimized one is restored (as its chip does). */
+function focusOrRestore(
+  state: WorkspaceState,
+  id: string,
+  now: number,
+): WorkspaceState {
+  const entry = state.terminals.find((t) => t.id === id);
+  return entry?.minimized
+    ? restoreTile(state, id, now)
+    : withFocus(state, id, now);
 }
 
 /** The pure state transition. Unknown ids and no-op changes return the same state object. */
@@ -555,27 +686,31 @@ export function reduce(
     case "remove": {
       if (!state.terminals.some((t) => t.id === action.id)) return state;
       const mru = state.mru.filter((x) => x !== action.id);
+      const terminals = state.terminals.filter((t) => t.id !== action.id);
       return {
         ...state,
-        terminals: state.terminals.filter((t) => t.id !== action.id),
+        terminals,
         mru,
-        focusedId: mru[0] ?? null,
+        focusedId: shownFocus(terminals, mru),
         cycle: null,
       };
     }
     case "focus":
-      return withFocus(state, action.id, action.now);
+      return focusOrRestore(state, action.id, action.now);
     case "focusPrevious": {
-      const prev = state.mru[1];
+      const prev = shownMru(state)[1];
       return prev === undefined ? state : withFocus(state, prev, action.now);
     }
     case "focusOrdinal": {
+      // A minimized tile's chip counts too: focusing it restores it.
       const id = barOrderIds(state)[action.ordinal - 1];
-      return id === undefined ? state : withFocus(state, id, action.now);
+      return id === undefined ? state : focusOrRestore(state, id, action.now);
     }
     case "cycle": {
-      if (state.mru.length < 2) return state;
-      const cycle = state.cycle ?? { order: state.mru, index: 0 };
+      // Minimized tiles are out of the cycle (as they are out of the layout).
+      const shown = shownMru(state);
+      if (shown.length < 2) return state;
+      const cycle = state.cycle ?? { order: shown, index: 0 };
       const n = cycle.order.length;
       const index = (cycle.index + action.dir + n) % n;
       const id = cycle.order[index];
@@ -648,28 +783,24 @@ export function reduce(
         previousPattern: null,
       };
     }
-    case "toggleMonocle": {
-      const { pattern } = state.settings.layout;
-      if (pattern === "monocle") {
-        const back = state.previousPattern ?? "cascade";
-        return {
-          ...state,
-          settings: {
-            ...state.settings,
-            layout: { ...state.settings.layout, pattern: back },
-          },
-          previousPattern: null,
-        };
-      }
-      return {
-        ...state,
-        settings: {
-          ...state.settings,
-          layout: { ...state.settings.layout, pattern: "monocle" },
-        },
-        previousPattern: pattern,
-      };
+    case "toggleMonocle":
+      return state.settings.layout.pattern === "monocle"
+        ? leaveMonocle(state)
+        : enterMonocle(state);
+    case "minimize":
+      return setMinimized(state, action.id, true);
+    case "maximize": {
+      if (!state.terminals.some((t) => t.id === action.id)) return state;
+      // In monocle already (another tile picked from the switcher): it is just focused.
+      const focused = withFocus(
+        setMinimized(state, action.id, false),
+        action.id,
+        action.now,
+      );
+      return enterMonocle(focused);
     }
+    case "restoreTile":
+      return restoreTile(state, action.id, action.now);
     case "setBarPosition":
       if (state.settings.barPosition === action.position) return state;
       return {
@@ -810,12 +941,21 @@ export function reduce(
       };
     case "restore": {
       const ids = new Set(action.terminals.map((t) => t.id));
-      const mru = action.mru.filter((id) => ids.has(id));
+      const terminals = action.terminals.map(({ minimized, ...t }) =>
+        minimized === true ? { ...t, minimized: true } : t
+      );
+      // The shown tiles first, then the minimized ones (each in its own MRU order).
+      const min = minimizedIds(terminals);
+      const known = action.mru.filter((id) => ids.has(id));
+      const mru = [
+        ...known.filter((id) => !min.has(id)),
+        ...known.filter((id) => min.has(id)),
+      ];
       return {
         ...state,
-        terminals: action.terminals.map((t) => ({ ...t })),
+        terminals,
         mru,
-        focusedId: mru[0] ?? null,
+        focusedId: shownFocus(terminals, mru),
         cycle: null,
         previousPattern: action.previousPattern,
         settings: action.layout

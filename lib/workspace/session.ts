@@ -140,13 +140,16 @@ function entryOf(v: unknown): TerminalEntry | undefined {
   }
   const num = (x: unknown, d: number) =>
     typeof x === "number" && Number.isFinite(x) ? x : d;
+  const { minimized: _m, ...entry } = v as unknown as TerminalEntry;
   return {
-    ...(v as unknown as TerminalEntry),
+    ...entry,
     createdAt: num(v.createdAt, 0),
     lastUsedAt: num(v.lastUsedAt, 0),
     exited: v.exited === true,
     exitCode: typeof v.exitCode === "number" ? v.exitCode : null,
     activity: false,
+    // A minimized tile comes back minimized (in the switcher bar, its shell running).
+    ...(v.minimized === true ? { minimized: true } : {}),
   };
 }
 

@@ -1,5 +1,9 @@
 import type { DenextConfig } from "denext/server";
-import { CLOSE_AND_END_ITEM } from "./lib/workspace/windows.ts";
+import {
+  CLOSE_AND_END_ITEM,
+  MINIMIZE_TILE_ITEM,
+  ZOOM_TILE_ITEM,
+} from "./lib/workspace/windows.ts";
 
 export default {
   desktop: {
@@ -72,16 +76,22 @@ export default {
     // window open. An ended workspace's key is forgotten (desktop/windows.ts), so it is never
     // listed. Qutty's own item, "Close Window and End Its Shells" (no shortcut), reaches the
     // `session` extension once per click with the key window (`host.onWindowMenuItem`,
-    // desktop/session.ts), never the pages (Denext 4.16).
+    // desktop/session.ts), never the pages (Denext 4.16). "Minimize Tile" and "Zoom Tile" (no
+    // shortcuts) arrive there too and are handed on to the key window's page, which acts on its
+    // focused tile. The items are static (no enabled state): Zoom Tile maximizes the focused tile,
+    // or restores it to the tiled layout when it is maximized.
     menu: {
       window: {
         newWindow: "/",
         reopenClosed: "list",
         list: true,
-        items: [{
-          id: CLOSE_AND_END_ITEM,
-          label: "Close Window and End Its Shells",
-        }],
+        items: [
+          { id: CLOSE_AND_END_ITEM, label: "Close Window and End Its Shells" },
+          // The focused tile's Minimize and Zoom (maximize / restore), as the window's own
+          // Minimize and Zoom above them; no shortcuts (⌘M stays the window's).
+          { id: MINIMIZE_TILE_ITEM, label: "Minimize Tile" },
+          { id: ZOOM_TILE_ITEM, label: "Zoom Tile" },
+        ],
       },
     },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned

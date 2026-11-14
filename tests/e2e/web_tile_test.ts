@@ -345,6 +345,64 @@ suite("web tiles", (test) => {
     });
   });
 
+  test("minimize / restore: the web tile keeps its page (never reloaded)", async (app) => {
+    await withPages(async (pages) => {
+      const { term, web, url } = await openPageA(app, pages);
+      const frame = `${tileSel(web)} [data-testid=web-frame]`;
+      // Mark the frame element: the same element must be there after the restore.
+      await app.eval((sel: string) => {
+        document.querySelector<HTMLElement>(sel)!.dataset.e2eMark = "kept";
+      }, frame);
+      const hits = pages.hits.length;
+      await app.click(`${tileSel(web)} [data-testid=tile-minimize]`);
+      await waitFor(
+        async () => (await app.attr(tileSel(web), "data-phase")) === "parked",
+        3000,
+        "the web tile parked",
+      );
+      assertEquals(await app.focusedId(), term);
+      assertEquals(await app.attr(frame, "data-e2e-mark"), "kept", "mounted");
+      assertEquals(
+        await app.attr(
+          `[data-testid=chip][data-id="${web}"]`,
+          "data-minimized",
+        ),
+        "true",
+      );
+      await app.focusChip(web);
+      await waitFor(
+        async () => (await app.attr(tileSel(web), "data-phase")) === "shown",
+        3000,
+        "the web tile shown",
+      );
+      assertEquals(await app.attr(frame, "data-e2e-mark"), "kept");
+      assertEquals(await frameSrc(app, web), url);
+      await new Promise((r) => setTimeout(r, 300));
+      assertEquals(pages.hits.length, hits, "the page was not loaded again");
+      assertEquals(
+        await app.attr(
+          `${tileSel(web)} [data-testid=tile-maximize]`,
+          "aria-label",
+        ),
+        "Maximize web tile",
+      );
+    });
+  });
+
+  test("double click on the address field does not zoom the web tile", async (app) => {
+    await withPages(async (pages) => {
+      const { web } = await openPageA(app, pages);
+      await app.settle();
+      const r =
+        (await app.rectOf(`${tileSel(web)} [data-testid=web-address]`))!;
+      await app.page.mouse.click(r.x + r.width / 2, r.y + r.height / 2, {
+        count: 2,
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      assertEquals(await app.pattern(), "cascade");
+    });
+  });
+
   test("closing a web tile gives the keyboard back to the terminal", async (app) => {
     await withPages(async (pages) => {
       const { term, web } = await openPageA(app, pages);

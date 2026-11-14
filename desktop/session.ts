@@ -8,7 +8,9 @@
 //
 // The Window menu's "Close Window and End Its Shells" (`desktop.menu.window.items`) arrives here
 // once per click with the key window (`host.onWindowMenuItem`): its workspace is ended and the
-// window closed, after asking when an agent there is busy.
+// window closed, after asking when an agent there is busy. Its tile items ("Minimize Tile",
+// "Zoom Tile") go on to the key window's page as a `tileMenu` event (`tileMenuToPage`): the page
+// acts on its focused tile.
 //
 // The quit guard lives here too: Cmd+Q kills every terminal, so with an agent at work the OS's own
 // message box asks first (`host.confirm`, app-modal: it works with no window open), and the guard
@@ -17,7 +19,8 @@
 // The window lifecycle goes to tray mode (desktop/tray.ts): closing the last window leaves the app
 // in the menu bar / tray while terminals run, and quits when none does.
 //
-// Events: `changed` (the workspace list, to every window).
+// Events: `changed` (the workspace list, to every window); `tileMenu` (a Window-menu tile item,
+// to the key window only).
 
 import {
   defineDesktopExtension,
@@ -34,7 +37,10 @@ import {
 import { terminalSessions } from "./pty.ts";
 import { type TrayMode, trayMode } from "./tray.ts";
 import { closeAppWindow } from "./windows.ts";
-import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
+import {
+  CLOSE_AND_END_ITEM,
+  isTileMenuItem,
+} from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 
 export type { PtyReplay, WorkspaceInfo };
@@ -277,11 +283,38 @@ export function closeAndEndFromMenu(
   });
 }
 
+/** What the key window's page gets for a Window-menu tile item. */
+export interface TileMenuEvent {
+  item: string;
+  /**
+   * When it was sent (ms since the epoch). Denext replays retained events to a page that
+   * subscribes later (a reload), so the page drops one older than `TILE_MENU_MAX_AGE_MS`
+   * (lib/workspace/windows.ts) rather than act on a stale click.
+   */
+  at: number;
+}
+
+/**
+ * The Window menu's tile items ("Minimize Tile", "Zoom Tile"): each click is handed to the key
+ * window's page (`tileMenu`), which acts on its focused tile. With no window open nothing happens.
+ * Returns the unsubscribe.
+ */
+export function tileMenuToPage(
+  host: Pick<DesktopExtensionHost, "onWindowMenuItem" | "emit">,
+  now: () => number = Date.now,
+): () => void {
+  return host.onWindowMenuItem((item, { keyWindow }) => {
+    if (!isTileMenuItem(item) || !keyWindow) return;
+    const event: TileMenuEvent = { item, at: now() };
+    host.emit("tileMenu", event, { window: keyWindow.id });
+  });
+}
+
 let endWindow: EndWindow | undefined;
 
 export default defineDesktopExtension({
   name: "session",
-  events: ["changed"],
+  events: ["changed", "tileMenu"],
   setup: (host) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     workspaces.onChanged(() => {
@@ -296,6 +329,7 @@ export default defineDesktopExtension({
     const ask = createAskEnd(host);
     endWindow = createEndWindow(ask);
     closeAndEndFromMenu(host, ask);
+    tileMenuToPage(host);
   },
   methods: {
     /** Show the calling window's workspace: its snapshot and its terminals, attached here. */

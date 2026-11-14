@@ -240,6 +240,7 @@ kbd {
   font-size: 10.5px;
 }
 .tile-close,
+.tile-ctl,
 .chip-close {
   appearance: none;
   border: 0;
@@ -255,6 +256,9 @@ kbd {
 }
 .tile:hover .tile-close,
 .tile.is-focused .tile-close,
+.tile:hover .tile-ctl,
+.tile.is-focused .tile-ctl,
+.tile-ctl:focus-visible,
 .chip:hover .chip-close,
 .chip.is-focused .chip-close,
 .tile-close:focus-visible,
@@ -265,6 +269,21 @@ kbd {
 .chip-close:hover {
   background: rgba(var(--red-rgb), 0.18);
   color: var(--red);
+}
+/* Minimize and Maximize / Restore: the close button's size and fade, a neutral hover. */
+.tile-ctl {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+.tile-ctl svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+.tile-ctl:hover {
+  background: rgba(var(--hi-rgb), 0.1);
+  color: var(--text);
 }
 
 .tile-body {
@@ -507,6 +526,22 @@ kbd {
   color: var(--text-3);
 }
 .chip.is-overflow:hover {
+  color: var(--text-2);
+}
+/* Minimized: put away on purpose, unlike overflow: no border, dimmed, a bar under the title
+   (the minimize glyph). */
+.chip.is-minimized {
+  border-color: transparent;
+  color: var(--text-3);
+  opacity: 0.75;
+}
+.chip.is-minimized .chip-title {
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+.chip.is-minimized:hover {
+  opacity: 1;
   color: var(--text-2);
 }
 .chip.is-focused {
@@ -978,6 +1013,10 @@ kbd {
 }
 .empty p {
   margin: 0;
+}
+.empty.is-minimized {
+  color: var(--text-3);
+  pointer-events: none;
 }
 .btn-primary {
   appearance: none;

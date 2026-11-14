@@ -47,6 +47,26 @@ export function workspaceWindow(
  */
 export const CLOSE_AND_END_ITEM = "qutty:window:close-end";
 
+/**
+ * The Window menu's "Minimize Tile" (no keyboard shortcut: ⌘M stays the window's): the key
+ * window's focused tile goes to the switcher bar. Its click reaches the `session` extension,
+ * which hands it to that window's page (`tileMenu`, desktop/session.ts).
+ */
+export const MINIMIZE_TILE_ITEM = "qutty:tile:minimize";
+/**
+ * The Window menu's "Zoom Tile" (no shortcut): the focused tile is maximized (shown alone), or
+ * restored to the tiled layout when it is maximized already, as the window menu's Zoom does.
+ */
+export const ZOOM_TILE_ITEM = "qutty:tile:zoom";
+
+/** The tile items of the Window menu, as the page gets them. */
+export type TileMenuItem = typeof MINIMIZE_TILE_ITEM | typeof ZOOM_TILE_ITEM;
+
+/** Whether a Window-menu item id is one of the tile items. */
+export function isTileMenuItem(id: unknown): id is TileMenuItem {
+  return id === MINIMIZE_TILE_ITEM || id === ZOOM_TILE_ITEM;
+}
+
 /** A workspace window's title (its label in the Window menu's lists). */
 export function workspaceTitle(name: string): string {
   return `Qutty — ${name}`;
@@ -137,4 +157,18 @@ export function createCloseGuard(deps: CloseGuardDeps): {
       busy = false;
     },
   };
+}
+
+/**
+ * How old a Window-menu tile event may be when the page gets it. Denext replays retained events
+ * to a page that subscribes later, so after a reload an old "Minimize Tile" click would otherwise
+ * act again.
+ */
+export const TILE_MENU_MAX_AGE_MS = 2000;
+
+/** Whether a tile menu event sent at `at` is still fresh at `now` (both ms since the epoch). */
+export function isFreshTileMenu(at: unknown, now: number): boolean {
+  return typeof at === "number" && Number.isFinite(at) &&
+    now - at >= -TILE_MENU_MAX_AGE_MS &&
+    now - at <= TILE_MENU_MAX_AGE_MS;
 }

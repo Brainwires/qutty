@@ -26,7 +26,10 @@ import {
   useRef,
   useState,
 } from "denext";
-import { makeWindowDraggable } from "denext/desktop/window";
+import {
+  getTitleBarPreferences,
+  makeWindowDraggable,
+} from "denext/desktop/window";
 import { computeLayout, type Rect } from "../lib/layout/mod.ts";
 import { getPtyBackend, isDesktop } from "../lib/pty-client.ts";
 import { TerminalManager } from "../lib/terminal-manager.ts";
@@ -52,12 +55,19 @@ import { terminalFontOptions } from "../lib/workspace/fonts.ts";
 import { applyChromeTheme, themeById } from "../lib/workspace/themes.ts";
 import {
   initialState,
+  isMaximized,
   loadSettings,
   reduce,
   saveSettings,
   SETTINGS_STORAGE_KEY,
+  shownMru,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
+import {
+  headDoubleClickControl,
+  type TileControl,
+  tileMenuControl,
+} from "../lib/workspace/tile-controls.ts";
 import { useSession } from "./use-session.ts";
 import { useWindowClose } from "./use-window-close.ts";
 import { CloseWindowDialog } from "./close-window-dialog.tsx";
@@ -301,6 +311,26 @@ function WorkspaceView() {
     run({ type: "focus", id, now: Date.now() });
     focusKeyboard(id);
   }, [run, focusKeyboard]);
+
+  /**
+   * A tile's Minimize, Maximize or Restore (its header buttons, a header double click, the Window
+   * menu). Maximize and Restore give it the keyboard; Minimize hands it to the next tile (`run`).
+   */
+  const tileControl = useCallback((control: TileControl, id: string) => {
+    run({ type: control, id, now: Date.now() });
+    if (control !== "minimize") focusKeyboard(id);
+  }, [run, focusKeyboard]);
+
+  /** A double click on a tile's header: what the OS title-bar double click does, for the tile. */
+  const headDoubleClick = useCallback((id: string) => {
+    void titleBarDoubleClick().then((action) => {
+      const control = headDoubleClickControl(
+        action,
+        isMaximized(stateRef.current, id),
+      );
+      if (control) tileControl(control, id);
+    });
+  }, [tileControl]);
 
   // What web tiles drive their page through.
   const webHooks = useMemo<WebTileHooks>(() => ({
@@ -621,6 +651,17 @@ function WorkspaceView() {
     };
   }, [ready, platform, runCommand, settingsOpen, modalOpen]);
 
+  // The Window menu's "Minimize Tile" / "Zoom Tile", chosen with this window key: the focused tile.
+  useEffect(() => {
+    const session = ready ? managerRef.current?.backend.session : undefined;
+    if (!session) return;
+    return session.onTileMenu((item) => {
+      const id = stateRef.current.focusedId;
+      if (!id) return;
+      tileControl(tileMenuControl(item, isMaximized(stateRef.current, id)), id);
+    });
+  }, [ready, tileControl]);
+
   // Title polling: the focused terminal, right away on focus and every couple of seconds.
   const focusedId = state.focusedId;
   useEffect(() => {
@@ -655,12 +696,20 @@ function WorkspaceView() {
     return makeWindowDraggable(el);
   }, [desktop, barPosition]);
 
+  // Minimized tiles are not laid out (keyed on which are minimized, not on every title change).
+  const minimizedKey = state.terminals.filter((t) => t.minimized).map((t) =>
+    t.id
+  ).join(" ");
+  const shown = useMemo(
+    () => shownMru(stateRef.current),
+    [state.mru, minimizedKey],
+  );
   const layout = useMemo(
     () =>
       bounds.w > 0 && bounds.h > 0
-        ? computeLayout(state.mru, bounds, settings.layout)
-        : { tiles: [], overflow: state.mru },
-    [state.mru, bounds, settings.layout],
+        ? computeLayout(shown, bounds, settings.layout)
+        : { tiles: [], overflow: shown },
+    [shown, bounds, settings.layout],
   );
   const visibleIds = useMemo(() => visibleIdSet(layout), [layout]);
 
@@ -748,6 +797,11 @@ function WorkspaceView() {
             scaleInactive={settings.inactiveTiles === "scale"}
             onFocus={focusTerminal}
             onClose={closeTerminal}
+            monocle={settings.layout.pattern === "monocle"}
+            onMinimize={(id) => tileControl("minimize", id)}
+            onMaximize={(id) => tileControl("maximize", id)}
+            onRestore={(id) => tileControl("restoreTile", id)}
+            onHeadDoubleClick={headDoubleClick}
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
             web={webHooks}
@@ -816,6 +870,13 @@ function WorkspaceView() {
             onPaste={broadcast.resolvePaste}
           />
         )}
+        {ready && session.booted && state.terminals.length > 0 &&
+          focusedId === null && (
+            // Every tile is minimized: their chips in the bar restore them.
+            <div class="empty is-minimized" data-testid="all-minimized">
+              <p>All tiles minimized</p>
+            </div>
+          )}
         {ready && session.booted && state.terminals.length === 0 && (
           <div class="empty" data-testid="empty">
             <p>No terminals open.</p>
@@ -963,6 +1024,16 @@ function BrowserFor(props: {
       onClose={props.onClose}
     />
   );
+}
+
+/**
+ * The user's title-bar double-click action (`maximize`, `minimize`, `none`, …), read at each
+ * double click as Denext's `makeWindowDraggable` does (the user may have changed it); `maximize`
+ * outside the desktop app, or when the runtime cannot say.
+ */
+function titleBarDoubleClick(): Promise<string> {
+  if (!isDesktop()) return Promise.resolve("maximize");
+  return getTitleBarPreferences().then((p) => p.doubleClick, () => "maximize");
 }
 
 /** Whether tile `id` is a web tile (it has no terminal). */
