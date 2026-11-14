@@ -168,6 +168,72 @@ kbd {
 .tile.is-parked {
   display: none;
 }
+/* The free-form view (app/use-freeform-drag.ts): tiles stay inside the area, a drag follows the
+   pointer with no transition, and grips on the edges and corners resize. */
+.app[data-view="freeform"] .tiles {
+  overflow: hidden;
+}
+.tile.is-dragging {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.tile-grip {
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+}
+.tile-grip.grip-n,
+.tile-grip.grip-s {
+  left: 10px;
+  right: 10px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.tile-grip.grip-e,
+.tile-grip.grip-w {
+  top: 10px;
+  bottom: 10px;
+  width: 5px;
+  cursor: ew-resize;
+}
+.tile-grip.grip-n {
+  top: 0;
+}
+.tile-grip.grip-s {
+  bottom: 0;
+}
+.tile-grip.grip-e {
+  right: 0;
+}
+.tile-grip.grip-w {
+  left: 0;
+}
+.tile-grip.grip-ne,
+.tile-grip.grip-nw,
+.tile-grip.grip-se,
+.tile-grip.grip-sw {
+  width: 10px;
+  height: 10px;
+}
+.tile-grip.grip-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.tile-grip.grip-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.tile-grip.grip-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.tile-grip.grip-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
 .tile.is-focused {
   border-color: var(--accent);
   box-shadow:
@@ -771,6 +837,39 @@ kbd {
 }
 .menu-patterns {
   min-width: 190px;
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+}
+/* The View menu's model-driven rows (app/view-menu.tsx). */
+.menu-heading {
+  padding: 6px 8px 3px;
+  color: var(--text-3, var(--text-2));
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+.menu-check {
+  flex: none;
+  width: 10px;
+  text-align: center;
+}
+.menu-item:disabled {
+  opacity: 0.42;
+  cursor: default;
+  background: transparent;
+}
+.menu-tiles {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 2px;
+}
+.freeform-glyph {
+  flex: none;
 }
 /* A link's menu in a terminal (app/link-menu.tsx), at the pointer. */
 .menu.link-menu {

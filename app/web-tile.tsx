@@ -89,6 +89,8 @@ export function useWebTile(
   shown: boolean,
   hooks: WebTileHooks | undefined,
   onFocus: (id: string) => void,
+  /** Another tile overlaps it from above (free-form view): handed to the view (`setOccluded`). */
+  occluded = false,
 ): WebTileView | null {
   const page = entry.web;
   const id = entry.id;
@@ -145,6 +147,7 @@ export function useWebTile(
         }),
       );
       void v.state().then((s) => live && setView({ ...s }));
+      if (occludedRef.current) void v.setOccluded(true);
       // A native view hides while an HTML menu or dialog is open (it would cover it).
       if (engine.capabilities.drawsAboveHtml) {
         offs.push(onOverlays((n) => void v.setVisible(n === 0)));
@@ -166,6 +169,13 @@ export function useWebTile(
     const root = hostRef.current?.closest("[data-testid=tile]");
     if (root && !root.contains(document.activeElement)) focusWebTile(id);
   }, [focused, shown, isWeb, id]);
+
+  // Covered by a tile above it (free-form): the view hears of it, and again once it is mounted.
+  const occludedRef = useRef(occluded);
+  occludedRef.current = occluded;
+  useEffect(() => {
+    void viewRef.current?.setOccluded(occluded);
+  }, [occluded]);
 
   const navigate = useCallback((input: string): boolean => {
     const url = addressToUrl(input);

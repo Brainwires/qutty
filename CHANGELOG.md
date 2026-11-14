@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- A free-form view, next to the tiled one. Each workspace is shown tiled (Qutty
+  lays the tiles out, as before) or free-form, where every tile is a window
+  inside the workspace: drag its header to move it, drag any edge or corner to
+  resize it (down to the layout's minimum tile size), click it to bring it to
+  the front. Tiles stay reachable when the window gets smaller, a new tile opens
+  cascaded from the last one, and switching to free-form starts every tile where
+  the tiled view had it, so nothing jumps. Switching back and forth keeps each
+  tile's free-form place, and both the view and the places are saved with the
+  workspace. Pick the view in the layout menu of the switcher bar ("Tiled View"
+  / "Free-form View"), in Settings → Layout → View, or in the Window menu.
+  Settings → Layout → "New workspaces" picks the view a new workspace starts in
+  (Tiled by default); each workspace keeps its own choice after that, and
+  nothing in the tiled view changes unless you switch.
+
+  In the free-form view Maximize (and ⌘Enter) fills the whole workspace with one
+  tile, the others waiting behind it, and Restore puts it back where it was;
+  Minimize works as before. Three arrange commands lay the tiles out once and
+  leave them free: "Cascade Tiles" (stacked and offset, front tile last),
+  "Arrange Tiles in Rows" and "Arrange Tiles in Columns" (in recency order, the
+  focused tile first). They are in the layout menu (greyed in the tiled view)
+  and in the Window menu, with "Tiled View" and "Free-form View"; none has a
+  keyboard shortcut. The layout menu also lists every tile under "Tiles", the
+  focused one checked, and focuses the one you pick.
+
 - Tiles say what happened in them while you looked elsewhere, on the header and
   the border instead of the old amber dot. New output tints an unfocused tile's
   header with the accent colour; a running command (from the shell integration

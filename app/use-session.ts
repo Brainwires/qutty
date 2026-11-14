@@ -65,6 +65,12 @@ export function useSession(opts: {
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
+  /** A new workspace starts in the view Settings → Layout picks for new workspaces. */
+  const startView = useCallback(() => {
+    const o = optsRef.current;
+    o.dispatch({ type: "setView", view: o.state.settings.defaultView });
+  }, []);
+
   /** Rebuild the workspace from what `join` brought (or start it). */
   const apply = useCallback((m: TerminalManager, joined: SessionJoined) => {
     const o = optsRef.current;
@@ -81,6 +87,8 @@ export function useSession(opts: {
         mru: plan.mru,
         ...(plan.layout ? { layout: plan.layout } : {}),
         previousPattern: plan.previousPattern,
+        view: plan.view,
+        freeform: plan.freeform,
       });
       const focused = shownFocus(plan.terminals, plan.mru);
       if (focused) o.focus(focused);
@@ -98,10 +106,11 @@ export function useSession(opts: {
         mru: [],
         layout: stored.layout,
         previousPattern: stored.previousPattern,
+        view: stored.view ?? o.state.settings.defaultView,
       });
-    }
+    } else startView();
     o.fresh();
-  }, []);
+  }, [startView]);
 
   // Join once the manager exists.
   useEffect(() => {
@@ -119,6 +128,7 @@ export function useSession(opts: {
       // No workspace (an old backend): the page works as a plain window.
       console.warn("session: could not join the workspace", err);
       if (!live) return;
+      startView();
       optsRef.current.fresh();
       setBooted(true);
     });
@@ -129,10 +139,10 @@ export function useSession(opts: {
       offChanged();
       globalThis.removeEventListener("focus", onFocus);
     };
-  }, [manager, apply]);
+  }, [manager, apply, startView]);
 
   // Save the snapshot as the workspace changes (and flush it when the page goes away).
-  const { terminals, mru, previousPattern } = opts.state;
+  const { terminals, mru, previousPattern, view, freeform } = opts.state;
   const layout = opts.state.settings.layout;
   useEffect(() => {
     if (!manager || !workspace) return;
@@ -148,6 +158,7 @@ export function useSession(opts: {
       saveWorkspaceLayout(workspace.id, {
         layout: snap.layout,
         previousPattern: snap.previousPattern,
+        view: snap.view,
       }, storage());
     };
     const timer = setTimeout(save, SAVE_DEBOUNCE_MS);
@@ -156,7 +167,16 @@ export function useSession(opts: {
       clearTimeout(timer);
       globalThis.removeEventListener("pagehide", save);
     };
-  }, [manager, workspace, terminals, mru, layout, previousPattern]);
+  }, [
+    manager,
+    workspace,
+    terminals,
+    mru,
+    layout,
+    previousPattern,
+    view,
+    freeform,
+  ]);
 
   const session = manager?.backend.session;
   return {

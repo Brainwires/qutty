@@ -4,6 +4,7 @@ import {
   MINIMIZE_TILE_ITEM,
   ZOOM_TILE_ITEM,
 } from "./lib/workspace/windows.ts";
+import { STATIC_WINDOW_ITEMS } from "./lib/workspace/mdi-menu.ts";
 
 export default {
   desktop: {
@@ -79,7 +80,10 @@ export default {
     // desktop/session.ts), never the pages (Denext 4.16). "Minimize Tile" and "Zoom Tile" (no
     // shortcuts) arrive there too and are handed on to the key window's page, which acts on its
     // focused tile. The items are static (no enabled state): Zoom Tile maximizes the focused tile,
-    // or restores it to the tiled layout when it is maximized.
+    // or restores it when it is maximized. So do the view items ("Tiled View", "Free-form View")
+    // and the free-form arrange commands ("Cascade Tiles", "Arrange Tiles in Rows" / "in
+    // Columns"; nothing in the tiled view), from the menu model (lib/workspace/mdi-menu.ts), which
+    // will also feed Denext's coming dynamic View menu and window items.
     menu: {
       window: {
         newWindow: "/",
@@ -91,6 +95,8 @@ export default {
           // Minimize and Zoom above them; no shortcuts (⌘M stays the window's).
           { id: MINIMIZE_TILE_ITEM, label: "Minimize Tile" },
           { id: ZOOM_TILE_ITEM, label: "Zoom Tile" },
+          // The workspace's view and the free-form arrange commands; no shortcuts.
+          ...STATIC_WINDOW_ITEMS,
         ],
       },
     },

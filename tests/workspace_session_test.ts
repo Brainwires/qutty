@@ -191,10 +191,18 @@ Deno.test("session: the layout per workspace survives a launch", () => {
     previousPattern: "grid",
   }, storage);
   assert(store.has(workspaceLayoutKey("ws-1")));
+  // Saved before the free-form view existed: tiled.
   assertEquals(loadWorkspaceLayout("ws-1", storage), {
     layout: { pattern: "rows" },
     previousPattern: "grid",
+    view: "tiled",
   });
+  saveWorkspaceLayout("ws-1", {
+    layout: { pattern: "rows" },
+    previousPattern: null,
+    view: "freeform",
+  }, storage);
+  assertEquals(loadWorkspaceLayout("ws-1", storage)?.view, "freeform");
   store.set(workspaceLayoutKey("ws-2"), "{not json");
   assertEquals(loadWorkspaceLayout("ws-2", storage), null);
   assertEquals(loadWorkspaceLayout("ws-1", undefined), null);

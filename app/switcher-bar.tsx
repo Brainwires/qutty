@@ -4,6 +4,11 @@
 // in a "+N" menu. Chip moves animate with FLIP; new chips fade in. Each chip (and each "+N"
 // menu item) wears its tile's activity state as `data-activity` and in its dot's colour
 // (lib/workspace/activity.ts), and shows the title the tile's header shows.
+//
+// The layout menu (the pattern button) starts with the View choice, Tiled or Free-form, and the
+// free-form arrange commands, and ends with the Tiles list (app/view-menu.tsx, from the menu model
+// lib/workspace/mdi-menu.ts); the tiled view's patterns sit between them. In the free-form view the
+// button reads Free-form.
 
 import {
   type ReactNode,
@@ -25,6 +30,9 @@ import {
 import { isTintId } from "../lib/workspace/themes.ts";
 import { type ActivityState, displayTitle } from "../lib/workspace/activity.ts";
 import { PatternPreview } from "./pattern-preview.tsx";
+import { TilesMenuSection, ViewMenuSection } from "./view-menu.tsx";
+import { VIEW_LABELS } from "../lib/workspace/freeform.ts";
+import type { MenuTile } from "../lib/workspace/mdi-menu.ts";
 import { LaunchMenu, type LaunchMenuProps } from "./launch-menu.tsx";
 import { SysMeter } from "./sys-meter.tsx";
 import type { Smoothed } from "../lib/sysstats.ts";
@@ -58,6 +66,8 @@ export interface SwitcherBarProps {
   broadcast: { on: boolean; count: number };
   onBroadcast(): void;
   onPattern(pattern: LayoutPattern): void;
+  /** An item of the View menu's model (the view, an arrange command, a tile of the list). */
+  onMenuItem(id: string): void;
   onToggleSettings(): void;
   /** The system meter's figures (Settings → System monitor); absent: no meter. */
   stats?: Smoothed;
@@ -240,6 +250,18 @@ export function SwitcherBar(props: SwitcherBarProps) {
   };
 
   const mod = (keys: string) => shortcutLabel(keys, props.platform);
+  const view = props.state.view;
+  const freeform = view === "freeform";
+  const menuTiles: MenuTile[] = chips.map((c) => ({
+    id: c.id,
+    title: titleOf(c.entry),
+    focused: c.focused,
+    minimized: c.minimized,
+  }));
+  const pickItem = (id: string) => {
+    setMenu("none");
+    props.onMenuItem(id);
+  };
 
   return (
     <nav
@@ -476,16 +498,23 @@ export function SwitcherBar(props: SwitcherBarProps) {
             class={`bar-btn bar-pattern${menu === "pattern" ? " is-open" : ""}`}
             data-testid="bar-pattern"
             data-pattern={props.pattern}
+            data-view={view}
             onClick={() => setMenu(menu === "pattern" ? "none" : "pattern")}
             aria-expanded={menu === "pattern"}
-            title={`Layout: ${PATTERN_INFO[props.pattern].label} (${
-              mod("Mod+Shift+L")
-            } cycles)`}
+            title={freeform
+              ? `View: ${VIEW_LABELS.freeform}`
+              : `Layout: ${PATTERN_INFO[props.pattern].label} (${
+                mod("Mod+Shift+L")
+              } cycles)`}
           >
-            <PatternPreview pattern={props.pattern} small />
+            {freeform
+              ? <FreeformGlyph />
+              : <PatternPreview pattern={props.pattern} small />}
             {!vertical && (
               <span class="bar-pattern-label">
-                {PATTERN_INFO[props.pattern].label}
+                {freeform
+                  ? VIEW_LABELS.freeform
+                  : PATTERN_INFO[props.pattern].label}
               </span>
             )}
           </button>
@@ -495,7 +524,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
               role="menu"
               data-testid="pattern-menu"
             >
-              {PATTERNS.map((p) => (
+              <ViewMenuSection
+                view={view}
+                tiles={menuTiles}
+                onPick={pickItem}
+              />
+              {!freeform && <div class="menu-sep" role="separator" />}
+              {!freeform && PATTERNS.map((p) => (
                 <button
                   type="button"
                   role="menuitemradio"
@@ -513,6 +548,11 @@ export function SwitcherBar(props: SwitcherBarProps) {
                   <span class="menu-label">{PATTERN_INFO[p].label}</span>
                 </button>
               ))}
+              <TilesMenuSection
+                view={view}
+                tiles={menuTiles}
+                onPick={pickItem}
+              />
             </div>
           )}
         </div>
@@ -554,5 +594,39 @@ export function SwitcherBar(props: SwitcherBarProps) {
         </button>
       </div>
     </nav>
+  );
+}
+
+/** The free-form view's mark on the layout button: two overlapping windows. */
+function FreeformGlyph() {
+  return (
+    <svg
+      class="freeform-glyph"
+      viewBox="0 0 16 12"
+      width="16"
+      height="12"
+      aria-hidden="true"
+    >
+      <rect
+        x="1"
+        y="1"
+        width="9"
+        height="6.5"
+        rx="1"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.2"
+      />
+      <rect
+        x="5.5"
+        y="4"
+        width="9.5"
+        height="7"
+        rx="1"
+        fill="var(--panel, #222)"
+        stroke="currentColor"
+        stroke-width="1.2"
+      />
+    </svg>
   );
 }

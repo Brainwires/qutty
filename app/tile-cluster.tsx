@@ -29,9 +29,22 @@
 // Activity (lib/workspace/activity.ts): an unfocused tile wears its one activity state as
 // `data-activity` (output, busy, attention, failed, done, none), which styles.css draws on the
 // header and the border. Its title is the program's own (OSC 0 / 2) when Settings → Tiles says so.
+//
+// The free-form view (`freeform` set; lib/workspace/freeform.ts): the tiles' rects are the user's,
+// stacked in the workspace's z-order. A drag on a header (not on its controls or the address
+// field) moves a tile and the grips on its edges and corners resize it (app/use-freeform-drag.ts:
+// no transition while the pointer moves). Maximize fills the whole area with the tile (MDI
+// maximize), the others behind it; a maximized tile does not drag. A web tile hears when another
+// tile covers it from above (`setOccluded`, for a native engine that draws above HTML).
 
 import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
+import { EDGES } from "../lib/workspace/freeform.ts";
+import {
+  type FreeformTiles,
+  type StartDrag,
+  useFreeformDrag,
+} from "./use-freeform-drag.ts";
 import { letterbox, type Size, tileBodySize } from "../lib/layout/scale.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TileInfo } from "../lib/hub/protocol.ts";
@@ -64,6 +77,8 @@ interface TileExtras {
   broadcastIds?: ReadonlySet<string>;
   /** What web tiles (an entry with `web`) drive their page through (app/web-tile.tsx). */
   web?: WebTileHooks;
+  /** The free-form view (absent: the tiled view). */
+  freeform?: FreeformTiles;
 }
 
 export interface TileClusterProps extends TileExtras {
@@ -82,8 +97,8 @@ export interface TileClusterProps extends TileExtras {
   scaleInactive: boolean;
   onFocus(id: string): void;
   onClose(id: string): void;
-  /** The layout shows one tile (monocle): the focused tile's header offers Restore. */
-  monocle: boolean;
+  /** The maximized tile (monocle, or free-form maximize): its header offers Restore. */
+  maximizedId: string | null;
   onMinimize(id: string): void;
   onMaximize(id: string): void;
   onRestore(id: string): void;
@@ -115,7 +130,7 @@ export function TileCluster(props: TileClusterProps) {
           full={full}
           onFocus={props.onFocus}
           onClose={props.onClose}
-          maximized={props.monocle && entry.id === props.focusedId}
+          maximized={entry.id === props.maximizedId}
           onMinimize={props.onMinimize}
           onMaximize={props.onMaximize}
           onRestore={props.onRestore}
@@ -127,6 +142,7 @@ export function TileCluster(props: TileClusterProps) {
           renderOverlay={props.renderOverlay}
           broadcastIds={props.broadcastIds}
           web={props.web}
+          freeform={props.freeform}
         />
       ))}
     </div>
@@ -187,8 +203,16 @@ function TerminalTile(props: TerminalTileProps) {
     lastRectRef.current = tile.rect;
     lastRankRef.current = tile.rank;
   }
-  const rect = lastRectRef.current;
   const rank = lastRankRef.current;
+  const ff = props.freeform;
+  const drag = useFreeformDrag({
+    id,
+    rect: lastRectRef.current,
+    ff,
+    enabled: visible && !props.maximized,
+    fit: (tid) => manager.fitNow(tid),
+  });
+  const rect = drag.live ?? lastRectRef.current;
   // A web tile: its toolbar and its page instead of a terminal (the manager never knows its id,
   // so the manager calls below do nothing for it).
   const web = useWebTile(
@@ -197,6 +221,7 @@ function TerminalTile(props: TerminalTileProps) {
     phase !== "parked",
     props.web,
     props.onFocus,
+    ff?.occluded.has(id) ?? false,
   );
 
   // Phase machine driven by visibility.
@@ -265,7 +290,7 @@ function TerminalTile(props: TerminalTileProps) {
     }`,
     width: `${rect.w}px`,
     height: `${rect.h}px`,
-    zIndex: String(100 - rank),
+    zIndex: String(ff ? ff.z.get(id) ?? 1 : 100 - rank),
     "--rank-dim": String(dim),
   };
 
@@ -288,6 +313,9 @@ function TerminalTile(props: TerminalTileProps) {
   if (props.dropTargetId === id) classes.push("is-drop-target");
   const broadcasting = props.broadcastIds?.has(id) ?? false;
   if (broadcasting) classes.push("is-broadcast");
+  if (ff) classes.push("is-freeform");
+  if (drag.live) classes.push("is-dragging");
+  const draggable = !!ff && !props.maximized;
 
   return (
     <div
@@ -306,6 +334,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-tint={tint}
       data-broadcast={broadcasting ? "true" : undefined}
       data-activity={props.activity}
+      data-maximized={props.maximized ? "true" : undefined}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
         const native = e as unknown as globalThis.TransitionEvent;
@@ -327,6 +356,12 @@ function TerminalTile(props: TerminalTileProps) {
       <div class="tile-inner">
         <header
           class="tile-head"
+          onPointerDown={(e) => {
+            // Free-form: a drag on the header moves the tile (not from its controls).
+            const t = e.target as Element | null;
+            if (!draggable || t?.closest?.(DRAG_SKIP)) return;
+            drag.start(e as unknown as PointerEvent, null, rootRef.current);
+          }}
           onDoubleClick={(e) => {
             // Not on a control (the window buttons, a web tile's toolbar and address field).
             const t = e.target as Element | null;
@@ -427,7 +462,32 @@ function TerminalTile(props: TerminalTileProps) {
         )}
         {props.renderOverlay?.(entry, focused)}
       </div>
+      {draggable && <Grips start={drag.start} />}
     </div>
+  );
+}
+
+/** What a header press never drags from: its controls, the address field, opt-outs. */
+const DRAG_SKIP = "button, input, select, textarea, a, [data-keep-focus]";
+
+/** A free-form tile's resize grips: its four edges and four corners. */
+function Grips(props: { start: StartDrag }) {
+  return (
+    <>
+      {EDGES.map((edge) => (
+        <div
+          key={edge}
+          class={`tile-grip grip-${edge}`}
+          data-testid="tile-grip"
+          data-edge={edge}
+          aria-hidden="true"
+          onPointerDown={(e) => {
+            const el = e.target as HTMLElement | null;
+            props.start(e as unknown as PointerEvent, edge, el);
+          }}
+        />
+      ))}
+    </>
   );
 }
 

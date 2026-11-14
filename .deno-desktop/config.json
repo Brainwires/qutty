@@ -59,6 +59,26 @@
           {
             "id": "qutty:tile:zoom",
             "label": "Zoom Tile"
+          },
+          {
+            "id": "qutty:view:tiled",
+            "label": "Tiled View"
+          },
+          {
+            "id": "qutty:view:freeform",
+            "label": "Free-form View"
+          },
+          {
+            "id": "qutty:arrange:cascade",
+            "label": "Cascade Tiles"
+          },
+          {
+            "id": "qutty:arrange:rows",
+            "label": "Arrange Tiles in Rows"
+          },
+          {
+            "id": "qutty:arrange:columns",
+            "label": "Arrange Tiles in Columns"
           }
         ]
       }

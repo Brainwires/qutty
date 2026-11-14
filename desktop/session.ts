@@ -39,7 +39,7 @@ import { type TrayMode, trayMode } from "./tray.ts";
 import { closeAppWindow } from "./windows.ts";
 import {
   CLOSE_AND_END_ITEM,
-  isTileMenuItem,
+  isPageMenuItem,
 } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 
@@ -295,8 +295,10 @@ export interface TileMenuEvent {
 }
 
 /**
- * The Window menu's tile items ("Minimize Tile", "Zoom Tile"): each click is handed to the key
- * window's page (`tileMenu`), which acts on its focused tile. With no window open nothing happens.
+ * The Window menu's tile items ("Minimize Tile", "Zoom Tile") and view / arrange items ("Tiled
+ * View", "Cascade Tiles", ...: lib/workspace/mdi-menu.ts): each click is handed to the key
+ * window's page (`tileMenu`), which acts on its focused tile or its workspace's view. With no
+ * window open nothing happens.
  * Returns the unsubscribe.
  */
 export function tileMenuToPage(
@@ -304,7 +306,7 @@ export function tileMenuToPage(
   now: () => number = Date.now,
 ): () => void {
   return host.onWindowMenuItem((item, { keyWindow }) => {
-    if (!isTileMenuItem(item) || !keyWindow) return;
+    if (!isPageMenuItem(item) || !keyWindow) return;
     const event: TileMenuEvent = { item, at: now() };
     host.emit("tileMenu", event, { window: keyWindow.id });
   });

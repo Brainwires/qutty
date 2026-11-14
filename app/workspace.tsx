@@ -13,6 +13,10 @@
 // terminals that kept running while no window showed it, or started with its first shell, and the
 // page saves its snapshot as it changes. Unmounting (the page going away) leaves the PTYs running.
 //
+// The view: each workspace is tiled (the layout engine) or free-form (MDI: tiles as windows the
+// user moves and resizes), picked in the bar's View menu, Settings → Layout or the Window menu
+// (`useFreeformView`, lib/workspace/freeform.ts, lib/workspace/mdi-menu.ts).
+//
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
 // waiting for a re-render (and without an effect that would steal focus from the settings UI).
@@ -62,6 +66,7 @@ import {
   initialState,
   isMaximized,
   loadSettings,
+  maximizedId,
   reduce,
   saveSettings,
   SETTINGS_STORAGE_KEY,
@@ -76,7 +81,8 @@ import {
 import { useSession } from "./use-session.ts";
 import { useWindowClose } from "./use-window-close.ts";
 import { CloseWindowDialog } from "./close-window-dialog.tsx";
-import type { WindowClose } from "../lib/workspace/windows.ts";
+import { isTileMenuItem, type WindowClose } from "../lib/workspace/windows.ts";
+import { useFreeformView } from "./use-freeform-view.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -677,6 +683,7 @@ function WorkspaceView() {
     const session = ready ? managerRef.current?.backend.session : undefined;
     if (!session) return;
     return session.onTileMenu((item) => {
+      if (!isTileMenuItem(item)) return void viewRef.current.menuItem(item);
       const id = stateRef.current.focusedId;
       if (!id) return;
       tileControl(tileMenuControl(item, isMaximized(stateRef.current, id)), id);
@@ -758,7 +765,20 @@ function WorkspaceView() {
         : { tiles: [], overflow: shown },
     [shown, bounds, settings.layout],
   );
-  const visibleIds = useMemo(() => visibleIdSet(layout), [layout]);
+  const view = useFreeformView({
+    state,
+    shown,
+    bounds,
+    layout,
+    run,
+    focus: focusTerminal,
+  });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const visibleIds = useMemo(
+    () => visibleIdSet({ tiles: view.tiles }),
+    [view.tiles],
+  );
 
   // Each tile's one activity state (its header, border and chip; lib/workspace/activity.ts).
   const activity = useMemo(() => {
@@ -791,6 +811,7 @@ function WorkspaceView() {
       data-platform={platform}
       data-testid="app"
       data-pattern={settings.layout.pattern}
+      data-view={state.view}
       data-focused={focusedId ?? ""}
       data-activity-mode={settings.activity.indicators}
     >
@@ -843,6 +864,7 @@ function WorkspaceView() {
         broadcast={{ on: broadcast.on, count: broadcast.state.members.length }}
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
+        onMenuItem={view.menuItem}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
@@ -860,15 +882,17 @@ function WorkspaceView() {
             terminals={state.terminals}
             activity={activity}
             tileTitle={settings.tileTitle}
-            tiles={layout.tiles}
+            tiles={view.tiles}
+            freeform={view.freeform}
             focusedId={focusedId}
             decay={settings.layout.decay}
             now={now}
             reducedMotion={reducedMotion}
-            scaleInactive={settings.inactiveTiles === "scale"}
+            scaleInactive={settings.inactiveTiles === "scale" &&
+              !view.freeform}
             onFocus={focusTerminal}
             onClose={closeTerminal}
-            monocle={settings.layout.pattern === "monocle"}
+            maximizedId={maximizedId(state)}
             onMinimize={(id) => tileControl("minimize", id)}
             onMaximize={(id) => tileControl("maximize", id)}
             onRestore={(id) => tileControl("restoreTile", id)}
@@ -967,6 +991,9 @@ function WorkspaceView() {
           settings={settings}
           platform={platform}
           onLayout={(patch) => run({ type: "setLayout", patch })}
+          view={state.view}
+          onView={view.setView}
+          onDefaultView={(v) => run({ type: "setDefaultView", view: v })}
           onBarPosition={(position) =>
             run({ type: "setBarPosition", position })}
           onBarOrder={(order) => run({ type: "setBarOrder", order })}

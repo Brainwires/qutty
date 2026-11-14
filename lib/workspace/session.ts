@@ -23,6 +23,12 @@ import {
   type WorkspaceState,
 } from "./store.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
+import {
+  type FreeformState,
+  sanitizeFreeform,
+  sanitizeViewMode,
+  type ViewMode,
+} from "./freeform.ts";
 
 /** One tile's terminal: its PTY now (`null` while none runs), what it runs, its home folder. */
 export interface TerminalTileSnapshot {
@@ -49,6 +55,10 @@ export interface WorkspaceSnapshot {
   layout: LayoutOptions;
   previousPattern: LayoutPattern | null;
   tiles: Record<string, TileSnapshot>;
+  /** Tiled or free-form (absent in a snapshot saved before the free-form view: tiled). */
+  view?: ViewMode;
+  /** The free-form rects, z-order and maximized tile (kept while tiled too). */
+  freeform?: FreeformState;
 }
 
 /** A terminal the backend handed to this window (desktop/terminal-sessions.ts `PtyReplay`). */
@@ -84,6 +94,9 @@ export interface RestorePlan {
   layout?: LayoutOptions;
   previousPattern: LayoutPattern | null;
   tiles: RestoredTile[];
+  view: ViewMode;
+  /** Only the rebuilt tiles' entries. */
+  freeform: FreeformState;
 }
 
 /**
@@ -110,6 +123,12 @@ export function snapshotOf(
     layout: { ...state.settings.layout },
     previousPattern: state.previousPattern,
     tiles,
+    view: state.view,
+    freeform: {
+      rects: { ...state.freeform.rects },
+      z: [...state.freeform.z],
+      maximized: state.freeform.maximized,
+    },
   };
 }
 
@@ -191,6 +210,8 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
       ? previous as LayoutPattern
       : null,
     tiles,
+    view: sanitizeViewMode(raw.view),
+    freeform: raw.freeform as FreeformState | undefined,
   };
 }
 
@@ -281,6 +302,8 @@ export function planRestore(
     ...(snap ? { layout: snap.layout } : {}),
     previousPattern: snap?.previousPattern ?? null,
     tiles,
+    view: snap?.view ?? "tiled",
+    freeform: sanitizeFreeform(snap?.freeform, ids),
   };
 }
 
@@ -297,6 +320,8 @@ export function workspaceLayoutKey(id: string): string {
 export interface StoredWorkspaceLayout {
   layout: Partial<LayoutOptions>;
   previousPattern: LayoutPattern | null;
+  /** Its view (absent: tiled). Free-form rects are not kept: the next launch's tiles are new. */
+  view?: ViewMode;
 }
 
 /** Workspace `id`'s layout from an earlier launch, or `null`. */
@@ -313,6 +338,7 @@ export function loadWorkspaceLayout(
       previousPattern: PATTERNS.includes(v.previousPattern as LayoutPattern)
         ? v.previousPattern as LayoutPattern
         : null,
+      view: sanitizeViewMode(v.view),
     };
   } catch {
     return null;
