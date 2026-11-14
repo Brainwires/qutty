@@ -327,12 +327,14 @@ Deno.test("session: a tile menu event carries its send time, and a stale replay 
     await fake.menuItem(MINIMIZE_TILE_ITEM, { id: "w1", key: "ws-1" });
     const sent = fake.events.find((e) => e.event === "tileMenu");
     assertEquals((sent?.data as { at: number }).at, 5000);
+    // One-shot: Denext never replays it to a page that reloads or subscribes later.
+    assertEquals(sent?.retain, false);
   } finally {
     off();
   }
   assertEquals(isFreshTileMenu(5000, 5000), true);
   assertEquals(isFreshTileMenu(5000, 5000 + TILE_MENU_MAX_AGE_MS), true);
-  // A page reloaded later gets the retained event replayed: too old, ignored.
+  // Under a runtime that still replays it, a page reloaded later finds it too old: ignored.
   assertEquals(isFreshTileMenu(5000, 5001 + TILE_MENU_MAX_AGE_MS), false);
   assertEquals(isFreshTileMenu(undefined, 5000), false);
   assertEquals(isFreshTileMenu(Number.NaN, 5000), false);

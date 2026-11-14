@@ -32,6 +32,8 @@ interface HostEvent {
   event: string;
   data: unknown;
   window?: string;
+  /** `false` for a one-shot emit (`{ retain: false }`). */
+  retain?: false;
 }
 
 /** A window as the host lists it. */
@@ -69,11 +71,16 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     };
   }
   const host = {
-    emit: (event: string, data: unknown, o?: { window?: string }) =>
+    emit: (
+      event: string,
+      data: unknown,
+      o?: { window?: string; retain?: boolean },
+    ) =>
       void events.push({
         event,
         data,
         ...(o?.window ? { window: o.window } : {}),
+        ...(o?.retain === false ? { retain: false } : {}),
       }),
     pickedPath: (): string => {
       throw new Error("unused");
@@ -105,6 +112,19 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     },
     onWindowMenuItem: on(menuItems),
     onSecondInstance: on(relaunches),
+    // Denext 4.18's: the app's own menus, notification clicks, navigation (unused by these tests).
+    setMenu: (): never => {
+      throw new Error("unused");
+    },
+    setMenuItemState: (): never => {
+      throw new Error("unused");
+    },
+    setWindowMenuAppItems: (): never => {
+      throw new Error("unused");
+    },
+    onAppMenuItem: () => () => {},
+    onNotificationClick: () => () => {},
+    onWillNavigate: () => () => {},
   };
   const fake = {
     host,
