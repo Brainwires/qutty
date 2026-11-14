@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.5.1 — Denext 4.18: browser tiles, free-form view, Minimize / Maximize / Restore, activity indicators, tray mode
+
+- Denext 4.18 (runtime 3.0.0-denext.22). A Window-menu click (Minimize Tile,
+  Zoom Tile, the view and arrange items) reaches the window once and is never
+  repeated when the page reloads. Release builds now also sign, notarize and
+  staple the .dmg itself, and a bundled sidecar's native files are packaged for
+  each architecture separately.
+
 - A free-form view, next to the tiled one. Each workspace is shown tiled (Qutty
   lays the tiles out, as before) or free-form, where every tile is a window
   inside the workspace: drag its header to move it, drag any edge or corner to
