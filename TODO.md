@@ -401,6 +401,9 @@
 - [x] v0.5.0: Denext 4.15 (system.stats meter, native quit dialog, Dock reopen,
       Reopen Closed Window list, Close Window and End Its Shells, Linux
       metainfo), cloud voices and the API key brain with keys in the keychain.
+- [x] v0.5.1: Denext 4.18, browser tiles, free-form (MDI) view, tile Minimize /
+      Maximize / Restore, activity indicators and program titles, tray mode, the
+      close-button question.
 - [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
       doesn't run, so the focused chip (first in the strip) can stay scrolled
       out of view on the left (seen while hardening the e2e chip clicks, #43).
