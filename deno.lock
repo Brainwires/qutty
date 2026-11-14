@@ -3,8 +3,8 @@
   "specifiers": {
     "jsr:@astral/astral@~0.5.3": "0.5.6",
     "jsr:@denext/avif@0.2": "0.2.0",
-    "jsr:@denext/denext@^4.16.0": "4.16.0",
-    "jsr:@denext/docs-corpus@4.16.0": "4.16.0",
+    "jsr:@denext/denext@^4.18.0": "4.18.0",
+    "jsr:@denext/docs-corpus@4.18.0": "4.18.0",
     "jsr:@denext/lightningcss@^1.0.0-rc.72": "1.0.0-rc.72.1",
     "jsr:@denext/og@~0.1.2": "0.1.2",
     "jsr:@denext/photon@~0.3.6": "0.3.6",
@@ -88,8 +88,8 @@
     "@denext/avif@0.2.0": {
       "integrity": "862466c78ba3bf4c60a24b45fc8c9bfdd9153f6deff0e0846f3eddb56e5661ee"
     },
-    "@denext/denext@4.16.0": {
-      "integrity": "7760234ab2b92e9a00867336c14f5c1c6057fff23b26b6348a8b46f428418561",
+    "@denext/denext@4.18.0": {
+      "integrity": "a3f61599261e02e97f7a7ba46f8fe9ac49910e4ae571d8aca7f0842b5cf0d561",
       "dependencies": [
         "jsr:@denext/avif",
         "jsr:@denext/docs-corpus",
@@ -111,8 +111,8 @@
         "npm:ws"
       ]
     },
-    "@denext/docs-corpus@4.16.0": {
-      "integrity": "2c02fb19ecaa1b4ece752ce06b65423e2c8e6e97d215464eedba21affd6ac33e"
+    "@denext/docs-corpus@4.18.0": {
+      "integrity": "0200ed3b98ab4c93e7b9bc167a9efc06b50ef94254d2d875d8c8182b3167f395"
     },
     "@denext/lightningcss@1.0.0-rc.72.1": {
       "integrity": "3c719d7987f85f8c35e129cddbc715ad5ca159c209ea9f2e739dea9a33beafb8"
@@ -1673,7 +1673,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@astral/astral@~0.5.3",
-      "jsr:@denext/denext@^4.16.0",
+      "jsr:@denext/denext@^4.18.0",
       "jsr:@rullama/agent@~0.12.1",
       "jsr:@rullama/core@~0.12.4",
       "jsr:@rullama/inference@~0.12.2",
