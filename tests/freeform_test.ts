@@ -625,6 +625,7 @@ Deno.test("Window menu: a view / arrange item goes to the key window's page", as
       event: "tileMenu",
       data: { item: MDI_ITEM_IDS.viewFreeform, at: 42 },
       window: "w1",
+      retain: false,
     }]);
   } finally {
     off();

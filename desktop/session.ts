@@ -308,7 +308,9 @@ export function tileMenuToPage(
   return host.onWindowMenuItem((item, { keyWindow }) => {
     if (!isPageMenuItem(item) || !keyWindow) return;
     const event: TileMenuEvent = { item, at: now() };
-    host.emit("tileMenu", event, { window: keyWindow.id });
+    // One-shot (Denext 4.18): a page that reloads or subscribes later never sees an old click.
+    // The page also drops a stale `at` (lib/workspace/windows.ts), for a runtime that ignores it.
+    host.emit("tileMenu", event, { window: keyWindow.id, retain: false });
   });
 }
 
