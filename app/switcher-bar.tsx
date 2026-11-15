@@ -75,6 +75,23 @@ export interface SwitcherBarProps {
   workspaces?: ReactNode;
 }
 
+/**
+ * Keep the page's focus where it is through this press: its `mousedown` would move it to whatever
+ * it lands on (the chip, or the strip if the chip has already moved away), taking the keyboard
+ * from the terminal the press just focused. Tab still reaches a chip.
+ */
+function keepFocusThroughPress(): void {
+  const stop = (e: Event) => e.preventDefault();
+  const done = () => {
+    removeEventListener("mousedown", stop, true);
+    removeEventListener("pointerup", done, true);
+    removeEventListener("pointercancel", done, true);
+  };
+  addEventListener("mousedown", stop, true);
+  addEventListener("pointerup", done, true);
+  addEventListener("pointercancel", done, true);
+}
+
 /** Where a chip is laid out, in its offset parent: no FLIP transform, no scroll of the strip. */
 interface ChipPos {
   left: number;
@@ -442,6 +459,18 @@ export function SwitcherBar(props: SwitcherBarProps) {
                     ? ""
                     : " (not tiled)"
                 } — rank ${rank}`}
+                // Focus on the press, as a browser tab does: the strip can move between press and
+                // release (it scrolls to keep the focused chip in view), and a release over
+                // something else fires no click. The close button acts on its own click instead.
+                onPointerDown={(e) => {
+                  const pe = e as unknown as globalThis.PointerEvent;
+                  if (pe.button !== 0 || pe.pointerType === "touch") return;
+                  if ((pe.target as Element | null)?.closest?.(".chip-close")) {
+                    return;
+                  }
+                  keepFocusThroughPress();
+                  props.onFocus(id);
+                }}
                 onClick={() => props.onFocus(id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {

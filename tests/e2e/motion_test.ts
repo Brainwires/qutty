@@ -270,6 +270,40 @@ suite("motion", (test) => {
     assert(after.length >= before.length - 200, "nothing lost");
   });
 
+  test("chips: a press focuses its chip even if the strip moves before the release", async (app) => {
+    // The strip scrolls back toward the focused chip after a keyboard focus change; a press held
+    // through that scroll is released over something else, which fires no click. The chip acts
+    // on the press, as a browser tab does, and the terminal keeps the keyboard.
+    for (let i = 1; i < 16; i++) await app.newTerminal("shortcut");
+    for (let k = 0; k < 4; k++) {
+      await app.settle();
+      await app.focusChip((await app.mru()).at(-1)!);
+      const before = await app.mru();
+      await app.shortcut("Backquote");
+      await waitFor(
+        async () => (await app.focusedId()) === before[1],
+        3000,
+        `Mod+\` to focus ${before[1]}`,
+      );
+      const id = before[Math.floor(before.length / 2)];
+      await app.slowClick(
+        `[data-testid=chip][data-id="${id}"] .chip-title`,
+        400,
+      );
+      await waitFor(
+        async () => (await app.focusedId()) === id,
+        3000,
+        `${id} to be focused by the press`,
+      );
+      await waitFor(
+        () => app.xtermHasFocus(id),
+        3000,
+        `${id}'s terminal to have the keyboard`,
+      );
+      assertEquals((await app.chips()).length, 16, "no chip closed");
+    }
+  });
+
   test("a chip click right after a keyboard focus change lands on that chip", async (app) => {
     // The strip overflows; a click on the last chip scrolls it to the far end, the keyboard then
     // moves the focus, and the switcher bar smooth-scrolls back to the focused chip (first in MRU
