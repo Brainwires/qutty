@@ -75,6 +75,24 @@ export interface SwitcherBarProps {
   workspaces?: ReactNode;
 }
 
+/** Where a chip is laid out, in its offset parent: no FLIP transform, no scroll of the strip. */
+interface ChipPos {
+  left: number;
+  top: number;
+}
+
+/**
+ * Every chip's layout position. Not `getBoundingClientRect`: that moves with a scroll of the strip
+ * (revealChip's smooth scroll, the user's), which would read as every chip having moved.
+ */
+function chipPositions(els: Map<string, HTMLElement>): Map<string, ChipPos> {
+  const out = new Map<string, ChipPos>();
+  for (const [id, el] of els) {
+    out.set(id, { left: el.offsetLeft, top: el.offsetTop });
+  }
+  return out;
+}
+
 /** Scroll `list` so chip `el` is in view, by where the chip is laid out (its FLIP transform aside). */
 function revealChip(list: HTMLElement, el: HTMLElement, vertical: boolean) {
   const t = getComputedStyle(el).transform;
@@ -96,7 +114,8 @@ export function SwitcherBar(props: SwitcherBarProps) {
   const barRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const chipEls = useRef(new Map<string, HTMLElement>());
-  const prevRects = useRef(new Map<string, DOMRect>());
+  /** Where each chip was laid out at the last render (see the FLIP effect). */
+  const prevRects = useRef(new Map<string, ChipPos>());
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [menu, setMenu] = useState<"none" | "more" | "pattern" | "launch">(
     "none",
@@ -122,10 +141,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
   // FLIP: chips that moved start at their old position and glide to the new one.
   const orderKey = ids.join("\u0000") + (vertical ? "|v" : "|h");
   useLayoutEffect(() => {
-    const next = new Map<string, DOMRect>();
-    for (const [id, el] of chipEls.current) {
-      next.set(id, el.getBoundingClientRect());
-    }
+    const next = chipPositions(chipEls.current);
     const prev = prevRects.current;
     prevRects.current = next;
     if (prev.size === 0) return;
@@ -162,6 +178,12 @@ export function SwitcherBar(props: SwitcherBarProps) {
       });
     };
   }, [orderKey]);
+  // Keep the "before" positions current between reorders: a chip's width changes with its title
+  // and the bar's size, and a FLIP from positions measured at the last reorder would glide every
+  // chip whose neighbours changed width since. (Runs after the FLIP effect, every render.)
+  useLayoutEffect(() => {
+    prevRects.current = chipPositions(chipEls.current);
+  });
 
   // Which chips are scrolled out of view → the "+N" menu.
   useEffect(() => {
