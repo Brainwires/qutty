@@ -397,4 +397,58 @@ suite("motion", (test) => {
     const out = await app.run(mru[0], "echo survived");
     assert(/^survived$/m.test(out));
   });
+
+  test("chips: a scroll of the strip between two reorders does not make every chip glide", async (app) => {
+    // The FLIP compares each chip's position before and after a reorder. Measured in the
+    // viewport, a scroll of the strip in between (revealChip's smooth scroll, or the user's)
+    // read as every chip having moved, and positions kept from the last reorder went stale as
+    // chip titles (and widths) changed, so every chip glided.
+    for (let i = 1; i < 16; i++) await app.newTerminal("shortcut");
+    await app.settle();
+    const before = await app.mru();
+    // Scroll the overflowing strip to its far end, instantly, with no reorder.
+    const scrolled = await app.eval(() => {
+      const list = document.querySelector<HTMLElement>("[data-testid=chips]")!;
+      list.style.scrollBehavior = "auto";
+      list.scrollLeft = list.scrollWidth;
+      list.style.scrollBehavior = "";
+      return list.scrollLeft;
+    });
+    assert(scrolled > 0, "the chip strip overflows and scrolled");
+    // Mod+` swaps the top two of the MRU order: only those two chips change places.
+    const glided = app.eval(() =>
+      new Promise<string[]>((resolve) => {
+        const seen = new Set<string>();
+        const t0 = performance.now();
+        const look = () => {
+          for (const a of document.getAnimations()) {
+            const el = (a.effect as KeyframeEffect | null)?.target as
+              | HTMLElement
+              | null;
+            const id = el?.matches?.("[data-testid=chip]")
+              ? el.dataset.id
+              : undefined;
+            if (
+              id && (a as CSSTransition).transitionProperty === "transform"
+            ) seen.add(id);
+          }
+          if (performance.now() - t0 < 400) requestAnimationFrame(look);
+          else resolve([...seen]);
+        };
+        requestAnimationFrame(look);
+      })
+    );
+    await app.shortcut("Backquote");
+    const moved = await glided;
+    // The FLIP still runs: the chip that left the front glides to its new place.
+    assert(moved.includes(before[0]), `${before[0]} glides (glided: ${moved})`);
+    for (const id of moved) {
+      assert(
+        before.slice(0, 2).includes(id),
+        `only the two swapped chips glide, not ${id} (glided: ${
+          moved.join(", ")
+        })`,
+      );
+    }
+  });
 });
