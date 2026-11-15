@@ -177,9 +177,29 @@ suite("ollama", (test) => {
     const before = await chipIds(app);
     await openDialog(app);
     await typeInto(app, "[data-testid=ollama-pull-name]", "mimo-v2.6");
+    // The pull tile prints its progress and closes when it succeeds, which the demo's fake pull
+    // does at once: record every chip that appears, so a tile gone before the next poll is seen.
+    await app.eval(() => {
+      const seen: string[] = [];
+      Object.defineProperty(globalThis, "__chipsSeen", { value: seen });
+      const list = document.querySelector("[data-testid=chips]")!;
+      new MutationObserver(() => {
+        for (
+          const c of list.querySelectorAll<HTMLElement>("[data-testid=chip]")
+        ) {
+          if (!seen.includes(c.dataset.id!)) seen.push(c.dataset.id!);
+        }
+      }).observe(list, { childList: true, subtree: true });
+    });
     await app.click("[data-testid=ollama-pull]");
-    // The pull tile prints its progress and closes when it succeeds.
-    const id = await newFocused(app, before);
+    const id = await waitFor(
+      async () =>
+        (await app.eval(() =>
+          (globalThis as unknown as { __chipsSeen: string[] }).__chipsSeen
+        )).find((c) => !before.has(c)) ?? null,
+      5000,
+      "the pull tile",
+    );
     await waitFor(
       async () => !(await chipIds(app)).has(id),
       6000,
