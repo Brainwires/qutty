@@ -270,6 +270,86 @@ suite("motion", (test) => {
     assert(after.length >= before.length - 200, "nothing lost");
   });
 
+  test("chips: a press focuses its chip even if the strip moves before the release", async (app) => {
+    // The strip scrolls back toward the focused chip after a keyboard focus change; a press held
+    // through that scroll is released over something else, which fires no click. The chip acts
+    // on the press, as a browser tab does, and the terminal keeps the keyboard.
+    for (let i = 1; i < 16; i++) await app.newTerminal("shortcut");
+    for (let k = 0; k < 4; k++) {
+      await app.settle();
+      await app.focusChip((await app.mru()).at(-1)!);
+      const before = await app.mru();
+      await app.shortcut("Backquote");
+      await waitFor(
+        async () => (await app.focusedId()) === before[1],
+        3000,
+        `Mod+\` to focus ${before[1]}`,
+      );
+      const id = before[Math.floor(before.length / 2)];
+      await app.slowClick(
+        `[data-testid=chip][data-id="${id}"] .chip-title`,
+        400,
+      );
+      await waitFor(
+        async () => (await app.focusedId()) === id,
+        3000,
+        `${id} to be focused by the press`,
+      );
+      await waitFor(
+        () => app.xtermHasFocus(id),
+        3000,
+        `${id}'s terminal to have the keyboard`,
+      );
+      assertEquals((await app.chips()).length, 16, "no chip closed");
+    }
+  });
+
+  test("a chip click right after a keyboard focus change lands on that chip", async (app) => {
+    // The strip overflows; a click on the last chip scrolls it to the far end, the keyboard then
+    // moves the focus, and the switcher bar smooth-scrolls back to the focused chip (first in MRU
+    // order). That scroll stands still for a frame or more before it moves, so the chip aimed at
+    // next looks still, then slides away before the press arrives; `pressDelayMs` stands in for a
+    // loaded runner's round trip. Without `click`'s guard the press lands on the neighbouring chip
+    // (often on its close button) and the chip aimed at is never focused.
+    for (let i = 1; i < 16; i++) await app.newTerminal("shortcut");
+    for (let k = 0; k < 12; k++) {
+      app.pressDelayMs = 0;
+      await app.settle();
+      await app.focusChip((await app.mru()).at(-1)!);
+      const before = await app.mru();
+      await app.shortcut("Backquote");
+      await waitFor(
+        async () => (await app.focusedId()) === before[1],
+        3000,
+        `Mod+\` to focus ${before[1]}`,
+      );
+      // A chip in the middle of the strip, not one of the two the keyboard swapped.
+      const id = await app.eval((skip: string[]) => {
+        const box = document.querySelector("[data-testid=chips]")!
+          .getBoundingClientRect();
+        const mid = box.left + box.width * 0.6;
+        let best = "";
+        let dist = Infinity;
+        for (
+          const c of document.querySelectorAll<HTMLElement>(
+            "[data-testid=chip]",
+          )
+        ) {
+          const r = c.getBoundingClientRect();
+          const d = Math.abs(r.left + r.width / 2 - mid);
+          if (d < dist && !skip.includes(c.dataset.id!)) {
+            dist = d;
+            best = c.dataset.id!;
+          }
+        }
+        return best;
+      }, before.slice(0, 2));
+      app.pressDelayMs = [40, 80, 120][k % 3];
+      await app.focusChip(id);
+      assertEquals((await app.chips()).length, 16, "no chip closed");
+    }
+  });
+
   // ---- Stress -------------------------------------------------------------------------------
 
   test("stress: 16 terminals, 50 random focus actions, layout consistent with MRU", async (app) => {
