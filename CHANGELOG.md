@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The companion's commands run instead of failing: when it typed Enter as a
+  backslash escape, a shell got a stray `r` (`ls\r` ran `lsr`). `write_tile` now
+  takes `enter: true`, and a trailing `\r` / `\n` or newline is pressed as
+  Enter.
 - The companion is now called Companion (was Loopy), and you can rename it in
   Settings → Companion.
 - Hold to dictate: a second voice key, picked in Settings → Voice → "Hold to

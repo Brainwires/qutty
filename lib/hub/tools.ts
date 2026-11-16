@@ -105,6 +105,25 @@ function actionsOf(args: Record<string, unknown>): string[] {
   return v as string[];
 }
 
+/**
+ * What `write_tile` types for `text` (and `enter`). Models often spell Enter as the two characters
+ * backslash and r (a JSON escape written one level too deep), which a shell reads as `r`: `ls\r`
+ * runs `lsr`. So a trailing backslash-r / backslash-n (not itself escaped) is taken as Enter, a
+ * trailing real newline becomes a carriage return (what the Enter key sends; a TUI in raw mode
+ * ignores a bare LF), and `enter` presses Enter once at the end.
+ */
+export function tileInput(text: string, enter = false): string {
+  let body = text;
+  let pressEnter = enter;
+  for (;;) {
+    const m = /(?<!\\)(?:\\r\\n|\\r|\\n|\r\n|\r|\n)$/.exec(body);
+    if (!m) break;
+    body = body.slice(0, m.index);
+    pressEnter = true;
+  }
+  return pressEnter ? `${body}\r` : body;
+}
+
 /** The caller, from the connection it came on. */
 function identityOf(ctx: RequestContext): HubIdentity {
   const id = ctx.connection?.identity as HubIdentity | undefined;
@@ -368,10 +387,26 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   // --- companion only ---------------------------------------------------------------------------
   add(
     "write_tile",
-    "(Companion only.) Type text into a tile, as if the user typed it. Include \\r to press Enter.",
-    obj({ tile: TILE_ARG, text: { type: "string" } }, ["tile", "text"]),
+    "(Companion only.) Type text into a tile, as if the user typed it. Set enter: true to press " +
+      "Enter after it (to run a command); never spell Enter as a backslash escape in text.",
+    obj({
+      tile: TILE_ARG,
+      text: {
+        type: "string",
+        description: "What to type (may be empty with enter: true)",
+      },
+      enter: {
+        type: "boolean",
+        description: "Press Enter after the text (default false)",
+      },
+    }, ["tile"]),
     async (a) => {
-      await core.writeTile(str(a, "tile", 256), str(a, "text"));
+      const tileId = str(a, "tile", 256);
+      const enter = optBool(a, "enter") ?? false;
+      const raw = a.text === undefined || a.text === null || a.text === ""
+        ? (enter ? "" : str(a, "text"))
+        : str(a, "text");
+      await core.writeTile(tileId, tileInput(raw, enter));
       return "written";
     },
   );
