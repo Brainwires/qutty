@@ -1277,7 +1277,13 @@ function launchBrowser(): Promise<Browser> {
   const profile = Deno.makeTempDirSync({ prefix: "gui-terminal-e2e-chrome-" });
   const launching = launch({
     headless: true,
-    args: [MOTION_FLAG, `--user-data-dir=${profile}`],
+    // E2E_CHROME: a Chromium of the system's own (Astral downloads none for Linux on ARM).
+    path: Deno.env.get("E2E_CHROME") || undefined,
+    args: [
+      MOTION_FLAG,
+      `--user-data-dir=${profile}`,
+      ...(Deno.env.get("E2E_CHROME") ? ["--no-sandbox"] : []),
+    ],
   }).then((b) => {
     profiles.set(b, profile);
     return b;
