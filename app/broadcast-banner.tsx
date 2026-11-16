@@ -10,6 +10,7 @@ import {
   pasteSummary,
 } from "../lib/broadcast.ts";
 import type { HeldPaste } from "./use-broadcast.ts";
+import { boxOf, useAreaOverlays } from "./use-html-overlay.ts";
 
 export interface BroadcastBannerProps {
   state: BroadcastState;
@@ -27,9 +28,13 @@ export function BroadcastBanner(props: BroadcastBannerProps) {
   useEffect(() => {
     if (held) pasteRef.current?.focus();
   }, [held]);
+  // It stays while broadcast is on: a native web tile under it makes room (lib/web/overlays.ts).
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useAreaOverlays(rootRef, (el) => [{ kind: "keepout", box: boxOf(el, 4) }]);
   const live = state.members.length >= 2;
   return (
     <div
+      ref={rootRef}
       class={`bcast-banner${live ? " is-live" : ""}`}
       role="status"
       data-testid="broadcast-banner"

@@ -34,6 +34,7 @@ import {
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
 import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
+import { webviewSelfTest } from "./desktop/webview-selftest.ts";
 
 const app = await runDesktop({
   importMetaUrl: import.meta.url,
@@ -56,6 +57,13 @@ if (!app.sidecarChild) {
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
       console.error(`detach self-test: FAILED: ${e?.message ?? e}`);
+      Deno.exit(1);
+    });
+  }
+  // `QUTTY_PTY_SELFTEST=webview`: the native web view behind the web tiles (it needs a window).
+  if (Deno.env.get("QUTTY_PTY_SELFTEST") === "webview") {
+    webviewSelfTest(app).then(() => Deno.exit(0), (e) => {
+      console.error(`webview self-test: FAILED: ${e?.message ?? e}`);
       Deno.exit(1);
     });
   }

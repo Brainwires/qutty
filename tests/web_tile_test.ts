@@ -31,6 +31,7 @@ import {
 import { initialState, reduce } from "../lib/workspace/store.ts";
 import { planRestore, snapshotOf } from "../lib/workspace/session.ts";
 import { csp } from "../app/page.tsx";
+import { fakeField } from "./web_helpers.ts";
 
 Deno.test("web: canEmbed takes http(s) on loopback and dev hosts only", () => {
   for (
@@ -350,30 +351,6 @@ Deno.test("session: a web tile saves its page and comes back at it, with no PTY"
     undefined,
   );
 });
-
-/** A fake focused field: records what reached it. */
-function fakeField(tagName: string, opts: Record<string, unknown> = {}) {
-  const events: Event[] = [];
-  const field = {
-    tagName,
-    type: "text",
-    value: "abc",
-    selectionStart: 1 as number | null,
-    selectionEnd: 2 as number | null,
-    disabled: false,
-    readOnly: false,
-    isContentEditable: false,
-    setRangeText(text: string, start: number, end: number) {
-      this.value = this.value.slice(0, start) + text + this.value.slice(end);
-    },
-    dispatchEvent(e: Event) {
-      events.push(e);
-      return true;
-    },
-    ...opts,
-  };
-  return { field, events };
-}
 
 /** A fake document with `activeElement` focused; `exec` answers `execCommand`. */
 function fakeDoc(activeElement: unknown, exec: () => boolean = () => false) {

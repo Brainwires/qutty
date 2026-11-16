@@ -84,6 +84,9 @@
       }
     },
     "titleBar": "hiddenInset",
+    "webViews": {
+      "limit": 16
+    },
     "capabilities": {
       "extensions": [
         "./desktop/pty.ts",

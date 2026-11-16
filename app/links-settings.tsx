@@ -4,6 +4,7 @@
 // `{file}`, `{line}` and `{col}` (lib/links.ts `editorArgv`: run as an argv, never a shell).
 
 import { useEffect, useState } from "denext";
+import { webEngine } from "../lib/web/engine.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import {
   EDITOR_PRESETS,
@@ -62,13 +63,22 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
           <option value="tile">A Qutty tile</option>
           <option value="browser">Default browser</option>
         </select>
-        <span class="field-hint">
-          {mod}-click a URL to open it in a tile beside its terminal. For now
-          tiles show local development pages (localhost, 127.0.0.1, *.localhost,
-          *.test); other sites open in the default browser until Qutty's native
-          web view lands, then they open in a tile too. Right-click a link to
-          choose each time.
-        </span>
+        {webEngine().capabilities.engine === "native"
+          ? (
+            <span class="field-hint">
+              {mod}-click a URL to open it in a tile beside its terminal.
+              Right-click a link to choose each time.
+            </span>
+          )
+          : (
+            <span class="field-hint">
+              {mod}-click a URL to open it in a tile beside its terminal. For
+              now tiles show local development pages (localhost, 127.0.0.1,
+              *.localhost, *.test); other sites open in the default browser
+              until Qutty's native web view lands, then they open in a tile too.
+              Right-click a link to choose each time.
+            </span>
+          )}
       </label>
       <label class="field">
         <span class="field-label">Open files with a line in</span>

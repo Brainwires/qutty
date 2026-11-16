@@ -35,6 +35,7 @@ import { VIEW_LABELS } from "../lib/workspace/freeform.ts";
 import type { MenuTile } from "../lib/workspace/mdi-menu.ts";
 import { LaunchMenu, type LaunchMenuProps } from "./launch-menu.tsx";
 import { SysMeter } from "./sys-meter.tsx";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 import type { Smoothed } from "../lib/sysstats.ts";
 
 export interface SwitcherBarProps {
@@ -137,6 +138,8 @@ export function SwitcherBar(props: SwitcherBarProps) {
   const [menu, setMenu] = useState<"none" | "more" | "pattern" | "launch">(
     "none",
   );
+  // The bar's own menus (the launch menu registers itself) drop over the tiles.
+  useHtmlOverlay(menu === "more" || menu === "pattern");
   const vertical = props.position === "left" || props.position === "right";
   const chips = barChips(props.state, props.visibleIds);
   const ids = chips.map((c) => c.id);

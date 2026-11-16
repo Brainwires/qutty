@@ -41,6 +41,10 @@
 // no transition while the pointer moves). Maximize fills the whole area with the tile (MDI
 // maximize), the others behind it; a maximized tile does not drag. A web tile hears when another
 // tile covers it from above (`setOccluded`, for a native engine that draws above HTML).
+//
+// With the native web engine (whose views draw above all HTML) a tile that is being dragged,
+// entering, leaving or sliding to a new place counts as an open overlay (`useHtmlOverlay`): every
+// web view shows its snapshot while tiles move, so no tile passes under a page.
 
 import { type ReactNode, useEffect, useRef, useState } from "denext";
 import { type LayoutTile, rankScale, type Rect } from "../lib/layout/mod.ts";
@@ -68,6 +72,7 @@ import {
   type WebTileHooks,
   WebToolbar,
 } from "./web-tile.tsx";
+import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 
 /** The workspace's additions to a tile (SSH tiles, agent badges). */
 interface TileExtras {
@@ -242,7 +247,19 @@ function TerminalTile(props: TerminalTileProps) {
     phase !== "parked",
     props.web,
     props.onFocus,
-    ff?.occluded.has(id) ?? false,
+    {
+      occluded: ff?.occluded.has(id) ?? false,
+      z: ff ? ff.z.get(id) ?? 1 : 100 - rank,
+      key: `${rect.x},${rect.y},${rect.w},${rect.h},${phase}`,
+    },
+  );
+  // Native web views draw above all HTML: while this tile moves they show their snapshots.
+  const nativeWeb = props.web?.engine?.capabilities.drawsAboveHtml === true;
+  const sliding = useTileMotion(rootRef, nativeWeb);
+  useHtmlOverlay(
+    nativeWeb &&
+      (sliding || drag.live !== null || phase === "entering" ||
+        phase === "leaving"),
   );
 
   // Phase machine driven by visibility.

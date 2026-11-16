@@ -59,8 +59,8 @@ export interface UseVoiceOptions {
   enabled: boolean;
   /** The companion's name (Settings → Companion → Name): the summary phrase may address it. */
   companionName?: string;
-  /** Type `text` into the focused tile (its terminal, or a web tile's page). */
-  deliverToFocused(text: string): DictateOutcome;
+  /** Type `text` into the focused tile (its terminal, or a web tile's page, which answers late). */
+  deliverToFocused(text: string): DictateOutcome | Promise<DictateOutcome>;
 }
 
 /** What the overlay and Settings → Voice use. */

@@ -3,7 +3,7 @@
  * nothing about its history (not its URL, not whether it can go back), so the iframe engine
  * records the navigations it starts — the first page, the address field, back, forward — and
  * walks this list. Navigations the page makes on its own (a click on one of its links) are not
- * seen; the native engine reports those (its `url` event) and replaces this.
+ * seen; the native engine reports those (its `url` event) and does not use this.
  *
  * Pure and immutable: every operation returns a new history (or the same one when nothing
  * changes).

@@ -45,6 +45,13 @@ import { CompanionFace, type CompanionFaceProps } from "./companion-face.tsx";
 import { DEFAULT_COMPANION_NAME } from "../../lib/companion/settings.ts";
 import { SpeechBubble } from "./speech-bubble.tsx";
 import {
+  boxOf,
+  unionBox,
+  useAreaOverlays,
+  useHtmlOverlay,
+} from "../use-html-overlay.ts";
+import type { AreaOverlay } from "../../lib/web/overlays.ts";
+import {
   type CompanionEvent,
   companionReducer,
   INITIAL_COMPANION,
@@ -581,6 +588,23 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     excited: life.excited,
     sleepy: sleep.asleep,
   });
+
+  // Over a native web tile (lib/web/overlays.ts): the companion itself stays, so the page makes
+  // room for it; its bubble, chat box and notes come and go, so the page under them shows its
+  // snapshot meanwhile, as every page does while the companion is dragged.
+  const reactionShown = reaction !== null && face.layer === "reaction" &&
+    reactions?.bubble !== false;
+  const speaking = current !== undefined || review !== undefined || chatOpen ||
+    reactionShown || voiceNote !== "";
+  useAreaOverlays(overlayRef, (el) => {
+    const hit = unionBox(
+      [...el.querySelectorAll("[data-companion-hit]")].map((h) => boxOf(h, 6)),
+    );
+    const areas: AreaOverlay[] = hit ? [{ kind: "keepout", box: hit }] : [];
+    if (speaking) areas.push({ kind: "cover", box: boxOf(el, 8) });
+    return areas;
+  }, [speaking, props.corner, current?.id]);
+  useHtmlOverlay(drag.dragging);
 
   const showHot = face.hot;
   const onHotShown = useRef(props.onHotShown);
