@@ -2519,6 +2519,74 @@ kbd {
   transition: none;
 }
 
+/* ---- Dictation: the focused tile's mic badge, the note when nothing could be typed -------- */
+
+.tile-dictating {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font: 10.5px/1 var(--mono);
+}
+.tile-dictating-mic {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.tile-dictating-level {
+  flex: none;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) left /
+    calc(var(--dictate-level, 0) * 100%)
+    100% no-repeat,
+    rgba(var(--accent-rgb), 0.22);
+}
+.tile-dictating[data-phase="transcribing"] .tile-dictating-level {
+  background: rgba(var(--accent-rgb), 0.22);
+}
+.dictation-note {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 600;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(var(--panel-rgb), 0.97);
+  box-shadow: 0 14px 36px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  /* Its end removes the note (app/dictation.tsx): an opacity fade, kept with reduced motion. */
+  animation: dictation-note 3.2s ease-in forwards;
+}
+@keyframes dictation-note {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* ---- Agent hub: tile badges, ask_user, Settings → Agent integration --------------------- */
 
 .tile-agent {

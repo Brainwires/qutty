@@ -12,6 +12,8 @@
 // the browser (and the server) are launched once per file and every case still reports on its
 // own. Each case gets a fresh page with the origin's storage cleared, and fails if the page logs
 // a console error or throws. `E2E_FILTER=<substring>` runs only the matching cases.
+// `E2E_CPU_THROTTLE=<n>` slows the page's CPU n times (Chromium's throttling), to try a
+// timing-sensitive case the way a loaded CI runner runs it.
 
 import { type Browser, launch, type Page } from "@astral/astral";
 import { contentType } from "@std/media-types";
@@ -322,6 +324,8 @@ interface ClickGuard {
   selector: string | null;
   /** `"ok"` (the press landed on it), a description of what it landed on instead, or null. */
   landed: string | null;
+  /** The last few presses and focus changes, with times: what `focusChip` reports on a timeout. */
+  trace: string[];
 }
 
 /**
@@ -333,8 +337,37 @@ interface ClickGuard {
  * focus change) sits still for a frame or more before it moves, so it passes the stillness check.
  */
 function clickGuardScript(): void {
-  const g: ClickGuard = { selector: null, landed: null };
+  const g: ClickGuard = { selector: null, landed: null, trace: [] };
   Object.defineProperty(globalThis, "__clickGuard", { value: g });
+  const note = (line: string) => {
+    g.trace.push(`${performance.now().toFixed(0)} ${line}`);
+    if (g.trace.length > 40) g.trace.shift();
+  };
+  const describe = (t: EventTarget | null) =>
+    t instanceof Element
+      ? `${t.tagName.toLowerCase()}.${[...t.classList].join(".")}${
+        (t.closest("[data-id]") as HTMLElement | null)?.dataset.id
+          ? ` in ${(t.closest("[data-id]") as HTMLElement).dataset.id}`
+          : ""
+      }`
+      : String(t);
+  for (const type of ["pointerdown", "pointerup", "click", "keydown"]) {
+    addEventListener(type, (e) => {
+      const at = e instanceof MouseEvent ? ` at ${e.clientX},${e.clientY}` : "";
+      const key = e instanceof KeyboardEvent ? ` ${e.key}` : "";
+      note(`${type}${key} on ${describe(e.target)}${at}`);
+    }, true);
+  }
+  new MutationObserver((records) => {
+    for (const r of records) {
+      const el = r.target as HTMLElement;
+      if (el.dataset?.testid === "app") note(`focused ${el.dataset.focused}`);
+    }
+  }).observe(document, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-focused"],
+  });
   let swallow = false;
   const block = (e: Event) => {
     e.stopImmediatePropagation();
@@ -349,14 +382,7 @@ function clickGuardScript(): void {
       g.landed = "ok";
       return;
     }
-    const at = t instanceof Element
-      ? `${t.tagName.toLowerCase()}.${[...t.classList].join(".")}${
-        (t.closest("[data-id]") as HTMLElement | null)?.dataset.id
-          ? ` in ${(t.closest("[data-id]") as HTMLElement).dataset.id}`
-          : ""
-      }`
-      : String(t);
-    g.landed = `${at} at ${e.clientX},${e.clientY}`;
+    g.landed = `${describe(t)} at ${e.clientX},${e.clientY}`;
     swallow = true;
     block(e);
   }, true);
@@ -424,6 +450,10 @@ export class App {
     await this.cdp.Page.addScriptToEvaluateOnNewDocument({
       source: `(${clickGuardScript.toString()})();`,
     });
+    const throttle = Number(Deno.env.get("E2E_CPU_THROTTLE") ?? "0");
+    if (throttle > 1) {
+      await this.cdp.Emulation.setCPUThrottlingRate({ rate: throttle });
+    }
     await this.page.goto(this.url, { waitUntil: "load" });
     await this.waitReady();
   }
@@ -1072,11 +1102,21 @@ export class App {
   async focusChip(id: string): Promise<void> {
     await this.waitForChipTitles();
     await this.click(`[data-testid=chip][data-id="${id}"] .chip-title`);
-    await waitFor(
-      async () => (await this.focusedId()) === id,
-      3000,
-      `${id} to be focused`,
-    );
+    try {
+      await waitFor(
+        async () => (await this.focusedId()) === id,
+        3000,
+        `${id} to be focused`,
+      );
+    } catch (err) {
+      // A flake seen only on loaded CI runners: say what the page saw, press by press.
+      const trace = await this.eval(() =>
+        (globalThis as { __clickGuard?: ClickGuard }).__clickGuard?.trace ?? []
+      ).catch(() => []);
+      throw new Error(
+        `${(err as Error).message}\n  page trace:\n    ${trace.join("\n    ")}`,
+      );
+    }
   }
 
   async openSettings(): Promise<void> {
@@ -1237,7 +1277,13 @@ function launchBrowser(): Promise<Browser> {
   const profile = Deno.makeTempDirSync({ prefix: "gui-terminal-e2e-chrome-" });
   const launching = launch({
     headless: true,
-    args: [MOTION_FLAG, `--user-data-dir=${profile}`],
+    // E2E_CHROME: a Chromium of the system's own (Astral downloads none for Linux on ARM).
+    path: Deno.env.get("E2E_CHROME") || undefined,
+    args: [
+      MOTION_FLAG,
+      `--user-data-dir=${profile}`,
+      ...(Deno.env.get("E2E_CHROME") ? ["--no-sandbox"] : []),
+    ],
   }).then((b) => {
     profiles.set(b, profile);
     return b;
