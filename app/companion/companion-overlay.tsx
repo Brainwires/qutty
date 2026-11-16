@@ -1,5 +1,5 @@
-// Loopy in the window: the companion overlay in a corner of the tile area. Its speech bubble
-// shows, one at a time and in arrival order:
+// The companion in the window: the companion overlay in a corner of the tile area. Its speech
+// bubble shows, one at a time and in arrival order:
 //
 // - agents' `ask_user` questions, with a button per answer (the waiting caller gets the label;
 //   the close button answers "dismissed"). This replaces the ask dialog (app/ask-dialog.tsx),
@@ -8,39 +8,41 @@
 // - the companion's replies, streamed in as its brain writes them, and its notes on agents'
 //   messages.
 //
-// Clicking Loopy opens the chat box under the bubble: what is typed there goes to the companion's
-// brain (desktop/companion.ts). Loopy thinks (its `think` move) while the brain works, and a dot
-// beside it shows the brain's status. Everything else in the overlay lets clicks through to the
-// tiles underneath (`pointer-events: none` but on Loopy, the bubble and the chat box).
+// Clicking the companion opens the chat box under the bubble: what is typed there goes to the
+// companion's brain (desktop/companion.ts). The companion thinks (its `think` move) while the brain
+// works, and a dot beside it shows the brain's status. Everything else in the overlay lets clicks
+// through to the tiles underneath (`pointer-events: none` but on the companion, the bubble and the
+// chat box).
 //
-// Dragging Loopy (app/companion/use-loopy-drag.ts) moves it to another corner: past a few pixels a
-// press is a drag, not a click; on release it snaps to the nearest corner, which is saved as
-// Settings → Companion → Corner (`onCorner`).
+// Dragging the companion (app/companion/use-companion-drag.ts) moves it to another corner: past a
+// few pixels a press is a drag, not a click; on release it snaps to the nearest corner, which is
+// saved as Settings → Companion → Corner (`onCorner`).
 //
 // The bubble never takes the keyboard by itself (a question can arrive mid-typing); after a
 // button or the close, the keyboard goes back to the focused tile. Escape in the chat box closes
 // it the same way.
 //
-// Voice (app/use-voice.ts): a mic button beside Loopy (hold to talk; a short click keeps listening
-// until the next click), a Summarize button ("what's going on in the window?") and, while an
-// answer is read aloud, a stop button. With review on, a transcript waits in the chat box with
+// Voice (app/use-voice.ts): a mic button beside the companion (hold to talk; a short click keeps
+// listening until the next click), a Summarize button ("what's going on in the window?") and, while
+// an answer is read aloud, a stop button. With review on, a transcript waits in the chat box with
 // Send / Edit / Cancel before it goes to the companion (or, in dictate mode, the focused tile).
-// Loopy shows the voice turn as the example does: it listens (the head glows), thinks while the
-// transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync). While
-// it listens, its head swells with the microphone's level (`voice.level`).
+// The companion shows the voice turn as the example does: it listens (the head glows), thinks while
+// the transcript is made, and moves its mouth while an answer or alert is read aloud (lip-sync).
+// While it listens, its head swells with the microphone's level (`voice.level`).
 //
-// Lively (app/companion/use-loopy-life.ts): with nothing on screen, Loopy makes small faces now
-// and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
+// Lively (app/companion/use-companion-life.ts): with nothing on screen, the companion makes small
+// faces now and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
 //
 // Reactions (Settings → Companion → Reactions): a hop of joy or a sad face when a long job
-// finishes (app/companion/use-loopy-reaction.ts), and sleepy at night
-// (app/companion/use-loopy-sleep.ts). Which face shows when several want Loopy is one pure
-// function, lib/companion/loopy-priority.ts: a question > a message > thinking / voice > a
+// finishes (app/companion/use-companion-reaction.ts), and sleepy at night
+// (app/companion/use-companion-sleep.ts). Which face shows when several want the companion is one
+// pure function, lib/companion/face-priority.ts: a question > a message > thinking / voice > a
 // reaction > hot > excited > sleepy > the idle life.
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
-import { Loopy, type LoopyProps } from "./loopy.tsx";
+import { CompanionFace, type CompanionFaceProps } from "./companion-face.tsx";
+import { DEFAULT_COMPANION_NAME } from "../../lib/companion/settings.ts";
 import { SpeechBubble } from "./speech-bubble.tsx";
 import {
   type CompanionEvent,
@@ -48,12 +50,12 @@ import {
   INITIAL_COMPANION,
 } from "../../lib/companion/companion-state.ts";
 import {
-  type LoopyModel,
-  type LoopyMood,
-  type LoopyState,
+  type FaceModel,
+  type FaceMood,
+  type FaceState,
   nextTimer,
-} from "../../lib/companion/loopy-machine.ts";
-import type { LoopyMessage } from "../../lib/companion/messages.ts";
+} from "../../lib/companion/face-machine.ts";
+import type { CompanionMessage } from "../../lib/companion/messages.ts";
 import {
   askAnswer,
   askBubble,
@@ -74,45 +76,50 @@ import {
   TALK_STEP_MS,
   talkStep,
 } from "../../lib/companion/lip-sync.ts";
-import { useLoopyLife } from "./use-loopy-life.ts";
-import { useLoopyDrag } from "./use-loopy-drag.ts";
-import { mayLiven } from "../../lib/companion/loopy-life.ts";
+import { useCompanionLife } from "./use-companion-life.ts";
+import { useCompanionDrag } from "./use-companion-drag.ts";
+import { mayLiven } from "../../lib/companion/face-life.ts";
 import { mayShowHot } from "../../lib/sysstats.ts";
 import {
   chooseFace,
   type FaceInputs,
   mayStartReaction,
-} from "../../lib/companion/loopy-priority.ts";
+} from "../../lib/companion/face-priority.ts";
 import type { Reaction } from "../../lib/companion/reactions.ts";
-import { useLoopySleep } from "./use-loopy-sleep.ts";
-import { useLoopyReaction } from "./use-loopy-reaction.ts";
+import { useCompanionSleep } from "./use-companion-sleep.ts";
+import { useCompanionReaction } from "./use-companion-reaction.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
+  /** What the companion is called (Settings → Companion → Name; default "Companion"). */
+  name?: string;
   corner: CompanionCorner;
   /** Whether the brain may run (else the chat box says how to turn it on). */
   brain: boolean;
   reducedMotion: boolean;
-  /** Settings → Companion → Lively: idle expressions, eyes on the pointer (app/companion/use-loopy-life.ts). */
+  /**
+   * Settings → Companion → Lively: idle expressions, eyes on the pointer
+   * (app/companion/use-companion-life.ts).
+   */
   lively?: boolean;
   /** Give the keyboard back to the focused tile. */
   onRefocus(): void;
-  /** Loopy was dragged to `corner` (saved as Settings → Companion → Corner). */
+  /** The companion was dragged to `corner` (saved as Settings → Companion → Corner). */
   onCorner?(corner: CompanionCorner): void;
   /** The voice layer (absent: no mic or summary buttons). */
   voice?: VoiceApi;
   /** The hold-to-talk key's label (`⌘⇧M`), or `""` when it is off. */
   pttLabel?: string;
   /**
-   * Qutty's own: the machine is hot (app/use-sysstats.ts, Settings → System monitor). Loopy wears
-   * its hot face only while it is otherwise idle (lib/sysstats.ts `mayShowHot`).
+   * Qutty's own: the machine is hot (app/use-sysstats.ts, Settings → System monitor). The companion
+   * wears its hot face only while it is otherwise idle (lib/sysstats.ts `mayShowHot`).
    */
   hot?: boolean;
   /** The hot face came on (the workspace may say a line about it, rarely). */
   onHotShown?(): void;
   /**
    * Settings → Companion → Reactions: sleepy at night (its hours, minutes since midnight) and
-   * the short line beside Loopy when it reacts.
+   * the short line beside the companion when it reacts.
    */
   reactions?: {
     readonly nightSleepy: boolean;
@@ -157,15 +164,15 @@ function squash(el: Element | null): void {
 
 /** End timed moves on time, and blink now and then while idle. */
 function useTimedMoves(
-  loopy: LoopyModel,
+  avatar: FaceModel,
   dispatch: Dispatch<CompanionEvent>,
 ): void {
   useEffect(() => {
-    const next = nextTimer(loopy.state);
+    const next = nextTimer(avatar.state);
     if (!next) return;
     const timer = setTimeout(() => dispatch(next.event), next.ms);
     return () => clearTimeout(timer);
-  }, [loopy]);
+  }, [avatar]);
 }
 
 /** The bubbles' sources: questions, `say` messages, the brain's turns and status. */
@@ -181,7 +188,7 @@ function useCompanionFeed(
 
   useEffect(() => {
     let live = true;
-    const enqueue = (message: LoopyMessage) => {
+    const enqueue = (message: CompanionMessage) => {
       if (!closed.has(message.id)) dispatch({ type: "enqueue", message });
     };
     const addAsk = (request: AskRequest) => {
@@ -238,7 +245,7 @@ function useCompanionFeed(
   }, [backend]);
 
   /** A bubble is done (a button: `actionId`; closed: `null`): answer whoever waits for it. */
-  const answer = (message: LoopyMessage, actionId: string | null) => {
+  const answer = (message: CompanionMessage, actionId: string | null) => {
     const askId = askIdOf(message.id);
     if (askId) {
       const request = asks.current.get(askId);
@@ -262,7 +269,7 @@ interface Review {
 }
 
 /** A transcript under review: Send, Edit (the line becomes editable), Cancel. */
-function ReviewBox(props: { review: Review }) {
+function ReviewBox(props: { review: Review; name: string }) {
   const { review } = props;
   const [draft, setDraft] = useState(review.transcript);
   const [editing, setEditing] = useState(false);
@@ -280,7 +287,7 @@ function ReviewBox(props: { review: Review }) {
       class="companion-chat voice-review"
       data-testid="voice-review"
       data-target={review.target}
-      data-loopy-hit=""
+      data-companion-hit=""
       onSubmit={(e) => {
         e.preventDefault();
         send();
@@ -289,7 +296,7 @@ function ReviewBox(props: { review: Review }) {
       <span class="voice-review-to">
         {review.target === "dictate"
           ? "Type into the focused tile"
-          : "Send to Loopy"}
+          : `Send to ${props.name}`}
       </span>
       <input
         ref={inputRef}
@@ -334,6 +341,8 @@ function ReviewBox(props: { review: Review }) {
 
 /** The chat box: one line to the companion; Escape closes it. */
 function ChatBox(props: {
+  /** The companion's name. */
+  name: string;
   brain: boolean;
   onSend(text: string): void;
   onClose(): void;
@@ -345,8 +354,8 @@ function ChatBox(props: {
   return (
     <form
       class="companion-chat"
-      data-testid="loopy-chat"
-      data-loopy-hit=""
+      data-testid="companion-chat"
+      data-companion-hit=""
       onSubmit={(e) => {
         e.preventDefault();
         const text = draft.trim();
@@ -359,11 +368,11 @@ function ChatBox(props: {
         ref={inputRef}
         type="text"
         class="companion-chat-input"
-        data-testid="loopy-chat-input"
-        aria-label="Ask Loopy"
+        data-testid="companion-chat-input"
+        aria-label={`Ask ${props.name}`}
         placeholder={off
           ? "My brain is off (Settings → Companion)"
-          : "Ask Loopy…"}
+          : `Ask ${props.name}…`}
         disabled={off}
         value={draft}
         maxLength={4000}
@@ -380,7 +389,7 @@ function ChatBox(props: {
       <button
         type="submit"
         class="companion-chat-send"
-        data-testid="loopy-chat-send"
+        data-testid="companion-chat-send"
         aria-label="Send"
         title="Send"
         disabled={off || !draft.trim()}
@@ -392,29 +401,29 @@ function ChatBox(props: {
 }
 
 /**
- * The mood Loopy wears: the message's on screen (as in the example), else `thinking` while it
- * thinks with nothing to show (the brain working), else none (bare steel).
+ * The mood the companion wears: the message's on screen (as in the example), else `thinking` while
+ * it thinks with nothing to show (the brain working), else none (bare steel).
  */
-function loopyMood(
-  current: LoopyMessage | undefined,
-  state: LoopyState,
-): LoopyMood | undefined {
+function faceMood(
+  current: CompanionMessage | undefined,
+  state: FaceState,
+): FaceMood | undefined {
   if (current) return current.mood;
   return state === "think" ? "thinking" : undefined;
 }
 
-/** What Loopy does in the voice turn: listens, thinks while transcribing, or speaks. */
-function loopyVoice(
+/** What the companion does in the voice turn: listens, thinks while transcribing, or speaks. */
+function faceVoice(
   phase: VoicePhase,
   speaking: boolean,
-): LoopyProps["voice"] {
+): CompanionFaceProps["voice"] {
   if (phase === "starting" || phase === "listening") return "listening";
   if (phase === "transcribing") return "thinking";
   return speaking ? "speaking" : undefined;
 }
 
 /**
- * Loopy's mouth step while something is said: the talking pattern, a step every
+ * The companion's mouth step while something is said: the talking pattern, a step every
  * {@linkcode TALK_STEP_MS}; with reduced motion a steady open mouth. Closed (0) otherwise.
  */
 function useTalkStep(speaking: boolean, reducedMotion: boolean): number {
@@ -429,7 +438,7 @@ function useTalkStep(speaking: boolean, reducedMotion: boolean): number {
   return reducedMotion ? 2 : talkStep(tick);
 }
 
-/** Loopy, its bubble and its chat box, in a corner of the tile area. */
+/** The companion, its bubble and its chat box, in a corner of the tile area. */
 export function CompanionOverlay(props: CompanionOverlayProps) {
   const { backend } = props;
   const [model, dispatch] = useReducer(companionReducer, INITIAL_COMPANION);
@@ -439,36 +448,36 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const pokeRef = useRef<HTMLButtonElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const drag = useLoopyDrag({
+  const drag = useCompanionDrag({
     target: pokeRef,
     overlay: overlayRef,
     onDrop: (corner) => props.onCorner?.(corner),
   });
   const feed = useCompanionFeed(backend, dispatch, closedRef.current);
-  useTimedMoves(model.loopy, dispatch);
+  useTimedMoves(model.avatar, dispatch);
   useEffect(() => dispatch({ type: "show" }), []);
 
   const current = model.queue[0];
   const thinking = feed.status?.state === "thinking" ||
     feed.status?.state === "starting";
-  // Working with nothing to show (agents' messages, the brain starting): Loopy thinks.
-  const loopyState = model.loopy.state;
+  // Working with nothing to show (agents' messages, the brain starting): the companion thinks.
+  const faceState = model.avatar.state;
   useEffect(() => {
     if (current) return;
-    if (thinking && loopyState === "idle") {
+    if (thinking && faceState === "idle") {
       dispatch({ type: "say", mood: "thinking" });
-    } else if (!thinking && loopyState === "think") {
+    } else if (!thinking && faceState === "think") {
       dispatch({ type: "settle" });
     }
-  }, [thinking, loopyState, current?.id]);
+  }, [thinking, faceState, current?.id]);
 
-  const finish = (message: LoopyMessage, actionId: string | null) => {
+  const finish = (message: CompanionMessage, actionId: string | null) => {
     closedRef.current.add(message.id);
     feed.answer(message, actionId);
     dispatch({ type: "finish", id: message.id });
   };
   /** Finished by a click in the bubble: the keyboard goes back to the tile. */
-  const finishByHand = (message: LoopyMessage, actionId: string | null) => {
+  const finishByHand = (message: CompanionMessage, actionId: string | null) => {
     finish(message, actionId);
     if (!chatOpen) props.onRefocus();
   };
@@ -482,11 +491,12 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     props.onRefocus();
   };
 
+  const name = props.name ?? DEFAULT_COMPANION_NAME;
   const voice = props.voice;
   const voicePhase = voice?.state.phase ?? "idle";
-  const loopyVoiceTurn = loopyVoice(voicePhase, voice?.speaking === true);
+  const faceVoiceTurn = faceVoice(voicePhase, voice?.speaking === true);
   const talk = useTalkStep(
-    loopyVoiceTurn === "speaking",
+    faceVoiceTurn === "speaking",
     props.reducedMotion,
   );
   const voiceNote = voice
@@ -507,13 +517,13 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     }
     : undefined;
 
-  // The faces that want Loopy, in their order (lib/companion/loopy-priority.ts).
+  // The faces that want the companion, in their order (lib/companion/face-priority.ts).
   const lively = props.lively !== false;
   const base = {
     lively,
-    state: loopyState,
+    state: faceState,
     message: current !== undefined,
-    voice: loopyVoiceTurn !== undefined,
+    voice: faceVoiceTurn !== undefined,
     busy: thinking,
   };
   // Hot: only on an otherwise free face (no question, reply, thinking or voice turn).
@@ -528,8 +538,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         ? "attention"
         : "other")
       : null,
-    thinking: thinking || loopyState === "think",
-    voice: loopyVoiceTurn !== undefined,
+    thinking: thinking || faceState === "think",
+    voice: faceVoiceTurn !== undefined,
     hot: hotWanted,
   };
   const canReact = mayStartReaction({
@@ -538,7 +548,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     excited: false,
     sleepy: false,
   });
-  const reaction = useLoopyReaction({
+  const reaction = useCompanionReaction({
     reaction: props.reaction,
     canStart: canReact,
     reducedMotion: props.reducedMotion,
@@ -546,7 +556,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     ...(props.onReactionShown ? { onShown: props.onReactionShown } : {}),
   });
   const reactions = props.reactions;
-  const sleep = useLoopySleep({
+  const sleep = useCompanionSleep({
     enabled: reactions?.nightSleepy === true,
     from: reactions?.nightFrom ?? 0,
     to: reactions?.nightTo ?? 0,
@@ -557,7 +567,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     reducedMotion: props.reducedMotion,
   });
 
-  const life = useLoopyLife({
+  const life = useCompanionLife({
     ...base,
     dragging: drag.dragging,
     held: reaction !== null || hotWanted || sleep.asleep,
@@ -593,7 +603,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       data-testid="companion-overlay"
       data-corner={props.corner}
       data-dragging={drag.dragging ? "true" : undefined}
-      data-loopy-state={model.loopy.state}
+      data-companion-state={model.avatar.state}
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
       data-voice={voicePhase}
       data-speaking={voice?.speaking ? "true" : "false"}
@@ -612,9 +622,10 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         )}
       </div>
       {review
-        ? <ReviewBox key={review.transcript} review={review} />
+        ? <ReviewBox key={review.transcript} review={review} name={name} />
         : chatOpen && (
           <ChatBox
+            name={name}
             brain={props.brain}
             onSend={(text) => {
               voice?.stopSpeaking();
@@ -625,8 +636,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         )}
       {reaction && face.layer === "reaction" && reactions?.bubble !== false && (
         <p
-          class="loopy-reaction"
-          data-testid="loopy-reaction"
+          class="companion-reaction"
+          data-testid="companion-reaction"
           data-kind={reaction.kind}
           role="status"
         >
@@ -644,12 +655,13 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         </p>
       )}
       <div class="stage">
-        <div class="squash" ref={squashRef} data-loopy-hit="">
-          <Loopy
-            state={model.loopy.state}
-            mood={loopyMood(current, model.loopy.state) ?? face.mood}
-            voice={loopyVoiceTurn}
-            level={loopyVoiceTurn === "listening"
+        <div class="squash" ref={squashRef} data-companion-hit="">
+          <CompanionFace
+            label={name}
+            state={model.avatar.state}
+            mood={faceMood(current, model.avatar.state) ?? face.mood}
+            voice={faceVoiceTurn}
+            level={faceVoiceTurn === "listening"
               ? (voice?.level ?? 0) * LEVEL_STEPS
               : talk}
             lively={props.lively !== false}
@@ -662,14 +674,14 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             ref={pokeRef}
             type="button"
             class="poke"
-            data-testid="loopy-poke"
+            data-testid="companion-poke"
             aria-label={chatOpen
-              ? "Close the chat with Loopy"
-              : "Talk to Loopy"}
+              ? `Close the chat with ${name}`
+              : `Talk to ${name}`}
             aria-expanded={chatOpen}
             title={chatOpen
-              ? "Close the chat (drag to move Loopy)"
-              : "Talk to Loopy (drag to move it)"}
+              ? `Close the chat (drag to move ${name})`
+              : `Talk to ${name} (drag to move it)`}
             onClick={poke}
           />
         </div>
@@ -685,7 +697,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         {status && (
           <span
             class="companion-status"
-            data-testid="loopy-status"
+            data-testid="companion-status"
             data-state={status.enabled ? status.state : "off"}
             title={statusLabel}
             aria-label={statusLabel}
@@ -723,11 +735,11 @@ function VoiceButtons(props: {
     props.onDone();
   };
   return (
-    <div class="voice-buttons" data-loopy-hit="">
+    <div class="voice-buttons" data-companion-hit="">
       <button
         type="button"
         class="voice-mic"
-        data-testid="loopy-mic"
+        data-testid="companion-mic"
         data-phase={phase}
         data-latched={voice.state.latched ? "true" : "false"}
         aria-pressed={listening}
@@ -749,7 +761,7 @@ function VoiceButtons(props: {
       <button
         type="button"
         class="voice-summarize"
-        data-testid="loopy-summarize"
+        data-testid="companion-summarize"
         aria-label="Summarize the window"
         title="Summarize the window (or say “what's going on?”)"
         onClick={() => {
@@ -765,7 +777,7 @@ function VoiceButtons(props: {
         <button
           type="button"
           class="voice-stop"
-          data-testid="loopy-stop-speaking"
+          data-testid="companion-stop-speaking"
           aria-label="Stop speaking"
           title="Stop speaking"
           onClick={() => {

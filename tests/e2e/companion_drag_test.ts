@@ -1,29 +1,30 @@
-// Dragging Loopy to another corner against the demo backend (app/companion/use-loopy-drag.ts): a
-// drag past the threshold moves the overlay with the pointer and snaps it to the nearest corner on
-// release, saved as Settings → Companion → Corner, without the click that would open the chat; a
-// press that barely moves is still a click; a drag that ends where it began snaps back.
+// Dragging the companion to another corner against the demo backend
+// (app/companion/use-companion-drag.ts): a drag past the threshold moves the overlay with the
+// pointer and snaps it to the nearest corner on release, saved as Settings → Companion → Corner,
+// without the click that would open the chat; a press that barely moves is still a click; a drag
+// that ends where it began snaps back.
 
 import { assert, assertEquals } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
 import { press } from "./pointer_helpers.ts";
 
 const OVERLAY = "[data-testid=companion-overlay]";
-const POKE = "[data-testid=loopy-poke]";
-const INPUT = "[data-testid=loopy-chat-input]";
+const POKE = "[data-testid=companion-poke]";
+const INPUT = "[data-testid=companion-chat-input]";
 
-/** Wait until Loopy has sprung up and stands idle. */
+/** Wait until the companion has sprung up and stands idle. */
 function landed(app: App) {
   return waitFor(
     async () =>
       ["idle", "blink"].includes(
-        await app.attr(OVERLAY, "data-loopy-state") ?? "",
+        await app.attr(OVERLAY, "data-companion-state") ?? "",
       ),
     3000,
-    "Loopy landed",
+    "The companion landed",
   );
 }
 
-/** The centre of Loopy's face, and the overlay's insets from the tile area's edges. */
+/** The centre of the companion's face, and the overlay's insets from the tile area's edges. */
 function where(app: App) {
   return app.eval(
     (o: string, p: string) => {
@@ -47,7 +48,7 @@ function where(app: App) {
 }
 
 suite("companion drag", (test) => {
-  test("drag Loopy from the bottom right to the top left: it snaps there and the corner is saved; no chat", async (app) => {
+  test("drag the companion from the bottom right to the top left: it snaps there and the corner is saved; no chat", async (app) => {
     await landed(app);
     assertEquals(await app.attr(OVERLAY, "data-corner"), "bottom-right");
     const start = await where(app);
@@ -67,7 +68,7 @@ suite("companion drag", (test) => {
     await waitFor(
       async () => (await app.attr(OVERLAY, "data-corner")) === "top-left",
       2000,
-      "Loopy in the top left",
+      "The companion in the top left",
     );
     const end = await where(app);
     assertEquals(end.translate, "", "no offset once it snapped");

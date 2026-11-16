@@ -1,6 +1,6 @@
-// Loopy's reactions (Settings → Companion → Reactions): which finished jobs earn a hop of joy or a
-// sad face (lib/companion/reactions.ts), sleepy at night (lib/companion/sleepy.ts), the order of
-// the faces (lib/companion/loopy-priority.ts) and the settings that drive them.
+// The companion's reactions (Settings → Companion → Reactions): which finished jobs earn a hop of
+// joy or a sad face (lib/companion/reactions.ts), sleepy at night (lib/companion/sleepy.ts), the
+// order of the faces (lib/companion/face-priority.ts) and the settings that drive them.
 
 import { assert, assertEquals } from "@std/assert";
 import {
@@ -35,8 +35,8 @@ import {
   type FaceInputs,
   mayStartReaction,
   topLayer,
-  wakesLoopy,
-} from "../lib/companion/loopy-priority.ts";
+  wakesCompanion,
+} from "../lib/companion/face-priority.ts";
 import {
   DEFAULT_COMPANION,
   sanitizeCompanion,
@@ -401,11 +401,11 @@ Deno.test("shouldSleep / shouldWake: at night, idle, nothing else on", () => {
   assert(shouldWake({ ...night, enabled: false }));
 });
 
-Deno.test("nearEnoughToWake: within twice Loopy's size", () => {
-  const loopy = { cx: 100, cy: 100, size: 50 };
-  assert(nearEnoughToWake({ x: 100, y: 100 }, loopy));
-  assert(nearEnoughToWake({ x: 199, y: 100 }, loopy));
-  assert(!nearEnoughToWake({ x: 201, y: 100 }, loopy));
+Deno.test("nearEnoughToWake: within twice the companion's size", () => {
+  const avatar = { cx: 100, cy: 100, size: 50 };
+  assert(nearEnoughToWake({ x: 100, y: 100 }, avatar));
+  assert(nearEnoughToWake({ x: 199, y: 100 }, avatar));
+  assert(!nearEnoughToWake({ x: 201, y: 100 }, avatar));
 });
 
 // --- the faces' order -------------------------------------------------------------------------
@@ -511,8 +511,8 @@ Deno.test("mayStartReaction: never over a question, a message, thinking or voice
   ) assert(!mayStartReaction({ ...NONE, ...over }), JSON.stringify(over));
 });
 
-Deno.test("wakesLoopy: anything above sleepy", () => {
-  assert(!wakesLoopy({ ...NONE, sleepy: true }));
+Deno.test("wakesCompanion: anything above sleepy", () => {
+  assert(!wakesCompanion({ ...NONE, sleepy: true }));
   for (
     const over of [
       { message: "attention" as const },
@@ -524,7 +524,7 @@ Deno.test("wakesLoopy: anything above sleepy", () => {
     ]
   ) {
     assert(
-      wakesLoopy({ ...NONE, sleepy: true, ...over }),
+      wakesCompanion({ ...NONE, sleepy: true, ...over }),
       JSON.stringify(over),
     );
   }

@@ -7,7 +7,8 @@
 // - `window.__e2e.resizes`: every PTY resize the backend was asked for, in order.
 // - `window.__e2e.links`: every link the backend was asked to open or edit, in order, and
 //   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
-// - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for Loopy's night.
+// - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for the companion's
+// night.
 // - `window.__e2e.requestClose(reason)`: a click on the window's close button (or a quit), asked
 //   of the page's close guard; `window.__e2e.windowCalls`: the session's `closeWindow` /
 //   `endWindow` calls, in order.
@@ -167,8 +168,8 @@ export function withBackendSpy(
     integrationUninstall: (target) => backend.integrationUninstall(target),
     companionStatus: () => backend.companionStatus(),
     companionSend: (text, via) => backend.companionSend(text, via),
-    companionConfigure: (enabled, model, engine) =>
-      backend.companionConfigure(enabled, model, engine),
+    companionConfigure: (enabled, model, engine, name) =>
+      backend.companionConfigure(enabled, model, engine, name),
     companionKeyStatus: () => backend.companionKeyStatus(),
     companionKeySet: (key) => backend.companionKeySet(key),
     companionKeyClear: () => backend.companionKeyClear(),
@@ -214,8 +215,8 @@ let clockOffset = 0;
 export const CLOCK_EVENT = "qutty:clock";
 
 /**
- * Now, for what depends on the time of day (Loopy sleepy at night: lib/companion/sleepy.ts):
- * `Date.now()`, moved by the e2e suite in test mode.
+ * Now, for what depends on the time of day (the companion sleepy at night:
+ * lib/companion/sleepy.ts): `Date.now()`, moved by the e2e suite in test mode.
  */
 export function clockNow(): number {
   return Date.now() + clockOffset;

@@ -8,7 +8,7 @@
 
 import type { BrainState } from "./brain.ts";
 import type { AuditEntry } from "./audit.ts";
-import type { LoopyMessage } from "./messages.ts";
+import type { CompanionMessage } from "./messages.ts";
 
 export type { AuditEntry, BrainState };
 
@@ -21,7 +21,7 @@ export const COMPANION_MODES: readonly CompanionMode[] = [
   "off",
 ];
 
-/** The window corner Loopy sits in. */
+/** The window corner the companion sits in. */
 export type CompanionCorner =
   | "bottom-right"
   | "bottom-left"
@@ -35,7 +35,7 @@ export const COMPANION_CORNERS: readonly CompanionCorner[] = [
   "top-left",
 ];
 
-/** The brain's status, as Loopy and Settings show it. */
+/** The brain's status, as the companion and Settings show it. */
 export interface CompanionStatus {
   /** Whether the brain may run (Settings → Companion → Brain). */
   enabled: boolean;
@@ -68,9 +68,9 @@ export type CompanionUpdate =
   | { kind: "tool"; turn: number; name: string }
   | { kind: "activity"; entry: AuditEntry };
 
-/** A `qutty-hook say` message for Loopy's bubble (the hub's `say` event). */
+/** A `qutty-hook say` message for the companion's bubble (the hub's `say` event). */
 export interface SayEvent {
-  message: LoopyMessage;
+  message: CompanionMessage;
   /** The sender waits for the button pressed (answer it with `companionSayDone`). */
   wait: boolean;
 }

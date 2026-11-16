@@ -60,13 +60,15 @@ export function useCompanion(opts: UseCompanionOptions): void {
   const backend: PtyBackend | undefined = opts.manager?.backend;
 
   // The brain runs only while the companion is shown and its brain is on.
-  const { brain, mode } = opts.settings;
+  const { brain, mode, name } = opts.settings;
   const { engine, model } = brainChoice(opts.settings);
   const enabled = brain && effectiveMode(mode) !== "off";
   useEffect(() => {
     if (!backend) return;
-    void backend.companionConfigure(enabled, model, engine).catch(() => {});
-  }, [backend, enabled, model, engine]);
+    void backend.companionConfigure(enabled, model, engine, name).catch(
+      () => {},
+    );
+  }, [backend, enabled, model, engine, name]);
 
   useEffect(() => {
     if (!backend) return;

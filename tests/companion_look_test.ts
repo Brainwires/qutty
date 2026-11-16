@@ -1,27 +1,31 @@
-// Loopy's face keeps the shape and the moods of Denext's examples/companion as it is on the branch
-// feat/loopy-voice-tools (the crossed-triangle wire with a steel bead head and 13 moods). Qutty
-// draws the bead head alone, larger, without the wire body, so only the face is compared, against
-// a snapshot taken from the example (tests/fixtures/companion/loopy-shape.json): the head group
-// app/companion/loopy.tsx renders in each of the 13 moods and in the voice turn (listening,
-// thinking, speaking at each lip-sync step), the bead's shading, each mood's tint, and every
-// non-colour declaration and keyframe of the face's CSS in public/styles.css (scoped under
+// The companion's face keeps the shape and the moods of Denext's examples/companion as it is on the
+// branch feat/loopy-voice-tools (the crossed-triangle wire with a steel bead head and 13 moods).
+// Qutty draws the bead head alone, larger, without the wire body, so only the face is compared,
+// against a snapshot taken from the example (tests/fixtures/companion/face-shape.json): the head
+// group app/companion/companion-face.tsx renders in each of the 13 moods and in the voice turn
+// (listening, thinking, speaking at each lip-sync step), the bead's shading, each mood's tint, and
+// every non-colour declaration and keyframe of the face's CSS in public/styles.css (scoped under
 // .companion-overlay there). The wire, the body's moves and the layout are Qutty's and left out.
 // The snapshot also holds the avatar's own size (Qutty's: the crop and the scale), checked against
 // the render. Where the example can be read (DENEXT_DIR, default ../denext beside the repo, at the
-// git ref DENEXT_LOOPY_REF, default origin/feat/loopy-voice-tools; an empty ref reads the
+// git ref DENEXT_COMPANION_REF, default origin/feat/loopy-voice-tools; an empty ref reads the
 // checkout's files), the face in the snapshot is also compared with it, and
-// `UPDATE_LOOPY_SNAPSHOT=1` rewrites the snapshot from it (and the avatar from the render).
+// `UPDATE_COMPANION_SNAPSHOT=1` rewrites the snapshot from it (and the avatar from the render).
 
 import { assert, assertEquals } from "@std/assert";
 import { join, toFileUrl } from "@std/path";
 import { renderToString } from "denext";
 import { jsx } from "denext/jsx-runtime";
-import { Loopy, LOOPY_SCALE, LOOPY_VIEWBOX } from "../app/companion/loopy.tsx";
-import { MOODS } from "../lib/companion/loopy-machine.ts";
+import {
+  COMPANION_SCALE,
+  COMPANION_VIEWBOX,
+  CompanionFace,
+} from "../app/companion/companion-face.tsx";
+import { MOODS } from "../lib/companion/face-machine.ts";
 
 const ROOT = new URL("../", import.meta.url);
 const SNAPSHOT = new URL(
-  "./fixtures/companion/loopy-shape.json",
+  "./fixtures/companion/face-shape.json",
   import.meta.url,
 );
 const EXAMPLE = "examples/companion";
@@ -47,7 +51,7 @@ interface Shape {
   tints: Record<string, string[]>;
   /** The bead's shading: the SVG's `<defs>`. */
   defs: string;
-  /** mood → the head group (`.loopy-head`) Loopy renders in it (idle). */
+  /** mood → the head group (`.companion-head`) the companion renders in it (idle). */
   head: Record<string, string>;
   /** voice turn (`speaking-<step>`, `listening-<step>`, `thinking`) → the head group (neutral). */
   voice: Record<string, string>;
@@ -70,7 +74,7 @@ function shapeValue(prop: string, value: string): string {
   if (prop.startsWith("border") && /solid/.test(value)) {
     return value.replace(/(solid)\s+.*/, "$1");
   }
-  return value.replace(/var\(--loopy-/g, "var(--");
+  return value.replace(/var\(--companion-/g, "var(--");
 }
 
 /** Top-level blocks of a CSS text: [prelude, body], comments dropped, @media flattened. */
@@ -109,12 +113,13 @@ function declarations(body: string): [string, string][] {
 /**
  * The face's parts of a selector list (scope already off), joined; "" when it has none. A face
  * part names the head or a part of it (the bead, eyes, brows, mouth, an extra), or is one of the
- * example's catch-alls for the drawing (`.loopy path`, the reduced-motion `.loopy *`).
+ * example's catch-alls for the drawing (`.companion-avatar path`, the reduced-motion
+ * `.companion-avatar *`).
  */
 function faceSelector(selector: string): string {
   return selector.split(", ").filter((p) =>
-    /\.loopy-(head|bead|eyes|eye-white|brows|mouth|tongue|star-eyes|heart-eyes|wow-sparks|exclaim|zaps|question|zs|steam|tear|blush|floating-hearts|extra)\b/
-      .test(p) || /^(@reduce )?\.loopy (path|\*)$/.test(p)
+    /\.companion-(head|bead|eyes|eye-white|brows|mouth|tongue|star-eyes|heart-eyes|wow-sparks|exclaim|zaps|question|zs|steam|tear|blush|floating-hearts|extra)\b/
+      .test(p) || /^(@reduce )?\.companion-avatar (path|\*)$/.test(p)
   ).join(", ");
 }
 
@@ -130,7 +135,7 @@ function cssShape(
   const keyframes: Shape["keyframes"] = {};
   for (const [prelude, body] of blocks(css)) {
     if (prelude.startsWith("@keyframes")) {
-      const name = prelude.split(" ")[1].replace(/^loopy-/, "");
+      const name = prelude.split(" ")[1].replace(/^companion-/, "");
       keyframes[name] = norm(body);
       continue;
     }
@@ -145,7 +150,7 @@ function cssShape(
     if (!selector) continue;
     const decls: Record<string, string> = {};
     for (const [prop, raw] of declarations(body)) {
-      const value = raw.replace(/(animation:\s*)?\bloopy-/g, "");
+      const value = raw.replace(/(animation:\s*)?\bcompanion-/g, "");
       if (prop.startsWith("--") || COLOUR_PROPS.has(prop)) continue;
       decls[prop] = shapeValue(prop, value);
     }
@@ -166,8 +171,9 @@ function cssShape(
 }
 
 /**
- * Each mood's wire tint: the bare steel on `root` (neutral), and every `.loopy[data-mood]` rule
- * (with `scope` taken off), as [--clip, --clip-edge, --clip-shine] (`--loopy-` prefixed in Qutty).
+ * Each mood's wire tint: the bare steel on `root` (neutral), and every
+ * `.companion-avatar[data-mood]` rule (with `scope` taken off), as [--clip, --clip-edge,
+ * --clip-shine] (`--companion-` prefixed in Qutty).
  */
 function tints(
   css: string,
@@ -179,10 +185,10 @@ function tints(
     const selector = prelude.replace(scope, "");
     const mood = selector === root
       ? "neutral"
-      : /^\.loopy\[data-mood="(\w+)"\]$/.exec(selector)?.[1];
+      : /^\.companion-avatar\[data-mood="(\w+)"\]$/.exec(selector)?.[1];
     if (!mood) continue;
     const vars = Object.fromEntries(
-      declarations(body).map(([p, v]) => [p.replace(/^--loopy-/, "--"), v]),
+      declarations(body).map(([p, v]) => [p.replace(/^--companion-/, "--"), v]),
     );
     if (vars["--clip"]) {
       out[mood] = [vars["--clip"], vars["--clip-edge"], vars["--clip-shine"]];
@@ -192,9 +198,9 @@ function tints(
 }
 
 // deno-lint-ignore no-explicit-any
-type LoopyComponent = (props: any) => unknown;
+type FaceComponent = (props: any) => unknown;
 
-/** The element of `html` that starts at `open` (`<g class="loopy-head">`, `<defs>`), whole. */
+/** The element of `html` that starts at `open` (`<g class="companion-head">`, `<defs>`), whole. */
 function element(html: string, open: string): string {
   const start = html.indexOf(open);
   assert(start >= 0, `${open} in the render`);
@@ -210,11 +216,11 @@ function element(html: string, open: string): string {
   throw new Error(`${open} is not closed`);
 }
 
-const head = (html: string) => element(html, '<g class="loopy-head">');
+const head = (html: string) => element(html, '<g class="companion-head">');
 
-/** A Loopy component's render with `props` (idle). */
+/** A face component's render with `props` (idle). */
 function render(
-  component: LoopyComponent,
+  component: FaceComponent,
   props: Record<string, unknown>,
 ): Promise<string> {
   return renderToString(
@@ -222,17 +228,23 @@ function render(
   );
 }
 
-/** What a Loopy component draws of the face: the shading, the head in each mood and voice turn. */
+/**
+ * What a face component draws of the face: the shading, the head in each mood and voice turn
+ * (each render passed through `names` first).
+ */
 async function drawnFace(
-  component: LoopyComponent,
+  component: FaceComponent,
+  names: (html: string) => string = (html) => html,
 ): Promise<Pick<Shape, "defs" | "head" | "voice">> {
+  const draw = async (props: Record<string, unknown>) =>
+    names(await render(component, props));
   const out: Pick<Shape, "defs" | "head" | "voice"> = {
-    defs: element(await render(component, {}), "<defs>"),
+    defs: element(await draw({}), "<defs>"),
     head: {},
     voice: {},
   };
   for (const mood of MOODS) {
-    out.head[mood] = head(await render(component, { mood }));
+    out.head[mood] = head(await draw({ mood }));
   }
   const turns: [string, Record<string, unknown>][] = [
     ["thinking", { voice: "thinking" }],
@@ -242,7 +254,7 @@ async function drawnFace(
     turns.push([`listening-${step}`, { voice: "listening", level: step }]);
   }
   for (const [name, props] of turns) {
-    out.voice[name] = head(await render(component, props));
+    out.voice[name] = head(await draw(props));
   }
   return out;
 }
@@ -250,22 +262,25 @@ async function drawnFace(
 /** Qutty's face: the CSS block scoped under .companion-overlay, and the rendered head. */
 async function qutty(): Promise<Shape> {
   const css = await Deno.readTextFile(new URL("public/styles.css", ROOT));
-  const start = css.indexOf("/* ---- The companion: Loopy");
+  const start = css.indexOf("/* ---- The companion's face");
   const end = css.indexOf(
     "/* ---------------------------------------------------------------- Qutty's additions */",
   );
-  assert(start > 0 && end > start, "Loopy's block in public/styles.css");
+  assert(
+    start > 0 && end > start,
+    "the companion's block in public/styles.css",
+  );
   const block = css.slice(start, end);
   return {
     ...cssShape(block, /\.companion-overlay /g),
     tints: tints(block, ".companion-overlay", /^\.companion-overlay /),
-    ...await drawnFace(Loopy),
+    ...await drawnFace(CompanionFace),
   };
 }
 
 /** Qutty's avatar as rendered: the SVG's viewBox, width and height. */
 async function avatar(): Promise<Avatar> {
-  const html = await render(Loopy, {});
+  const html = await render(CompanionFace, {});
   const attr = (name: string) =>
     new RegExp(`<svg[^>]* ${name}="([^"]*)"`).exec(html)?.[1] ?? "";
   return {
@@ -295,13 +310,16 @@ async function exampleFile(
   }
 }
 
-/** The example's Loopy component: its source and the modules it imports, copied out and loaded. */
-async function exampleLoopy(
+/**
+ * The example's face component (its `Loopy`): its source and the modules it imports, copied out and
+ * loaded.
+ */
+async function exampleFace(
   read: (path: string) => Promise<string | null>,
-): Promise<LoopyComponent | null> {
+): Promise<FaceComponent | null> {
   const tsx = await read("components/Loopy.tsx");
   if (tsx === null) return null;
-  const tmp = await Deno.makeTempDir({ prefix: "loopy-example-" });
+  const tmp = await Deno.makeTempDir({ prefix: "denext-example-" });
   try {
     await Deno.mkdir(join(tmp, "components"));
     await Deno.mkdir(join(tmp, "lib"));
@@ -314,22 +332,35 @@ async function exampleLoopy(
     const mod = await import(
       toFileUrl(join(tmp, "components/Loopy.tsx")).href
     );
-    return mod.Loopy as LoopyComponent;
+    return mod.Loopy as FaceComponent;
   } finally {
     await Deno.remove(tmp, { recursive: true });
   }
 }
 
-/** The example's shape, when it can be read. */
+/**
+ * The example's names as Qutty's: the example calls its companion Loopy (`.loopy`, `.loopy-head`,
+ * `--loopy-clip`, `@keyframes loopy-pop`), Qutty's face is `.companion-avatar` with `companion-*`
+ * parts, variables and keyframes.
+ */
+function quttyNames(text: string): string {
+  return text.replace(/\bloopy(?=-)/g, "companion").replace(
+    /\bloopy\b/g,
+    "companion-avatar",
+  );
+}
+
+/** The example's shape (in Qutty's names), when it can be read. */
 async function example(): Promise<Shape | null> {
   const dir = Deno.env.get("DENEXT_DIR") ??
     new URL("../denext/", ROOT).pathname;
-  const ref = Deno.env.get("DENEXT_LOOPY_REF") ??
+  const ref = Deno.env.get("DENEXT_COMPANION_REF") ??
     "origin/feat/loopy-voice-tools";
   const read = (path: string) => exampleFile(dir, ref, path);
-  const css = await read("public/styles.css");
-  if (css === null) return null;
-  const component = await exampleLoopy(read);
+  const source = await read("public/styles.css");
+  if (source === null) return null;
+  const css = quttyNames(source);
+  const component = await exampleFace(read);
   if (!component) return null;
   // The speech bubble, stage, Loopy and voice sections; not the size setting between them.
   const section = (name: string) =>
@@ -339,53 +370,61 @@ async function example(): Promise<Shape | null> {
   const sizeAt = section("size");
   const voiceAt = section("voice");
   const settingsAt = section("settings");
-  const loopyCss = css.slice(
+  const faceCss = css.slice(
     section("speech bubble"),
     sizeAt < 0 ? undefined : sizeAt,
   ) + (voiceAt < 0
     ? ""
     : css.slice(voiceAt, settingsAt < 0 ? undefined : settingsAt));
   return {
-    ...cssShape(loopyCss, ""),
+    ...cssShape(faceCss, ""),
     tints: tints(css, ":root", ""),
-    ...await drawnFace(component),
+    ...await drawnFace(component, quttyNames),
   };
 }
 
-Deno.test("Loopy's look: the face in every mood and voice turn, the tints, the face's CSS and the avatar's size match the snapshot", async () => {
+Deno.test("The companion's look: the face in every mood and voice turn, the tints, the face's CSS and the avatar's size match the snapshot", async () => {
   const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Snapshot;
   const mine = await qutty();
   assertEquals(Object.keys(snap.head), [...MOODS], "the 13 moods");
   for (const mood of MOODS) {
-    assertEquals(mine.head[mood], snap.head[mood], `Loopy's face ${mood}`);
+    assertEquals(
+      mine.head[mood],
+      snap.head[mood],
+      `the companion's face ${mood}`,
+    );
   }
   assertEquals(mine.defs, snap.defs, "the bead's shading");
-  assertEquals(mine.voice, snap.voice, "Loopy listening, thinking, speaking");
+  assertEquals(
+    mine.voice,
+    snap.voice,
+    "the companion listening, thinking, speaking",
+  );
   assertEquals(mine.tints, snap.tints, "each mood's tint");
   assertEquals(mine.keyframes, snap.keyframes, "the face's keyframes");
   assertEquals(mine.rules, snap.rules, "the face's CSS");
   assertEquals(await avatar(), snap.avatar, "the avatar's crop and size");
 });
 
-Deno.test("Loopy's look: the avatar is the head alone, 2 times the clip's, smaller than the clip was", async () => {
-  const [, , w, h] = LOOPY_VIEWBOX;
+Deno.test("The companion's look: the avatar is the head alone, 2 times the clip's, smaller than the clip was", async () => {
+  const [, , w, h] = COMPANION_VIEWBOX;
   // The bead (r 29) at the clip's 0.75 px a unit was 43.5 px across; now 2 times that.
-  assertEquals(58 * LOOPY_SCALE, 43.5 * 2);
+  assertEquals(58 * COMPANION_SCALE, 43.5 * 2);
   // Smaller than the whole clip was in its window (120 x 150).
-  assert(w * LOOPY_SCALE < 120 && h * LOOPY_SCALE < 150);
-  const html = await render(Loopy, { mood: "love" });
-  for (const gone of ["loopy-wire", "loopy-body", "loopy-shadow"]) {
+  assert(w * COMPANION_SCALE < 120 && h * COMPANION_SCALE < 150);
+  const html = await render(CompanionFace, { mood: "love" });
+  for (const gone of ["companion-wire", "companion-body", "companion-shadow"]) {
     assert(!html.includes(gone), `no ${gone}`);
   }
 });
 
 Deno.test({
   name:
-    "Loopy's look: the snapshot's face matches the example (where it can be read)",
+    "The companion's look: the snapshot's face matches the example (where it can be read)",
   async fn() {
     const ex = await example();
     if (!ex) return; // CI: no Denext checkout; the snapshot stands in for it.
-    if (Deno.env.get("UPDATE_LOOPY_SNAPSHOT")) {
+    if (Deno.env.get("UPDATE_COMPANION_SNAPSHOT")) {
       const next: Snapshot = { ...ex, avatar: await avatar() };
       await Deno.writeTextFile(SNAPSHOT, JSON.stringify(next, null, 2) + "\n");
     }

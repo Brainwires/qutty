@@ -1,13 +1,13 @@
-// Settings → Companion: where Loopy is drawn (in the window; floating comes with Denext
-// multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner, whether
-// it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at night,
-// celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its brain may run, which
-// brain (headless Claude Code with its model, a local Ollama model that can call tools, from the
-// Ollama helper's tracked models, or Anthropic's API with the user's key, which the hub keeps in
-// the OS keychain: app/companion/api-key-field.tsx) and the brain's status, and "Companion
-// activity": the
-// companion's privileged actions from the audit log, newest first (the full log is
-// companion-audit.jsonl in the app-support folder).
+// Settings → Companion: its name (in the chat box, its labels, its brain's system prompt and the
+// voice summary's address), where the companion is drawn (in the window; floating comes with
+// Denext multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner,
+// whether it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at
+// night, celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its
+// brain may run, which brain (headless Claude Code with its model, a local Ollama model that can
+// call tools, from the Ollama helper's tracked models, or Anthropic's API with the user's key,
+// which the hub keeps in the OS keychain: app/companion/api-key-field.tsx) and the brain's status,
+// and "Companion activity": the companion's privileged actions from the audit log, newest first
+// (the full log is companion-audit.jsonl in the app-support folder).
 
 import { useEffect, useState } from "denext";
 import {
@@ -22,7 +22,10 @@ import {
   type BrainEngine,
   type BrainModel,
   COMPANION_MODELS,
+  COMPANION_NAME_MAX,
+  companionName,
   type CompanionSettings,
+  DEFAULT_COMPANION_NAME,
 } from "../../lib/companion/settings.ts";
 import { ANTHROPIC_MODELS } from "../../lib/companion/anthropic-provider.ts";
 import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
@@ -45,13 +48,17 @@ const ENGINE_LABEL: Record<BrainEngine, string> = {
   anthropic: "API key",
 };
 
-const ENGINE_HINT: Record<BrainEngine, string> = {
-  claude: "Headless Claude Code with your own login.",
-  ollama:
-    "A local Ollama model on this computer; it calls the hub's tools itself.",
-  anthropic:
-    "Anthropic's API with your own API key: what you ask Loopy, and what its tools read from your tiles, is sent to api.anthropic.com and billed to that key.",
-};
+/** What each brain is, for the companion called `name`. */
+function engineHint(engine: BrainEngine, name: string): string {
+  switch (engine) {
+    case "claude":
+      return "Headless Claude Code with your own login.";
+    case "ollama":
+      return "A local Ollama model on this computer; it calls the hub's tools itself.";
+    case "anthropic":
+      return `Anthropic's API with your own API key: what you ask ${name}, and what its tools read from your tiles, is sent to api.anthropic.com and billed to that key.`;
+  }
+}
 
 const MODE_LABEL: Record<CompanionMode, string> = {
   window: "In window",
@@ -138,10 +145,11 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
         </div>
         <span class="field-hint">
           {shown
-            ? "Loopy sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click Loopy)."
+            ? `${settings.name} sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click ${settings.name}).`
             : "Off: agents' questions open a card instead, and the brain does not run."}
         </span>
       </div>
+      <NameField name={settings.name} onChange={(name) => onChange({ name })} />
       <label class="field">
         <span class="field-label">Corner</span>
         <select
@@ -229,6 +237,46 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
   );
 }
 
+/**
+ * The companion's name. Edited as a draft and saved when the field is left or Enter is pressed
+ * (saving sanitizes it: emptied, it is Companion again), so a name being typed is not trimmed or
+ * reset under the cursor.
+ */
+function NameField(props: { name: string; onChange(name: string): void }) {
+  const [draft, setDraft] = useState(props.name);
+  useEffect(() => setDraft(props.name), [props.name]);
+  const save = () => {
+    const name = companionName(draft);
+    setDraft(name);
+    if (name !== props.name) props.onChange(name);
+  };
+  return (
+    <label class="field">
+      <span class="field-label">Name</span>
+      <input
+        type="text"
+        class="font-custom"
+        data-testid="setting-companion-name"
+        placeholder={DEFAULT_COMPANION_NAME}
+        value={draft}
+        maxLength={COMPANION_NAME_MAX}
+        spellcheck={false}
+        autocomplete="off"
+        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+        }}
+      />
+      <span class="field-hint">
+        What it is called in the chat box, its labels and its brain's
+        instructions; say it to ask for the summary ("{props.name}, what's going
+        on?"). Empty: {DEFAULT_COMPANION_NAME}.
+      </span>
+    </label>
+  );
+}
+
 /** The API key brain's Anthropic key: kept by the hub in the OS keychain. */
 function AnthropicKey(props: { backend: PtyBackend }) {
   const { backend } = props;
@@ -289,7 +337,7 @@ function BrainChoice(props: {
           ))}
         </div>
         <span class="field-hint" data-testid="companion-engine-hint">
-          {ENGINE_HINT[settings.engine]}
+          {engineHint(settings.engine, settings.name)}
         </span>
       </div>
       {settings.engine === "anthropic" && props.backend && (

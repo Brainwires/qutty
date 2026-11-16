@@ -10,22 +10,22 @@
  * @module
  */
 
-import type { LoopyMood } from "./loopy-machine.ts";
-import type { LoopyAction, SayRequest } from "./messages.ts";
+import type { FaceMood } from "./face-machine.ts";
+import type { CompanionAction, SayRequest } from "./messages.ts";
 
 /** A usage error: the shim prints it on stderr and exits 1. */
 export class UsageError extends Error {}
 
 /** What the flags have set so far. */
 interface Flags {
-  mood?: LoopyMood;
+  mood?: FaceMood;
   timeoutMs?: number;
   wait: boolean;
-  actions: LoopyAction[];
+  actions: CompanionAction[];
 }
 
 /** `<id>:<label>` as an action. */
-function action(spec: string): LoopyAction {
+function action(spec: string): CompanionAction {
   const colon = spec.indexOf(":");
   if (colon <= 0) throw new UsageError("--action takes <id>:<label>");
   return { id: spec.slice(0, colon), label: spec.slice(colon + 1) };
@@ -33,7 +33,7 @@ function action(spec: string): LoopyAction {
 
 /** The flags that take a value, and what each sets. */
 const VALUE_FLAGS: Record<string, (f: Flags, v: string) => void> = {
-  "--mood": (f, v) => (f.mood = v as LoopyMood),
+  "--mood": (f, v) => (f.mood = v as FaceMood),
   "--timeout": (f, v) => (f.timeoutMs = Number(v)),
   "--action": (f, v) => f.actions.push(action(v)),
 };

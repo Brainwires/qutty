@@ -1,6 +1,7 @@
-// Loopy's lip-sync: a mouth step (0 closed … LEVEL_STEPS wide open) becomes a mouth shape on its
-// face. `LEVEL_STEPS` and `mouthShape` are Denext's examples/companion lib/lip-sync.ts
-// (feat/loopy-voice-tools; same author, MIT) unchanged, so Loopy's speaking mouth is the example's.
+// The companion's lip-sync: a mouth step (0 closed … LEVEL_STEPS wide open) becomes a mouth shape
+// on its face. `LEVEL_STEPS` and `mouthShape` are Denext's examples/companion lib/lip-sync.ts
+// (feat/loopy-voice-tools; same author, MIT) unchanged, so the companion's speaking mouth is the
+// example's.
 //
 // The example samples the model's voice with a Web Audio analyser. Qutty's speech comes from the
 // OS (denext/mobile `speak()`) or the native library, neither of which hands the page any audio,

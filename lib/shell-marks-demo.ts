@@ -1,8 +1,8 @@
 // The demo shell's side of the shell integration marks (lib/shell-marks.ts): the demo backend's
 // shell (lib/pty-client.ts `DemoShell`) sends OSC 133 marks like Qutty's zsh plugin does (`A` at
 // each prompt, `C` with the line when a command starts, `D;<exit>` when it ends), and its `job`
-// command stands in for a long build or test run, so the e2e suite can make Loopy celebrate or
-// look sad:
+// command stands in for a long build or test run, so the e2e suite can make the companion celebrate
+// or look sad:
 //
 //   job <seconds> <exit> <command…>     e.g. `job 1.5 2 make all`
 //

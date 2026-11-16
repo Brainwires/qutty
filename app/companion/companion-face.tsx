@@ -1,26 +1,24 @@
-// Loopy, drawn: the face of Denext's crossed-triangle paper clip on its own. A polished steel bead
-// is the head, with the face on it: two big eyes under expressive brows and a small mouth, and
-// each mood's extras around it (?, z's, hearts, !, steam, a tear…). The wire body is gone; the
-// head is drawn 2 times the size it had on the clip, by cropping the drawing to the head
-// (`LOOPY_VIEWBOX`) and scaling it (`LOOPY_SCALE`), so every shape is the example's. Hand-written
-// SVG, no assets. Every move is CSS keyed off `data-state` (public/styles.css), on `.loopy-face`;
-// the idle life (Lively: micro-expressions, the eyes on the pointer) off `data-expr` and the
-// `--loopy-gaze-*` offsets, as transforms of the face's parts.
+// The companion, drawn: the face of Denext's crossed-triangle paper clip on its own. A polished
+// steel bead is the head, with the face on it: two big eyes under expressive brows and a small
+// mouth, and each mood's extras around it (?, z's, hearts, !, steam, a tear…). The wire body is
+// gone; the head is drawn 2 times the size it had on the clip, by cropping the drawing to the head
+// (`COMPANION_VIEWBOX`) and scaling it (`COMPANION_SCALE`), so every shape is the example's.
+// Hand-written SVG, no assets. Every move is CSS keyed off `data-state` (public/styles.css), on
+// `.companion-face`; the idle life (Lively: micro-expressions, the eyes on the pointer) off
+// `data-expr` and the `--companion-gaze-*` offsets, as transforms of the face's parts.
 //
 // Pure: no hooks, no timers — app/companion/companion-overlay.tsx owns the state machine and the
 // squash on poke.
 //
 // The head group is Denext's examples/companion (components/Loopy.tsx on feat/loopy-voice-tools;
-// same author, MIT) unchanged, voice turn included: `voice` says whether Loopy is listening,
-// thinking or speaking, and `level` is the mouth step while speaking (lib/companion/lip-sync.ts)
-// or the microphone's while listening. tests/companion_look_test.ts renders the head against the
-// example.
-import type {
-  LoopyMood,
-  LoopyState,
-} from "../../lib/companion/loopy-machine.ts";
+// same author, MIT) unchanged, voice turn included: `voice` says whether the companion is
+// listening, thinking or speaking, and `level` is the mouth step while speaking
+// (lib/companion/lip-sync.ts) or the microphone's while listening. tests/companion_look_test.ts
+// renders the head against the example.
+import type { FaceMood, FaceState } from "../../lib/companion/face-machine.ts";
 import { LEVEL_STEPS, mouthShape } from "../../lib/companion/lip-sync.ts";
-import type { MicroExpression } from "../../lib/companion/loopy-life.ts";
+import type { MicroExpression } from "../../lib/companion/face-life.ts";
+import { DEFAULT_COMPANION_NAME } from "../../lib/companion/settings.ts";
 
 /** One face: the brows, the eyes' shape and pupils, the mouth, and any extras. */
 interface Face {
@@ -49,7 +47,7 @@ const SMILE = "M71 88 Q80 95 89 88";
 const FROWN = "M71 92 Q80 85 89 92";
 
 /** The face each mood wears. */
-const FACES: Readonly<Record<LoopyMood, Face>> = {
+const FACES: Readonly<Record<FaceMood, Face>> = {
   neutral: {
     brows: ["M59 60 Q67 51 76 58", "M84 58 Q93 51 101 60"],
     eyeRy: 8.8,
@@ -174,7 +172,7 @@ function Pupils({ face }: { face: Face }) {
   }
   if (p.kind === "stars") {
     return (
-      <g class="loopy-star-eyes">
+      <g class="companion-star-eyes">
         <path d={star(70, 72, 5.4)} />
         <path d={star(90, 72, 5.4)} />
       </g>
@@ -182,7 +180,7 @@ function Pupils({ face }: { face: Face }) {
   }
   if (p.kind === "hearts") {
     return (
-      <g class="loopy-heart-eyes">
+      <g class="companion-heart-eyes">
         <path d={heart(70, 72, 4.6)} />
         <path d={heart(90, 72, 4.6)} />
       </g>
@@ -197,13 +195,15 @@ function Pupils({ face }: { face: Face }) {
 }
 
 /** The extras a mood adds around the head: a question mark, steam, a tear, z's, hearts, blush. */
-function Extras({ mood }: { mood: LoopyMood }) {
+function Extras({ mood }: { mood: FaceMood }) {
   switch (mood) {
     case "confused":
-      return <text class="loopy-extra loopy-question" x="112" y="52">?</text>;
+      return (
+        <text class="companion-extra companion-question" x="112" y="52">?</text>
+      );
     case "mad":
       return (
-        <g class="loopy-extra loopy-steam">
+        <g class="companion-extra companion-steam">
           <path d="M44 50 q-4 -6 0 -12 q4 -6 0 -12" />
           <path d="M116 50 q4 -6 0 -12 q-4 -6 0 -12" />
         </g>
@@ -211,13 +211,13 @@ function Extras({ mood }: { mood: LoopyMood }) {
     case "sad":
       return (
         <path
-          class="loopy-extra loopy-tear"
+          class="companion-extra companion-tear"
           d="M63 82 q-3 6 0 8 q3 -2 0 -8 Z"
         />
       );
     case "sleepy":
       return (
-        <g class="loopy-extra loopy-zs">
+        <g class="companion-extra companion-zs">
           <text x="110" y="52">z</text>
           <text x="120" y="40">z</text>
           <text x="131" y="28">Z</text>
@@ -225,22 +225,24 @@ function Extras({ mood }: { mood: LoopyMood }) {
       );
     case "love":
       return (
-        <g class="loopy-extra">
-          <g class="loopy-blush">
+        <g class="companion-extra">
+          <g class="companion-blush">
             <ellipse cx="62" cy="86" rx="5" ry="3" />
             <ellipse cx="98" cy="86" rx="5" ry="3" />
           </g>
-          <g class="loopy-floating-hearts">
+          <g class="companion-floating-hearts">
             <path d={heart(120, 44, 5)} />
             <path d={heart(36, 36, 4)} />
           </g>
         </g>
       );
     case "surprised":
-      return <text class="loopy-extra loopy-exclaim" x="112" y="50">!</text>;
+      return (
+        <text class="companion-extra companion-exclaim" x="112" y="50">!</text>
+      );
     case "shocked":
       return (
-        <g class="loopy-extra loopy-zaps">
+        <g class="companion-extra companion-zaps">
           <path d="M40 54 l-8 -4 M38 66 l-9 0 M40 78 l-8 4" />
           <path d="M120 54 l8 -4 M122 66 l9 0 M120 78 l8 4" />
         </g>
@@ -248,7 +250,7 @@ function Extras({ mood }: { mood: LoopyMood }) {
     case "wow":
       return (
         <ellipse
-          class="loopy-extra loopy-tongue"
+          class="companion-extra companion-tongue"
           cx="80"
           cy="96.5"
           rx="4.2"
@@ -261,12 +263,13 @@ function Extras({ mood }: { mood: LoopyMood }) {
 }
 
 // --- Qutty's own: hot ---------------------------------------------------------------------------
-// Not one of the example's 13 moods (lib/companion/loopy-machine.ts MOODS stays the example's, and
-// tests/companion_look_test.ts checks those unchanged): the face Loopy wears, while it is otherwise
-// idle, when the CPU or the GPU has been busy for a while (lib/sysstats.ts, the `hot` prop). Drawn
-// in the example's style: the same eyes, brows and ink, a flushed bead, a panting mouth with the
-// wow face's tongue, sweat drops like the sad face's tear and heat rising like the mad face's
-// steam. Its CSS is in public/styles.css, "Loopy is hot" (after the example's block).
+// Not one of the example's 13 moods (lib/companion/face-machine.ts MOODS stays the example's, and
+// tests/companion_look_test.ts checks those unchanged): the face the companion wears, while it is
+// otherwise idle, when the CPU or the GPU has been busy for a while (lib/sysstats.ts, the `hot`
+// prop). Drawn in the example's style: the same eyes, brows and ink, a flushed bead, a panting
+// mouth with the wow face's tongue, sweat drops like the sad face's tear and heat rising like the
+// mad face's steam. Its CSS is in public/styles.css, "The companion is hot" (after the example's
+// block).
 
 /** The hot face: worried brows, tired eyes, a panting open mouth. */
 const HOT_FACE: Face = {
@@ -280,12 +283,12 @@ const HOT_FACE: Face = {
 /** The flush on the bead, under the face: the steel warming to red-orange at the rim. */
 function HotFlush() {
   return (
-    <g class="loopy-hot-flush" aria-hidden="true">
-      <radialGradient id="loopy-flush" cx="0.5" cy="0.55" r="0.55">
+    <g class="companion-hot-flush" aria-hidden="true">
+      <radialGradient id="companion-flush" cx="0.5" cy="0.55" r="0.55">
         <stop offset="0.35" stop-color="#ff9a4a" stop-opacity="0.12" />
         <stop offset="1" stop-color="#e5401c" stop-opacity="0.62" />
       </radialGradient>
-      <circle cx="80" cy="76" r="29" fill="url(#loopy-flush)" />
+      <circle cx="80" cy="76" r="29" fill="url(#companion-flush)" />
     </g>
   );
 }
@@ -293,17 +296,17 @@ function HotFlush() {
 /** The hot face's extras: flushed cheeks, the tongue out, sweat drops, heat rising off the head. */
 function HotExtras() {
   return (
-    <g class="loopy-extra loopy-hot">
-      <g class="loopy-hot-cheeks">
+    <g class="companion-extra companion-hot">
+      <g class="companion-hot-cheeks">
         <ellipse cx="61" cy="85" rx="5" ry="3" />
         <ellipse cx="99" cy="85" rx="5" ry="3" />
       </g>
-      <ellipse class="loopy-tongue" cx="80" cy="94.6" rx="3.8" ry="2.3" />
-      <g class="loopy-sweat">
+      <ellipse class="companion-tongue" cx="80" cy="94.6" rx="3.8" ry="2.3" />
+      <g class="companion-sweat">
         <path d="M105 55 q-3 6 0 8 q3 -2 0 -8 Z" />
         <path d="M55 61 q-2.4 5 0 6.6 q2.4 -1.6 0 -6.6 Z" />
       </g>
-      <g class="loopy-heat">
+      <g class="companion-heat">
         <path d="M68 44 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
         <path d="M80 41 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
         <path d="M92 44 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
@@ -312,15 +315,17 @@ function HotExtras() {
   );
 }
 
-/** The props of {@linkcode Loopy}. */
-export interface LoopyProps {
+/** The props of {@linkcode the companion}. */
+export interface CompanionFaceProps {
   /** The move on screen. */
-  readonly state: LoopyState;
-  /** Accessible name (default "Loopy"). */
+  readonly state: FaceState;
+  /** Accessible name (default "Companion": Settings → Companion → Name). */
   readonly label?: string;
   /** The mood of the message on screen: its face, and a tinted rim on the bead (none: bare steel). */
-  readonly mood?: LoopyMood;
-  /** What Loopy is doing in a voice turn (`data-voice`): listening, thinking or speaking. */
+  readonly mood?: FaceMood;
+  /**
+   * What the companion is doing in a voice turn (`data-voice`): listening, thinking or speaking.
+   */
   readonly voice?: "listening" | "thinking" | "speaking";
   /**
    * The audio level step, 0 to `LEVEL_STEPS`: while speaking how open the mouth is (lip-sync),
@@ -328,32 +333,36 @@ export interface LoopyProps {
    */
   readonly level?: number;
   /**
-   * Lively (`data-lively`): the pupils follow the pointer (the `--loopy-gaze-*` offsets the overlay
-   * sets) and the face eases between its micro-expressions.
+   * Lively (`data-lively`): the pupils follow the pointer (the `--companion-gaze-*` offsets the
+   * overlay sets) and the face eases between its micro-expressions.
    */
   readonly lively?: boolean;
   /**
-   * A micro-expression on the neutral face (`data-expr`; lib/companion/loopy-life.ts), or
+   * A micro-expression on the neutral face (`data-expr`; lib/companion/face-life.ts), or
    * `delighted` while the pointer is over it. Only transforms of the face's parts: the shapes stay
    * the example's.
    */
   readonly expression?: MicroExpression | "delighted";
   /**
    * Qutty's own: the machine is hot (`data-mood="hot"`). Only drawn over the neutral face: the
-   * page passes it only while Loopy is otherwise idle (lib/sysstats.ts `mayShowHot`).
+   * page passes it only while the companion is otherwise idle (lib/sysstats.ts `mayShowHot`).
    */
   readonly hot?: boolean;
   /**
-   * Qutty's own: Loopy sleeps at night (`data-asleep`, with the example's `sleepy` mood): its
-   * nod and z's slow down (public/styles.css, "Loopy sleeps").
+   * Qutty's own: the companion sleeps at night (`data-asleep`, with the example's `sleepy` mood):
+   * its nod and z's slow down (public/styles.css, "The companion sleeps").
    */
   readonly asleep?: boolean;
-  /** Qutty's own: Loopy stretches as it wakes up (`data-stretch`). */
+  /** Qutty's own: the companion stretches as it wakes up (`data-stretch`). */
   readonly stretching?: boolean;
 }
 
 /** The mouth to draw: the lip-sync shape while speaking, else the mood's. */
-function mouthFor(face: Face, voice: LoopyProps["voice"], step: number) {
+function mouthFor(
+  face: Face,
+  voice: CompanionFaceProps["voice"],
+  step: number,
+) {
   if (voice === "speaking") return mouthShape(step);
   return { d: face.mouth, open: face.mouthOpen === true };
 }
@@ -364,22 +373,22 @@ function mouthFor(face: Face, voice: LoopyProps["voice"], step: number) {
  * the head draw outside the box (`overflow: visible`). In the drawing's own coordinates, so the
  * face is the example's, unchanged.
  */
-export const LOOPY_VIEWBOX = [49, 33, 62, 74] as const;
+export const COMPANION_VIEWBOX = [49, 33, 62, 74] as const;
 
 /**
  * CSS px per unit of the drawing: the head 2 times the size it had on the example's crossed-
- * triangle Loopy in its 120 x 150 desktop window (0.75 px per unit there, a 43.5 px bead; here
- * 87 px).
+ * triangle the companion in its 120 x 150 desktop window (0.75 px per unit there, a 43.5 px bead;
+ * here 87 px).
  */
-export const LOOPY_SCALE = 0.75 * 2;
+export const COMPANION_SCALE = 0.75 * 2;
 
-const [VB_X, VB_Y, VB_W, VB_H] = LOOPY_VIEWBOX;
+const [VB_X, VB_Y, VB_W, VB_H] = COMPANION_VIEWBOX;
 
-/** Loopy's face: the steel bead head of the example's paper clip, without the wire. */
-export function Loopy(
+/** The companion's face: the steel bead head of the example's paper clip, without the wire. */
+export function CompanionFace(
   {
     state,
-    label = "Loopy",
+    label = DEFAULT_COMPANION_NAME,
     mood,
     voice,
     level = 0,
@@ -388,7 +397,7 @@ export function Loopy(
     hot,
     asleep,
     stretching,
-  }: LoopyProps,
+  }: CompanionFaceProps,
 ) {
   const current = mood ?? "neutral";
   const isHot = hot === true && current === "neutral";
@@ -397,7 +406,7 @@ export function Loopy(
   const listen = voice === "listening" ? Math.min(1, level / LEVEL_STEPS) : 0;
   return (
     <svg
-      class="loopy"
+      class="companion-avatar"
       data-state={state}
       data-mood={isHot ? "hot" : current}
       data-voice={voice}
@@ -405,47 +414,47 @@ export function Loopy(
       data-expr={expression}
       data-asleep={asleep && current === "sleepy" ? "" : undefined}
       data-stretch={stretching ? "" : undefined}
-      style={{ "--loopy-listen": listen }}
+      style={{ "--companion-listen": listen }}
       viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
-      width={String(VB_W * LOOPY_SCALE)}
-      height={String(VB_H * LOOPY_SCALE)}
+      width={String(VB_W * COMPANION_SCALE)}
+      height={String(VB_H * COMPANION_SCALE)}
       role="img"
       aria-label={label}
     >
       <defs>
-        <radialGradient id="loopy-bead" cx="0.36" cy="0.32" r="0.75">
+        <radialGradient id="companion-bead" cx="0.36" cy="0.32" r="0.75">
           <stop offset="0" stop-color="#ffffff" />
           <stop offset="0.35" stop-color="#d9dee3" />
           <stop offset="0.8" stop-color="#8b959e" />
           <stop offset="1" stop-color="#5d666e" />
         </radialGradient>
       </defs>
-      <g class="loopy-face">
-        <g class="loopy-head">
+      <g class="companion-face">
+        <g class="companion-head">
           <circle
-            class="loopy-bead"
+            class="companion-bead"
             cx="80"
             cy="76"
             r="29"
-            fill="url(#loopy-bead)"
+            fill="url(#companion-bead)"
           />
           {isHot && <HotFlush />}
-          <g class="loopy-brows">
+          <g class="companion-brows">
             <path d={face.brows[0]} />
             <path d={face.brows[1]} />
           </g>
-          <g class="loopy-eyes">
+          <g class="companion-eyes">
             {face.eyeRy > 0 && (
               <>
                 <ellipse
-                  class="loopy-eye-white"
+                  class="companion-eye-white"
                   cx="70"
                   cy="72"
                   rx="7.2"
                   ry={face.eyeRy}
                 />
                 <ellipse
-                  class="loopy-eye-white"
+                  class="companion-eye-white"
                   cx="90"
                   cy="72"
                   rx="7.2"
@@ -456,17 +465,17 @@ export function Loopy(
             <Pupils face={face} />
           </g>
           <path
-            class={mouth.open ? "loopy-mouth is-open" : "loopy-mouth"}
+            class={mouth.open ? "companion-mouth is-open" : "companion-mouth"}
             d={mouth.d}
           />
           {isHot ? <HotExtras /> : <Extras mood={current} />}
         </g>
-        <g class="loopy-thought" aria-hidden="true">
+        <g class="companion-thought" aria-hidden="true">
           <circle cx="112" cy="40" r="2.6" />
           <circle cx="121" cy="32" r="2.6" />
           <circle cx="130" cy="24" r="2.6" />
         </g>
-        <g class="loopy-sparkles" aria-hidden="true">
+        <g class="companion-sparkles" aria-hidden="true">
           <path d="M38 44 l3 -8 l3 8 l-3 8 z" />
           <path d="M116 64 l2.5 -6 l2.5 6 l-2.5 6 z" />
           <path d="M40 100 l2 -5 l2 5 l-2 5 z" />

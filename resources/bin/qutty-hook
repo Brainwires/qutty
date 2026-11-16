@@ -8,7 +8,7 @@
 #
 # qutty-hook say <text...> [--mood neutral|thinking|attention|success|confused|mad|sad|excited|
 #                sleepy|love|surprised|shocked|wow] [--action id:label]... [--timeout ms] [--wait]
-# makes Loopy, the window's companion, say something (the `loopy-say` shape). --wait prints the
+# makes the window's companion say something (the `say` shape). --wait prints the
 # id of the button pressed (nothing when the bubble was closed). A refused message is reported
 # on stderr with exit code 1.
 #

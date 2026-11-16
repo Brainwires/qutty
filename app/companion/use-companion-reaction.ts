@@ -1,15 +1,15 @@
-// Loopy's reactions to finished jobs (lib/companion/reactions.ts): the workspace hands the overlay
-// each new reaction, and this plays it for a moment — the `success` mood with the example's
+// The companion's reactions to finished jobs (lib/companion/reactions.ts): the workspace hands the
+// overlay each new reaction, and this plays it for a moment — the `success` mood with the example's
 // `celebrate` hop (no hop with reduced motion), or the `sad` face — when nothing above reactions
-// holds Loopy's face (lib/companion/loopy-priority.ts `mayStartReaction`). One that arrives while
-// a question, a message, thinking or a voice turn is up is dropped: it is brief news.
+// holds the companion's face (lib/companion/face-priority.ts `mayStartReaction`). One that arrives
+// while a question, a message, thinking or a voice turn is up is dropped: it is brief news.
 
 import { useEffect, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
 import type { CompanionEvent } from "../../lib/companion/companion-state.ts";
 import { type Reaction, REACTION_MS } from "../../lib/companion/reactions.ts";
 
-export interface LoopyReactionOptions {
+export interface CompanionReactionOptions {
   /** The latest reaction (a new `id` plays it). */
   readonly reaction: Reaction | undefined;
   /** Nothing above reactions holds the face now. */
@@ -21,7 +21,9 @@ export interface LoopyReactionOptions {
 }
 
 /** The reaction playing, or `null`. */
-export function useLoopyReaction(opts: LoopyReactionOptions): Reaction | null {
+export function useCompanionReaction(
+  opts: CompanionReactionOptions,
+): Reaction | null {
   const [active, setActive] = useState<Reaction | null>(null);
   const live = useRef(opts);
   live.current = opts;

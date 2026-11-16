@@ -1,7 +1,7 @@
-// Settings → Companion → Reactions: Loopy sleepy at night (with its hours), a hop of joy when a
-// long job finishes well, a brief sad face when one fails, how long a shell command must run to
-// count (and whether any long command counts, not only builds and tests), and the short line
-// beside Loopy saying what finished (lib/companion/reactions.ts, lib/companion/sleepy.ts).
+// Settings → Companion → Reactions: the companion sleepy at night (with its hours), a hop of joy
+// when a long job finishes well, a brief sad face when one fails, how long a shell command must run
+// to count (and whether any long command counts, not only builds and tests), and the short line
+// beside the companion saying what finished (lib/companion/reactions.ts, lib/companion/sleepy.ts).
 
 import {
   type CompanionSettings,
@@ -95,7 +95,7 @@ export function ReactionSettings(props: ReactionSettingsProps) {
         "Any long command, not only builds and tests",
         !jobs,
       )}
-      {check("reactBubble", "Say what finished beside Loopy", !jobs)}
+      {check("reactBubble", `Say what finished beside ${settings.name}`, !jobs)}
       <span class="field-hint">
         Shell tiles need the shell integration (Settings → Agent integration:
         zsh or bash), which marks where each command starts and ends; agents'

@@ -1,14 +1,14 @@
 // The workspace's voice layer (lib/voice/): the companion's answers and the chosen event alerts read
-// aloud through one speech queue, and push-to-talk — the mic button on Loopy or the hold-to-talk
-// key — through the speech-to-text engine picked in Settings → Voice. The transcript goes to the
-// companion (`companionSend(text, "voice")`), to the summary request, or, in dictate mode, is typed
-// into the focused tile. Talking (or pressing the mic) stops whatever is being said: barge-in.
-// The hold-to-dictate key (Settings → Voice, off until picked) is a second hold key: its capture
-// is always typed into the focused tile (a one-shot dictation), and it works with the companion
-// off too — the controller lives here whenever there is a backend, not only with Loopy shown.
-// Review (Send / Edit / Cancel) happens only while the overlay is shown to hold the review box.
-// While it listens, the microphone's level (0–1, about 20 times a second) is followed for Loopy's
-// pulse, and drops back to 0 when listening stops.
+// aloud through one speech queue, and push-to-talk — the mic button on the companion or the
+// hold-to-talk key — through the speech-to-text engine picked in Settings → Voice. The transcript
+// goes to the companion (`companionSend(text, "voice")`), to the summary request, or, in dictate
+// mode, is typed into the focused tile. Talking (or pressing the mic) stops whatever is being said:
+// barge-in. The hold-to-dictate key (Settings → Voice, off until picked) is a second hold key: its
+// capture is always typed into the focused tile (a one-shot dictation), and it works with the
+// companion off too — the controller lives here whenever there is a backend, not only with the
+// companion shown. Review (Send / Edit / Cancel) happens only while the overlay is shown to hold
+// the review box. While it listens, the microphone's level (0–1, about 20 times a second) is
+// followed for the companion's pulse, and drops back to 0 when listening stops.
 //
 // In the browser demo the engines are fakes (lib/voice/client.ts `createDemoVoice`, a timed TTS),
 // which the e2e suite drives through `window.__e2eVoice` in test mode.
@@ -57,6 +57,8 @@ export interface UseVoiceOptions {
    * the hold-to-dictate key does not.
    */
   enabled: boolean;
+  /** The companion's name (Settings → Companion → Name): the summary phrase may address it. */
+  companionName?: string;
   /** Type `text` into the focused tile (its terminal, or a web tile's page). */
   deliverToFocused(text: string): DictateOutcome;
 }
@@ -80,7 +82,7 @@ export interface VoiceApi {
   stopSpeaking(): void;
   /** Say `text` now (Settings' "Test voice"). */
   test(text: string): void;
-  /** Say `text` as an alert, after whatever is being said (Loopy's reactions). */
+  /** Say `text` as an alert, after whatever is being said (the companion's reactions). */
   alert(text: string): void;
 }
 
@@ -132,12 +134,13 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     if (!voice || !backend || !keys) return undefined;
     return new VoiceController({
       engine: () => sttEngine(optsRef.current.settings.sttEngine, voice, keys),
-      // Review only where the review box can be shown (on Loopy).
+      // Review only where the review box can be shown (on the companion).
       settings: () => {
-        const { settings, enabled } = optsRef.current;
+        const { settings, enabled, companionName } = optsRef.current;
         return {
           dictate: settings.dictate,
           review: settings.review && enabled,
+          ...(companionName !== undefined ? { name: companionName } : {}),
         };
       },
       bargeIn: () => void queue.interrupt(),

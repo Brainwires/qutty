@@ -2,8 +2,9 @@
  * The microphone's level while push-to-talk listens: desktop/voice.ts reads the native library's
  * `rla_level` (the input's RMS, 0–1, over the last ~100 ms; 0 when not capturing) every
  * {@linkcode LEVEL_MS} (20 Hz) and sends the page a `level` event when it changed enough
- * ({@linkcode levelGate}); the page swells Loopy's head with it (the listening pulse,
- * app/companion/loopy.tsx `level`). The demo's fake voice sends a made-up level the same way.
+ * ({@linkcode levelGate}); the page swells the companion's head with it (the listening pulse,
+ * app/companion/companion-face.tsx `level`). The demo's fake voice sends a made-up level the same
+ * way.
  *
  * Speech is quiet as RMS goes (rarely above ~0.3), so {@linkcode normalizeLevel} spreads the
  * useful range over 0–1, as Denext's examples/companion lib/lip-sync.ts does (its `SILENCE` and
@@ -17,10 +18,10 @@
 /** How often the level is read while listening (ms): 20 Hz. */
 export const LEVEL_MS = 50;
 
-/** Below this RMS the input counts as silent: breath and line noise leave Loopy still. */
+/** Below this RMS the input counts as silent: breath and line noise leave the companion still. */
 export const SILENCE = 0.02;
 
-/** An RMS this loud swells Loopy all the way. */
+/** An RMS this loud swells the companion all the way. */
 export const FULL = 0.25;
 
 /** The smallest change worth sending (on the 0–1 scale); silence is always sent once. */

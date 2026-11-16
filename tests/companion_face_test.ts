@@ -1,4 +1,4 @@
-// Loopy's pure parts (lib/companion/): the state machine and the message queue (ported from
+// The companion's pure parts (lib/companion/): the state machine and the message queue (ported from
 // Denext's examples/companion with its tests' cases, plus Qutty's `update` / `drop`), the `say`
 // validation and `qutty-hook say` arguments, the bubbles for `ask_user` questions and the
 // companion's replies, and Settings → Companion's sanitising.
@@ -11,18 +11,18 @@ import {
   assertThrows,
 } from "@std/assert";
 import {
+  type FaceEvent,
+  type FaceModel,
+  type FaceMood,
+  type FaceState,
   INITIAL_MODEL,
   isVisible,
-  type LoopyEvent,
-  type LoopyModel,
-  type LoopyMood,
-  type LoopyState,
   MOODS,
   moodState,
   nextTimer,
   stateDurationMs,
   transition,
-} from "../lib/companion/loopy-machine.ts";
+} from "../lib/companion/face-machine.ts";
 import {
   type CompanionModel,
   companionReducer,
@@ -30,7 +30,7 @@ import {
   MAX_QUEUE,
 } from "../lib/companion/companion-state.ts";
 import {
-  type LoopyMessage,
+  type CompanionMessage,
   MAX_TEXT,
   MOOD_ALIASES,
   parseSayRequest,
@@ -47,18 +47,21 @@ import {
 } from "../lib/companion/bubbles.ts";
 import {
   brainChoice,
+  COMPANION_NAME_MAX,
+  companionName,
   DEFAULT_COMPANION,
+  DEFAULT_COMPANION_NAME,
   effectiveMode,
   sanitizeCompanion,
 } from "../lib/companion/settings.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
 
-const run = (events: LoopyEvent[], from: LoopyModel = INITIAL_MODEL) =>
+const run = (events: FaceEvent[], from: FaceModel = INITIAL_MODEL) =>
   events.reduce(transition, from);
 
 // --- the machine ------------------------------------------------------------------------------
 
-Deno.test("loopy machine: show springs up and settles; blinks only while idle; moods map to moves", () => {
+Deno.test("face machine: show springs up and settles; blinks only while idle; moods map to moves", () => {
   const appeared = run([{ type: "show" }]);
   assertEquals(appeared.state, "appear");
   const idle = transition(appeared, { type: "settle" });
@@ -85,9 +88,9 @@ Deno.test("loopy machine: show springs up and settles; blinks only while idle; m
   }
 });
 
-Deno.test("loopy machine: the 13 moods each take the example's move", () => {
+Deno.test("face machine: the 13 moods each take the example's move", () => {
   assertEquals(MOODS.length, 13);
-  const moves: Record<LoopyMood, LoopyState> = {
+  const moves: Record<FaceMood, FaceState> = {
     neutral: "idle",
     thinking: "think",
     attention: "point",
@@ -110,7 +113,7 @@ Deno.test("loopy machine: the 13 moods each take the example's move", () => {
   }
 });
 
-Deno.test("loopy machine: a message while hidden lands first; dismiss folds to hidden", () => {
+Deno.test("face machine: a message while hidden lands first; dismiss folds to hidden", () => {
   const landing = transition(INITIAL_MODEL, { type: "say", mood: "attention" });
   assertEquals(landing, { state: "appear", pendingMood: "attention" });
   assertEquals(transition(landing, { type: "settle" }).state, "point");
@@ -122,7 +125,7 @@ Deno.test("loopy machine: a message while hidden lands first; dismiss folds to h
   assertEquals(transition(folding, { type: "show" }).state, "appear");
 });
 
-Deno.test("loopy machine: timed moves have durations, held moves don't; idle blinks in 2.5–6 s", () => {
+Deno.test("face machine: timed moves have durations, held moves don't; idle blinks in 2.5–6 s", () => {
   for (const s of ["appear", "blink", "celebrate", "dismiss"] as const) {
     assert((stateDurationMs(s) ?? 0) > 0, s);
   }
@@ -142,8 +145,8 @@ Deno.test("loopy machine: timed moves have durations, held moves don't; idle bli
 
 const msg = (
   id: string,
-  mood: LoopyMessage["mood"] = "neutral",
-): LoopyMessage => ({ id, text: id, mood, actions: [], timeoutMs: 0 });
+  mood: CompanionMessage["mood"] = "neutral",
+): CompanionMessage => ({ id, text: id, mood, actions: [], timeoutMs: 0 });
 
 const upIdle = (): CompanionModel =>
   companionReducer(companionReducer(INITIAL_COMPANION, { type: "show" }), {
@@ -153,9 +156,13 @@ const upIdle = (): CompanionModel =>
 Deno.test("companion queue: messages queue; finishing says the next; the last settles; capped; fold drops all", () => {
   let m = upIdle();
   m = companionReducer(m, { type: "enqueue", message: msg("a", "thinking") });
-  assertEquals(m.loopy.state, "think");
+  assertEquals(m.avatar.state, "think");
   m = companionReducer(m, { type: "enqueue", message: msg("b", "success") });
-  assertEquals(m.loopy.state, "think", "a waiting message doesn't move Loopy");
+  assertEquals(
+    m.avatar.state,
+    "think",
+    "a waiting message doesn't move the companion",
+  );
   assertStrictEquals(
     companionReducer(m, { type: "enqueue", message: msg("a") }),
     m,
@@ -164,10 +171,10 @@ Deno.test("companion queue: messages queue; finishing says the next; the last se
   assertStrictEquals(companionReducer(m, { type: "finish", id: "b" }), m);
   m = companionReducer(m, { type: "finish", id: "a" });
   assertEquals(m.queue.map((q) => q.id), ["b"]);
-  assertEquals(m.loopy.state, "celebrate");
+  assertEquals(m.avatar.state, "celebrate");
   m = companionReducer(m, { type: "finish", id: "b" });
   assertEquals(m.queue, []);
-  assertEquals(m.loopy.state, "idle");
+  assertEquals(m.avatar.state, "idle");
 
   for (let i = 0; i < MAX_QUEUE + 5; i++) {
     m = companionReducer(m, { type: "enqueue", message: msg(`m${i}`) });
@@ -175,14 +182,14 @@ Deno.test("companion queue: messages queue; finishing says the next; the last se
   assertEquals(m.queue.length, MAX_QUEUE + 1);
   m = companionReducer(m, { type: "foldUp" });
   assertEquals(m.queue, []);
-  assertEquals(m.loopy.state, "dismiss");
+  assertEquals(m.avatar.state, "dismiss");
 });
 
-Deno.test("companion queue: update patches a message (a new mood on screen moves Loopy); drop removes one anywhere", () => {
+Deno.test("companion queue: update patches a message (a new mood on screen moves the companion); drop removes one anywhere", () => {
   let m = upIdle();
   m = companionReducer(m, { type: "enqueue", message: msg("r", "thinking") });
   m = companionReducer(m, { type: "enqueue", message: msg("q") });
-  assertEquals(m.loopy.state, "think");
+  assertEquals(m.avatar.state, "think");
   m = companionReducer(m, {
     type: "update",
     id: "r",
@@ -190,9 +197,9 @@ Deno.test("companion queue: update patches a message (a new mood on screen moves
   });
   assertEquals(m.queue[0].text, "streamed");
   assertEquals(
-    m.loopy.state,
+    m.avatar.state,
     "idle",
-    "the reply is done: Loopy stops thinking",
+    "the reply is done: the companion stops thinking",
   );
   const same = companionReducer(m, {
     type: "update",
@@ -200,9 +207,9 @@ Deno.test("companion queue: update patches a message (a new mood on screen moves
     patch: { mood: "attention" },
   });
   assertEquals(
-    same.loopy,
-    m.loopy,
-    "a waiting message's mood doesn't move Loopy",
+    same.avatar,
+    m.avatar,
+    "a waiting message's mood doesn't move the companion",
   );
   assertStrictEquals(
     companionReducer(m, { type: "update", id: "nope", patch: { text: "x" } }),
@@ -401,8 +408,36 @@ const REACTION_DEFAULTS = {
   reactBubble: true,
 };
 
+Deno.test("settings: the companion's name: trimmed, capped, Companion when empty or not a string", () => {
+  assertEquals(DEFAULT_COMPANION_NAME, "Companion");
+  assertEquals(companionName("  Jarvis  "), "Jarvis");
+  assertEquals(companionName("Mr\t Robot\n"), "Mr Robot");
+  assertEquals(companionName("bell\u0007here"), "bell here");
+  // At most COMPANION_NAME_MAX characters (code points: an emoji is not cut in half).
+  assertEquals(COMPANION_NAME_MAX, 24);
+  assertEquals(companionName("x".repeat(40)), "x".repeat(24));
+  assertEquals(companionName("🤖".repeat(30)), "🤖".repeat(24));
+  // The cut does not leave a trailing space.
+  assertEquals(companionName(`${"a".repeat(23)} b`), "a".repeat(23));
+  for (const empty of ["", "   ", "\n\t", undefined, null, 42, {}, ["Jo"]]) {
+    assertEquals(companionName(empty), "Companion", String(empty));
+  }
+  // Through the settings: kept, sanitised, defaulted; absent from a patch leaves it as it was.
+  assertEquals(sanitizeCompanion({ name: " Jarvis " }).name, "Jarvis");
+  assertEquals(sanitizeCompanion({ name: "" }).name, "Companion");
+  assertEquals(sanitizeCompanion({ name: 7 }).name, "Companion");
+  assertEquals(sanitizeCompanion({}).name, "Companion");
+  const named = sanitizeCompanion({ name: "Jarvis" });
+  assertEquals(sanitizeCompanion({ lively: false }, named).name, "Jarvis");
+  assertEquals(sanitizeCompanion({ name: "  " }, named).name, "Companion");
+  // Settings saved before the name existed load with the default.
+  const { name: _gone, ...older } = DEFAULT_COMPANION;
+  assertEquals(sanitizeCompanion(older).name, "Companion");
+});
+
 Deno.test("settings: the companion's fields sanitise; floating is drawn in the window; the store reduces them", () => {
   assertEquals(DEFAULT_COMPANION, {
+    name: "Companion",
     mode: "window",
     corner: "bottom-right",
     brain: true,
@@ -423,6 +458,7 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
       lively: false,
     }),
     {
+      name: "Companion",
       mode: "off",
       corner: "top-left",
       brain: false,

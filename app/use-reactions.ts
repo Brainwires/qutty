@@ -1,14 +1,14 @@
-// Loopy's reactions to the tiles' work (Settings → Companion → Reactions), the workspace's side:
-// it hears both signals and turns them into the reaction the overlay plays
-// (app/companion/use-loopy-reaction.ts), by the rules in lib/companion/reactions.ts:
+// The companion's reactions to the tiles' work (Settings → Companion → Reactions), the workspace's
+// side: it hears both signals and turns them into the reaction the overlay plays
+// (app/companion/use-companion-reaction.ts), by the rules in lib/companion/reactions.ts:
 //
 // - a shell command ended (the terminal manager's `onCommandDone`, from the shell's OSC 133
 //   marks: lib/shell-marks.ts);
 // - an agent tile's `set_status` note changed (the hub's `tiles` snapshots).
 //
-// At most one reaction of a kind per REACT_EVERY_MS (counted from the last one Loopy showed). A
-// reaction that played is said aloud only when its voice alert is on (Settings → Voice: "finished"
-// for a success, "failed build" for a failure) and nothing else is being said.
+// At most one reaction of a kind per REACT_EVERY_MS (counted from the last one the companion
+// showed). A reaction that played is said aloud only when its voice alert is on (Settings → Voice:
+// "finished" for a success, "failed build" for a failure) and nothing else is being said.
 
 import { useEffect, useRef, useState } from "denext";
 import type { PtyBackend } from "../lib/pty-client.ts";

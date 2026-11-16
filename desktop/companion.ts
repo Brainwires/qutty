@@ -36,13 +36,17 @@ import {
 } from "../lib/companion/brain.ts";
 import { CompanionRuntime } from "../lib/companion/runtime.ts";
 import type { CompanionTools } from "../lib/companion/inference-brain.ts";
-import type { BrainEngine } from "../lib/companion/settings.ts";
+import {
+  type BrainEngine,
+  companionName,
+  DEFAULT_COMPANION_NAME,
+} from "../lib/companion/settings.ts";
 import type {
   CompanionStatus,
   CompanionUpdate,
 } from "../lib/companion/protocol.ts";
 import {
-  type LoopyMessage,
+  type CompanionMessage,
   MAX_TIMEOUT_MS,
   parseSayRequest,
 } from "../lib/companion/messages.ts";
@@ -146,6 +150,8 @@ export interface BrainConfig {
   mcpConfig: string;
   model?: string;
   engine?: BrainEngine;
+  /** The companion's name (Settings → Companion → Name), for its system prompt. */
+  name?: string;
 }
 
 /** The label Settings shows for a brain choice. */
@@ -171,6 +177,7 @@ export class CompanionHost {
   #nextControl = 0;
   #model: string | undefined;
   #engine: BrainEngine = "claude";
+  #name: string = DEFAULT_COMPANION_NAME;
 
   constructor(opts: CompanionHostOptions) {
     this.#opts = opts;
@@ -191,18 +198,31 @@ export class CompanionHost {
           if (!cfg.model) {
             throw new Error("no Ollama model is chosen (Settings → Companion)");
           }
-          return ollamaCompanionBrain(cfg.model, opts.tools());
+          return ollamaCompanionBrain(
+            cfg.model,
+            opts.tools(),
+            undefined,
+            cfg.name,
+          );
         }
         if (cfg.engine === "anthropic") {
           if (!opts.tools) throw new Error("the hub's tools are not available");
           const key = opts.anthropicKey;
           if (!key) throw new Error("the OS keychain is not available");
-          return anthropicCompanionBrain(cfg.model ?? "", key, opts.tools());
+          return anthropicCompanionBrain(
+            cfg.model ?? "",
+            key,
+            opts.tools(),
+            undefined,
+            undefined,
+            cfg.name,
+          );
         }
         return new ClaudeCodeBrain({
           mcpConfig: cfg.mcpConfig,
           cwd: `${opts.quttyDir}/companion`,
           ...(cfg.model ? { model: cfg.model } : {}),
+          ...(cfg.name ? { name: cfg.name } : {}),
           ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
         });
       });
@@ -214,6 +234,7 @@ export class CompanionHost {
         createBrain({
           mcpConfig: this.mcpConfig,
           engine: this.#engine,
+          name: this.#name,
           ...(this.#model ? { model: this.#model } : {}),
         }),
       emit: (update) => this.#send(update),
@@ -270,18 +291,24 @@ export class CompanionHost {
   }
 
   /**
-   * The page's settings: whether the brain may run, which one, and its model ("" = the
-   * engine's default).
+   * The page's settings: whether the brain may run, which one, its model ("" = the engine's
+   * default), and the companion's name (a new name restarts the session: it is in the system
+   * prompt).
    */
   configure(
     enabled: boolean,
     model: string,
     engine: BrainEngine = "claude",
+    name: string = this.#name,
   ): CompanionStatus {
     const next = model || undefined;
-    if (next !== this.#model || engine !== this.#engine) {
+    const called = companionName(name);
+    if (
+      next !== this.#model || engine !== this.#engine || called !== this.#name
+    ) {
       this.#model = next;
       this.#engine = engine;
+      this.#name = called;
       this.runtime.setAdapter(adapterLabel(engine, next));
       this.runtime.restart();
     }
@@ -292,16 +319,16 @@ export class CompanionHost {
   // --- `qutty-hook say` ------------------------------------------------------------------------
 
   /**
-   * A `say` line from a tile's `qutty-hook say …`: show it in Loopy's bubble; with `--wait`,
-   * resolve with the button pressed (`null`: closed or timed out). Throws a usage or validation
-   * error the shim prints.
+   * A `say` line from a tile's `qutty-hook say …`: show it in the companion's bubble; with
+   * `--wait`, resolve with the button pressed (`null`: closed or timed out). Throws a usage or
+   * validation error the shim prints.
    */
   async say(
     args: readonly string[],
     fromName: string,
   ): Promise<{ id: string; action?: string | null }> {
     const { message, wait } = parseSayRequest(parseSayArgs(args));
-    const shown: LoopyMessage = { ...message, from: fromName };
+    const shown: CompanionMessage = { ...message, from: fromName };
     const answer = wait
       ? this.#says.wait(
         message.id,

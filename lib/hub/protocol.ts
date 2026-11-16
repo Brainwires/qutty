@@ -73,7 +73,10 @@ export interface HubMessage {
   state: MessageState;
 }
 
-/** An `ask_user` question, shown by the page (Loopy's bubble in phase 2; a dialog for now). */
+/**
+ * An `ask_user` question, shown by the page (the companion's bubble in phase 2; a dialog for
+ * now).
+ */
 export interface AskRequest {
   id: string;
   /** The asking tile's id (or {@linkcode COMPANION}). */

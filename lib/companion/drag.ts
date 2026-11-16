@@ -1,10 +1,11 @@
 /**
- * Dragging Loopy within the window (app/companion/use-loopy-drag.ts is the DOM side): a press on
- * its face that moves further than {@linkcode DRAG_THRESHOLD_PX} becomes a drag, and anything
- * shorter stays a click (the poke that opens the chat). On release Loopy snaps to the corner of the
- * tile area nearest the drop point ({@linkcode nearestCorner}), which becomes Settings → Companion
- * → Corner: there is no free position, so the bubble and the chat box keep the layout each corner
- * already has, and the Corner select stays the keyboard's way to move Loopy.
+ * Dragging the companion within the window (app/companion/use-companion-drag.ts is the DOM side): a
+ * press on its face that moves further than {@linkcode DRAG_THRESHOLD_PX} becomes a drag, and
+ * anything shorter stays a click (the poke that opens the chat). On release the companion snaps to
+ * the corner of the tile area nearest the drop point ({@linkcode nearestCorner}), which becomes
+ * Settings → Companion → Corner: there is no free position, so the bubble and the chat box keep the
+ * layout each corner already has, and the Corner select stays the keyboard's way to move the
+ * companion.
  *
  * Client-safe and pure.
  *
@@ -12,7 +13,7 @@
  */
 
 import type { CompanionCorner } from "./protocol.ts";
-import type { Point } from "./loopy-life.ts";
+import type { Point } from "./face-life.ts";
 
 /** How far (CSS px) a press must move before it is a drag rather than a click. */
 export const DRAG_THRESHOLD_PX = 5;

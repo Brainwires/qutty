@@ -91,7 +91,8 @@ const LATCH_MS = 300;
 
 export interface VoiceControllerOptions {
   engine(): SttEngine;
-  settings(): Pick<VoiceSettings, "review" | "dictate">;
+  /** Voice settings, and the companion's name (the summary phrase may be addressed by it). */
+  settings(): Pick<VoiceSettings, "review" | "dictate"> & { name?: string };
   /** Barge-in: stop speaking (the speech queue's `interrupt`). */
   bargeIn(): void;
   /** Send `text` to the companion as spoken. */
@@ -218,8 +219,10 @@ export class VoiceController {
   /** Send the transcript under review (as edited). */
   send(text: string): void {
     if (this.#state.phase !== "review") return;
+    const { name } = this.#opts.settings();
     const route = routeTranscript(text, {
       dictate: this.#state.target === "dictate",
+      ...(name !== undefined ? { name } : {}),
     });
     this.#set({ ...IDLE_VOICE });
     this.#deliver(route);
@@ -235,7 +238,10 @@ export class VoiceController {
     const settings = this.#opts.settings();
     const dictate = this.#oneShot || settings.dictate;
     this.#oneShot = false;
-    const route = routeTranscript(text, { dictate });
+    const route = routeTranscript(text, {
+      dictate,
+      ...(settings.name !== undefined ? { name: settings.name } : {}),
+    });
     if (route.kind === "empty") {
       return this.#set({
         ...IDLE_VOICE,

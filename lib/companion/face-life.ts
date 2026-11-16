@@ -1,7 +1,8 @@
 /**
- * Loopy's idle life ("Lively", Settings → Companion): the logic of the small things Loopy does
- * on its own while it has nothing to say, kept pure so it is unit-tested; app/companion/
- * use-loopy-life.ts is the thin DOM side (timers, the window's `pointermove`, one rAF loop).
+ * The companion's idle life ("Lively", Settings → Companion): the logic of the small things the
+ * companion does on its own while it has nothing to say, kept pure so it is unit-tested;
+ * app/companion/ use-companion-life.ts is the thin DOM side (timers, the window's `pointermove`,
+ * one rAF loop).
  *
  * - Micro-expressions: now and then (every 4–12 s, never the same twice in a row) a variation of
  *   the neutral face for 0.6–2 s: a glance aside, a look up, a brow raise, a small smile, a head
@@ -9,48 +10,48 @@
  *   keyed off `data-expr`), so the face's shapes stay the example's.
  * - The eyes follow the pointer: each pupil moves from its eye's centre toward the pointer,
  *   clamped inside the eye white and eased, and drifts back once the pointer has rested a while.
- * - Excitement: the pointer moving near Loopy, fast around it, or circling it, brings the
- *   `excited` face for a moment, at most once every 20 s, and only while Loopy is idle.
+ * - Excitement: the pointer moving near the companion, fast around it, or circling it, brings the
+ *   `excited` face for a moment, at most once every 20 s, and only while the companion is idle.
  *
- * None of it ever replaces a mood Loopy shows for a reason (a question, a reply, thinking, a voice
- * turn): {@linkcode mayLiven} says when Loopy is free.
+ * None of it ever replaces a mood the companion shows for a reason (a question, a reply, thinking,
+ * a voice turn): {@linkcode mayLiven} says when the companion is free.
  *
  * Client-safe and pure.
  *
  * @module
  */
 
-import type { LoopyState } from "./loopy-machine.ts";
+import type { FaceState } from "./face-machine.ts";
 
 // --- when -----------------------------------------------------------------------------------
 
-/** What decides whether Loopy may live on its own right now. */
+/** What decides whether the companion may live on its own right now. */
 export interface LifeContext {
   /** Settings → Companion → Lively. */
   readonly lively: boolean;
-  /** Loopy's move. */
-  readonly state: LoopyState;
+  /** The companion's move. */
+  readonly state: FaceState;
   /** A message (question, reply, `say`) is on screen. */
   readonly message: boolean;
   /** A voice turn is on (listening, transcribing, speaking). */
   readonly voice: boolean;
-  /** The companion's brain is working (Loopy thinks). */
+  /** The companion's brain is working (the companion thinks). */
   readonly busy: boolean;
   /** The window is shown and has not been in the background long ({@linkcode BLUR_SLEEP_MS}). */
   readonly awake: boolean;
-  /** Loopy is being dragged to another corner (lib/companion/drag.ts). */
+  /** The companion is being dragged to another corner (lib/companion/drag.ts). */
   readonly dragging?: boolean;
   /**
-   * A face above the idle life holds Loopy: a reaction, the hot face, or sleep
-   * (lib/companion/loopy-priority.ts). No micro-expressions and no excitement then.
+   * A face above the idle life holds the companion: a reaction, the hot face, or sleep
+   * (lib/companion/face-priority.ts). No micro-expressions and no excitement then.
    */
   readonly held?: boolean;
 }
 
 /**
- * Whether Loopy is free for its idle life: Lively on, the window awake, standing idle (or in the
- * middle of a blink) with nothing on screen, no voice turn, no thinking, not held by a face above
- * the idle life, and not being dragged (the pointer is on its face then: no delight, no
+ * Whether the companion is free for its idle life: Lively on, the window awake, standing idle (or
+ * in the middle of a blink) with nothing on screen, no voice turn, no thinking, not held by a face
+ * above the idle life, and not being dragged (the pointer is on its face then: no delight, no
  * excitement).
  */
 export function mayLiven(ctx: LifeContext): boolean {
@@ -59,7 +60,9 @@ export function mayLiven(ctx: LifeContext): boolean {
     (ctx.state === "idle" || ctx.state === "blink");
 }
 
-/** How long the window may be in the background (blurred) before Loopy's idle life stops. */
+/**
+ * How long the window may be in the background (blurred) before the companion's idle life stops.
+ */
 export const BLUR_SLEEP_MS = 30_000;
 
 // --- micro-expressions ----------------------------------------------------------------------
@@ -145,7 +148,7 @@ export interface Point {
 /** The origin: pupils where the face draws them. */
 export const ZERO: Point = { x: 0, y: 0 };
 
-/** The eyes in the drawing (app/companion/loopy.tsx): their centres. */
+/** The eyes in the drawing (app/companion/companion-face.tsx): their centres. */
 export const EYE_CENTRES: readonly [Point, Point] = [
   { x: 70, y: 72 },
   { x: 90, y: 72 },
@@ -225,7 +228,7 @@ export function near(a: Point, b: Point, eps = 0.02): boolean {
 
 // --- excitement -----------------------------------------------------------------------------
 
-/** Loopy on screen: its centre and size (the avatar's larger side), px. */
+/** The companion on screen: its centre and size (the avatar's larger side), px. */
 export interface Target {
   readonly cx: number;
   readonly cy: number;
@@ -237,21 +240,21 @@ export interface Sample extends Point {
   readonly t: number;
 }
 
-/** "Near" Loopy: within this many times its size of its centre. */
+/** "Near" the companion: within this many times its size of its centre. */
 const EXCITE_NEAR = 1.5;
-/** The pointer must move near Loopy this long (ms) to count (a fly-through does not). */
+/** The pointer must move near the companion this long (ms) to count (a fly-through does not). */
 export const EXCITE_DWELL_MS = 150;
-/** Fast or circling counts within this many times Loopy's size of its centre. */
+/** Fast or circling counts within this many times the companion's size of its centre. */
 const EXCITE_RING = 3;
 /** "Fast": px per ms. */
 const EXCITE_FAST = 2.5;
-/** One full turn around Loopy within this long (ms) is circling it. */
+/** One full turn around the companion within this long (ms) is circling it. */
 const EXCITE_CIRCLE_MS = 3_000;
 /** At most one excitement this often, ms. */
 export const EXCITE_COOLDOWN_MS = 20_000;
 /** How long the excited face stays, ms. */
 export const EXCITE_MS = 1_600;
-/** The face counts as hovered within this fraction of Loopy's size of its centre. */
+/** The face counts as hovered within this fraction of the companion's size of its centre. */
 const HOVER_RADIUS = 0.4;
 
 /** What the excitement rules remember of the pointer. */
@@ -261,7 +264,7 @@ export interface ExciteTracker {
   readonly nearSince: number | null;
   /** Whether coming near may excite (again): set once the pointer has been away. */
   readonly armed: boolean;
-  /** The angle swept around Loopy (radians, signed) since `sweepFrom`. */
+  /** The angle swept around the companion (radians, signed) since `sweepFrom`. */
   readonly sweep: number;
   readonly sweepFrom: number;
   /** The last excitement, or `null`. */
@@ -285,42 +288,44 @@ function wrap(a: number): number {
   return x;
 }
 
-/** The angle swept around Loopy so far, with the pointer now at `s` (still within the ring). */
+/**
+ * The angle swept around the companion so far, with the pointer now at `s` (still within the ring).
+ */
 function swept(
   tr: ExciteTracker,
   s: Sample,
-  loopy: Target,
+  avatar: Target,
 ): Pick<ExciteTracker, "sweep" | "sweepFrom"> {
   const last = tr.last;
   if (!last || s.t - tr.sweepFrom > EXCITE_CIRCLE_MS) {
     return { sweep: 0, sweepFrom: s.t };
   }
-  const a0 = Math.atan2(last.y - loopy.cy, last.x - loopy.cx);
-  const a1 = Math.atan2(s.y - loopy.cy, s.x - loopy.cx);
+  const a0 = Math.atan2(last.y - avatar.cy, last.x - avatar.cx);
+  const a1 = Math.atan2(s.y - avatar.cy, s.x - avatar.cx);
   return { sweep: tr.sweep + wrap(a1 - a0), sweepFrom: tr.sweepFrom };
 }
 
 /**
- * The pointer moved to `s`: the rules' new memory, and whether Loopy gets excited now. It does
- * when it may (`free`, see {@linkcode mayLiven}), has not been in the last
+ * The pointer moved to `s`: the rules' new memory, and whether the companion gets excited now. It
+ * does when it may (`free`, see {@linkcode mayLiven}), has not been in the last
  * {@linkcode EXCITE_COOLDOWN_MS}, and the pointer has moved near it for
  * {@linkcode EXCITE_DWELL_MS} (once per visit), moved fast close by, or gone once around it.
  */
 export function trackExcitement(
   tr: ExciteTracker,
   s: Sample,
-  loopy: Target,
+  avatar: Target,
   free: boolean,
 ): { tracker: ExciteTracker; fire: boolean } {
-  const dist = Math.hypot(s.x - loopy.cx, s.y - loopy.cy);
-  const isNear = dist <= EXCITE_NEAR * loopy.size;
-  const inRing = dist <= EXCITE_RING * loopy.size;
+  const dist = Math.hypot(s.x - avatar.cx, s.y - avatar.cy);
+  const isNear = dist <= EXCITE_NEAR * avatar.size;
+  const inRing = dist <= EXCITE_RING * avatar.size;
   const dt = tr.last ? s.t - tr.last.t : 0;
   const speed = tr.last && dt > 0
     ? Math.hypot(s.x - tr.last.x, s.y - tr.last.y) / dt
     : 0;
   const nearSince = isNear ? tr.nearSince ?? s.t : null;
-  const sweep = inRing ? swept(tr, s, loopy) : { sweep: 0, sweepFrom: s.t };
+  const sweep = inRing ? swept(tr, s, avatar) : { sweep: 0, sweepFrom: s.t };
   const next: ExciteTracker = {
     ...tr,
     ...sweep,
@@ -348,8 +353,8 @@ export function trackExcitement(
   };
 }
 
-/** Whether the pointer at `p` is over Loopy's face. */
-export function overFace(p: Point, loopy: Target): boolean {
-  return Math.hypot(p.x - loopy.cx, p.y - loopy.cy) <=
-    HOVER_RADIUS * loopy.size;
+/** Whether the pointer at `p` is over the companion's face. */
+export function overFace(p: Point, avatar: Target): boolean {
+  return Math.hypot(p.x - avatar.cx, p.y - avatar.cy) <=
+    HOVER_RADIUS * avatar.size;
 }

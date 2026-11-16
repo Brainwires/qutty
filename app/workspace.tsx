@@ -3,11 +3,11 @@
 // The workspace island: owns the store, the terminal manager, the keyboard and the layout
 // measurement, and renders the switcher bar, the tile cluster and the settings popover. The
 // SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`; the agent
-// hub's tiles (the agent badges) in `useHub`; the companion (Loopy, in a corner of the tile area:
-// `ask_user` questions, `qutty-hook say`, the chat with its brain) in `CompanionOverlay`, its
-// settings and commands in `useCompanion`. With the companion Off, `AskDialog` asks instead.
-// Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the tiles' checkboxes; an
-// SSH tile's port forwards open in `ForwardsDialog`.
+// hub's tiles (the agent badges) in `useHub`; the companion (`CompanionFace`, in a corner of the
+// tile area: `ask_user` questions, `qutty-hook say`, the chat with its brain) in
+// `CompanionOverlay`, its settings and commands in `useCompanion`. With the companion Off,
+// `AskDialog` asks instead. Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the
+// tiles' checkboxes; an SSH tile's port forwards open in `ForwardsDialog`.
 //
 // Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
 // terminals that kept running while no window showed it, or started with its first shell, and the
@@ -429,6 +429,7 @@ function WorkspaceView() {
     settings: state.settings.voice,
     platform,
     enabled: companionShown,
+    companionName: state.settings.companion.name,
     // A dictation goes to the focused tile: its terminal, or a web tile's page.
     deliverToFocused: (text): DictateOutcome => {
       const manager = managerRef.current;
@@ -445,9 +446,9 @@ function WorkspaceView() {
       return "typed";
     },
   });
-  // The lite system monitor: the bar meter, and Loopy's hot face (with Lively on).
+  // The lite system monitor: the bar meter, and the companion's hot face (with Lively on).
   const monitor = state.settings.monitor;
-  const hotWanted = monitor.hotLoopy && state.settings.companion.lively &&
+  const hotWanted = monitor.hotCompanion && state.settings.companion.lively &&
     effectiveMode(state.settings.companion.mode) === "window";
   const sys = useSysStats({
     backend: managerRef.current?.backend ?? null,
@@ -468,7 +469,7 @@ function WorkspaceView() {
     hotSaidAt.current = now;
     voice.test(HOT_LINE);
   };
-  // Loopy's reactions: a long shell command or an agent's job that finished well or failed.
+  // The companion's reactions: a long shell command or an agent's job that finished well or failed.
   const reactions = useReactions({
     backend: managerRef.current?.backend ?? null,
     companion: state.settings.companion,
@@ -954,6 +955,7 @@ function WorkspaceView() {
         {manager && companionShown && (
           <CompanionOverlay
             backend={manager.backend}
+            name={settings.companion.name}
             corner={settings.companion.corner}
             brain={settings.companion.brain}
             lively={settings.companion.lively}

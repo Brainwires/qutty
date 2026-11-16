@@ -48,7 +48,7 @@
     `QUTTY_SOCK` / `QUTTY_TILE_ID` / `~/.qutty/bin` in every tile, the
     `qutty-mcp` / `qutty-hook` shims, launch flags for Claude Code and Codex,
     Settings → Agent integration, agent badges in tile headers.
-  - Done (phase 2): the companion — Loopy in a corner (`app/companion/`,
+  - Done (phase 2): the companion in a corner (`app/companion/`,
     `lib/companion/`), `ask_user` and `qutty-hook say` in its bubble, its chat
     box, a privileged identity on its own socket (`desktop/companion.ts`) with
     the companion-only tools carried out by the page, the brain as headless
@@ -59,7 +59,7 @@
     barge-in, push-to-talk controller, alerts, model download, FFI binding),
     `desktop/voice.ts` (rullama-audio-ffi over `Deno.dlopen`, the Whisper model
     via `curl` in a hidden PTY, Deepgram / ElevenLabs), the mic / Summarize /
-    Stop buttons and the review box on Loopy, Settings → Voice.
+    Stop buttons and the review box on the companion, Settings → Voice.
   - Voice, open: bundle `librullama_audio_ffi` per architecture in the app
     (Denext's packager has no option for extra files yet: see
     docs/denext-speech-recognition-proposal.md, "Related gap"); until then it is
@@ -68,8 +68,9 @@
     doc. ElevenLabs text to speech needs `output_format` sent as a query
     parameter in `@rullama/provider-speech` (it is ignored today, so the reply
     is mp3, which the library cannot play); Deepgram Aura is used instead.
-    OpenAI Realtime (Denext's `feat/loopy-voice-tools` Loopy voice) can be one
-    more optional cloud engine behind the same adapters.
+    OpenAI Realtime (the voice of Denext's example companion on
+    `feat/loopy-voice-tools`) can be one more optional cloud engine behind the
+    same adapters.
   - Done (Denext 4.15): the cloud engines (Deepgram, ElevenLabs) are on. Their
     keys live in the voice extension's own secure store (`host.secureStore`,
     `org.qutty.Qutty/ext/voice` in the OS keychain), which no page can read;
@@ -144,13 +145,13 @@
     next turn starts a fresh session with the same system prompt
     (`InferenceBrain` `history: { fresh }`, lib/companion/inference-brain.ts).
   - API key brain, open: never run against the real API (the tests use a fake
-    `fetch`). A fresh session forgets the earlier turns without a summary; Loopy
-    does not say so yet. The limit is checked at a turn's start, so one turn's
-    tool rounds can grow past it. An OpenAI key brain (`OpenAiChatProvider`,
-    api.openai.com) would be one more engine and host.
-  - Done: dragging Loopy (snaps to the nearest corner, which is the Corner
-    setting) and the mic level driving its listening pulse (`level` events from
-    desktop/voice.ts, ~20 Hz while capturing).
+    `fetch`). A fresh session forgets the earlier turns without a summary; the
+    companion does not say so yet. The limit is checked at a turn's start, so
+    one turn's tool rounds can grow past it. An OpenAI key brain
+    (`OpenAiChatProvider`, api.openai.com) would be one more engine and host.
+  - Done: dragging the companion (snaps to the nearest corner, which is the
+    Corner setting) and the mic level driving its listening pulse (`level`
+    events from desktop/voice.ts, ~20 Hz while capturing).
   - Next: a floating window (Denext multi-window).
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
@@ -327,7 +328,7 @@
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
 
-- [x] **Lite system monitor and hot Loopy** (`lib/sysstats.ts`,
+- [x] **Lite system monitor and the hot companion** (`lib/sysstats.ts`,
       `app/use-sysstats.ts`, `app/sys-meter.tsx`).
   - Done: CPU, GPU and memory pressure from Denext's `system.stats()` (the
     `systemStats` capability, Denext 4.15); the bar meter; the hot face with
@@ -337,9 +338,9 @@
     Intel GPUs on Linux (Denext reports `null`: no busy figure without
     `intel_gpu_top`).
 
-- [x] **Loopy's reactions** (`lib/companion/reactions.ts`, `sleepy.ts`,
-      `loopy-priority.ts`, `lib/shell-marks.ts`, `app/use-reactions.ts`,
-      `app/companion/use-loopy-sleep.ts`, `use-loopy-reaction.ts`).
+- [x] **The companion's reactions** (`lib/companion/reactions.ts`, `sleepy.ts`,
+      `face-priority.ts`, `lib/shell-marks.ts`, `app/use-reactions.ts`,
+      `app/companion/use-companion-sleep.ts`, `use-companion-reaction.ts`).
   - Done: OSC 133 marks from the zsh / bash plugins (and any shell integration
     that sends them); celebrate / sad over long build-like commands and agents'
     status notes, rate-limited; sleepy at night with a wake-up stretch; one
@@ -401,9 +402,11 @@
 - [x] v0.2.0: tagged, never published (its release run hit runner issues).
 - [x] v0.3.0: SSH, shell picker, scaled tiles, Homebrew, agent hub, companion,
       voice, shared sandbox.
-- [x] v0.3.1: Codex, Ollama helper, more harnesses, shell agent, lively Loopy.
+- [x] v0.3.1: Codex, Ollama helper, more harnesses, shell agent, a lively
+      companion.
 - [x] v0.4.0: detachable sessions and New Window, Linux packages, SSH broadcast
-      input and port forwards, clickable links, CPU / GPU meter, Loopy reacts.
+      input and port forwards, clickable links, CPU / GPU meter, the companion
+      reacts.
 - [x] v0.5.0: Denext 4.15 (system.stats meter, native quit dialog, Dock reopen,
       Reopen Closed Window list, Close Window and End Its Shells, Linux
       metainfo), cloud voices and the API key brain with keys in the keychain.

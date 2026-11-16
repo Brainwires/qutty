@@ -225,7 +225,10 @@ export interface PtyBackend {
 
   // --- The system monitor (Denext's `system.stats`, the `systemStats` capability) ------------
 
-  /** CPU since the previous sample, GPU and memory pressure (%), for the meter and hot Loopy. */
+  /**
+   * CPU since the previous sample, GPU and memory pressure (%), for the meter and the companion's
+   * hot face.
+   */
   sysSample(): Promise<SysSample>;
   kill(id: string): Promise<void>;
   info(id: string): Promise<PtyProcessInfo>;
@@ -305,13 +308,15 @@ export interface PtyBackend {
     via?: "chat" | "voice",
   ): Promise<{ turn: number }>;
   /**
-   * Settings → Companion: whether the brain may run, which one (default Claude Code), and its
-   * model (`""`: the default).
+   * Settings → Companion: whether the brain may run, which one (default Claude Code), its
+   * model (`""`: the default), and the companion's name (its system prompt's; default
+   * "Companion").
    */
   companionConfigure(
     enabled: boolean,
     model: string,
     engine?: BrainEngine,
+    name?: string,
   ): Promise<CompanionStatus>;
   /**
    * Whether the API key brain's Anthropic key is saved (the hub keeps it in the OS keychain; the
@@ -328,7 +333,7 @@ export interface PtyBackend {
   hubControlDone(requestId: string, result: ControlResult): Promise<boolean>;
   /** The brain's status, its turns as they stream, its tool calls, new audit entries. */
   onCompanion(cb: (update: CompanionUpdate) => void): () => void;
-  /** A `qutty-hook say` message for Loopy's bubble. */
+  /** A `qutty-hook say` message for the companion's bubble. */
   onHubSay(cb: (say: SayEvent) => void): () => void;
   /** A companion command for the page (spawn / close / focus a tile); answer with `hubControlDone`. */
   onHubControl(
@@ -743,8 +748,13 @@ export function createDesktopBackend(
     async companionSend(text, via = "chat") {
       return await hub.companionSend({ text, via });
     },
-    async companionConfigure(enabled, model, engine = "claude") {
-      return await hub.companionConfigure({ enabled, model, engine });
+    async companionConfigure(enabled, model, engine = "claude", name) {
+      return await hub.companionConfigure({
+        enabled,
+        model,
+        engine,
+        ...(name !== undefined ? { name } : {}),
+      });
     },
     async companionKeyStatus() {
       return await hub.companionKeyStatus({});
@@ -819,7 +829,7 @@ const DEMO_HELP = [
   `  ${fg(81)}replies${RESET}    how many answers to queries arrived`,
   `  ${
     fg(81)
-  }job${RESET} <s> <exit> <cmd…>  pretend to run cmd for s seconds (Loopy reacts)`,
+  }job${RESET} <s> <exit> <cmd…>  pretend to run cmd for s seconds (the companion reacts)`,
   // A tile's activity and program title (lib/shell-marks-demo.ts): a bell now or in s seconds,
   // text printed in s seconds, the title set (OSC 2, or OSC 0) or cleared.
   `  ${
@@ -828,7 +838,7 @@ const DEMO_HELP = [
   }`,
   `  ${
     fg(81)
-  }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  Loopy says it`,
+  }qutty-hook say${RESET} <text> [--mood m] [--action id:label] [--wait]  the companion says it`,
   `  ${fg(81)}pwd${RESET}, ${fg(81)}cd${RESET}, ${fg(81)}whoami${RESET}, ${
     fg(81)
   }exit${RESET}`,
@@ -874,7 +884,7 @@ const DEMO_AGENT_HELP = [
   }/msg${RESET} <name> <text>  queue a message for another tile (its badge counts it)`,
   `  ${
     fg(209)
-  }/msg companion${RESET} <text>  ask the companion (Loopy answers in its bubble)`,
+  }/msg companion${RESET} <text>  ask the companion (it answers in its bubble)`,
   `  ${
     fg(209)
   }/fail${RESET} [what]        report a failure (set_status note "<what> failed")`,
@@ -1586,8 +1596,8 @@ export function createDemoBackend(): PtyBackend {
     integrationUninstall: (target) => hub.integrationUninstall(target),
     companionStatus: () => hub.companion.status(),
     companionSend: (text, via) => hub.companion.send(text, via),
-    companionConfigure: (enabled, model, engine) =>
-      hub.companion.configure(enabled, model, engine),
+    companionConfigure: (enabled, model, engine, name) =>
+      hub.companion.configure(enabled, model, engine, name),
     companionKeyStatus: () => hub.companion.keyStatus(),
     companionKeySet: (key) => hub.companion.keySet(key),
     companionKeyClear: () => hub.companion.keyClear(),

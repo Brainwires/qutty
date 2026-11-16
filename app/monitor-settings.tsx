@@ -1,7 +1,7 @@
-// Settings → System monitor: the CPU / GPU meter in the switcher bar (off by default), and Loopy
-// looking hot while the machine is busy (on, with Lively), with its thresholds (lib/sysstats.ts).
-// The figures come from Denext's `system.stats()` every few seconds, only while one of the two
-// is on.
+// Settings → System monitor: the CPU / GPU meter in the switcher bar (off by default), and the
+// companion looking hot while the machine is busy (on, with Lively), with its thresholds
+// (lib/sysstats.ts). The figures come from Denext's `system.stats()` every few seconds, only while
+// one of the two is on.
 
 import { MONITOR_RANGES, type MonitorSettings } from "../lib/sysstats.ts";
 
@@ -9,6 +9,8 @@ export interface MonitorSettingsProps {
   settings: MonitorSettings;
   /** Settings → Companion → Lively (the hot face needs it). */
   lively: boolean;
+  /** Settings → Companion → Name. */
+  name: string;
   onChange(patch: Partial<MonitorSettings>): void;
 }
 
@@ -29,7 +31,7 @@ export function MonitorSettingsSection(props: MonitorSettingsProps) {
         max={MONITOR_RANGES[key].max}
         step={1}
         value={settings[key]}
-        disabled={!settings.hotLoopy}
+        disabled={!settings.hotCompanion}
         data-testid={`setting-monitor-${key}`}
         onInput={(e) => onChange({ [key]: Number(e.currentTarget.value) })}
       />
@@ -51,11 +53,13 @@ export function MonitorSettingsSection(props: MonitorSettingsProps) {
         <input
           type="checkbox"
           data-testid="setting-monitor-hot"
-          checked={settings.hotLoopy}
+          checked={settings.hotCompanion}
           onChange={(e) =>
-            onChange({ hotLoopy: (e.target as HTMLInputElement).checked })}
+            onChange({ hotCompanion: (e.target as HTMLInputElement).checked })}
         />
-        <span class="field-label">Loopy gets hot when the machine is busy</span>
+        <span class="field-label">
+          {props.name} gets hot when the machine is busy
+        </span>
       </label>
       {range("hotAt", "Hot at", "%")}
       {range("coolAt", "Cool below", "%")}
@@ -63,7 +67,7 @@ export function MonitorSettingsSection(props: MonitorSettingsProps) {
       <span class="field-hint">
         Hot once the CPU or the GPU stays at or above the first figure, cool
         again once both stay below the second. {props.lively
-          ? "Loopy only looks hot while it has nothing else to show."
+          ? `${props.name} only looks hot while it has nothing else to show.`
           : "Needs Lively on (Companion)."}{" "}
         Sampled every 4 s (12 s in the background, never while the window is
         hidden), only while one of these is on.

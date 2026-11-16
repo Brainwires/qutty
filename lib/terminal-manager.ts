@@ -411,7 +411,7 @@ export class TerminalManager {
       return true;
     });
     // OSC 133 (`ESC ] 133 ; A|B|C|D;exit BEL`): the shell's prompt and command marks, so the
-    // workspace hears when a command ends, how, and how long it ran (Loopy's reactions).
+    // workspace hears when a command ends, how, and how long it ran (the companion's reactions).
     term.parser.registerOscHandler(133, (data) => {
       const mark = parseOsc133(data);
       if (!mark) return false;
