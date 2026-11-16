@@ -19,7 +19,12 @@
 // non-focused tile shows its body letterboxed with `transform: scale()` (which the fit and the
 // ResizeObserver do not see) under a transparent click-catcher: xterm's mouse maths does not
 // survive a transform, so a scaled terminal takes no selection or mouse reports, and a click
-// only focuses the tile.
+// only focuses the tile. The size is the main (first) slot's: the focused tile's, unless tiles
+// keep their places, where the focused tile is fitted to its own body instead, so a focus change
+// refits only the tile that gains or loses the focus.
+//
+// Tiles in place (Settings → Layout; `onSwap` set): a header drag onto another tile swaps the two
+// (app/use-swap-drag.ts). The dragged tile follows the pointer and the one under it is marked.
 //
 // Window controls: every tile's header has Minimize, Maximize (Restore on the tile shown alone in
 // monocle) and Close. A minimized tile is out of the layout, so it parks like an overflow one (a
@@ -46,6 +51,7 @@ import {
   useFreeformDrag,
 } from "./use-freeform-drag.ts";
 import { letterbox, type Size, tileBodySize } from "../lib/layout/scale.ts";
+import { type SwapDrag, useSwapDrag } from "./use-swap-drag.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TileInfo } from "../lib/hub/protocol.ts";
 import { formatAge } from "../lib/workspace/format.ts";
@@ -93,8 +99,10 @@ export interface TileClusterProps extends TileExtras {
   decay: number;
   now: number;
   reducedMotion: boolean;
-  /** Show inactive tiles scaled down at the focused tile's size instead of resizing them. */
+  /** Show inactive tiles scaled down at the main tile's size instead of resizing them. */
   scaleInactive: boolean;
+  /** Tiles keep their places: a header drag onto another tile swaps the two (absent: no swap). */
+  onSwap?: (a: string, b: string) => void;
   onFocus(id: string): void;
   onClose(id: string): void;
   /** The maximized tile (monocle, or free-form maximize): its header offers Restore. */
@@ -108,11 +116,11 @@ export interface TileClusterProps extends TileExtras {
 
 export function TileCluster(props: TileClusterProps) {
   const byId = new Map(props.tiles.map((t) => [t.id, t]));
-  // The tiles are in rank order: the first is the focused one.
-  const focusedRect = props.tiles[0]?.rect;
-  const full = props.scaleInactive && focusedRect
-    ? tileBodySize(focusedRect)
-    : null;
+  // The tiles are in slot order: the first is the main one (the focused one, unless tiles keep
+  // their places).
+  const mainRect = props.tiles[0]?.rect;
+  const full = props.scaleInactive && mainRect ? tileBodySize(mainRect) : null;
+  const swap = useSwapDrag({ tiles: props.tiles, onSwap: props.onSwap });
   return (
     <div class="tiles" data-testid="tiles">
       {props.terminals.map((entry) => (
@@ -143,6 +151,8 @@ export function TileCluster(props: TileClusterProps) {
           broadcastIds={props.broadcastIds}
           web={props.web}
           freeform={props.freeform}
+          swapDrag={swap.drag}
+          onSwapStart={props.onSwap ? swap.start : undefined}
         />
       ))}
     </div>
@@ -175,14 +185,22 @@ interface TerminalTileProps extends TileExtras {
   onMaximize(id: string): void;
   onRestore(id: string): void;
   onHeadDoubleClick(id: string): void;
+  /** The swap drag under way, if any (tiles in place). */
+  swapDrag: SwapDrag | null;
+  /** A header press that may start a swap drag (absent: tiles do not swap). */
+  onSwapStart?: (e: PointerEvent, id: string, head: HTMLElement) => void;
 }
 
-/** Scale mode: the body at the full size, letterboxed into the tile's own body unless focused. */
+/**
+ * Scale mode: the body at the full size, letterboxed into the tile's own body; the focused tile's
+ * body is its own size (the full size when it is in the main slot).
+ */
 function scaledBodyStyle(full: Size, rect: Rect, focused: boolean) {
   const fit = focused ? null : letterbox(tileBodySize(rect), full);
+  const size = focused ? tileBodySize(rect) : full;
   return {
-    width: `${full.w}px`,
-    height: `${full.h}px`,
+    width: `${size.w}px`,
+    height: `${size.h}px`,
     transform: fit
       ? `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`
       : "none",
@@ -196,6 +214,7 @@ function TerminalTile(props: TerminalTileProps) {
   const [phase, setPhase] = useState<Phase>("parked");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const headRef = useRef<HTMLElement | null>(null);
   const attachedRef = useRef(false);
   const lastRectRef = useRef<Rect>({ x: 0, y: 0, w: 0, h: 0 });
   const lastRankRef = useRef(0);
@@ -213,6 +232,8 @@ function TerminalTile(props: TerminalTileProps) {
     fit: (tid) => manager.fitNow(tid),
   });
   const rect = drag.live ?? lastRectRef.current;
+  const swapDrag = props.swapDrag;
+  const lifted = swapDrag?.id === id ? swapDrag : null;
   // A web tile: its toolbar and its page instead of a terminal (the manager never knows its id,
   // so the manager calls below do nothing for it).
   const web = useWebTile(
@@ -285,12 +306,12 @@ function TerminalTile(props: TerminalTileProps) {
   const dim = focused ? 1 : 0.62 + 0.38 * rankScale(rank, props.decay);
   const scale = phase === "entering" ? 0.96 : phase === "leaving" ? 0.94 : 1;
   const style = {
-    transform: `translate(${rect.x}px, ${rect.y}px)${
-      scale !== 1 ? ` scale(${scale})` : ""
-    }`,
+    transform: `translate(${rect.x + (lifted?.dx ?? 0)}px, ${
+      rect.y + (lifted?.dy ?? 0)
+    }px)${scale !== 1 ? ` scale(${scale})` : ""}`,
     width: `${rect.w}px`,
     height: `${rect.h}px`,
-    zIndex: String(ff ? ff.z.get(id) ?? 1 : 100 - rank),
+    zIndex: String(ff ? ff.z.get(id) ?? 1 : lifted ? 200 : 100 - rank),
     "--rank-dim": String(dim),
   };
 
@@ -315,6 +336,8 @@ function TerminalTile(props: TerminalTileProps) {
   if (broadcasting) classes.push("is-broadcast");
   if (ff) classes.push("is-freeform");
   if (drag.live) classes.push("is-dragging");
+  if (lifted) classes.push("is-swap-dragging");
+  if (swapDrag?.over === id) classes.push("is-swap-target");
   const draggable = !!ff && !props.maximized;
 
   return (
@@ -356,11 +379,17 @@ function TerminalTile(props: TerminalTileProps) {
       <div class="tile-inner">
         <header
           class="tile-head"
+          ref={headRef}
           onPointerDown={(e) => {
-            // Free-form: a drag on the header moves the tile (not from its controls).
+            // Free-form: a drag on the header moves the tile (not from its controls). Tiled with
+            // tiles in place: it may swap the tile with another.
             const t = e.target as Element | null;
-            if (!draggable || t?.closest?.(DRAG_SKIP)) return;
-            drag.start(e as unknown as PointerEvent, null, rootRef.current);
+            if (t?.closest?.(DRAG_SKIP)) return;
+            const pe = e as unknown as PointerEvent;
+            if (draggable) drag.start(pe, null, rootRef.current);
+            else if (!ff && !props.maximized && headRef.current) {
+              props.onSwapStart?.(pe, id, headRef.current);
+            }
           }}
           onDoubleClick={(e) => {
             // Not on a control (the window buttons, a web tile's toolbar and address field).
