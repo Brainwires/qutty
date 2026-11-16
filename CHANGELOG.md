@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Linux: the font picker lists DejaVu Sans Mono, Liberation Mono, Noto Sans
-  Mono and Ubuntu Mono. The forwards panel keeps the keyboard when a forward's
-  row goes away, so Escape still closes it.
+- Linux: the font picker lists DejaVu Sans Mono, Liberation Mono, Noto Sans Mono
+  and Ubuntu Mono. The forwards panel keeps the keyboard when a forward's row
+  goes away, so Escape still closes it.
 
 ## 0.5.1 — Denext 4.18: browser tiles, free-form view, Minimize / Maximize / Restore, activity indicators, tray mode
 
