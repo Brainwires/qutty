@@ -7,7 +7,7 @@
 // Shown from an SSH tile's header (`ForwardsDialog`) and inside the connection manager's detail
 // pane. Favourites are kept in qutty.conf metadata, so only Qutty hosts can have them.
 
-import { useEffect, useRef, useState } from "denext";
+import { useEffect, useLayoutEffect, useRef, useState } from "denext";
 import type { PtyBackend, SshForwardStatus } from "../lib/pty-client.ts";
 import type { SshHost, SshTarget } from "../lib/ssh-config.ts";
 import {
@@ -83,15 +83,15 @@ export function ForwardsPanel(props: ForwardsPanelProps) {
       setError(errorText(err));
     } finally {
       setBusy(false);
-      // The clicked button may be gone (a stopped forward's row) or was disabled while busy:
-      // keep the keyboard in the panel, so Escape and Tab still work.
-      setTimeout(() => {
-        if (!rootRef.current?.contains(document.activeElement)) {
-          specRef.current?.focus();
-        }
-      }, 0);
     }
   };
+  // The clicked button may be gone (a stopped forward's row) or was disabled while busy, and the
+  // keyboard then falls to the page: put it back in the panel in the same commit, so an Escape or
+  // Tab pressed right after still reaches the dialog.
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) specRef.current?.focus();
+  });
 
   const favorites = favoritesOf(host?.forwards);
   const configured = configuredForwards(host?.directives ?? []);

@@ -15,7 +15,6 @@ import {
   selectedKey,
   textOf,
   tileSel,
-  waitForRemotePrompt,
 } from "./ssh_helpers.ts";
 
 suite("ssh", (test) => {
@@ -540,7 +539,9 @@ suite("ssh", (test) => {
       "down",
     );
     await app.click(`${tileSel(id)} [data-testid=reconnect]`);
-    await waitForRemotePrompt(app, id);
+    // The new session's prompt: the old one is still on screen (Reconnect keeps it), and a drop
+    // before the new session reports its folder (OSC 7) would find none.
+    await app.waitForText(id, /\[reconnecting…\][\s\S]*\S+@\S+:\S*\$/);
     await dropFiles(app, id, ["x.bin"]);
     const dir = await app.eval(
       (sel: string) =>

@@ -272,7 +272,7 @@ suite("launcher", (test) => {
     await setPlusOpens(app, "last");
     assertEquals(
       await app.attr("[data-testid=bar-new]", "aria-label"),
-      "New: bash ⌘T",
+      app.platform === "mac" ? "New: bash ⌘T" : "New: bash Ctrl+T",
     );
     let before = await chipIds(app);
     await app.click("[data-testid=bar-new]");
