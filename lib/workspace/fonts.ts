@@ -46,6 +46,18 @@ export const FONT_OPTIONS: readonly FontOption[] = [
     css: `"${name}"`,
     probe: [`"${name}"`],
   })),
+  // Linux's usual monospace families (Debian/Ubuntu/Fedora defaults).
+  ...[
+    ["dejavu-sans-mono", "DejaVu Sans Mono"],
+    ["liberation-mono", "Liberation Mono"],
+    ["noto-sans-mono", "Noto Sans Mono"],
+    ["ubuntu-mono", "Ubuntu Mono"],
+  ].map(([id, name]) => ({
+    id,
+    label: name,
+    css: `"${name}"`,
+    probe: [`"${name}"`],
+  })),
   { id: "hack", label: "Hack", css: "Hack", probe: ["Hack"] },
   { id: "iosevka", label: "Iosevka", css: "Iosevka", probe: ["Iosevka"] },
   {

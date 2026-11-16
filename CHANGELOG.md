@@ -11,6 +11,9 @@
   review on, the transcript waits in the review box first. A tile that can't
   take the text (no focused tile, a web page Qutty can't type into) gets a short
   note that fades away.
+- Linux: the font picker lists DejaVu Sans Mono, Liberation Mono, Noto Sans Mono
+  and Ubuntu Mono. The forwards panel keeps the keyboard when a forward's row
+  goes away, so Escape still closes it.
 
 ## 0.5.1 — Denext 4.18: browser tiles, free-form view, Minimize / Maximize / Restore, activity indicators, tray mode
 
