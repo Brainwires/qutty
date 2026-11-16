@@ -176,6 +176,21 @@ kbd {
 .tile.is-dragging {
   transition: border-color 180ms ease, box-shadow 180ms ease;
 }
+/* Tiles in place (app/use-swap-drag.ts): the tile picked up by its header follows the pointer with
+   no transition, lifted above the others; the tile under it shows it takes the drop. On the drop
+   the slots swap and the usual transitions carry both tiles into place. */
+.tile.is-swap-dragging {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+  opacity: 0.85;
+  box-shadow: 0 14px 40px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
+}
+.tile.is-swap-dragging .tile-head {
+  cursor: grabbing;
+}
+.tile.is-swap-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.55);
+}
 .tile-grip {
   position: absolute;
   z-index: 5;

@@ -80,6 +80,7 @@ import {
   type ViewMode,
 } from "./freeform.ts";
 import { reduceView, type ViewAction } from "./view.ts";
+import { appendId, sanitizeOrder, swapIds } from "./tile-order.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -186,6 +187,12 @@ export interface Settings extends FontSettings {
   barOrder: BarOrder;
   /** Resize or scale the terminals in non-focused tiles. */
   inactiveTiles: InactiveTiles;
+  /**
+   * Settings → Layout: focusing a tile moves it to the main (biggest) slot and the others follow
+   * by recency (on), or every tile keeps its place, in the workspace's own order (off;
+   * lib/workspace/tile-order.ts).
+   */
+  focusToMain: boolean;
   /** The colour theme (see themes.ts). */
   theme: ThemeId;
   /** The settings-panel sections the user folded away (Agent integration by default). */
@@ -225,6 +232,12 @@ export interface WorkspaceState {
    * focused terminal unless every tile is minimized.
    */
   mru: string[];
+  /**
+   * Every tile in slot order, minimized ones too (they come back to their place): the tiled
+   * layout's order while `settings.focusToMain` is off (lib/workspace/tile-order.ts). New tiles
+   * go last; turning the setting off seeds it from `mru`.
+   */
+  order: string[];
   /** The first tile in `mru` that is not minimized, else `null` ({@linkcode shownFocus}). */
   focusedId: string | null;
   settings: Settings;
@@ -304,6 +317,10 @@ export type WorkspaceAction =
   | { type: "cycleBarPosition" }
   | { type: "setBarOrder"; order: BarOrder }
   | { type: "setInactiveTiles"; mode: InactiveTiles }
+  /** Settings → Layout: whether the focused tile moves to the main slot. */
+  | { type: "setFocusToMain"; on: boolean }
+  /** Tiles `a` and `b` trade places in the tile order (a header dragged onto another tile). */
+  | { type: "swapTiles"; a: string; b: string }
   | { type: "setTheme"; theme: ThemeId }
   | { type: "setPlusOpens"; plusOpens: PlusOpens }
   | { type: "setCompanion"; patch: Partial<CompanionSettings> }
@@ -324,6 +341,8 @@ export type WorkspaceAction =
     type: "restore";
     terminals: TerminalEntry[];
     mru: string[];
+    /** Its tile order (absent or partial: completed from `mru`). */
+    order?: string[];
     layout?: Partial<LayoutOptions>;
     previousPattern: LayoutPattern | null;
     /** Its view (absent: tiled, as a workspace saved before the free-form view was). */
@@ -338,6 +357,7 @@ export const DEFAULT_SETTINGS: Settings = {
   barPosition: "top",
   barOrder: "mru",
   inactiveTiles: "resize",
+  focusToMain: true,
   theme: DEFAULT_THEME_ID,
   // Agent integration is for agents started by hand: folded until someone looks for it.
   collapsedSections: ["integration"],
@@ -363,6 +383,7 @@ export function initialState(
   return {
     terminals: [],
     mru: [],
+    order: [],
     focusedId: null,
     settings: cloneSettings(settings),
     previousPattern: null,
@@ -485,6 +506,7 @@ export function sanitizeSettings(
   if (INACTIVE_TILE_MODES.includes(r.inactiveTiles as InactiveTiles)) {
     out.inactiveTiles = r.inactiveTiles as InactiveTiles;
   }
+  if (typeof r.focusToMain === "boolean") out.focusToMain = r.focusToMain;
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
@@ -830,6 +852,18 @@ function focusOrRestore(
 }
 
 /**
+ * `state` with `settings`; turning `focusToMain` off seeds the tile order from the MRU, which is
+ * the order on screen, so nothing moves.
+ */
+function withSettings(
+  state: WorkspaceState,
+  settings: Settings,
+): WorkspaceState {
+  const seed = state.settings.focusToMain && !settings.focusToMain;
+  return { ...state, settings, ...(seed ? { order: [...state.mru] } : {}) };
+}
+
+/**
  * The pure state transition. Unknown ids and no-op changes return the same state object. The
  * focused tile always ends on top of the free-form z-order.
  */
@@ -867,6 +901,7 @@ function reduceCore(
         ...state,
         terminals: [...state.terminals, entry],
         mru: touch(state.mru, action.id),
+        order: appendId(state.order, action.id),
         focusedId: action.id,
         cycle: null,
       };
@@ -879,6 +914,7 @@ function reduceCore(
         ...state,
         terminals,
         mru,
+        order: state.order.filter((x) => x !== action.id),
         focusedId: shownFocus(terminals, mru),
         cycle: null,
         freeform: dropTile(state.freeform, action.id),
@@ -1049,6 +1085,16 @@ function reduceCore(
         ...state,
         settings: { ...state.settings, inactiveTiles: action.mode },
       };
+    case "setFocusToMain":
+      if (state.settings.focusToMain === action.on) return state;
+      return withSettings(state, {
+        ...state.settings,
+        focusToMain: action.on === true,
+      });
+    case "swapTiles": {
+      const order = swapIds(state.order, action.a, action.b);
+      return order === state.order ? state : { ...state, order: [...order] };
+    }
     case "setTheme": {
       const theme = sanitizeThemeId(action.theme);
       if (state.settings.theme === theme) return state;
@@ -1154,10 +1200,10 @@ function reduceCore(
     case "resetFontSize":
       return withFont(state, { fontSize: DEFAULT_FONT_SETTINGS.fontSize });
     case "hydrateSettings":
-      return {
-        ...state,
-        settings: sanitizeSettings(action.settings, state.settings),
-      };
+      return withSettings(
+        state,
+        sanitizeSettings(action.settings, state.settings),
+      );
     case "restore": {
       const ids = new Set(action.terminals.map((t) => t.id));
       const terminals = action.terminals.map(({ minimized, ...t }) =>
@@ -1174,6 +1220,7 @@ function reduceCore(
         ...state,
         terminals,
         mru,
+        order: sanitizeOrder(action.order, mru),
         focusedId: shownFocus(terminals, mru),
         cycle: null,
         view: action.view ?? state.view,

@@ -76,6 +76,8 @@ export interface SettingsPanelProps {
   onBarPosition(position: BarPosition): void;
   onBarOrder(order: BarOrder): void;
   onInactiveTiles(mode: InactiveTiles): void;
+  /** Settings → Layout: whether the focused tile moves to the main spot. */
+  onFocusToMain(on: boolean): void;
   /** Settings → Tiles. */
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
@@ -269,6 +271,21 @@ export function SettingsPanel(props: SettingsPanelProps) {
             ))}
           </div>
           <p class="pattern-desc">{PATTERN_INFO[layout.pattern].description}</p>
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              data-testid="setting-focus-to-main"
+              checked={settings.focusToMain}
+              onChange={(e) =>
+                props.onFocusToMain((e.target as HTMLInputElement).checked)}
+            />
+            <span class="field-label">Focused tile moves to the main spot</span>
+          </label>
+          <span class="field-hint">
+            {settings.focusToMain
+              ? "Focusing a tile makes it the biggest; the others shift by how recently they were used."
+              : "Tiles stay where they are when focused. Drag a tile by its header onto another to swap them."}
+          </span>
 
           {slider(
             "decay",
@@ -278,9 +295,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
           )}
           {slider(
             "masterRatio",
-            "Focused share",
+            "Main share",
             `${Math.round(layout.masterRatio * 100)}%`,
-            "The focused terminal's share in master + stack (a cap for cascade and spiral).",
+            "The main tile's share in master + stack (a cap for cascade and spiral).",
           )}
           {slider(
             "maxVisible",
@@ -357,7 +374,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </div>
             <span class="field-hint">
               {settings.inactiveTiles === "scale"
-                ? "Every terminal keeps the focused tile's size; the others are shown scaled down, so focusing one never resizes it."
+                ? settings.focusToMain
+                  ? "Every terminal keeps the main tile's size; the others are shown scaled down, so focusing one never resizes it."
+                  : "Every terminal keeps the main tile's size, the others shown scaled down; the focused one fits its own tile."
                 : "Every terminal is fitted to its own tile and resized when the layout changes."}
             </span>
           </div>

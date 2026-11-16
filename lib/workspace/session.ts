@@ -3,7 +3,7 @@
  * process (desktop/session.ts) as it changes, and the plan to rebuild it when a window shows the
  * workspace again — after its window was closed and reopened, or after a page reload. A snapshot
  * maps each tile to its PTY (and what it runs), so every terminal comes back in its own tile with
- * the layout, MRU order and focus it had. Pure, so it is tested without a DOM
+ * the layout, MRU order, tile order and focus it had. Pure, so it is tested without a DOM
  * (tests/workspace_session_test.ts).
  *
  * The layout is also kept per workspace in localStorage, which outlives a quit: a workspace window
@@ -23,6 +23,7 @@ import {
   type WorkspaceState,
 } from "./store.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
+import { sanitizeOrder } from "./tile-order.ts";
 import {
   type FreeformState,
   sanitizeFreeform,
@@ -52,6 +53,8 @@ export interface WorkspaceSnapshot {
   seq: number;
   terminals: TerminalEntry[];
   mru: string[];
+  /** The tile order (lib/workspace/tile-order.ts; absent in an older snapshot: the MRU). */
+  order?: string[];
   layout: LayoutOptions;
   previousPattern: LayoutPattern | null;
   tiles: Record<string, TileSnapshot>;
@@ -91,6 +94,8 @@ export interface RestorePlan {
   seq: number;
   terminals: TerminalEntry[];
   mru: string[];
+  /** Every tile, in its place in the tile order. */
+  order: string[];
   layout?: LayoutOptions;
   previousPattern: LayoutPattern | null;
   tiles: RestoredTile[];
@@ -120,6 +125,7 @@ export function snapshotOf(
     // and a program's title comes back only if its replay sets it again.
     terminals: state.terminals.map(clearSignals),
     mru: [...state.mru],
+    order: [...state.order],
     layout: { ...state.settings.layout },
     previousPattern: state.previousPattern,
     tiles,
@@ -204,6 +210,9 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
     mru: Array.isArray(raw.mru)
       ? raw.mru.filter((x) => typeof x === "string")
       : [],
+    ...(Array.isArray(raw.order)
+      ? { order: raw.order.filter((x) => typeof x === "string") }
+      : {}),
     layout:
       (isObject(raw.layout) ? raw.layout : {}) as unknown as LayoutOptions,
     previousPattern: PATTERNS.includes(previous as LayoutPattern)
@@ -299,6 +308,7 @@ export function planRestore(
     seq,
     terminals,
     mru,
+    order: sanitizeOrder(snap?.order, mru),
     ...(snap ? { layout: snap.layout } : {}),
     previousPattern: snap?.previousPattern ?? null,
     tiles,

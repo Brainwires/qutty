@@ -390,6 +390,11 @@
         literal, so the page's `frame-src` cannot allow them (the native engine
         is not bound by the page's CSP).
 
+- [ ] Tiles in place (Settings → Layout → "Focused tile moves to the main spot"
+      off; `lib/workspace/tile-order.ts`): tiles swap by a header drag. Maybe: a
+      keyboard way to move the focused tile to the next / previous slot, once
+      there is a free binding that suits it (none is bound today).
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =
