@@ -1,6 +1,6 @@
 // The window's workspace (lib/session-client.ts): on boot the page joins the workspace its window
 // shows and rebuilds it — every terminal on its running PTY, redrawn from its replay, with the
-// layout, MRU order and focus it had — or, for a new workspace, opens its first shell. As the
+// layout, MRU order, tile order and focus it had — or, for a new workspace, opens its first shell. As the
 // workspace changes its snapshot is saved in the app's process (debounced, and flushed when the
 // page goes away), and its layout in localStorage for the next launch. Also: the workspace list
 // for the Workspaces menu.
@@ -85,6 +85,7 @@ export function useSession(opts: {
         type: "restore",
         terminals: plan.terminals,
         mru: plan.mru,
+        order: plan.order,
         ...(plan.layout ? { layout: plan.layout } : {}),
         previousPattern: plan.previousPattern,
         view: plan.view,
@@ -142,7 +143,7 @@ export function useSession(opts: {
   }, [manager, apply, startView]);
 
   // Save the snapshot as the workspace changes (and flush it when the page goes away).
-  const { terminals, mru, previousPattern, view, freeform } = opts.state;
+  const { terminals, mru, order, previousPattern, view, freeform } = opts.state;
   const layout = opts.state.settings.layout;
   useEffect(() => {
     if (!manager || !workspace) return;
@@ -172,6 +173,7 @@ export function useSession(opts: {
     workspace,
     terminals,
     mru,
+    order,
     layout,
     previousPattern,
     view,

@@ -15,6 +15,7 @@ import {
   buildToolRegistry,
   createHubHandler,
   harnessOfClient,
+  tileInput,
 } from "../lib/hub/tools.ts";
 import { formatMessages, notificationStatus } from "../lib/hub/hooks.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
@@ -592,4 +593,50 @@ Deno.test("companion deliver: types a nudge only when messages wait", async () =
   assertEquals(await core.deliver("codex"), 1);
   assert(env.writes[0].text.includes("read_messages"));
   await assertRejects(() => core.writeTile("nobody", "x"), HubError);
+});
+
+Deno.test("write_tile: Enter spelled as a backslash escape, a newline or enter: true is a carriage return", async () => {
+  assertEquals(tileInput("ls\\r"), "ls\r");
+  assertEquals(tileInput("ls\\n"), "ls\r");
+  assertEquals(tileInput("ls\\r\\n"), "ls\r");
+  assertEquals(tileInput("ls\n"), "ls\r");
+  assertEquals(tileInput("ls\r\n"), "ls\r");
+  assertEquals(tileInput("ls\r"), "ls\r");
+  assertEquals(tileInput("ls", true), "ls\r");
+  assertEquals(tileInput("ls\\r", true), "ls\r");
+  assertEquals(tileInput("", true), "\r");
+  assertEquals(tileInput("ls"), "ls");
+  // An escaped backslash before the r is literal text, and escapes inside are left alone.
+  assertEquals(tileInput("echo a\\\\r"), "echo a\\\\r");
+  assertEquals(tileInput("printf 'a\\nb'"), "printf 'a\\nb'");
+  assertEquals(tileInput("cat <<EOF\nhi\nEOF\n"), "cat <<EOF\nhi\nEOF\r");
+
+  const { core, env } = hubWithTiles();
+  const handler = createHubHandler(core, buildToolRegistry(core));
+  await handler.callTool(
+    "write_tile",
+    { tile: "codex", text: "ls\\r" },
+    ctxFor(COMPANION_ID),
+  );
+  await handler.callTool("write_tile", {
+    tile: "codex",
+    text: "pwd",
+    enter: true,
+  }, ctxFor(COMPANION_ID));
+  await handler.callTool(
+    "write_tile",
+    { tile: "codex", enter: true },
+    ctxFor(COMPANION_ID),
+  );
+  const empty = await handler.callTool(
+    "write_tile",
+    { tile: "codex" },
+    ctxFor(COMPANION_ID),
+  );
+  assert(empty.isError);
+  assertEquals(env.writes, [
+    { tileId: "pty-2", text: "ls\r" },
+    { tileId: "pty-2", text: "pwd\r" },
+    { tileId: "pty-2", text: "\r" },
+  ]);
 });

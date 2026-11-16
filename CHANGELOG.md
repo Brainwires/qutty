@@ -30,7 +30,10 @@
   - The page's own title and the links you follow inside it show in the tile's
     header, the bar and the address field, and back / forward follow the page's
     real history.
-
+- The companion's commands run instead of failing: when it typed Enter as a
+  backslash escape, a shell got a stray `r` (`ls\r` ran `lsr`). `write_tile` now
+  takes `enter: true`, and a trailing `\r` / `\n` or newline is pressed as
+  Enter.
 - The companion is now called Companion (was Loopy), and you can rename it in
   Settings → Companion.
 - Hold to dictate: a second voice key, picked in Settings → Voice → "Hold to
@@ -42,6 +45,15 @@
   shown and review on, the transcript waits in the review box first. A tile that
   can't take the text (no focused tile, a web page Qutty can't type into) gets a
   short note that fades away.
+- Tiles can stay where they are: turn off Settings → Layout → "Focused tile
+  moves to the main spot" and focusing a tile (a click, the keyboard, a chip,
+  the companion) only moves the focus, never the tiles. New tiles go last and
+  closed ones leave a gap the rest close up. To rearrange, drag a tile by its
+  header onto another tile and the two swap places (Escape or a drop elsewhere
+  puts it back). Each workspace keeps its own order, also when its window is
+  closed and reopened. With more tiles than fit, the order decides which are
+  shown, and a hidden tile you pick from the bar takes the place of the shown
+  tile you used least recently. "Focused share" is now "Main share".
 - Linux: the font picker lists DejaVu Sans Mono, Liberation Mono, Noto Sans Mono
   and Ubuntu Mono. The forwards panel keeps the keyboard when a forward's row
   goes away, so Escape still closes it.

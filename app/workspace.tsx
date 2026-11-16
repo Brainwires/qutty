@@ -57,6 +57,12 @@ import {
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
 import {
+  keepsPlaces,
+  overflowSwap,
+  slotOrder,
+  withRecencyRanks,
+} from "../lib/workspace/tile-order.ts";
+import {
   type ActivityState,
   nextDecay,
   tileActivity,
@@ -806,13 +812,26 @@ function WorkspaceView() {
     () => shownMru(stateRef.current),
     [state.mru, minimizedKey],
   );
+  // The tiled slots: by recency, or in the workspace's own order when tiles keep their places
+  // (Settings → Layout; lib/workspace/tile-order.ts).
+  const keep = keepsPlaces(state);
+  const slots = useMemo(
+    () => keep ? slotOrder(stateRef.current, true) : shown,
+    [keep, shown, state.order, minimizedKey],
+  );
   const layout = useMemo(
     () =>
       bounds.w > 0 && bounds.h > 0
-        ? computeLayout(shown, bounds, settings.layout)
-        : { tiles: [], overflow: shown },
-    [shown, bounds, settings.layout],
+        ? withRecencyRanks(computeLayout(slots, bounds, settings.layout), shown)
+        : { tiles: [], overflow: slots },
+    [slots, shown, bounds, settings.layout],
   );
+  // Tiles in place: a hidden tile that got the focus takes the least recently used shown tile's
+  // slot (before the frame is painted without it).
+  useLayoutEffect(() => {
+    const swap = overflowSwap(stateRef.current, layout);
+    if (swap) dispatch({ type: "swapTiles", a: swap[0], b: swap[1] });
+  }, [layout, focusedId]);
   const view = useFreeformView({
     state,
     shown,
@@ -938,6 +957,9 @@ function WorkspaceView() {
             reducedMotion={reducedMotion}
             scaleInactive={settings.inactiveTiles === "scale" &&
               !view.freeform}
+            onSwap={keep && !view.freeform
+              ? (a, b) => run({ type: "swapTiles", a, b })
+              : undefined}
             onFocus={focusTerminal}
             onClose={closeTerminal}
             maximizedId={maximizedId(state)}
@@ -1054,6 +1076,7 @@ function WorkspaceView() {
             run({ type: "setBarPosition", position })}
           onBarOrder={(order) => run({ type: "setBarOrder", order })}
           onInactiveTiles={(mode) => run({ type: "setInactiveTiles", mode })}
+          onFocusToMain={(on) => run({ type: "setFocusToMain", on })}
           onActivity={(patch) => run({ type: "setActivity", patch })}
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onFont={(patch) => run({ type: "setFont", patch })}
