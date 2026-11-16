@@ -97,7 +97,8 @@ suite("agent hub", (test) => {
   });
 
   test("ask_user (companion Off): the card's buttons answer the waiting agent; questions queue; dismiss", async (app) => {
-    // With the companion shown, questions go to Loopy's bubble (companion_test.ts); Off, the card.
+    // With the companion shown, questions go to the companion's bubble (companion_test.ts); Off,
+    // the card.
     await app.openSettings();
     await app.click('[data-testid=setting-companion-mode][data-value="off"]');
     await app.closeSettings();

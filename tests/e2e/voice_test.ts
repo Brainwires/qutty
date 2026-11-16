@@ -4,8 +4,8 @@
 // key (never reaching the terminal), the transcript review (Send / Edit / Cancel), dictate mode,
 // spoken answers and barge-in, the Summarize button, spoken event alerts, Settings → Voice, and the
 // hold-to-dictate key (with the companion off: typed into the focused terminal, the tile's mic
-// badge; on a web tile whose cross-origin page can't take text, the note saying so; with Loopy
-// shown and review on, the review box aimed at the tile).
+// badge; on a web tile whose cross-origin page can't take text, the note saying so; with the
+// companion shown and review on, the review box aimed at the tile).
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { type App, serveWebPages, suite, waitFor } from "./harness.ts";
@@ -17,11 +17,11 @@ import type { VoiceSettings } from "../../lib/voice/settings.ts";
 import type { DemoVoiceScript } from "../../lib/voice/client.ts";
 
 const OVERLAY = "[data-testid=companion-overlay]";
-const MIC = "[data-testid=loopy-mic]";
+const MIC = "[data-testid=companion-mic]";
 const REVIEW = "[data-testid=voice-review]";
-const BUBBLE_TEXT = "[data-testid=loopy-bubble-text]";
-const LOOPY = `${OVERLAY} svg.loopy`;
-const MOUTH = `${LOOPY} .loopy-mouth`;
+const BUBBLE_TEXT = "[data-testid=companion-bubble-text]";
+const COMPANION = `${OVERLAY} svg.companion-avatar`;
+const MOUTH = `${COMPANION} .companion-mouth`;
 
 /** Settings → Voice as given (persisted, then the page reloaded). */
 async function withVoice(app: App, patch: Partial<VoiceSettings>) {
@@ -105,15 +105,15 @@ async function center(app: App, selector: string) {
   }, selector);
 }
 
-/** Loopy's listening pulse (`--loopy-listen` on the avatar, 0–1). */
+/** The companion's listening pulse (`--companion-listen` on the avatar, 0–1). */
 async function listenLevel(app: App): Promise<number> {
   return Number(
     await app.eval(
       (s: string) =>
         document.querySelector<SVGElement>(s)?.style.getPropertyValue(
-          "--loopy-listen",
+          "--companion-listen",
         ) || "0",
-      LOOPY,
+      COMPANION,
     ),
   );
 }
@@ -147,7 +147,7 @@ function bubbleText(app: App, includes: string, ms = 5000) {
 }
 
 suite("voice", (test) => {
-  test("hold the mic: listening, then the transcript waits for review; Send asks Loopy", async (app) => {
+  test("hold the mic: listening, then the transcript waits for review; Send asks the companion", async (app) => {
     await waitFor(() => app.exists(MIC), 3000, "the mic button");
     assertEquals(await app.attr(MIC, "data-phase"), "idle");
     await willHear(app, "What is in tile 1?");
@@ -198,7 +198,7 @@ suite("voice", (test) => {
     assert(!text.includes("never mind"), text);
   });
 
-  test("listening: Loopy's head pulses with the microphone's level, and settles once the mic is let go", async (app) => {
+  test("listening: the companion's head pulses with the microphone's level, and settles once the mic is let go", async (app) => {
     await waitFor(() => app.exists(MIC), 3000, "the mic button");
     assertEquals(await listenLevel(app), 0, "still before listening");
     await willHear(app, "a pulse");
@@ -226,7 +226,7 @@ suite("voice", (test) => {
       2000,
       "the pulse settled",
     );
-    assert(await app.attr(LOOPY, "data-voice") !== "listening");
+    assert(await app.attr(COMPANION, "data-voice") !== "listening");
   });
 
   test("a short click latches listening; the next click stops", async (app) => {
@@ -240,7 +240,7 @@ suite("voice", (test) => {
     );
     assertEquals(await app.attr(MIC, "data-phase"), "listening");
     assertEquals(await app.attr(OVERLAY, "data-voice"), "listening");
-    assertEquals(await app.attr(LOOPY, "data-voice"), "listening");
+    assertEquals(await app.attr(COMPANION, "data-voice"), "listening");
     // The listening mic pulses (App.click waits for stillness): click its centre.
     const { x, y } = await center(app, MIC);
     await app.clickAt(x, y);
@@ -292,9 +292,10 @@ suite("voice", (test) => {
       5000,
       "speaking",
     );
-    assert(await app.exists("[data-testid=loopy-stop-speaking]"));
-    // Loopy speaks: its mouth is the lip-sync shape and moves (steady and open with reduced motion).
-    assertEquals(await app.attr(LOOPY, "data-voice"), "speaking");
+    assert(await app.exists("[data-testid=companion-stop-speaking]"));
+    // The companion speaks: its mouth is the lip-sync shape and moves (steady and open with reduced
+    // motion).
+    assertEquals(await app.attr(COMPANION, "data-voice"), "speaking");
     const mouths = new Set<string>();
     let opened = false;
     for (let i = 0; i < 8; i++) {
@@ -317,13 +318,13 @@ suite("voice", (test) => {
       2000,
       "stopped speaking",
     );
-    assert((await app.attr(LOOPY, "data-voice")) !== "speaking");
+    assert((await app.attr(COMPANION, "data-voice")) !== "speaking");
     assert((await script(app)).stops >= 1);
   });
 
-  test("Summarize asks Loopy about every tile, and the answer is spoken", async (app) => {
+  test("Summarize asks the companion about every tile, and the answer is spoken", async (app) => {
     await withVoice(app, { speakAnswers: true });
-    await app.click("[data-testid=loopy-summarize]");
+    await app.click("[data-testid=companion-summarize]");
     await bubbleText(app, "tile");
     const text = await bubbleText(app, " is ");
     assert(/\d+ tiles?:/.test(text), text);
@@ -495,7 +496,8 @@ suite("voice", (test) => {
   });
 
   test("hold-to-dictate with the companion off: the badge shows, the transcript is typed, no Enter", async (app) => {
-    // Review is on, but with no Loopy to hold the review box the dictation is typed at once.
+    // Review is on, but with no the companion to hold the review box the dictation is typed at
+    // once.
     await withSettings(app, { dictateKey: "Mod+Shift+K", review: true }, "off");
     assert(!(await app.exists(OVERLAY)), "no companion");
     const id = (await app.focusedId())!;
@@ -515,7 +517,7 @@ suite("voice", (test) => {
     );
     assert(!(await app.exists(NOTE)));
     assertEquals((await script(app)).starts, ["local"]);
-    // The push-to-talk key stays Loopy's: with the companion off it does nothing.
+    // The push-to-talk key stays the companion's: with the companion off it does nothing.
     const kb = app.page.keyboard;
     await kb.down(app.mod);
     await kb.down("Shift");
@@ -585,7 +587,7 @@ suite("voice", (test) => {
     }
   });
 
-  test("hold-to-dictate with Loopy shown and review on: the review box is aimed at the tile", async (app) => {
+  test("hold-to-dictate with the companion shown and review on: the review box is aimed at the tile", async (app) => {
     await withVoice(app, { dictateKey: "Mod+Shift+K", review: true });
     const id = (await app.focusedId())!;
     await app.focusTerminalInput(id);

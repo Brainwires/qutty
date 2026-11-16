@@ -427,10 +427,10 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
   });
 });
 
-Deno.test("settings: the system monitor defaults (meter off, hot Loopy on), reduces and persists", () => {
+Deno.test("settings: the system monitor defaults (meter off, the hot companion on), reduces and persists", () => {
   assertEquals(DEFAULT_SETTINGS.monitor, {
     meter: false,
-    hotLoopy: true,
+    hotCompanion: true,
     hotAt: 85,
     coolAt: 70,
     sustainS: 10,

@@ -14,7 +14,7 @@
 //   answers with the transcript: on-device Whisper, or the audio sent to the cloud engine the user
 //   picked (Deepgram, ElevenLabs; `@rullama/provider-speech`) with the user's key. Nothing is
 //   sent anywhere else. While it listens, the microphone's level goes to the page as `level`
-//   events, 20 a second at most (lib/voice/level.ts), for Loopy's pulse.
+//   events, 20 a second at most (lib/voice/level.ts), for the companion's pulse.
 // - Cloud speech: Deepgram Aura's WAV, played by the library (`speak` / `speakStop`).
 // - The cloud keys: kept in the OS keychain through this extension's own secure store
 //   (`host.secureStore`, Denext's `<app identifier>/ext/voice` namespace, which no page can read;

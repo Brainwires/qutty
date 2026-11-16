@@ -10,7 +10,7 @@
 // - `/msg <name> <text>`: a message for another tile. Its unread count goes up until that tile's
 //   agent takes its next turn (any line typed into it), which prints the message and clears it.
 //
-// - `/msg companion <text>`: a message for the companion (Loopy), handled by the fake brain
+// - `/msg companion <text>`: a message for the companion, handled by the fake brain
 //   (lib/companion/demo-brain.ts) under the real companion runtime;
 // - `/say <text> [--mood m] [--action id:label] [--wait]`: `qutty-hook say` (the answer to a
 //   `--wait` is printed).
@@ -360,8 +360,14 @@ export function createDemoHub(
         }),
       send: (text: string, via: "chat" | "voice" = "chat") =>
         Promise.resolve({ turn: runtime.userSays(text, via) }),
-      configure(enabled: boolean, model: string, engine = "claude") {
-        // The demo brain answers either way; the label says which one Settings picked.
+      configure(
+        enabled: boolean,
+        model: string,
+        engine = "claude",
+        _name?: string,
+      ) {
+        // The demo brain answers either way (it has no system prompt to name it in); the label
+        // says which one Settings picked.
         runtime.setAdapter(
           engine === "ollama"
             ? `Demo brain (Ollama ${model || "?"})`

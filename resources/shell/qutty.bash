@@ -35,8 +35,8 @@
 # Shell integration marks (OSC 133, lib/shell-marks.ts): bash has no hook before a command runs,
 # so the same PROMPT_COMMAND hook sends, for each new command, `133;D;<exit>` with its line and
 # how long it ran (from the history entry's timestamp), then `133;A` as the prompt starts. Qutty
-# learns each command's exit status and duration from it (Loopy's reactions, Settings →
-# Companion). They are invisible; QUTTY_SHELL_MARKS=off leaves them out.
+# learns each command's exit status and duration from it (the companion's reactions,
+# Settings → Companion). They are invisible; QUTTY_SHELL_MARKS=off leaves them out.
 #
 # Settings (environment): QUTTY_AGENT_PREFIX (default ,), QUTTY_AGENT_BRAIN (auto | claude |
 # ollama), QUTTY_AGENT_MODEL, QUTTY_AGENT_BIN (the qutty-agent to use), QUTTY_AGENT_NOTIFY_EVERY,

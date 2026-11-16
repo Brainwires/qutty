@@ -1,15 +1,15 @@
-// Loopy's reactions (Settings → Companion → Reactions) against the demo backend. The demo shell
-// sends OSC 133 marks around every command like Qutty's zsh plugin, and `job <s> <exit> <cmd…>`
-// (lib/shell-marks-demo.ts) stands in for a long build or test run; the minimum duration is set to
-// 1 s so the suite is quick. Demo agents report `/pass` and `/fail` status notes. The app's clock
-// is moved for the night (`window.__e2e.setClock`, lib/test-hooks.ts).
+// The companion's reactions (Settings → Companion → Reactions) against the demo backend. The demo
+// shell sends OSC 133 marks around every command like Qutty's zsh plugin, and `job <s> <exit>
+// <cmd…>` (lib/shell-marks-demo.ts) stands in for a long build or test run; the minimum duration is
+// set to 1 s so the suite is quick. Demo agents report `/pass` and `/fail` status notes. The app's
+// clock is moved for the night (`window.__e2e.setClock`, lib/test-hooks.ts).
 //
 // Covers: a hop of joy after a long build-like command succeeds, a sad face after one fails, the
-// line beside Loopy, short and non-build commands left alone; agents' notes; never over an
+// line beside the companion, short and non-build commands left alone; agents' notes; never over an
 // ask_user question; reduced motion (no hop); sleepy at night, staying asleep while the pointer
 // moves far away, waking with a stretch when it comes near, dozing off again, woken by a message,
-// awake by day; the Settings toggles. Takes the screenshots the PR shows (loopy-reactions-*.png,
-// copied to `LOOPY_REACTIONS_SHOT_DIR` when set).
+// awake by day; the Settings toggles. Takes the screenshots the PR shows
+// (companion-reactions-*.png, copied to `COMPANION_REACTIONS_SHOT_DIR` when set).
 
 import { assert, assertEquals, assertMatch } from "@std/assert";
 import { join } from "@std/path";
@@ -17,13 +17,13 @@ import { type App, ROOT, suite, waitFor } from "./harness.ts";
 import { launchAgent } from "./agent_helpers.ts";
 
 const OVERLAY = "[data-testid=companion-overlay]";
-const LOOPY = `${OVERLAY} svg.loopy`;
-const REACTION = "[data-testid=loopy-reaction]";
+const COMPANION = `${OVERLAY} svg.companion-avatar`;
+const REACTION = "[data-testid=companion-reaction]";
 const SHOT_DIR = join(ROOT, "tests/e2e/__screenshots__");
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Loopy's mood, move and the overlay's top face layer. */
+/** The companion's mood, move and the overlay's top face layer. */
 function looks(app: App) {
   return app.eval(
     (s: string, o: string) => {
@@ -36,21 +36,24 @@ function looks(app: App) {
         face: document.querySelector(o)?.getAttribute("data-face") ?? null,
       };
     },
-    LOOPY,
+    COMPANION,
     OVERLAY,
   );
 }
 
-/** Wait until Loopy wears `mood`. */
+/** Wait until the companion wears `mood`. */
 function waitMood(app: App, mood: string, ms = 4000) {
   return waitFor(
     async () => (await looks(app)).mood === mood,
     ms,
-    `Loopy ${mood}`,
+    `The companion ${mood}`,
   );
 }
 
-/** Record every mood and move Loopy takes from now on; call again with `reset: false` to read. */
+/**
+ * Record every mood and move the companion takes from now on; call again with `reset: false` to
+ * read.
+ */
 function record(app: App, reset = true): Promise<string[]> {
   return app.eval(
     (s: string, fresh: boolean) => {
@@ -75,12 +78,12 @@ function record(app: App, reset = true): Promise<string[]> {
       }
       return [...(w.__seen ?? [])];
     },
-    LOOPY,
+    COMPANION,
     reset,
   );
 }
 
-/** The line beside Loopy (`null`: none). */
+/** The line beside the companion (`null`: none). */
 function reactionLine(app: App) {
   return app.eval((s: string) => {
     const el = document.querySelector<HTMLElement>(s);
@@ -121,7 +124,7 @@ async function quick(app: App) {
   await waitFor(
     async () => ["idle", "blink"].includes((await looks(app)).state ?? ""),
     3000,
-    "Loopy landed",
+    "The companion landed",
   );
 }
 
@@ -147,16 +150,16 @@ function tomorrowAt(hour: number): number {
   return d.getTime();
 }
 
-/** Loopy's bead centre and size on screen. */
+/** The companion's bead centre and size on screen. */
 function bead(app: App) {
   return app.eval((s: string) => {
-    const r = document.querySelector(`${s} .loopy-bead`)!
+    const r = document.querySelector(`${s} .companion-bead`)!
       .getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, size: r.width };
   }, OVERLAY);
 }
 
-/** A close-up of Loopy (and its line), as loopy-reactions-<name>.png. */
+/** A close-up of the companion (and its line), as companion-reactions-<name>.png. */
 async function shot(app: App, name: string): Promise<void> {
   const c = await bead(app);
   const o = (await app.rectOf(OVERLAY))!;
@@ -171,12 +174,14 @@ async function shot(app: App, name: string): Promise<void> {
     },
   });
   await Deno.mkdir(SHOT_DIR, { recursive: true });
-  await Deno.writeFile(join(SHOT_DIR, `loopy-reactions-${name}.png`), png);
-  const dir = Deno.env.get("LOOPY_REACTIONS_SHOT_DIR");
-  if (dir) await Deno.writeFile(join(dir, `loopy-reactions-${name}.png`), png);
+  await Deno.writeFile(join(SHOT_DIR, `companion-reactions-${name}.png`), png);
+  const dir = Deno.env.get("COMPANION_REACTIONS_SHOT_DIR");
+  if (dir) {
+    await Deno.writeFile(join(dir, `companion-reactions-${name}.png`), png);
+  }
 }
 
-suite("loopy reactions", (test) => {
+suite("companion reactions", (test) => {
   test("a long build that succeeds: a hop of joy and a line; one that fails: a sad face", async (app) => {
     await quick(app);
     const shell = (await app.focusedId())!;
@@ -245,7 +250,7 @@ suite("loopy reactions", (test) => {
     assertEquals((await looks(app)).mood, "attention", "sad never replaces it");
     assertEquals(await reactionLine(app), null);
     await record(app);
-    await app.click("[data-testid=loopy-action]");
+    await app.click("[data-testid=companion-action]");
     await waitMood(app, "neutral", 4000);
     await pause(1200);
     const seen = await record(app, false);
@@ -284,7 +289,7 @@ suite("loopy reactions", (test) => {
     }
     await pause(300);
     assertEquals((await looks(app)).mood, "sleepy", "still asleep");
-    // Near Loopy: it wakes, with a stretch.
+    // Near the companion: it wakes, with a stretch.
     const c = await bead(app);
     await app.page.mouse.move(c.x - c.size * 1.5, c.y);
     await pause(30);

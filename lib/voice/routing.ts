@@ -10,6 +10,8 @@
  * @module
  */
 
+import { DEFAULT_COMPANION_NAME } from "../companion/settings.ts";
+
 /** What to do with a transcript. */
 export type VoiceRoute =
   /** Nothing was heard. */
@@ -30,13 +32,33 @@ export const SUMMARIZE_PROMPT =
   "two or three short sentences what is going on, most important first. Plain sentences, no " +
   "lists or markdown: this is read aloud.";
 
-/** The phrases that ask for the summary ("summarize the window", "what's going on?"). */
-const SUMMARY_PHRASE =
-  /^(?:(?:hey |ok |okay )?(?:loopy|qutty)[,.]?\s+)?(?:please\s+)?(?:summari[sz]e(?: (?:the|this|my))? (?:window|tiles|screens?|terminals?)|give me a summary|status report|what(?:'s| is) (?:going on|happening))(?: (?:here|now|in (?:the|this) window))?(?: please)?[.!?]*$/i;
+/** `text` with every regular expression metacharacter escaped. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+}
 
-/** Whether `text` asks for the window summary. */
-export function isSummaryRequest(text: string): boolean {
-  return SUMMARY_PHRASE.test(text.trim());
+/**
+ * The phrases that ask for the summary ("summarize the window", "what's going on?"), optionally
+ * addressed to the companion by `name`, "qutty" or "companion" ("hey Companion, what's going on?").
+ */
+function summaryPhrase(name: string): RegExp {
+  const names = [name.trim(), "qutty", "companion"].filter((n) => n !== "")
+    .map(escapeRegExp).join("|");
+  return new RegExp(
+    `^(?:(?:hey |ok |okay )?(?:${names})[,.]?\\s+)?(?:please\\s+)?(?:summari[sz]e(?: (?:the|this|my))? (?:window|tiles|screens?|terminals?)|give me a summary|status report|what(?:'s| is) (?:going on|happening))(?: (?:here|now|in (?:the|this) window))?(?: please)?[.!?]*$`,
+    "i",
+  );
+}
+
+/**
+ * Whether `text` asks for the window summary; `name` is the companion's (Settings → Companion →
+ * Name), which it may be addressed by.
+ */
+export function isSummaryRequest(
+  text: string,
+  name: string = DEFAULT_COMPANION_NAME,
+): boolean {
+  return summaryPhrase(name).test(text.trim());
 }
 
 /** Whisper's markers for no speech (`[BLANK_AUDIO]`, `(silence)`, `[Music]`…). */
@@ -55,10 +77,13 @@ export function dictationText(text: string): string {
   return text.replace(/[\r\n]+/g, " ").replace(/(?<!\.)\.$/, "").trim();
 }
 
-/** Route transcript `raw`: dictate mode types it; otherwise a summary request or the companion. */
+/**
+ * Route transcript `raw`: dictate mode types it; otherwise a summary request (addressed by
+ * `opts.name`, the companion's name, or none) or the companion.
+ */
 export function routeTranscript(
   raw: string,
-  opts: { dictate: boolean },
+  opts: { dictate: boolean; name?: string },
 ): VoiceRoute {
   const text = cleanTranscript(raw);
   if (!text) return { kind: "empty" };
@@ -66,6 +91,6 @@ export function routeTranscript(
     const typed = dictationText(text);
     return typed ? { kind: "dictate", text: typed } : { kind: "empty" };
   }
-  if (isSummaryRequest(text)) return { kind: "summarize" };
+  if (isSummaryRequest(text, opts.name)) return { kind: "summarize" };
   return { kind: "companion", text };
 }

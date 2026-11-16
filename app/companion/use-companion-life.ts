@@ -1,19 +1,20 @@
-// Loopy's idle life in the window (Settings → Companion → Lively), the DOM side of
-// lib/companion/loopy-life.ts, which holds every rule: micro-expressions now and then while Loopy
-// is free, the pupils following the pointer, and a burst of excitement when the pointer comes
-// near. Kept thin:
+// The companion's idle life in the window (Settings → Companion → Lively), the DOM side of
+// lib/companion/face-life.ts, which holds every rule: micro-expressions now and then while the
+// companion is free, the pupils following the pointer, and a burst of excitement when the pointer
+// comes near. Kept thin:
 //
 // - one passive `pointermove` listener on the window (so it works over the terminals too), which
 //   only stores the position and asks for an animation frame;
 // - one rAF loop that reads the avatar's box, works out the pupils' offsets and eases them, and
-//   writes them as custom properties on the avatar's holder (`--loopy-gaze-lx/ly/rx/ry`, drawing
-//   units; public/styles.css turns them into transforms on the pupils). It runs while the pointer
-//   moves and until the eyes have drifted back, then stops;
+//   writes them as custom properties on the avatar's holder (`--companion-gaze-lx/ly/rx/ry`,
+//   drawing units; public/styles.css turns them into transforms on the pupils). It runs while the
+//   pointer moves and until the eyes have drifted back, then stops;
 // - a timer chain for the micro-expressions, and the excitement's timer, all cleared on unmount.
 //
 // The window hidden, or in the background for a while (BLUR_SLEEP_MS), puts it all to sleep. While
-// Loopy is dragged (app/companion/use-loopy-drag.ts) it is not free (`mayLiven`): the pointer on
-// its face brings no delight and no excitement, and the eyes just keep looking at the pointer.
+// the companion is dragged (app/companion/use-companion-drag.ts) it is not free (`mayLiven`): the
+// pointer on its face brings no delight and no excitement, and the eyes just keep looking at the
+// pointer.
 
 import { useEffect, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
@@ -38,31 +39,33 @@ import {
   type Target,
   trackExcitement,
   ZERO,
-} from "../../lib/companion/loopy-life.ts";
-import { LOOPY_VIEWBOX } from "./loopy.tsx";
+} from "../../lib/companion/face-life.ts";
+import { COMPANION_VIEWBOX } from "./companion-face.tsx";
 
-export interface LoopyLifeOptions extends Omit<LifeContext, "awake"> {
-  /** The element holding Loopy's SVG: the gaze offsets are set on it. */
+export interface CompanionLifeOptions extends Omit<LifeContext, "awake"> {
+  /** The element holding the companion's SVG: the gaze offsets are set on it. */
   readonly stage: { readonly current: HTMLElement | null };
   readonly reducedMotion: boolean;
-  /** For the excited hop (Loopy's `celebrate`), left out with reduced motion. */
+  /** For the excited hop (the companion's `celebrate`), left out with reduced motion. */
   readonly dispatch: Dispatch<CompanionEvent>;
 }
 
-/** What Loopy's idle life shows: a micro-expression (or delight) and, briefly, excitement. */
-export interface LoopyLife {
+/**
+ * What the companion's idle life shows: a micro-expression (or delight) and, briefly, excitement.
+ */
+export interface CompanionLife {
   readonly expression: MicroExpression | "delighted" | undefined;
   readonly excited: boolean;
 }
 
 const GAZE_VARS = [
-  "--loopy-gaze-lx",
-  "--loopy-gaze-ly",
-  "--loopy-gaze-rx",
-  "--loopy-gaze-ry",
+  "--companion-gaze-lx",
+  "--companion-gaze-ly",
+  "--companion-gaze-rx",
+  "--companion-gaze-ry",
 ] as const;
 
-const [VB_X, VB_Y, VB_W] = LOOPY_VIEWBOX;
+const [VB_X, VB_Y, VB_W] = COMPANION_VIEWBOX;
 
 /** Whether the window is shown and has not sat in the background for long. */
 function useAwake(enabled: boolean): boolean {
@@ -120,7 +123,7 @@ function useMicroExpressions(
   return expression;
 }
 
-/** Loopy's box on screen: its bead's centre and size, and the eyes' centres, in px. */
+/** The companion's box on screen: its bead's centre and size, and the eyes' centres, in px. */
 function measure(svg: Element) {
   const box = svg.getBoundingClientRect();
   const unit = box.width / VB_W;
@@ -137,8 +140,8 @@ function measure(svg: Element) {
   return { unit, target, eyes: EYE_CENTRES.map(at) as [Point, Point] };
 }
 
-/** Loopy's idle life; see the module comment. */
-export function useLoopyLife(opts: LoopyLifeOptions): LoopyLife {
+/** The companion's idle life; see the module comment. */
+export function useCompanionLife(opts: CompanionLifeOptions): CompanionLife {
   const { lively, reducedMotion } = opts;
   const awake = useAwake(lively);
   const free = mayLiven({ ...opts, awake });
@@ -199,7 +202,7 @@ export function useLoopyLife(opts: LoopyLifeOptions): LoopyLife {
 
     const tick = (now: number) => {
       frame = 0;
-      const svg = stage.querySelector("svg.loopy");
+      const svg = stage.querySelector("svg.companion-avatar");
       if (!svg) return;
       const { unit, target, eyes } = measure(svg);
       if (pointer && fresh) {

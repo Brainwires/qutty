@@ -1,17 +1,17 @@
 // Ported from Denext's examples/companion (lib/loopy-machine.ts on feat/loopy-voice-tools: the
-// crossed-triangle Loopy with 13 moods; same author, MIT) unchanged.
+// crossed-triangle the companion with 13 moods; same author, MIT) unchanged.
 //
-// Loopy's animation state machine: a pure reducer the page runs with `useReducer`. Each state is
-// one of Loopy's moves (styles.css draws them from the `data-state` attribute); the timed ones end
-// on their own when the page sends `settle` after {@linkcode stateDurationMs}.
+// The companion's animation state machine: a pure reducer the page runs with `useReducer`. Each
+// state is one of the companion's moves (styles.css draws them from the `data-state` attribute);
+// the timed ones end on their own when the page sends `settle` after {@linkcode stateDurationMs}.
 //
 //   hidden ─show/say─▶ appear ─settle─▶ idle ◀─settle─ blink / celebrate
 //                                       │ ▲
 //                         say(mood) ────┘ └──── settle ─ think / point (held while a bubble is up)
 //   any visible state ─dismiss─▶ dismiss ─settle─▶ hidden
 
-/** A move Loopy can be in. */
-export type LoopyState =
+/** A move the companion can be in. */
+export type FaceState =
   | "hidden"
   | "appear"
   | "idle"
@@ -21,8 +21,8 @@ export type LoopyState =
   | "celebrate"
   | "dismiss";
 
-/** How a message wants Loopy to look while it speaks. */
-export type LoopyMood =
+/** How a message wants the companion to look while it speaks. */
+export type FaceMood =
   | "neutral"
   | "thinking"
   | "attention"
@@ -38,7 +38,7 @@ export type LoopyMood =
   | "wow";
 
 /** Every mood, for validation. */
-export const MOODS: readonly LoopyMood[] = [
+export const MOODS: readonly FaceMood[] = [
   "neutral",
   "thinking",
   "attention",
@@ -55,26 +55,29 @@ export const MOODS: readonly LoopyMood[] = [
 ];
 
 /** What the machine holds. */
-export interface LoopyModel {
+export interface FaceModel {
   /** The move on screen. */
-  readonly state: LoopyState;
-  /** The mood to take once an `appear` lands (a message that arrived while Loopy was hidden). */
-  readonly pendingMood: LoopyMood | null;
+  readonly state: FaceState;
+  /**
+   * The mood to take once an `appear` lands (a message that arrived while the companion was
+   * hidden).
+   */
+  readonly pendingMood: FaceMood | null;
 }
 
-/** What can happen to Loopy. */
-export type LoopyEvent =
+/** What can happen to the companion. */
+export type FaceEvent =
   | { readonly type: "show" }
-  | { readonly type: "say"; readonly mood: LoopyMood }
+  | { readonly type: "say"; readonly mood: FaceMood }
   | { readonly type: "blink" }
   | { readonly type: "settle" }
   | { readonly type: "dismiss" };
 
-/** Where Loopy starts: folded away until the page shows it. */
-export const INITIAL_MODEL: LoopyModel = { state: "hidden", pendingMood: null };
+/** Where the companion starts: folded away until the page shows it. */
+export const INITIAL_MODEL: FaceModel = { state: "hidden", pendingMood: null };
 
 /** The move a mood maps to. */
-export function moodState(mood: LoopyMood): LoopyState {
+export function moodState(mood: FaceMood): FaceState {
   switch (mood) {
     case "thinking":
     case "confused":
@@ -100,7 +103,7 @@ export function moodState(mood: LoopyMood): LoopyState {
  * How long a timed move lasts before the page sends `settle` (its CSS animation is the same
  * length), or `null` for a move that holds until something else happens.
  */
-export function stateDurationMs(state: LoopyState): number | null {
+export function stateDurationMs(state: FaceState): number | null {
   switch (state) {
     case "appear":
       return 650;
@@ -123,9 +126,9 @@ export function stateDurationMs(state: LoopyState): number | null {
  * @param random A number in [0, 1) that picks the blink delay (`Math.random` by default).
  */
 export function nextTimer(
-  state: LoopyState,
+  state: FaceState,
   random: () => number = Math.random,
-): { readonly event: LoopyEvent; readonly ms: number } | null {
+): { readonly event: FaceEvent; readonly ms: number } | null {
   if (state === "idle") {
     return { event: { type: "blink" }, ms: 2_500 + random() * 3_500 };
   }
@@ -133,21 +136,21 @@ export function nextTimer(
   return ms === null ? null : { event: { type: "settle" }, ms };
 }
 
-/** Whether Loopy is on screen (anything but `hidden` and the fold-away). */
-export function isVisible(state: LoopyState): boolean {
+/** Whether the companion is on screen (anything but `hidden` and the fold-away). */
+export function isVisible(state: FaceState): boolean {
   return state !== "hidden" && state !== "dismiss";
 }
 
 const at = (
-  state: LoopyState,
-  pendingMood: LoopyMood | null = null,
-): LoopyModel => ({
+  state: FaceState,
+  pendingMood: FaceMood | null = null,
+): FaceModel => ({
   state,
   pendingMood,
 });
 
 /** Where `settle` goes from the current move. */
-function settled(model: LoopyModel): LoopyModel {
+function settled(model: FaceModel): FaceModel {
   switch (model.state) {
     case "appear":
       return at(model.pendingMood ? moodState(model.pendingMood) : "idle");
@@ -167,7 +170,7 @@ function settled(model: LoopyModel): LoopyModel {
  * The next model for `event`. Unknown or meaningless events (a blink while hidden, a settle while
  * idle) return the model unchanged, so the page may send them freely.
  */
-export function transition(model: LoopyModel, event: LoopyEvent): LoopyModel {
+export function transition(model: FaceModel, event: FaceEvent): FaceModel {
   switch (event.type) {
     case "show":
       return model.state === "hidden" || model.state === "dismiss"

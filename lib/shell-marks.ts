@@ -4,7 +4,7 @@
  * that a command runs (`C`) and that it ended with an exit status (`D;<exit>`). Qutty's shell
  * plugin (resources/shell/qutty.zsh, qutty.bash; Settings → Agent integration) sends them, and so
  * does any other shell integration that speaks OSC 133. From them the terminal knows each
- * command's line, how long it ran and how it ended, which Loopy reacts to
+ * command's line, how long it ran and how it ended, which the companion reacts to
  * (lib/companion/reactions.ts).
  *
  * The parameters after the mark are `key=value` pairs; the command line comes as kitty's

@@ -2,8 +2,9 @@
  * The page's speech engines behind the adapters (lib/voice/tts.ts `TtsEngine`, lib/voice/controller.ts
  * `SttEngine`):
  *
- * - TTS `system` (the default): `speak()` / `stopSpeaking()` from `denext/mobile`, the engine Loopy
- *   in Denext's example uses — the window's Web Speech, else the OS's (`Deno.desktop.speech`).
+ * - TTS `system` (the default): `speak()` / `stopSpeaking()` from `denext/mobile`, the engine the
+ *   companion in Denext's example uses — the window's Web Speech, else the OS's
+ *   (`Deno.desktop.speech`).
  * - TTS `deepgram`: Deepgram Aura through the voice extension, played by the native library.
  * - STT `local` (the default): on-device Whisper in the native library (rullama-hardware).
  * - STT `deepgram` / `elevenlabs`: the native library records, the extension sends the audio.

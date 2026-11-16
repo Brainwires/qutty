@@ -1,11 +1,11 @@
 /**
  * Sleepy at night (Settings → Companion → Reactions): between the night's hours (default 00:00
- * to 06:00, local time) and once the pointer has not moved for a while, Loopy dozes off in the
- * example's `sleepy` mood (droopy eyes, z's) and its idle life slows down. The pointer moving near
- * it, or anything to say (a question, a reply, a reaction, thinking, a voice turn), wakes it with
- * a stretch; the pointer moving elsewhere only keeps it from falling asleep.
+ * to 06:00, local time) and once the pointer has not moved for a while, the companion dozes off in
+ * the example's `sleepy` mood (droopy eyes, z's) and its idle life slows down. The pointer moving
+ * near it, or anything to say (a question, a reply, a reaction, thinking, a voice turn), wakes it
+ * with a stretch; the pointer moving elsewhere only keeps it from falling asleep.
  *
- * Client-safe and pure; app/companion/use-loopy-sleep.ts is the DOM side.
+ * Client-safe and pure; app/companion/use-companion-sleep.ts is the DOM side.
  *
  * @module
  */
@@ -49,12 +49,12 @@ export function parseMinute(text: string): DayMinute | null {
   return h < 24 && min < 60 ? h * 60 + min : null;
 }
 
-/** How long the pointer must rest before Loopy dozes off, ms. */
+/** How long the pointer must rest before the companion dozes off, ms. */
 export const SLEEP_AFTER_MS = 2 * 60_000;
 /** How long the wake-up stretch lasts, ms. */
 export const STRETCH_MS = 900;
 
-/** What decides whether Loopy sleeps. */
+/** What decides whether the companion sleeps. */
 export interface SleepContext {
   /** Settings → Companion → Reactions → Sleepy at night. */
   readonly enabled: boolean;
@@ -65,30 +65,39 @@ export interface SleepContext {
   readonly to: DayMinute;
   /** When the pointer last moved (or a key was pressed), ms. */
   readonly lastActivity: number;
-  /** Something is on Loopy's face for a reason (a message, thinking, a voice turn, a reaction). */
+  /**
+   * Something is on the companion's face for a reason (a message, thinking, a voice turn, a
+   * reaction).
+   */
   readonly busy: boolean;
 }
 
-/** Whether Loopy may fall asleep now (it stays asleep until something wakes it). */
+/** Whether the companion may fall asleep now (it stays asleep until something wakes it). */
 export function shouldSleep(ctx: SleepContext): boolean {
   return ctx.enabled && !ctx.busy &&
     inWindow(dayMinute(ctx.now), ctx.from, ctx.to) &&
     ctx.now - ctx.lastActivity >= SLEEP_AFTER_MS;
 }
 
-/** Whether a sleeping Loopy wakes: night is over, it was turned off, or something needs it. */
+/**
+ * Whether the sleeping companion wakes: night is over, it was turned off, or something needs it.
+ */
 export function shouldWake(ctx: Omit<SleepContext, "lastActivity">): boolean {
   return !ctx.enabled || ctx.busy ||
     !inWindow(dayMinute(ctx.now), ctx.from, ctx.to);
 }
 
-/** "Near" Loopy, for waking it: within this many times its size of its centre. */
+/** "Near" the companion, for waking it: within this many times its size of its centre. */
 const WAKE_NEAR = 2;
 
-/** Whether the pointer at (`x`, `y`) is near enough to wake Loopy (centre `cx`, `cy`, `size` px). */
+/**
+ * Whether the pointer at (`x`, `y`) is near enough to wake the companion (centre `cx`, `cy`, `size`
+ * px).
+ */
 export function nearEnoughToWake(
   p: { readonly x: number; readonly y: number },
-  loopy: { readonly cx: number; readonly cy: number; readonly size: number },
+  avatar: { readonly cx: number; readonly cy: number; readonly size: number },
 ): boolean {
-  return Math.hypot(p.x - loopy.cx, p.y - loopy.cy) <= WAKE_NEAR * loopy.size;
+  return Math.hypot(p.x - avatar.cx, p.y - avatar.cy) <=
+    WAKE_NEAR * avatar.size;
 }

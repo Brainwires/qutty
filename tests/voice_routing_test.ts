@@ -56,8 +56,9 @@ Deno.test("routing: the summary phrases", () => {
       "what is going on here",
       "Summarize the window.",
       "summarise the tiles",
-      "Loopy, what's happening?",
-      "Hey Loopy summarize this window please",
+      "Companion, what's happening?",
+      "Hey companion summarize this window please",
+      "Qutty, status report",
       "Status report",
       "Give me a summary.",
     ]
@@ -76,6 +77,64 @@ Deno.test("routing: the summary phrases", () => {
   ) {
     assertEquals(isSummaryRequest(no), false, no);
   }
+});
+
+Deno.test("routing: the summary phrase addressed by the companion's own name", () => {
+  // A custom name, and still "qutty" and "companion".
+  for (
+    const yes of [
+      "Hey Jarvis, what's going on?",
+      "jarvis summarize the window",
+      "Qutty, what's happening?",
+      "OK companion, status report.",
+    ]
+  ) {
+    assertEquals(isSummaryRequest(yes, "Jarvis"), true, yes);
+    assertEquals(
+      routeTranscript(yes, { dictate: false, name: "Jarvis" }),
+      { kind: "summarize" },
+      yes,
+    );
+  }
+  // The old name is not an address any more, nor is another name.
+  for (const no of ["Loopy, what's going on?", "Hey Friday, status report"]) {
+    assertEquals(isSummaryRequest(no, "Jarvis"), false, no);
+    assertEquals(
+      routeTranscript(no, { dictate: false, name: "Jarvis" }).kind,
+      "companion",
+      no,
+    );
+  }
+  // A name with spaces.
+  assertEquals(
+    isSummaryRequest("Mr Robot, what's going on?", "Mr Robot"),
+    true,
+  );
+  // Without a name: the default, "Companion".
+  assertEquals(isSummaryRequest("Companion, what's going on?"), true);
+});
+
+Deno.test("routing: a name with regular expression metacharacters is matched literally", () => {
+  const name = "R2.D2 (beta)+";
+  assertEquals(isSummaryRequest("R2.D2 (beta)+, what's going on?", name), true);
+  assertEquals(isSummaryRequest("hey r2.d2 (beta)+ status report", name), true);
+  // `.` is not any character, `+` not "one or more", the parentheses not a group.
+  assertEquals(
+    isSummaryRequest("R2xD2 (beta)+, what's going on?", name),
+    false,
+  );
+  assertEquals(isSummaryRequest("R2.D2 beta, what's going on?", name), false);
+  assertEquals(
+    isSummaryRequest("R2.D2 (beta)), what's going on?", name),
+    false,
+  );
+  // Neither breaks the pattern nor matches everything.
+  for (const odd of ["[", "(", "a|b", ".*", "\\", "^$", "/"]) {
+    assertEquals(isSummaryRequest(`${odd}, what's going on?`, odd), true, odd);
+    assertEquals(isSummaryRequest("tell codex hi", odd), false, odd);
+  }
+  assertEquals(isSummaryRequest("b, what's going on?", "a|b"), false);
+  assertEquals(isSummaryRequest("anything, status report", ".*"), false);
 });
 
 Deno.test("routing: dictation is one line, its last full stop dropped", () => {

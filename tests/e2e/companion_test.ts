@@ -1,11 +1,11 @@
-// The companion (Loopy) against the demo backend: the real companion runtime over a fake brain
-// (lib/companion/demo-brain.ts). Loopy in its corner with clicks passing through the rest of the
-// overlay; the chat box and a streamed reply; agents' `ask_user` questions in the bubble, answered
-// by its buttons; `qutty-hook say` with a `--wait` answer; an agent's message to the companion; a
-// tile the companion spawns, and its activity in Settings; the settings (corner, Off → the ask
-// card returns, brain off); reduced motion; Lively (the eyes on the pointer, excitement near it,
-// never over a question, still with reduced motion, off in Settings). Also takes the screenshots
-// the PRs show.
+// The companion (`CompanionFace`) against the demo backend: the real companion runtime over a fake
+// brain (lib/companion/demo-brain.ts). The companion in its corner with clicks passing through the
+// rest of the overlay; the chat box and a streamed reply; agents' `ask_user` questions in the
+// bubble, answered by its buttons; `qutty-hook say` with a `--wait` answer; an agent's message to
+// the companion; a tile the companion spawns, and its activity in Settings; the settings (corner,
+// Off → the ask card returns, brain off); reduced motion; Lively (the eyes on the pointer,
+// excitement near it, never over a question, still with reduced motion, off in Settings). Also
+// takes the screenshots the PRs show.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
@@ -14,8 +14,8 @@ import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
 
 const OVERLAY = "[data-testid=companion-overlay]";
-const BUBBLE = "[data-testid=loopy-bubble]";
-const INPUT = "[data-testid=loopy-chat-input]";
+const BUBBLE = "[data-testid=companion-bubble]";
+const INPUT = "[data-testid=companion-chat-input]";
 /** Where the screenshot goes (gitignored), and a copy where `COMPANION_SHOT` says. */
 const SHOT_DIR = join(ROOT, "tests/e2e/__screenshots__");
 
@@ -26,16 +26,19 @@ function bubble(app: App) {
     return el && {
       kind: el.dataset.kind ?? "",
       mood: el.dataset.mood ?? "",
-      from: el.querySelector("[data-testid=loopy-bubble-from]")?.textContent ??
-        null,
-      text: el.querySelector("[data-testid=loopy-bubble-text]")?.textContent ??
-        "",
+      from:
+        el.querySelector("[data-testid=companion-bubble-from]")?.textContent ??
+          null,
+      text:
+        el.querySelector("[data-testid=companion-bubble-text]")?.textContent ??
+          "",
       actions: [
-        ...el.querySelectorAll<HTMLElement>("[data-testid=loopy-action]"),
+        ...el.querySelectorAll<HTMLElement>("[data-testid=companion-action]"),
       ]
         .map((b) => b.dataset.action),
-      more: el.querySelector("[data-testid=loopy-bubble-more]")?.textContent ??
-        null,
+      more:
+        el.querySelector("[data-testid=companion-bubble-more]")?.textContent ??
+          null,
     };
   }, BUBBLE);
 }
@@ -57,21 +60,23 @@ function waitBubble(
   );
 }
 
-/** Wait until Loopy has sprung up and stands idle. */
+/** Wait until the companion has sprung up and stands idle. */
 function landed(app: App) {
   return waitFor(
     async () =>
       ["idle", "blink"].includes(
-        await app.attr(OVERLAY, "data-loopy-state") ?? "",
+        await app.attr(OVERLAY, "data-companion-state") ?? "",
       ),
     3000,
-    "Loopy landed",
+    "The companion landed",
   );
 }
 
-/** Open the chat box (click Loopy) and send `text`. */
+/** Open the chat box (click the companion) and send `text`. */
 async function chat(app: App, text: string): Promise<void> {
-  if (!(await app.exists(INPUT))) await app.click("[data-testid=loopy-poke]");
+  if (!(await app.exists(INPUT))) {
+    await app.click("[data-testid=companion-poke]");
+  }
   await waitFor(
     () =>
       app.eval(
@@ -95,16 +100,20 @@ async function companionSettings(app: App): Promise<void> {
   );
 }
 
-/** Loopy's face for the Lively checks: mood, expression, pupils' offsets (px), centre, gaze. */
+/**
+ * The companion's face for the Lively checks: mood, expression, pupils' offsets (px), centre, gaze.
+ */
 function face(app: App) {
   return app.eval((s: string) => {
-    const svg = document.querySelector<SVGSVGElement>(`${s} svg.loopy`)!;
+    const svg = document.querySelector<SVGSVGElement>(
+      `${s} svg.companion-avatar`,
+    )!;
     const mid = (el: Element) => {
       const r = el.getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     };
-    const whites = [...svg.querySelectorAll(".loopy-eye-white")].map(mid);
-    const pupils = [...svg.querySelectorAll(".loopy-eyes circle")].map(mid);
+    const whites = [...svg.querySelectorAll(".companion-eye-white")].map(mid);
+    const pupils = [...svg.querySelectorAll(".companion-eyes circle")].map(mid);
     const holder = svg.parentElement!;
     return {
       mood: svg.getAttribute("data-mood"),
@@ -112,10 +121,10 @@ function face(app: App) {
       lively: svg.hasAttribute("data-lively"),
       /** Each pupil's centre from its eye white's, across (px). */
       pupils: pupils.map((p, i) => p.x - whites[i].x),
-      centre: mid(svg.querySelector(".loopy-bead")!),
+      centre: mid(svg.querySelector(".companion-bead")!),
       /** The gaze offsets the pointer loop set ("0" at rest, "" when none). */
       gaze: ["lx", "ly", "rx", "ry"].map((k) => {
-        const v = holder.style.getPropertyValue(`--loopy-gaze-${k}`);
+        const v = holder.style.getPropertyValue(`--companion-gaze-${k}`);
         return v && Math.abs(parseFloat(v)) < 0.05 ? "0" : v;
       }),
     };
@@ -125,40 +134,40 @@ function face(app: App) {
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Start recording Loopy's moods and moves (`reset`), or read what was recorded: each mood
- * (`data-mood`) and move (`data-state`) Loopy took since.
+ * Start recording the companion's moods and moves (`reset`), or read what was recorded: each mood
+ * (`data-mood`) and move (`data-state`) the companion took since.
  */
 function record(app: App, reset = true): Promise<string[]> {
   return app.eval(
     (s: string, fresh: boolean) => {
       const w = globalThis as {
-        __loopyLife?: string[];
-        __loopyObs?: MutationObserver;
+        __faceLife?: string[];
+        __faceObs?: MutationObserver;
       };
       if (fresh) {
-        w.__loopyObs?.disconnect();
+        w.__faceObs?.disconnect();
         const seen: string[] = [];
-        w.__loopyLife = seen;
-        const svg = document.querySelector(`${s} svg.loopy`)!;
-        w.__loopyObs = new MutationObserver((list) => {
+        w.__faceLife = seen;
+        const svg = document.querySelector(`${s} svg.companion-avatar`)!;
+        w.__faceObs = new MutationObserver((list) => {
           for (const m of list) {
             const v = (m.target as Element).getAttribute(m.attributeName!);
             if (v) seen.push(v);
           }
         });
-        w.__loopyObs.observe(svg, {
+        w.__faceObs.observe(svg, {
           attributes: true,
           attributeFilter: ["data-mood", "data-state"],
         });
       }
-      return [...(w.__loopyLife ?? [])];
+      return [...(w.__faceLife ?? [])];
     },
     OVERLAY,
     reset,
   );
 }
 
-/** Bring the pointer slowly from the left to just beside Loopy, and move it about there. */
+/** Bring the pointer slowly from the left to just beside the companion, and move it about there. */
 async function approach(app: App): Promise<void> {
   const c = (await face(app)).centre;
   for (let i = 0; i <= 12; i++) {
@@ -171,7 +180,10 @@ async function approach(app: App): Promise<void> {
   }
 }
 
-/** A close-up of Loopy, as loopy-alive-<name>.png in SHOT_DIR (and `LOOPY_SHOT_DIR` when set). */
+/**
+ * A close-up of the companion, as companion-alive-<name>.png in SHOT_DIR (and `COMPANION_SHOT_DIR`
+ * when set).
+ */
 async function shot(app: App, name: string): Promise<void> {
   const c = (await face(app)).centre;
   const png = await app.page.screenshot({
@@ -179,13 +191,13 @@ async function shot(app: App, name: string): Promise<void> {
     clip: { x: c.x - 80, y: c.y - 85, width: 160, height: 150, scale: 3 },
   });
   await Deno.mkdir(SHOT_DIR, { recursive: true });
-  await Deno.writeFile(join(SHOT_DIR, `loopy-alive-${name}.png`), png);
-  const dir = Deno.env.get("LOOPY_SHOT_DIR");
-  if (dir) await Deno.writeFile(join(dir, `loopy-alive-${name}.png`), png);
+  await Deno.writeFile(join(SHOT_DIR, `companion-alive-${name}.png`), png);
+  const dir = Deno.env.get("COMPANION_SHOT_DIR");
+  if (dir) await Deno.writeFile(join(dir, `companion-alive-${name}.png`), png);
 }
 
 suite("companion", (test) => {
-  test("Loopy appears in the bottom-right corner; the overlay lets clicks through except Loopy", async (app) => {
+  test("The companion appears in the bottom-right corner; the overlay lets clicks through except the companion", async (app) => {
     await waitFor(() => app.exists(OVERLAY), 3000, "the overlay");
     assertEquals(await app.attr(OVERLAY, "data-corner"), "bottom-right");
     await landed(app);
@@ -194,13 +206,15 @@ suite("companion", (test) => {
       const c = document.querySelector("[data-testid=cluster]")!
         .getBoundingClientRect();
       const r = o.getBoundingClientRect();
-      const poke = o.querySelector<HTMLElement>("[data-testid=loopy-poke]")!;
+      const poke = o.querySelector<HTMLElement>(
+        "[data-testid=companion-poke]",
+      )!;
       return {
         right: Math.round(c.right - r.right),
         bottom: Math.round(c.bottom - r.bottom),
         overlay: getComputedStyle(o).pointerEvents,
         poke: getComputedStyle(poke).pointerEvents,
-        // Just left of Loopy, inside the overlay's box: the tile underneath gets it.
+        // Just left of the companion, inside the overlay's box: the tile underneath gets it.
         under: document.elementFromPoint(r.left + 1, r.top + 1)?.closest(
           "[data-testid=tile]",
         ) !== null,
@@ -210,11 +224,11 @@ suite("companion", (test) => {
     assert(geo.bottom >= 0 && geo.bottom < 30, `bottom inset ${geo.bottom}`);
     assertEquals(geo.overlay, "none");
     assertEquals(geo.poke, "auto");
-    assert(geo.under, "a click beside Loopy reaches the tile");
+    assert(geo.under, "a click beside the companion reaches the tile");
     // The brain sleeps until it is used.
     await waitFor(
       async () =>
-        (await app.attr("[data-testid=loopy-status]", "data-state")) ===
+        (await app.attr("[data-testid=companion-status]", "data-state")) ===
           "stopped",
       3000,
       "the brain's status",
@@ -227,17 +241,19 @@ suite("companion", (test) => {
   });
 
   test(
-    "chat: the reply streams into the bubble while Loopy thinks; Escape gives the keyboard back",
+    "chat: the reply streams into the bubble while the companion thinks; Escape gives the keyboard back",
     async (app) => {
       const shell = (await app.focusedId())!;
       await landed(app);
-      // Record Loopy's moves and the brain's status while it answers.
+      // Record the companion's moves and the brain's status while it answers.
       await app.eval((s: string) => {
         const seen: string[] = [];
-        (globalThis as { __loopySeen?: string[] }).__loopySeen = seen;
+        (globalThis as { __faceSeen?: string[] }).__faceSeen = seen;
         const overlay = document.querySelector<HTMLElement>(s)!;
         new MutationObserver(() =>
-          seen.push(`${overlay.dataset.loopyState}/${overlay.dataset.brain}`)
+          seen.push(
+            `${overlay.dataset.companionState}/${overlay.dataset.brain}`,
+          )
         ).observe(overlay, { attributes: true });
       }, OVERLAY);
       await chat(app, "what's in tile 1?");
@@ -249,7 +265,7 @@ suite("companion", (test) => {
       );
       assertEquals(done.from, null);
       const seen = await app.eval(() =>
-        (globalThis as { __loopySeen?: string[] }).__loopySeen ?? []
+        (globalThis as { __faceSeen?: string[] }).__faceSeen ?? []
       );
       assert(seen.some((x) => x.startsWith("think/")), `thinking: ${seen}`);
       for (const state of ["starting", "thinking", "ready"]) {
@@ -257,7 +273,7 @@ suite("companion", (test) => {
       }
       await waitFor(
         async () =>
-          (await app.attr("[data-testid=loopy-status]", "data-state")) ===
+          (await app.attr("[data-testid=companion-status]", "data-state")) ===
             "ready",
         3000,
         "the brain ready",
@@ -294,15 +310,15 @@ suite("companion", (test) => {
       more: null,
     });
     await waitFor(
-      async () => (await app.attr(OVERLAY, "data-loopy-state")) === "point",
+      async () => (await app.attr(OVERLAY, "data-companion-state")) === "point",
       3000,
-      "Loopy points at it",
+      "The companion points at it",
     );
     assert(
       await app.xtermHasFocus(claude),
       "the bubble does not take the keyboard",
     );
-    await app.click('[data-testid=loopy-action][data-action="Yes"]');
+    await app.click('[data-testid=companion-action][data-action="Yes"]');
     await app.waitForText(claude, "(demo) the user answered: Yes");
     await waitFor(
       async () => !(await app.exists(BUBBLE)),
@@ -316,7 +332,7 @@ suite("companion", (test) => {
     await waitBubble(app, (b) => b.text === "First?", "the first question");
     await app.typeInTerminal(codex, "/ask Second?\n");
     await waitBubble(app, (b) => b.more === "+1 more", "the second queued");
-    await app.click("[data-testid=loopy-bubble-close]");
+    await app.click("[data-testid=companion-bubble-close]");
     await app.waitForText(claude, "the user answered: nothing (dismissed)");
     const second = await waitBubble(
       app,
@@ -324,9 +340,9 @@ suite("companion", (test) => {
       "the next",
     );
     assertEquals(second.from, "codex");
-    await app.click('[data-testid=loopy-action][data-action="No"]');
+    await app.click('[data-testid=companion-action][data-action="No"]');
     await app.waitForText(codex, "the user answered: No");
-    // The ask card is not used while Loopy is shown.
+    // The ask card is not used while the companion is shown.
     assertEquals(await app.exists("[data-testid=ask-dialog]"), false);
   });
 
@@ -343,7 +359,7 @@ suite("companion", (test) => {
       "success",
       "shell-1",
     ]);
-    await app.click("[data-testid=loopy-bubble-close]");
+    await app.click("[data-testid=companion-bubble-close]");
     await app.typeInTerminal(
       shell,
       "qutty-hook say Deploy? --action yes:Deploy --action no:Later --wait\n",
@@ -354,7 +370,7 @@ suite("companion", (test) => {
       "the question",
     );
     assertEquals(asked.actions, ["Deploy", "Later"]);
-    await app.click('[data-testid=loopy-action][data-action="Deploy"]');
+    await app.click('[data-testid=companion-action][data-action="Deploy"]');
     await waitFor(
       async () =>
         (await app.readTerminalText(shell)).split("\n").some((l) =>
@@ -370,7 +386,7 @@ suite("companion", (test) => {
     );
   });
 
-  test("an agent's message to the companion: Loopy says who wrote, and the agent gets an answer", async (app) => {
+  test("an agent's message to the companion: the companion says who wrote, and the agent gets an answer", async (app) => {
     const claude = await launchAgent(app, "claude");
     await app.typeInTerminal(claude, "/msg companion are the tests green?\n");
     await app.waitForText(claude, "queued for companion");
@@ -429,7 +445,90 @@ suite("companion", (test) => {
     );
   });
 
-  test("settings: the corner moves Loopy; Off hides it (the ask card returns); brain off disables the chat", async (app) => {
+  test("settings: the name given in Settings → Companion is the chat's and the face's; it persists; empty is Companion", async (app) => {
+    const NAME = "[data-testid=setting-companion-name]";
+    const FACE = `${OVERLAY} svg.companion-avatar`;
+    const value = () =>
+      app.eval(
+        (s: string) => document.querySelector<HTMLInputElement>(s)!.value,
+        NAME,
+      );
+    /** Replace the name field's text by typing, then leave the field (the change is saved). */
+    const rename = async (text: string) => {
+      await app.eval((s: string) => {
+        const input = document.querySelector<HTMLInputElement>(s)!;
+        input.focus();
+        input.select();
+      }, NAME);
+      if (text) await app.page.keyboard.type(text);
+      else await app.press("Backspace");
+      await app.press("Tab");
+    };
+    /** Open the chat box: its placeholder and label, and the face's and the poke's labels. */
+    const labels = async () => {
+      if (!(await app.exists(INPUT))) {
+        await app.click("[data-testid=companion-poke]");
+      }
+      await waitFor(() => app.exists(INPUT), 2000, "the chat box");
+      return {
+        placeholder: await app.attr(INPUT, "placeholder"),
+        input: await app.attr(INPUT, "aria-label"),
+        face: await app.attr(FACE, "aria-label"),
+        poke: await app.attr("[data-testid=companion-poke]", "aria-label"),
+      };
+    };
+
+    // The default.
+    await companionSettings(app);
+    assertEquals(await value(), "Companion");
+    assertEquals((await app.settings()).companion.name, "Companion");
+    await app.closeSettings();
+    assertEquals(await labels(), {
+      placeholder: "Ask Companion…",
+      input: "Ask Companion",
+      face: "Companion",
+      poke: "Close the chat with Companion",
+    });
+    await app.press("Escape");
+
+    // A new name, trimmed when saved.
+    await companionSettings(app);
+    await rename("  Jarvis  ");
+    await waitFor(
+      async () => (await app.settings()).companion.name === "Jarvis",
+      2000,
+      "the name saved",
+    );
+    assertEquals(await value(), "Jarvis");
+    await app.closeSettings();
+    const jarvis = {
+      placeholder: "Ask Jarvis…",
+      input: "Ask Jarvis",
+      face: "Jarvis",
+      poke: "Close the chat with Jarvis",
+    };
+    assertEquals(await labels(), jarvis);
+
+    // It survives a reload.
+    await app.reload();
+    await landed(app);
+    assertEquals(await labels(), jarvis);
+    await app.press("Escape");
+
+    // Emptied: back to Companion.
+    await companionSettings(app);
+    await rename("");
+    await waitFor(
+      async () => (await app.settings()).companion.name === "Companion",
+      2000,
+      "the default name back",
+    );
+    assertEquals(await value(), "Companion");
+    await app.closeSettings();
+    assertEquals((await labels()).placeholder, "Ask Companion…");
+  });
+
+  test("settings: the corner moves the companion; Off hides it (the ask card returns); brain off disables the chat", async (app) => {
     await companionSettings(app);
     await app.eval(() => {
       const s = document.querySelector<HTMLSelectElement>(
@@ -456,7 +555,7 @@ suite("companion", (test) => {
 
     await app.click("[data-testid=setting-companion-brain]");
     await app.closeSettings();
-    await app.click("[data-testid=loopy-poke]");
+    await app.click("[data-testid=companion-poke]");
     assertEquals(await app.attr(INPUT, "disabled"), "");
     assertStringIncludes(
       (await app.attr(INPUT, "placeholder")) ?? "",
@@ -464,7 +563,8 @@ suite("companion", (test) => {
     );
     await waitFor(
       async () =>
-        (await app.attr("[data-testid=loopy-status]", "data-state")) === "off",
+        (await app.attr("[data-testid=companion-status]", "data-state")) ===
+          "off",
       2000,
       "the brain off",
     );
@@ -472,7 +572,11 @@ suite("companion", (test) => {
     await companionSettings(app);
     await app.click('[data-testid=setting-companion-mode][data-value="off"]');
     await app.closeSettings();
-    await waitFor(async () => !(await app.exists(OVERLAY)), 2000, "Loopy gone");
+    await waitFor(
+      async () => !(await app.exists(OVERLAY)),
+      2000,
+      "The companion gone",
+    );
     const claude = await launchAgent(app, "claude");
     await app.typeInTerminal(claude, "/ask Still the card?\n");
     await waitFor(
@@ -486,6 +590,7 @@ suite("companion", (test) => {
     // Settings persist across a reload.
     await app.reload();
     assertEquals((await app.settings()).companion, {
+      name: "Companion",
       mode: "off",
       corner: "top-left",
       brain: false,
@@ -506,7 +611,7 @@ suite("companion", (test) => {
   });
 
   test(
-    "screenshot: Loopy answering in the bubble, with the chat box open",
+    "screenshot: the companion answering in the bubble, with the chat box open",
     async (app) => {
       const shell = (await app.focusedId())!;
       await app.run(shell, "ls");
@@ -531,18 +636,18 @@ suite("companion", (test) => {
     { width: 1280, height: 800 },
   );
 
-  test("look: Loopy's face is the example's, 2 times the clip's head, with its moods, rim and moves", async (app) => {
+  test("look: the companion's face is the example's, 2 times the clip's head, with its moods, rim and moves", async (app) => {
     await landed(app);
     const snap = JSON.parse(
       await Deno.readTextFile(
-        join(ROOT, "tests/fixtures/companion/loopy-shape.json"),
+        join(ROOT, "tests/fixtures/companion/face-shape.json"),
       ),
     ) as {
       head: Record<string, string>;
       tints: Record<string, string[]>;
       avatar: { viewBox: string; width: number; height: number };
     };
-    /** Loopy's head as drawn, and the snapshot's for `mood`, as one line per element. */
+    /** The companion's head as drawn, and the snapshot's for `mood`, as one line per element. */
     const compare = (mood: string) =>
       app.eval(
         (s: string, markup: string) => {
@@ -554,16 +659,17 @@ suite("companion", (test) => {
                 el.children.length ? "" : (el.textContent ?? ""),
               ].join(" ")
             );
-          const live = document.querySelector(`${s} svg.loopy`)!;
+          const live = document.querySelector(`${s} svg.companion-avatar`)!;
           const parsed = new DOMParser().parseFromString(
             `<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
             "image/svg+xml",
           ).querySelector("g")!;
           return {
             mood: live.getAttribute("data-mood"),
-            live: lines(live.querySelector(".loopy-head")!),
+            live: lines(live.querySelector(".companion-head")!),
             expected: lines(parsed),
-            rim: getComputedStyle(live.querySelector(".loopy-bead")!).filter,
+            rim:
+              getComputedStyle(live.querySelector(".companion-bead")!).filter,
           };
         },
         OVERLAY,
@@ -574,7 +680,7 @@ suite("companion", (test) => {
         [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")
       })`;
 
-    /** Loopy in `mood`, once the rim has eased into the mood's tint (neutral: no rim). */
+    /** The companion in `mood`, once the rim has eased into the mood's tint (neutral: no rim). */
     const inMood = (mood: string) =>
       waitFor(
         async () => {
@@ -586,7 +692,7 @@ suite("companion", (test) => {
           return tinted ? look : null;
         },
         3000,
-        `Loopy's rim tinted ${mood}`,
+        `The companion's rim tinted ${mood}`,
       );
 
     // Neutral (nothing said): the bare steel bead, the example's face, no rim and no wire.
@@ -594,12 +700,14 @@ suite("companion", (test) => {
     assertEquals(neutral.live, neutral.expected);
 
     const drawn = await app.eval((s: string) => {
-      const svg = document.querySelector<SVGSVGElement>(`${s} svg.loopy`)!;
-      const face = svg.querySelector(".loopy-face")!;
+      const svg = document.querySelector<SVGSVGElement>(
+        `${s} svg.companion-avatar`,
+      )!;
+      const face = svg.querySelector(".companion-face")!;
       const box = svg.getBoundingClientRect();
-      const poke = document.querySelector("[data-testid=loopy-poke]")!
+      const poke = document.querySelector("[data-testid=companion-poke]")!
         .getBoundingClientRect();
-      const bead = svg.querySelector<SVGCircleElement>(".loopy-bead")!;
+      const bead = svg.querySelector<SVGCircleElement>(".companion-bead")!;
       const beadBox = bead.getBBox();
       const scale = svg.getScreenCTM()!.a;
       // The bead on screen, without the face's own moves (the SVG's scale only).
@@ -624,7 +732,7 @@ suite("companion", (test) => {
         viewBox: svg.getAttribute("viewBox"),
         bead: beadOnScreen,
         poke: { x: poke.x, y: poke.y, w: poke.width, h: poke.height },
-        wire: svg.querySelectorAll(".loopy-wire, .loopy-body").length,
+        wire: svg.querySelectorAll(".companion-wire, .companion-body").length,
         moves,
       };
     }, OVERLAY);
@@ -649,10 +757,10 @@ suite("companion", (test) => {
         near(drawn.poke.h, drawn.bead.size),
       `the poke target covers the bead: ${JSON.stringify(drawn)}`,
     );
-    assertEquals(drawn.moves.appear, "loopy-face-pop-in");
-    assertEquals(drawn.moves.idle, "loopy-face-bob");
-    assertEquals(drawn.moves.celebrate, "loopy-face-hop");
-    assertEquals(drawn.moves.dismiss, "loopy-face-fold");
+    assertEquals(drawn.moves.appear, "companion-face-pop-in");
+    assertEquals(drawn.moves.idle, "companion-face-bob");
+    assertEquals(drawn.moves.celebrate, "companion-face-hop");
+    assertEquals(drawn.moves.dismiss, "companion-face-fold");
     assert(drawn.moves.think.startsWith("matrix("), "think: a tilt back");
     assert(drawn.moves.point.startsWith("matrix("), "point: a nudge");
 
@@ -665,7 +773,7 @@ suite("companion", (test) => {
       await waitBubble(app, (b) => b.mood === mood, `the ${mood} bubble`);
       const look = await inMood(mood);
       assertEquals(look.live, look.expected, mood);
-      await app.click("[data-testid=loopy-bubble-close]");
+      await app.click("[data-testid=companion-bubble-close]");
     }
 
     // The bubble's shape: the example's radius, border, padding and tail (re-aimed at the face).
@@ -696,10 +804,10 @@ suite("companion", (test) => {
     ]);
   });
 
-  test("reduced motion: Loopy's moves land at once", async (app) => {
+  test("reduced motion: the companion's moves land at once", async (app) => {
     await waitFor(() => app.exists(OVERLAY), 3000, "the overlay");
     const durations = await app.eval(() => {
-      const face = document.querySelector(".loopy-face")!;
+      const face = document.querySelector(".companion-face")!;
       return getComputedStyle(face).animationDuration;
     });
     assertEquals(durations, "0.001s");
@@ -713,7 +821,7 @@ suite("companion", (test) => {
     assertEquals(bubbleAnim, "0.001s");
   }, { reducedMotion: true });
 
-  // --- Lively: the eyes on the pointer, excitement near it (app/companion/use-loopy-life.ts)
+  // --- Lively: the eyes on the pointer, excitement near it (app/companion/use-companion-life.ts)
 
   test(
     "lively: the eyes follow the pointer left and right, and drift back once it rests",
@@ -721,7 +829,7 @@ suite("companion", (test) => {
       await landed(app);
       const start = await face(app);
       assertEquals(start.lively, true, "Lively by default");
-      // Far from Loopy (no excitement): top left, then top right.
+      // Far from the companion (no excitement): top left, then top right.
       await app.page.mouse.move(10, 40, { steps: 6 });
       const left = await waitFor(
         async () => {
@@ -733,7 +841,7 @@ suite("companion", (test) => {
       );
       assertEquals(left.mood, "neutral");
       await shot(app, "left");
-      // Loopy sits at the right edge: up and to its right, still far (no excitement).
+      // The companion sits at the right edge: up and to its right, still far (no excitement).
       await app.page.mouse.move(1395, left.centre.y - 360, { steps: 6 });
       await waitFor(
         async () => (await face(app)).pupils.every((x) => x > 1.5),
@@ -760,7 +868,7 @@ suite("companion", (test) => {
     { width: 1400, height: 900 },
   );
 
-  test("lively: the pointer near Loopy excites it once, with a hop; then a cooldown; over the face, delight", async (app) => {
+  test("lively: the pointer near the companion excites it once, with a hop; then a cooldown; over the face, delight", async (app) => {
     await landed(app);
     await record(app);
     await approach(app);
@@ -811,7 +919,7 @@ suite("companion", (test) => {
     await waitFor(
       async () =>
         (await face(app)).mood === "attention" &&
-        (await app.attr(OVERLAY, "data-loopy-state")) === "point",
+        (await app.attr(OVERLAY, "data-companion-state")) === "point",
       3000,
       "the attention face, pointing at the question",
     );
@@ -825,8 +933,8 @@ suite("companion", (test) => {
     const f = await face(app);
     assertEquals(f.mood, "attention");
     assertEquals(f.expr, null, "no micro-expression over a question");
-    assertEquals(await record(app, false), [], "nothing changed Loopy");
-    assertEquals(await app.attr(OVERLAY, "data-loopy-state"), "point");
+    assertEquals(await record(app, false), [], "nothing changed the companion");
+    assertEquals(await app.attr(OVERLAY, "data-companion-state"), "point");
   });
 
   test(
@@ -860,7 +968,7 @@ suite("companion", (test) => {
     { reducedMotion: true },
   );
 
-  test("lively off (Settings → Companion): today's Loopy, eyes still and no excitement", async (app) => {
+  test("lively off (Settings → Companion): today's companion, eyes still and no excitement", async (app) => {
     await companionSettings(app);
     await app.click("[data-testid=setting-companion-lively]");
     await app.closeSettings();

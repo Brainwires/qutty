@@ -1,5 +1,5 @@
 /**
- * Which face Loopy wears when several want it at once, as one pure function so the order is
+ * Which face the companion wears when several want it at once, as one pure function so the order is
  * unit-tested and the overlay (app/companion/companion-overlay.tsx) only draws the answer:
  *
  *   attention (an agent's ask_user question)
@@ -7,23 +7,23 @@
  *   > thinking / a voice turn
  *   > a reaction (sad or celebrate, brief: lib/companion/reactions.ts)
  *   > hot (lib/sysstats.ts)
- *   > excited (the pointer came near: lib/companion/loopy-life.ts)
+ *   > excited (the pointer came near: lib/companion/face-life.ts)
  *   > sleepy (at night: lib/companion/sleepy.ts)
  *   > idle life (micro-expressions, the eyes on the pointer)
  *
  * A face lower in the list never covers one above it; a reaction that arrives while a higher face
  * is up is dropped (it is brief news, stale a moment later), and anything above sleepy wakes
- * Loopy.
+ * the companion.
  *
  * Client-safe and pure.
  *
  * @module
  */
 
-import type { LoopyMood } from "./loopy-machine.ts";
+import type { FaceMood } from "./face-machine.ts";
 import type { ReactionKind } from "./reactions.ts";
 
-/** A face that wants Loopy, highest first. */
+/** A face that wants the companion, highest first. */
 export const FACE_LAYERS = [
   "attention",
   "message",
@@ -38,11 +38,11 @@ export const FACE_LAYERS = [
 
 export type FaceLayer = typeof FACE_LAYERS[number];
 
-/** What wants Loopy's face right now. */
+/** What wants the companion's face right now. */
 export interface FaceInputs {
   /** A message is on screen, and whether it is a question (`attention`). */
   readonly message: "attention" | "other" | null;
-  /** The companion's brain works (Loopy thinks). */
+  /** The companion's brain works (the companion thinks). */
   readonly thinking: boolean;
   /** A voice turn: listening, transcribing, speaking. */
   readonly voice: boolean;
@@ -52,7 +52,7 @@ export interface FaceInputs {
   readonly hot: boolean;
   /** The pointer's excitement is on. */
   readonly excited: boolean;
-  /** Loopy sleeps (at night, idle). */
+  /** The companion sleeps (at night, idle). */
   readonly sleepy: boolean;
 }
 
@@ -79,8 +79,8 @@ export function mayStartReaction(i: FaceInputs): boolean {
   return rank(topLayer({ ...i, reaction: null })) > rank("reaction");
 }
 
-/** Whether something above sleepy wants Loopy (it wakes). */
-export function wakesLoopy(i: FaceInputs): boolean {
+/** Whether something above sleepy wants the companion (it wakes). */
+export function wakesCompanion(i: FaceInputs): boolean {
   return rank(topLayer({ ...i, sleepy: false })) < rank("sleepy");
 }
 
@@ -91,7 +91,7 @@ export interface FaceChoice {
    * The mood to wear when no message gives one (the reaction's, excited, sleepy); `undefined`
    * leaves the overlay's own (a message's mood, thinking) or none.
    */
-  readonly mood: LoopyMood | undefined;
+  readonly mood: FaceMood | undefined;
   /** The hot face. */
   readonly hot: boolean;
   /** The idle life (micro-expressions, delight) may show. */
@@ -101,7 +101,7 @@ export interface FaceChoice {
 /** The face for `i`. */
 export function chooseFace(i: FaceInputs): FaceChoice {
   const layer = topLayer(i);
-  const mood: LoopyMood | undefined = layer === "reaction"
+  const mood: FaceMood | undefined = layer === "reaction"
     ? (i.reaction === "celebrate" ? "success" : "sad")
     : layer === "excited"
     ? "excited"

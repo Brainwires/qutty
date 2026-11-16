@@ -291,7 +291,7 @@ Deno.test("brain choice: Ollama's model lookup; Settings switches the adapter an
   assert(!ollamaHasModel(["llama3:8b"], "llama3"));
 
   const { core } = hubWithTiles();
-  const made: { engine?: string; model?: string }[] = [];
+  const made: { engine?: string; model?: string; name?: string }[] = [];
   const host = new CompanionHost({
     core,
     socketDir: "/nonexistent",
@@ -303,6 +303,7 @@ Deno.test("brain choice: Ollama's model lookup; Settings switches the adapter an
       made.push({
         ...(cfg.engine ? { engine: cfg.engine } : {}),
         ...(cfg.model ? { model: cfg.model } : {}),
+        ...(cfg.name ? { name: cfg.name } : {}),
       });
       return {
         label: "fake",
@@ -318,7 +319,16 @@ Deno.test("brain choice: Ollama's model lookup; Settings switches the adapter an
   );
   host.runtime.userSays("hi");
   await waitUntil(() => made.length > 0, 1000);
-  assertEquals(made[0], { engine: "ollama", model: "qwen3.8:27b-mlx" });
+  assertEquals(made[0], {
+    engine: "ollama",
+    model: "qwen3.8:27b-mlx",
+    name: "Companion",
+  });
+  // A new name (Settings → Companion → Name) restarts the brain with it, sanitised.
+  host.configure(true, "qwen3.8:27b-mlx", "ollama", "  Jarvis ");
+  host.runtime.userSays("hi again");
+  await waitUntil(() => made.length > 1, 1000);
+  assertEquals(made.at(-1)?.name, "Jarvis");
   assertEquals(host.configure(true, "", "claude").adapter, "Claude Code");
   host.runtime.stop();
 });

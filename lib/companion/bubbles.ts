@@ -1,8 +1,8 @@
 /**
- * What goes into Loopy's bubble, besides `qutty-hook say` messages: an agent's `ask_user`
+ * What goes into the companion's bubble, besides `qutty-hook say` messages: an agent's `ask_user`
  * question (buttons that answer the waiting caller) and the companion's own replies (streamed in
  * as the brain writes them). Pure mappings from the hub's shapes to the bubble's
- * {@linkcode LoopyMessage}, so the overlay stays thin and the rules are unit-tested.
+ * {@linkcode CompanionMessage}, so the overlay stays thin and the rules are unit-tested.
  *
  * Client-safe.
  *
@@ -10,7 +10,7 @@
  */
 
 import type { AskRequest } from "../hub/protocol.ts";
-import { type LoopyMessage, readingTimeMs } from "./messages.ts";
+import { type CompanionMessage, readingTimeMs } from "./messages.ts";
 import type { CompanionUpdate } from "./protocol.ts";
 
 /** The longest text a bubble shows (it scrolls; a reply is cut here). */
@@ -29,7 +29,7 @@ export const askIdOf = (bubbleId: string) =>
 const turnBubbleId = (turn: number) => `turn:${turn}`;
 
 /** An `ask_user` question as a bubble: who asks, the text, one button per action. */
-export function askBubble(request: AskRequest): LoopyMessage {
+export function askBubble(request: AskRequest): CompanionMessage {
   const labels = request.actions.length > 0 ? request.actions : ["OK"];
   return {
     id: askBubbleId(request.id),
@@ -48,7 +48,7 @@ export function askBubble(request: AskRequest): LoopyMessage {
 /** The answer a button of an `ask_user` bubble gives: the question's own label (not the cut one). */
 export function askAnswer(
   request: AskRequest | undefined,
-  bubble: LoopyMessage,
+  bubble: CompanionMessage,
   actionId: string | null,
 ): string | null {
   if (actionId === null) return null;
@@ -69,12 +69,12 @@ export function replyTimeoutMs(text: string): number {
  * The bubble for a `turn` update: the whole message to show (`enqueue` when new, `update` when
  * on screen already), or `null` when the turn shows nothing — a turn on agents' messages shows
  * only once it is done, and not when the brain said `(quiet)`. A user turn shows at once: `…`
- * while the brain thinks, then the text as it streams. Loopy's mood: `thinking` until the turn
- * ends, then `neutral`, or `sad` when the turn failed.
+ * while the brain thinks, then the text as it streams. The companion's mood: `thinking` until the
+ * turn ends, then `neutral`, or `sad` when the turn failed.
  */
 export function turnBubble(
   update: Extract<CompanionUpdate, { kind: "turn" }>,
-): LoopyMessage | null {
+): CompanionMessage | null {
   if (update.source === "mail" && (!update.done || update.quiet)) return null;
   const text = (update.text || (update.done ? "" : "…")).slice(
     0,

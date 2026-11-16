@@ -1,9 +1,10 @@
 /**
- * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): where
- * Loopy is drawn, which corner, whether its brain may run, which brain (Claude Code, a local
- * Ollama model, or Anthropic's API with the user's key) and its model, whether Loopy is lively (idle expressions, eyes that follow the pointer: lib/companion/loopy-life.ts),
- * and its reactions (sleepy at night: lib/companion/sleepy.ts; celebrate and sad over finished
- * jobs: lib/companion/reactions.ts).
+ * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): its name
+ * (default "Companion"), where it is drawn, which corner, whether its brain may run, which brain
+ * (Claude Code, a local Ollama model, or Anthropic's API with the user's key) and its model,
+ * whether the companion is lively (idle expressions, eyes that follow the pointer:
+ * lib/companion/face-life.ts), and its reactions (sleepy at night: lib/companion/sleepy.ts;
+ * celebrate and sad over finished jobs: lib/companion/reactions.ts).
  *
  * Client-safe and pure.
  *
@@ -47,11 +48,39 @@ export function isOllamaModelName(name: string): boolean {
   return /^(?:[A-Za-z0-9][A-Za-z0-9._:/-]{0,127})?$/.test(name);
 }
 
+/** The companion's name when the user has not given it one. */
+export const DEFAULT_COMPANION_NAME = "Companion";
+
+/** The longest name the companion may have, in characters. */
+export const COMPANION_NAME_MAX = 24;
+
+/**
+ * The companion's name from `raw` (storage, a patch, the Settings field): trimmed, inner
+ * whitespace and control characters collapsed to single spaces, at most
+ * {@linkcode COMPANION_NAME_MAX} characters; {@linkcode DEFAULT_COMPANION_NAME} when that leaves
+ * nothing or `raw` is not a string.
+ */
+export function companionName(raw: unknown): string {
+  if (typeof raw !== "string") return DEFAULT_COMPANION_NAME;
+  // deno-lint-ignore no-control-regex
+  const clean = raw.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
+  const name = Array.from(clean).slice(0, COMPANION_NAME_MAX).join("").trim();
+  return name || DEFAULT_COMPANION_NAME;
+}
+
 export interface CompanionSettings {
+  /**
+   * What the companion is called: in the chat box, its labels and Settings, its brain's system
+   * prompt, and the voice summary's address ("hey <name>, summarize the window").
+   */
+  name: string;
   /** In the window, floating (not available yet: Denext multi-window), or off. */
   mode: CompanionMode;
   corner: CompanionCorner;
-  /** Whether the brain (headless Claude Code) may run; Loopy still shows messages without it. */
+  /**
+   * Whether the brain (headless Claude Code) may run; the companion still shows messages without
+   * it.
+   */
   brain: boolean;
   /** Which brain runs. */
   engine: BrainEngine;
@@ -73,7 +102,7 @@ export interface CompanionSettings {
   reactMinS: number;
   /** Reactions: every long command counts, not only build- and test-like ones. */
   reactAnyCommand: boolean;
-  /** Reactions: a short line beside Loopy saying what finished. */
+  /** Reactions: a short line beside the companion saying what finished. */
   reactBubble: boolean;
 }
 
@@ -85,6 +114,7 @@ export const REACTION_RANGES = {
 } as const;
 
 export const DEFAULT_COMPANION: CompanionSettings = {
+  name: DEFAULT_COMPANION_NAME,
   mode: "window",
   corner: "bottom-right",
   brain: true,
@@ -123,6 +153,7 @@ export function sanitizeCompanion(
   const out = { ...base };
   if (!raw || typeof raw !== "object") return out;
   const r = raw as Partial<Record<keyof CompanionSettings, unknown>>;
+  if ("name" in r) out.name = companionName(r.name);
   if (COMPANION_MODES.includes(r.mode as CompanionMode)) {
     out.mode = r.mode as CompanionMode;
   }
@@ -161,7 +192,7 @@ export function brainChoice(
     : { engine: s.engine, model: s.model };
 }
 
-/** How Loopy is drawn today: floating falls back to the window. */
+/** How the companion is drawn today: floating falls back to the window. */
 export function effectiveMode(mode: CompanionMode): "window" | "off" {
   return mode === "off" ? "off" : "window";
 }

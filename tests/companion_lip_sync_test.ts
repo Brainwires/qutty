@@ -1,4 +1,4 @@
-// Loopy's lip-sync (lib/companion/lip-sync.ts): the example's mouth shapes, and the talking
+// The companion's lip-sync (lib/companion/lip-sync.ts): the example's mouth shapes, and the talking
 // pattern that drives them while Qutty speaks.
 
 import { assert, assertEquals } from "@std/assert";

@@ -194,7 +194,7 @@ export interface Settings extends FontSettings {
   plusOpens: PlusOpens;
   /** The picker entry chosen last (`agent:claude`), for `plusOpens: "last"`. */
   lastLaunch: string | null;
-  /** Settings → Companion (Loopy and its brain; lib/companion/settings.ts). */
+  /** Settings → Companion (the companion and its brain; lib/companion/settings.ts). */
   companion: CompanionSettings;
   /** Settings → Voice (spoken answers and alerts, push-to-talk; lib/voice/settings.ts). */
   voice: VoiceSettings;
@@ -204,7 +204,7 @@ export interface Settings extends FontSettings {
   ollama: OllamaSettings;
   /** Settings → Links (what opens a file printed with a line; lib/links.ts). */
   links: LinkSettings;
-  /** Settings → System monitor (the bar meter, hot Loopy; lib/sysstats.ts). */
+  /** Settings → System monitor (the bar meter, the hot companion; lib/sysstats.ts). */
   monitor: MonitorSettings;
   /** Settings → Windows: what a window's close button does (lib/workspace/windows.ts). */
   windowClose: WindowClose;

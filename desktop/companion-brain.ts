@@ -44,6 +44,7 @@ import {
   type BrainAdapter,
   type BrainSink,
   claudeBrainArgv,
+  companionSystemPrompt,
   READY_MARKER,
   StreamJsonParser,
   userTurnLine,
@@ -62,6 +63,8 @@ export interface ClaudeCodeBrainOptions {
   /** The `claude` executable (default: looked up like the `+` picker does). */
   claude?: string;
   model?: string;
+  /** The companion's name, for its system prompt (default "Companion"). */
+  name?: string;
   /** Where node-pty's spawn-helper may be copied (the app-support folder). */
   appSupportDir?: string;
   /** Every raw output chunk (fixture recording, diagnostics). */
@@ -126,6 +129,7 @@ export class ClaudeCodeBrain implements BrainAdapter {
       claude,
       mcpConfig: this.#opts.mcpConfig,
       ...(this.#opts.model ? { model: this.#opts.model } : {}),
+      ...(this.#opts.name ? { name: this.#opts.name } : {}),
     });
     const spawned = await host.spawn(
       { cols: 400, rows: 50, program, args, cwd: this.#opts.cwd },
@@ -193,6 +197,7 @@ export function anthropicCompanionBrain(
   tools: CompanionTools,
   fetchFn?: typeof fetch,
   historyChars = ANTHROPIC_HISTORY_CHARS,
+  name?: string,
 ): BrainAdapter {
   const alias: BrainModel = COMPANION_MODELS.includes(model as BrainModel)
     ? model as BrainModel
@@ -206,6 +211,7 @@ export function anthropicCompanionBrain(
       ...(fetchFn ? { fetch: fetchFn } : {}),
     }),
     tools,
+    systemPrompt: companionSystemPrompt(name),
     history: { fresh: historyChars },
     async check() {
       if (!await key()) {
@@ -220,11 +226,13 @@ export function ollamaCompanionBrain(
   model: string,
   tools: CompanionTools,
   baseUrl = OLLAMA_URL,
+  name?: string,
 ): BrainAdapter {
   return new InferenceBrain({
     label: `Ollama (${model})`,
     provider: new OllamaChatProvider(model, baseUrl),
     tools,
+    systemPrompt: companionSystemPrompt(name),
     temperature: 0.2,
     async check() {
       const models = await detectOllama(baseUrl);

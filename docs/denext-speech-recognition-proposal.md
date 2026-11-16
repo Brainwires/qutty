@@ -1,12 +1,13 @@
 # Proposal: OS speech recognition in Denext desktop (`speechToText`)
 
 For the Denext agent. Qutty's companion takes voice input (push-to-talk: hold a
-key or Loopy's mic button, speak, release). Today Qutty does that with its own
-native library: rullama-hardware's audio built as the `rullama-audio-ffi` cdylib
-(cpal capture + Whisper through whisper-rs), loaded over `Deno.dlopen`. It works
-offline and on macOS and Linux. But every app that wants dictation has to ship a
-~2 MB native library per architecture plus a 57 MB model, and Denext's packager
-has no way to bundle the library (see "Related gap" below).
+key or the companion's mic button, speak, release). Today Qutty does that with
+its own native library: rullama-hardware's audio built as the
+`rullama-audio-ffi` cdylib (cpal capture + Whisper through whisper-rs), loaded
+over `Deno.dlopen`. It works offline and on macOS and Linux. But every app that
+wants dictation has to ship a ~2 MB native library per architecture plus a 57 MB
+model, and Denext's packager has no way to bundle the library (see "Related gap"
+below).
 
 Every desktop OS already has a recognizer. Denext has the text-to-speech half
 (`speak()` in `denext/mobile`, the `textToSpeech` capability over

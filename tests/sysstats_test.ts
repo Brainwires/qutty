@@ -1,6 +1,6 @@
 // The lite system monitor: Denext's `SystemStats` folded to the monitor's sample, the moving
-// average, the hot / cool hysteresis, when Loopy may look hot or say so, the cadence and the
-// settings (lib/sysstats.ts); the demo's `load` (lib/sysstats-demo.ts).
+// average, the hot / cool hysteresis, when the companion may look hot or say so, the cadence and
+// the settings (lib/sysstats.ts); the demo's `load` (lib/sysstats-demo.ts).
 
 import { assert, assertEquals } from "@std/assert";
 import {
@@ -122,7 +122,7 @@ Deno.test("sysstats: no figures at all is cool", () => {
   assertEquals(run([[0, NO_STATS], [30, NO_STATS]]), [false, false]);
 });
 
-Deno.test("sysstats: Loopy looks hot only when enabled, hot and otherwise free", () => {
+Deno.test("sysstats: the companion looks hot only when enabled, hot and otherwise free", () => {
   assert(mayShowHot({ enabled: true, hot: true, free: true }));
   assert(!mayShowHot({ enabled: false, hot: true, free: true }));
   assert(!mayShowHot({ enabled: true, hot: false, free: true }));
@@ -147,9 +147,9 @@ Deno.test("sysstats: every 4 s focused, 12 s in the background, never while hidd
   assertEquals(sampleDelay("hidden", true), null);
 });
 
-Deno.test("sysstats: the settings: meter off, hot Loopy on, thresholds clamped, cool below hot", () => {
+Deno.test("sysstats: the settings: meter off, the hot companion on, thresholds clamped, cool below hot", () => {
   assertEquals(DEFAULT_MONITOR.meter, false);
-  assertEquals(DEFAULT_MONITOR.hotLoopy, true);
+  assertEquals(DEFAULT_MONITOR.hotCompanion, true);
   assertEquals(sanitizeMonitor(null), DEFAULT_MONITOR);
   assertEquals(
     sanitizeMonitor({ meter: true, hotAt: 400, coolAt: -3, sustainS: 0.4 }),
@@ -157,6 +157,13 @@ Deno.test("sysstats: the settings: meter off, hot Loopy on, thresholds clamped, 
   );
   assertEquals(sanitizeMonitor({ hotAt: 60 }).coolAt, 55);
   assertEquals(sanitizeMonitor({ meter: "yes", hotAt: "9" }), DEFAULT_MONITOR);
+  // Saved by 0.5.1 and earlier as `hotLoopy`: still read; the new key wins when both are there.
+  assertEquals(sanitizeMonitor({ hotLoopy: false }).hotCompanion, false);
+  assertEquals(
+    sanitizeMonitor({ hotLoopy: false, hotCompanion: true }).hotCompanion,
+    true,
+  );
+  assertEquals("hotLoopy" in sanitizeMonitor({ hotLoopy: false }), false);
   assertEquals(thresholds(DEFAULT_MONITOR), {
     hotAt: 85,
     coolAt: 70,

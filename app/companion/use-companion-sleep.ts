@@ -1,15 +1,15 @@
-// Loopy sleepy at night (Settings → Companion → Reactions), the DOM side of
+// The companion sleepy at night (Settings → Companion → Reactions), the DOM side of
 // lib/companion/sleepy.ts, which holds the rules. Kept thin and cheap:
 //
 // - one passive `pointermove` and one `keydown` listener on the window, which only note the time
-//   (any activity keeps Loopy from dozing off); while Loopy sleeps, a pointer move also checks
-//   whether it came near Loopy (one bounding box read), which wakes it;
+//   (any activity keeps the companion from dozing off); while the companion sleeps, a pointer
+//   move also checks whether it came near the companion (one bounding box read), which wakes it;
 // - a check every SLEEP_CHECK_MS (and when the e2e suite moves the clock, lib/test-hooks.ts)
 //   whether it is night and the pointer has rested long enough.
 //
-// Waking up plays a stretch (`stretching`, public/styles.css "Loopy wakes"), left out with reduced
-// motion. Anything that needs Loopy's face (`busy`: a message, thinking, a voice turn, a reaction)
-// wakes it too.
+// Waking up plays a stretch (`stretching`, public/styles.css "The companion wakes"), left out with
+// reduced motion. Anything that needs the companion's face (`busy`: a message, thinking, a voice
+// turn, a reaction) wakes it too.
 
 import { useEffect, useRef, useState } from "denext";
 import {
@@ -23,28 +23,28 @@ import { CLOCK_EVENT, clockNow } from "../../lib/test-hooks.ts";
 /** How often the night and the pointer's rest are checked, ms. */
 const SLEEP_CHECK_MS = 15_000;
 
-export interface LoopySleepOptions {
+export interface CompanionSleepOptions {
   /** Settings → Companion → Reactions → Sleepy at night. */
   readonly enabled: boolean;
   /** The night's hours (minutes since midnight). */
   readonly from: number;
   readonly to: number;
-  /** Something else needs Loopy's face: it wakes (and does not fall asleep). */
+  /** Something else needs the companion's face: it wakes (and does not fall asleep). */
   readonly busy: boolean;
-  /** The element holding Loopy's SVG (for "near"). */
+  /** The element holding the companion's SVG (for "near"). */
   readonly stage: { readonly current: HTMLElement | null };
   readonly reducedMotion: boolean;
 }
 
-/** Whether Loopy sleeps, and whether it is stretching awake. */
-export interface LoopySleep {
+/** Whether the companion sleeps, and whether it is stretching awake. */
+export interface CompanionSleep {
   readonly asleep: boolean;
   readonly stretching: boolean;
 }
 
-/** Loopy's centre and size on screen, px (`null`: not drawn). */
-function loopyBox(stage: HTMLElement | null) {
-  const svg = stage?.querySelector("svg.loopy");
+/** The companion's centre and size on screen, px (`null`: not drawn). */
+function faceBox(stage: HTMLElement | null) {
+  const svg = stage?.querySelector("svg.companion-avatar");
   if (!svg) return null;
   const r = svg.getBoundingClientRect();
   return {
@@ -54,8 +54,8 @@ function loopyBox(stage: HTMLElement | null) {
   };
 }
 
-/** Loopy's night; see the module comment. */
-export function useLoopySleep(opts: LoopySleepOptions): LoopySleep {
+/** The companion's night; see the module comment. */
+export function useCompanionSleep(opts: CompanionSleepOptions): CompanionSleep {
   const [asleep, setAsleep] = useState(false);
   const [stretching, setStretching] = useState(false);
   const lastActivity = useRef(clockNow());
@@ -107,7 +107,7 @@ export function useLoopySleep(opts: LoopySleepOptions): LoopySleep {
         lastActivity.current = clockNow();
         return;
       }
-      const box = loopyBox(live.current.stage.current);
+      const box = faceBox(live.current.stage.current);
       if (box && nearEnoughToWake({ x: e.clientX, y: e.clientY }, box)) {
         wakeRef.current();
       }
@@ -128,8 +128,8 @@ export function useLoopySleep(opts: LoopySleepOptions): LoopySleep {
     };
   }, [enabled, from, to]);
 
-  // Something to say (or think, or hear) wakes Loopy at once, and keeps it awake; the rest before
-  // it dozes off again counts from when that ended.
+  // Something to say (or think, or hear) wakes the companion at once, and keeps it awake; the rest
+  // before it dozes off again counts from when that ended.
   useEffect(() => {
     if (busy) wakeRef.current();
     else lastActivity.current = clockNow();

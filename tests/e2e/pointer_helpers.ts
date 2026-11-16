@@ -1,5 +1,5 @@
-// A real pointer drag for the e2e suite: the left button held through the moves (Loopy's drag,
-// free-form tiles' moves and resizes).
+// A real pointer drag for the e2e suite: the left button held through the moves (the companion's
+// drag, free-form tiles' moves and resizes).
 
 import type { App } from "./harness.ts";
 

@@ -85,6 +85,7 @@ import type { BrainAdapter } from "../lib/companion/brain.ts";
 import {
   BRAIN_ENGINES,
   type BrainEngine,
+  companionName,
   isOllamaModelName,
 } from "../lib/companion/settings.ts";
 import {
@@ -948,7 +949,7 @@ const sendInput = objectSchema<{ text: string; via: "chat" | "voice" }>(
 );
 
 const configureInput = objectSchema<
-  { enabled: boolean; model: string; engine: BrainEngine }
+  { enabled: boolean; model: string; engine: BrainEngine; name?: string }
 >(
   (v, issues) => {
     if (typeof v.enabled !== "boolean") {
@@ -965,7 +966,12 @@ const configureInput = objectSchema<
         path: ["engine"],
       });
     }
-    return { enabled: v.enabled === true, model, engine: engine ?? "claude" };
+    return {
+      enabled: v.enabled === true,
+      model,
+      engine: engine ?? "claude",
+      name: companionName(v.name),
+    };
   },
 );
 
@@ -1040,16 +1046,22 @@ export default defineDesktopExtension({
         return { turn: requireService().companion.runtime.userSays(text, via) };
       },
     },
-    /** Settings → Companion: whether the brain may run, which one, and its model. */
+    /** Settings → Companion: whether the brain may run, which one, its model, and the name. */
     companionConfigure: {
       input: configureInput,
       handler: (args: unknown): CompanionStatus => {
-        const { enabled, model, engine } = args as {
+        const { enabled, model, engine, name } = args as {
           enabled: boolean;
           model: string;
           engine: BrainEngine;
+          name: string;
         };
-        return requireService().companion.configure(enabled, model, engine);
+        return requireService().companion.configure(
+          enabled,
+          model,
+          engine,
+          name,
+        );
       },
     },
     /** Whether the API key brain's Anthropic key is in the keychain (never the key). */

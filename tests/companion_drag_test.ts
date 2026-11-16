@@ -1,5 +1,6 @@
-// Dragging Loopy to another corner (lib/companion/drag.ts): the threshold between a click and a
-// drag, the corner a drop snaps to, and Loopy's idle life pausing while it is dragged.
+// Dragging the companion to another corner (lib/companion/drag.ts): the threshold between a click
+// and a drag, the corner a drop snaps to, and the companion's idle life pausing while it is
+// dragged.
 
 import { assertEquals } from "@std/assert";
 import {
@@ -7,7 +8,7 @@ import {
   isDrag,
   nearestCorner,
 } from "../lib/companion/drag.ts";
-import { type LifeContext, mayLiven } from "../lib/companion/loopy-life.ts";
+import { type LifeContext, mayLiven } from "../lib/companion/face-life.ts";
 
 Deno.test("drag: a press that moves a few pixels is still a click", () => {
   const from = { x: 100, y: 100 };
@@ -32,7 +33,7 @@ Deno.test("drag: the drop snaps to the nearest corner of the area", () => {
   assertEquals(nearestCorner({ x: 1400, y: -10 }, size), "top-right");
 });
 
-Deno.test("drag: Loopy is not free for its idle life while dragged", () => {
+Deno.test("drag: the companion is not free for its idle life while dragged", () => {
   const ctx: LifeContext = {
     lively: true,
     state: "idle",

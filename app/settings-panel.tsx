@@ -421,6 +421,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         "Voice",
         <VoiceSettingsSection
           settings={settings.voice}
+          name={settings.companion.name}
           platform={props.platform}
           voice={props.voice}
           onChange={props.onVoice}
@@ -469,6 +470,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <MonitorSettingsSection
           settings={settings.monitor}
           lively={settings.companion.lively}
+          name={settings.companion.name}
           onChange={props.onMonitor}
         />,
         "monitor-section",

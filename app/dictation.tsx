@@ -1,8 +1,9 @@
-// Dictation feedback that does not need Loopy (the hold-to-dictate key works with the companion
-// off): a mic badge in the focused tile's header while a dictation listens or transcribes, its bar
-// following the microphone's level, and a short note at the bottom of the tile area when what was
-// said could not be typed (no focused tile, a page that can't take text, nothing heard, an engine
-// that cannot run). The note fades out on its own: its CSS animation's end removes it (no timer).
+// Dictation feedback that does not need the companion (the hold-to-dictate key works with the
+// companion off): a mic badge in the focused tile's header while a dictation listens or
+// transcribes, its bar following the microphone's level, and a short note at the bottom of the tile
+// area when what was said could not be typed (no focused tile, a page that can't take text, nothing
+// heard, an engine that cannot run). The note fades out on its own: its CSS animation's end removes
+// it (no timer).
 
 import { useEffect, useState } from "denext";
 import type { VoiceState } from "../lib/voice/controller.ts";

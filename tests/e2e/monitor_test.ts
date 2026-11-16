@@ -1,8 +1,9 @@
 // The lite system monitor against the demo backend (lib/sysstats-demo.ts: the demo shell's
 // `load <cpu> [gpu]` pins the fake figures), sampled every 250 ms here (`statsMs`): the bar meter
-// (off by default, on and off in Settings), Loopy's hot face after a sustained load and its cool
-// down with hysteresis, never over an `ask_user` question's attention face, and off with Lively.
-// Also takes the hot face's screenshot (and the meter's), copied where `LOOPY_HOT_SHOT` says.
+// (off by default, on and off in Settings), the companion's hot face after a sustained load and its
+// cool down with hysteresis, never over an `ask_user` question's attention face, and off with
+// Lively. Also takes the hot face's screenshot (and the meter's), copied where `COMPANION_HOT_SHOT`
+// says.
 
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
@@ -16,9 +17,9 @@ const SHOT_DIR = join(ROOT, "tests/e2e/__screenshots__");
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Loopy's face mood (`hot` while hot). */
+/** The companion's face mood (`hot` while hot). */
 function mood(app: App): Promise<string | null> {
-  return app.attr(`${OVERLAY} svg.loopy`, "data-mood");
+  return app.attr(`${OVERLAY} svg.companion-avatar`, "data-mood");
 }
 
 /** Set a System monitor slider (the panel must be open) and fire `input`. */
@@ -115,7 +116,7 @@ suite("system monitor", (test) => {
   );
 
   test(
-    "hot Loopy: after a sustained load, stays hot above the cool line, cools below it",
+    "the hot companion: after a sustained load, stays hot above the cool line, cools below it",
     async (app) => {
       await quickHot(app);
       await waitFor(async () => (await mood(app)) === "neutral", 3000, "idle");
@@ -140,7 +141,7 @@ suite("system monitor", (test) => {
   );
 
   test(
-    "hot Loopy: never over an ask_user question; hot again once it is answered",
+    "the hot companion: never over an ask_user question; hot again once it is answered",
     async (app) => {
       await quickHot(app);
       await load(app, "97");
@@ -154,29 +155,33 @@ suite("system monitor", (test) => {
       );
       await pause(1500);
       assertEquals(await mood(app), "attention", "hot never replaces it");
-      await app.click("[data-testid=loopy-action]");
+      await app.click("[data-testid=companion-action]");
       await waitFor(async () => (await mood(app)) === "hot", 5000, "hot again");
     },
     { query: QUERY },
   );
 
-  test("hot Loopy: off in Settings, and off with Lively", async (app) => {
-    await quickHot(app);
-    await load(app, "97");
-    await waitFor(async () => (await mood(app)) === "hot", 8000, "hot");
-    await app.openSettings();
-    await app.click("[data-testid=setting-companion-lively]");
-    await waitFor(
-      async () => (await mood(app)) === "neutral",
-      3000,
-      "no Lively",
-    );
-    await app.click("[data-testid=setting-companion-lively]");
-    await waitFor(async () => (await mood(app)) === "hot", 8000, "hot again");
-    await app.click("[data-testid=setting-monitor-hot]");
-    await waitFor(async () => (await mood(app)) === "neutral", 3000, "off");
-    await app.closeSettings();
-  }, { query: QUERY });
+  test(
+    "the hot companion: off in Settings, and off with Lively",
+    async (app) => {
+      await quickHot(app);
+      await load(app, "97");
+      await waitFor(async () => (await mood(app)) === "hot", 8000, "hot");
+      await app.openSettings();
+      await app.click("[data-testid=setting-companion-lively]");
+      await waitFor(
+        async () => (await mood(app)) === "neutral",
+        3000,
+        "no Lively",
+      );
+      await app.click("[data-testid=setting-companion-lively]");
+      await waitFor(async () => (await mood(app)) === "hot", 8000, "hot again");
+      await app.click("[data-testid=setting-monitor-hot]");
+      await waitFor(async () => (await mood(app)) === "neutral", 3000, "off");
+      await app.closeSettings();
+    },
+    { query: QUERY },
+  );
 
   test("screenshot: the hot face and the bar meter", async (app) => {
     await app.openSettings();
@@ -189,7 +194,7 @@ suite("system monitor", (test) => {
     await pause(1200);
     const box = await app.eval(
       (o: string, m: string) => {
-        const b = document.querySelector(`${o} .loopy-bead`)!
+        const b = document.querySelector(`${o} .companion-bead`)!
           .getBoundingClientRect();
         const r = document.querySelector(m)!.getBoundingClientRect();
         return {
@@ -221,9 +226,9 @@ suite("system monitor", (test) => {
       },
     });
     await Deno.mkdir(SHOT_DIR, { recursive: true });
-    await Deno.writeFile(join(SHOT_DIR, "loopy-hot.png"), face);
+    await Deno.writeFile(join(SHOT_DIR, "companion-hot.png"), face);
     await Deno.writeFile(join(SHOT_DIR, "sys-meter.png"), bar);
-    const copy = Deno.env.get("LOOPY_HOT_SHOT");
+    const copy = Deno.env.get("COMPANION_HOT_SHOT");
     if (copy) {
       await Deno.writeFile(copy, face);
       await Deno.writeFile(copy.replace(/\.png$/, "-meter.png"), bar);

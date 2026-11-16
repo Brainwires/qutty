@@ -1,42 +1,43 @@
-// Dragging Loopy to another corner, the DOM side of lib/companion/drag.ts. The press is on the poke
-// target (the bead), with native pointer listeners on it: the pointer is captured on the press, so the moves and
-// the release come here even off the face, and a press that stays within DRAG_THRESHOLD_PX is the
-// usual click (the poke, the chat). Past it the overlay follows the pointer (a `translate` set on
-// it directly, no re-render per move); on release Loopy snaps to the nearest corner of the tile
-// area (`onDrop`, which saves Settings → Companion → Corner) and the click the release would bring
-// is swallowed (`consumeClick`). A cancelled pointer (`pointercancel`) puts Loopy back.
+// Dragging the companion to another corner, the DOM side of lib/companion/drag.ts. The press is on
+// the poke target (the bead), with native pointer listeners on it: the pointer is captured on the
+// press, so the moves and the release come here even off the face, and a press that stays within
+// DRAG_THRESHOLD_PX is the usual click (the poke, the chat). Past it the overlay follows the
+// pointer (a `translate` set on it directly, no re-render per move); on release the companion snaps
+// to the nearest corner of the tile area (`onDrop`, which saves Settings → Companion → Corner) and
+// the click the release would bring is swallowed (`consumeClick`). A cancelled pointer
+// (`pointercancel`) puts the companion back.
 
 import { useEffect, useRef, useState } from "denext";
 import type { CompanionCorner } from "../../lib/companion/protocol.ts";
 import { isDrag, nearestCorner } from "../../lib/companion/drag.ts";
-import type { Point } from "../../lib/companion/loopy-life.ts";
+import type { Point } from "../../lib/companion/face-life.ts";
 
-export interface LoopyDragOptions {
+export interface CompanionDragOptions {
   /** The poke target: the press starts on it. */
   readonly target: { readonly current: HTMLElement | null };
   /** The overlay: it moves while dragged, and its offset parent is the area of the corners. */
   readonly overlay: { readonly current: HTMLElement | null };
-  /** Loopy was dropped: the corner it snaps to. */
+  /** The companion was dropped: the corner it snaps to. */
   onDrop(corner: CompanionCorner): void;
 }
 
 /** What the overlay needs to know of a drag. */
-export interface LoopyDrag {
+export interface CompanionDrag {
   /** A drag is under way (past the threshold). */
   readonly dragging: boolean;
   /** True (once) for the click that ends a drag: the poke must ignore it. */
   consumeClick(): boolean;
 }
 
-/** One press on Loopy. */
+/** One press on the companion. */
 interface Press {
   readonly id: number;
   readonly start: Point;
   dragging: boolean;
 }
 
-/** Dragging Loopy; see the module comment. */
-export function useLoopyDrag(opts: LoopyDragOptions): LoopyDrag {
+/** Dragging the companion; see the module comment. */
+export function useCompanionDrag(opts: CompanionDragOptions): CompanionDrag {
   const swallow = useRef(false);
   const [dragging, setDragging] = useState(false);
   const optsRef = useRef(opts);

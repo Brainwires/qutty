@@ -9,7 +9,7 @@
  * - Smoothing: an exponential moving average over the samples.
  * - "Hot": a hysteresis state machine over the smoothed figures (hot after the CPU or GPU stays
  *   at or above `hotAt` for `sustainMs`; cool again after both stay below `coolAt` that long), so
- *   Loopy's hot face does not flicker. {@linkcode mayShowHot} says when it may show.
+ *   the companion's hot face does not flicker. {@linkcode mayShowHot} says when it may show.
  *
  * Client-safe and pure.
  *
@@ -122,24 +122,24 @@ export function stepHot(
   return state.since === null ? { ...state, since } : state;
 }
 
-/** What decides whether Loopy may show it is hot. */
+/** What decides whether the companion may show it is hot. */
 export interface HotContext {
-  /** Settings → System monitor → Loopy gets hot (and Lively on). */
+  /** Settings → System monitor → the companion gets hot (and Lively on). */
   readonly enabled: boolean;
   readonly hot: boolean;
-  /** Loopy is free: idle with nothing on screen (lib/companion/loopy-life.ts `mayLiven`). */
+  /** The companion is free: idle with nothing on screen (lib/companion/face-life.ts `mayLiven`). */
   readonly free: boolean;
 }
 
 /**
- * Whether Loopy wears its hot face: never over a question, a reply, thinking, a voice turn or a
- * sad face — only while it is otherwise idle.
+ * Whether the companion wears its hot face: never over a question, a reply, thinking, a voice turn
+ * or a sad face — only while it is otherwise idle.
  */
 export function mayShowHot(ctx: HotContext): boolean {
   return ctx.enabled && ctx.hot && ctx.free;
 }
 
-/** What Loopy says (aloud) when it gets hot. */
+/** What the companion says (aloud) when it gets hot. */
 export const HOT_LINE = "Phew, the CPU is cooking.";
 /** At most one hot line this often. */
 export const HOT_LINE_EVERY_MS = 30 * 60_000;
@@ -178,8 +178,8 @@ export function sampleDelay(
 export interface MonitorSettings {
   /** The CPU / GPU meter in the switcher bar. */
   meter: boolean;
-  /** Loopy looks hot while the machine is (needs Settings → Companion → Lively). */
-  hotLoopy: boolean;
+  /** The companion looks hot while the machine is (needs Settings → Companion → Lively). */
+  hotCompanion: boolean;
   hotAt: number;
   coolAt: number;
   /** Seconds either condition must hold. */
@@ -188,7 +188,7 @@ export interface MonitorSettings {
 
 export const DEFAULT_MONITOR: MonitorSettings = {
   meter: false,
-  hotLoopy: true,
+  hotCompanion: true,
   hotAt: 85,
   coolAt: 70,
   sustainS: 10,
@@ -210,7 +210,10 @@ export function sanitizeMonitor(
   if (!raw || typeof raw !== "object") return out;
   const r = raw as Partial<Record<keyof MonitorSettings, unknown>>;
   if (typeof r.meter === "boolean") out.meter = r.meter;
-  if (typeof r.hotLoopy === "boolean") out.hotLoopy = r.hotLoopy;
+  // Saved by 0.5.1 and earlier as `hotLoopy` (the companion was called Loopy): read it, saved as
+  // the new key from then on.
+  const hot = r.hotCompanion ?? (raw as { hotLoopy?: unknown }).hotLoopy;
+  if (typeof hot === "boolean") out.hotCompanion = hot;
   for (const key of ["hotAt", "coolAt", "sustainS"] as const) {
     const v = r[key];
     if (typeof v === "number" && Number.isFinite(v)) {

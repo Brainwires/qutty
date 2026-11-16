@@ -1,7 +1,7 @@
 /**
- * Loopy's reactions to the tiles' work (Settings → Companion → Reactions): a hop of joy (the
- * example's `success` mood, its `celebrate` move) when a long job finishes well, a brief sad face
- * when one fails. Two signals:
+ * The companion's reactions to the tiles' work (Settings → Companion → Reactions): a hop of joy
+ * (the example's `success` mood, its `celebrate` move) when a long job finishes well, a brief sad
+ * face when one fails. Two signals:
  *
  * - shell tiles: the shell integration marks (OSC 133, lib/shell-marks.ts) say when a command
  *   ended, with its exit status and how long it ran. Only commands that ran at least the minimum
@@ -14,8 +14,8 @@
  *   `isFailureNote`), when it changes.
  *
  * At most one reaction of a kind this often ({@linkcode REACT_EVERY_MS}), so a loop of failing
- * builds does not keep Loopy sad. Whether it shows at all is the face's priority
- * (lib/companion/loopy-priority.ts): never over a question, thinking or a voice turn.
+ * builds does not keep the companion sad. Whether it shows at all is the face's priority
+ * (lib/companion/face-priority.ts): never over a question, thinking or a voice turn.
  *
  * Client-safe and pure.
  *
@@ -26,7 +26,7 @@ import type { TileInfo } from "../hub/protocol.ts";
 import { isFailureNote, seenBefore } from "../voice/alerts.ts";
 import type { CommandDone } from "../shell-marks.ts";
 
-/** What Loopy does about a finished job. */
+/** What the companion does about a finished job. */
 export type ReactionKind = "celebrate" | "sad";
 
 /** A reaction, as the overlay receives it. */

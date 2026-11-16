@@ -209,7 +209,7 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
       companion: {
         name: "companion",
         note:
-          "the window's assistant (Loopy): it talks to the user and can act on any tile",
+          "the window's companion (its assistant): it talks to the user and can act on any tile",
       },
     }),
   );

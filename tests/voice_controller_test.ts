@@ -269,12 +269,12 @@ Deno.test("hold-to-dictate: what could not be typed, and nothing heard, say so",
 
 Deno.test("hold-to-dictate: a press while push-to-talk listens is ignored; a cancel drops the one-shot", async () => {
   const { stt, log, c } = setup({ review: false, dictate: false });
-  stt.transcript = "to Loopy";
+  stt.transcript = "to Companion";
   await c.press();
   await c.press({ dictate: true });
   assertEquals(c.state.target, "companion");
   await c.release(900);
-  assertEquals(log.at(-1), "companion: to Loopy");
+  assertEquals(log.at(-1), "companion: to Companion");
 
   await c.press({ dictate: true });
   await c.cancel();

@@ -11,6 +11,7 @@ import {
   claudeBrainFlags,
   COMPANION_SYSTEM_PROMPT,
   companionMcpConfig,
+  companionSystemPrompt,
   READY_MARKER,
   StreamJsonParser,
   toolShortName,
@@ -154,6 +155,29 @@ Deno.test("claude flags: stream-json both ways, partial messages, only the hub's
   assertEquals(after("--tools"), "", "no built-in tools");
   assertEquals(after("--allowedTools"), "mcp__qutty");
   assertEquals(after("--append-system-prompt"), COMPANION_SYSTEM_PROMPT);
+  // The default name, and no paper clip any more.
+  assert(
+    COMPANION_SYSTEM_PROMPT.startsWith(
+      "You are Companion, the companion of Qutty",
+    ),
+  );
+  assert(!/paper clip/i.test(COMPANION_SYSTEM_PROMPT));
+  // A name from Settings → Companion → Name is the one the brain is told (sanitised again).
+  const named = claudeBrainFlags({
+    claude: "c",
+    mcpConfig: "m",
+    name: "  Jarvis ",
+  });
+  assertEquals(
+    named[named.indexOf("--append-system-prompt") + 1],
+    companionSystemPrompt("Jarvis"),
+  );
+  assert(
+    companionSystemPrompt("Jarvis").startsWith(
+      "You are Jarvis, the companion of Qutty",
+    ),
+  );
+  assertEquals(companionSystemPrompt(""), COMPANION_SYSTEM_PROMPT);
   assertEquals(after("--model"), "haiku");
   assert(
     !claudeBrainFlags({ claude: "c", mcpConfig: "m" }).includes("--model"),

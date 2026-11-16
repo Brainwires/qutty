@@ -1,13 +1,14 @@
-// What another program can ask Loopy to say, validated before it reaches the page. Ported from
-// Denext's examples/companion (lib/messages.ts; same author, MIT): the same `say` shape, so a
-// `loopy-say`-style script or hook can target Qutty through `qutty-hook say …` (the hub validates
-// it here; lib/companion/say-args.ts parses the command line). Qutty adds two optional fields to
-// a message, `kind` and `from`, for its own bubbles (companion replies and `ask_user` questions).
+// What another program can ask the companion to say, validated before it reaches the page. Ported
+// from Denext's examples/companion (lib/messages.ts; same author, MIT): the same `say` shape, so a
+// `companion-say`-style script or hook can target Qutty through `qutty-hook say …` (the hub
+// validates it here; lib/companion/say-args.ts parses the command line). Qutty adds two optional
+// fields to a message, `kind` and `from`, for its own bubbles (companion replies and `ask_user`
+// questions).
 
-import { type LoopyMood, MOODS } from "./loopy-machine.ts";
+import { type FaceMood, MOODS } from "./face-machine.ts";
 
 /** A button under a message. */
-export interface LoopyAction {
+export interface CompanionAction {
   /** What the sender gets back when it is pressed (`wait: true`). */
   readonly id: string;
   /** The button's text. */
@@ -16,12 +17,12 @@ export interface LoopyAction {
 
 /** A message as a sender posts it. */
 export interface SayRequest {
-  /** What Loopy says (1–500 characters). */
+  /** What the companion says (1–500 characters). */
   readonly text: string;
-  /** How Loopy looks while it says it (default `neutral`). */
-  readonly mood?: LoopyMood;
+  /** How the companion looks while it says it (default `neutral`). */
+  readonly mood?: FaceMood;
   /** Up to three buttons. */
-  readonly actions?: readonly LoopyAction[];
+  readonly actions?: readonly CompanionAction[];
   /**
    * How long the bubble stays up, in milliseconds (1000–120000). `0` keeps it until the user
    * closes it. Default: by length, or until closed when there are actions.
@@ -32,12 +33,12 @@ export interface SayRequest {
 }
 
 /** A validated message, as the page receives it. */
-export interface LoopyMessage {
+export interface CompanionMessage {
   /** Random per message; the page answers a button press with it. */
   readonly id: string;
   readonly text: string;
-  readonly mood: LoopyMood;
-  readonly actions: readonly LoopyAction[];
+  readonly mood: FaceMood;
+  readonly actions: readonly CompanionAction[];
   /** Milliseconds before the bubble closes itself, or `0` for never. */
   readonly timeoutMs: number;
   /**
@@ -72,23 +73,23 @@ export function readingTimeMs(text: string): number {
  * Qutty: other names a sender may use for a mood, after the companion's own states (idle, an
  * `ask_user` question, an error). The four moods Qutty had before the 13 keep their names.
  */
-export const MOOD_ALIASES: Readonly<Record<string, LoopyMood>> = {
+export const MOOD_ALIASES: Readonly<Record<string, FaceMood>> = {
   idle: "neutral",
   ask: "attention",
   error: "sad",
 };
 
 /** The `mood` field, validated: one of {@linkcode MOODS} or an alias of one. */
-function parseMood(raw: unknown): LoopyMood {
+function parseMood(raw: unknown): FaceMood {
   if (typeof raw === "string") {
-    if (MOODS.includes(raw as LoopyMood)) return raw as LoopyMood;
+    if (MOODS.includes(raw as FaceMood)) return raw as FaceMood;
     if (Object.hasOwn(MOOD_ALIASES, raw)) return MOOD_ALIASES[raw];
   }
   throw new SayError(`mood must be one of ${MOODS.join(", ")}`);
 }
 
 /** One action, validated. */
-function parseAction(raw: unknown, index: number): LoopyAction {
+function parseAction(raw: unknown, index: number): CompanionAction {
   if (typeof raw !== "object" || raw === null) {
     throw new SayError(`actions[${index}] must be an object`);
   }
@@ -107,7 +108,7 @@ function parseAction(raw: unknown, index: number): LoopyAction {
 }
 
 /** The `actions` field, validated (ids unique). */
-function parseActions(raw: unknown): LoopyAction[] {
+function parseActions(raw: unknown): CompanionAction[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw) || raw.length > MAX_ACTIONS) {
     throw new SayError(`actions must be an array of at most ${MAX_ACTIONS}`);
@@ -144,7 +145,7 @@ function parseTimeout(raw: unknown, text: string, hasActions: boolean): number {
 export function parseSayRequest(
   raw: unknown,
   id: string = crypto.randomUUID(),
-): { message: LoopyMessage; wait: boolean } {
+): { message: CompanionMessage; wait: boolean } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new SayError("the body must be a JSON object");
   }

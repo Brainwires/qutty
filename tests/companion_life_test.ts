@@ -1,10 +1,10 @@
-// Loopy's idle life (lib/companion/loopy-life.ts): when Loopy may live on its own, the
-// micro-expression scheduler, the pupils' offsets toward the pointer, and the excitement rules.
+// The companion's idle life (lib/companion/face-life.ts): when the companion may live on its own,
+// the micro-expression scheduler, the pupils' offsets toward the pointer, and the excitement rules.
 
 import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
 import { renderToString } from "denext";
 import { jsx } from "denext/jsx-runtime";
-import { Loopy } from "../app/companion/loopy.tsx";
+import { CompanionFace } from "../app/companion/companion-face.tsx";
 import {
   easeToward,
   EXCITE_COOLDOWN_MS,
@@ -28,8 +28,8 @@ import {
   type Sample,
   type Target,
   trackExcitement,
-} from "../lib/companion/loopy-life.ts";
-import type { LoopyState } from "../lib/companion/loopy-machine.ts";
+} from "../lib/companion/face-life.ts";
+import type { FaceState } from "../lib/companion/face-machine.ts";
 
 /** A seeded random in [0, 1) (mulberry32). */
 function seeded(seed: number): () => number {
@@ -52,7 +52,7 @@ const FREE: LifeContext = {
   awake: true,
 };
 
-Deno.test("life: Loopy lives on its own only when Lively, awake and idle with nothing to say, no voice, no thinking", () => {
+Deno.test("life: the companion lives on its own only when Lively, awake and idle with nothing to say, no voice, no thinking", () => {
   assert(mayLiven(FREE));
   assert(mayLiven({ ...FREE, state: "blink" }));
   for (
@@ -63,7 +63,7 @@ Deno.test("life: Loopy lives on its own only when Lively, awake and idle with no
       "point",
       "celebrate",
       "dismiss",
-    ] as LoopyState[]
+    ] as FaceState[]
   ) {
     assert(!mayLiven({ ...FREE, state }), state);
   }
@@ -178,9 +178,9 @@ Deno.test("life: the gaze eases smoothly whatever the frame rate, and stops foll
   assertEquals(GAZE_HOLD_MS, 1_500);
 });
 
-const LOOPY: Target = { cx: 1000, cy: 700, size: 100 };
+const COMPANION: Target = { cx: 1000, cy: 700, size: 100 };
 
-/** Feed `samples` through the rules; the times at which Loopy got excited. */
+/** Feed `samples` through the rules; the times at which the companion got excited. */
 function run(
   samples: Sample[],
   free: (s: Sample) => boolean = () => true,
@@ -188,7 +188,7 @@ function run(
   let tr = INITIAL_EXCITE;
   const fired: number[] = [];
   for (const s of samples) {
-    const step = trackExcitement(tr, s, LOOPY, free(s));
+    const step = trackExcitement(tr, s, COMPANION, free(s));
     tr = step.tracker;
     if (step.fire) fired.push(s.t);
   }
@@ -205,7 +205,7 @@ function path(a: Point, b: Point, t0: number, ms: number): Sample[] {
   }));
 }
 
-Deno.test("life: moving near Loopy excites it once; then not again within the cooldown, and only after leaving", () => {
+Deno.test("life: moving near the companion excites it once; then not again within the cooldown, and only after leaving", () => {
   const far = { x: 200, y: 700 };
   const close = { x: 900, y: 700 }; // 100 px from the centre: near (1.5 × 100)
   const closer = { x: 960, y: 690 };
@@ -243,7 +243,7 @@ Deno.test("life: moving near Loopy excites it once; then not again within the co
   assertEquals(EXCITE_COOLDOWN_MS, 20_000);
 });
 
-Deno.test("life: excitement never comes while Loopy is busy, nor from a fly-through or from far away", () => {
+Deno.test("life: excitement never comes while the companion is busy, nor from a fly-through or from far away", () => {
   const visit = [
     ...path({ x: 200, y: 700 }, { x: 900, y: 700 }, 0, 2_000),
     ...path({ x: 900, y: 700 }, { x: 960, y: 690 }, 2_000, 400),
@@ -270,7 +270,7 @@ Deno.test("life: excitement never comes while Loopy is busy, nor from a fly-thro
   );
 });
 
-Deno.test("life: a fast move close by, or a circle around Loopy, excites it", () => {
+Deno.test("life: a fast move close by, or a circle around the companion, excites it", () => {
   // Fast past it, 250 px away (within 3 × its size), 4 px/ms.
   const fast = path({ x: 600, y: 950 }, { x: 1400, y: 950 }, 0, 200);
   assertEquals(run(fast).length, 1, "fast");
@@ -294,12 +294,12 @@ Deno.test("life: a fast move close by, or a circle around Loopy, excites it", ()
 });
 
 Deno.test("life: hovering over the face; the eyes' geometry is the neutral face's; lively attributes stay off the face", async () => {
-  assert(overFace({ x: 1000, y: 700 }, LOOPY));
-  assert(overFace({ x: 1035, y: 700 }, LOOPY));
-  assert(!overFace({ x: 1060, y: 700 }, LOOPY));
+  assert(overFace({ x: 1000, y: 700 }, COMPANION));
+  assert(overFace({ x: 1035, y: 700 }, COMPANION));
+  assert(!overFace({ x: 1060, y: 700 }, COMPANION));
 
   const html = await renderToString(
-    jsx(Loopy as never, { state: "idle" }) as never,
+    jsx(CompanionFace as never, { state: "idle" }) as never,
   );
   const circles = [
     ...html.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="3.6"/g),
@@ -316,9 +316,9 @@ Deno.test("life: hovering over the face; the eyes' geometry is the neutral face'
     },
   ]);
 
-  const head = (s: string) => s.slice(s.indexOf('<g class="loopy-head">'));
+  const head = (s: string) => s.slice(s.indexOf('<g class="companion-head">'));
   const lively = await renderToString(
-    jsx(Loopy as never, {
+    jsx(CompanionFace as never, {
       state: "idle",
       lively: true,
       expression: "tilt",

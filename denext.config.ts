@@ -131,8 +131,8 @@ export default {
         // capability only opens paths inside the app's own folders and needs `run`).
         "./desktop/links.ts",
       ],
-      // The lite system monitor: CPU, GPU and memory figures for the bar meter and Loopy's hot
-      // face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It
+      // The lite system monitor: CPU, GPU and memory figures for the bar meter and the companion's
+      // hot face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It
       // bakes no Deno permission (aggregate figures only; the runtime serves it to an app whose
       // packaged launch config lists it).
       systemStats: true,

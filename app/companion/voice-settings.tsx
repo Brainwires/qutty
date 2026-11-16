@@ -37,6 +37,8 @@ import {
 
 export interface VoiceSettingsProps {
   settings: VoiceSettings;
+  /** The companion's name (Settings → Companion → Name). */
+  name: string;
   platform: KeyPlatform;
   voice: VoiceApi | null;
   onChange(patch: Partial<VoiceSettings>): void;
@@ -219,7 +221,7 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
   return (
     <div class="voice-settings" data-testid="voice-settings">
       <Check
-        label="Read aloud (Loopy's answers)"
+        label={`Read aloud (${props.name}'s answers)`}
         testid="setting-voice-speak"
         checked={settings.speakAnswers}
         onChange={(speakAnswers) => onChange({ speakAnswers })}
@@ -313,7 +315,8 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
           class="btn-quiet"
           data-testid="setting-voice-test"
           disabled={!voice}
-          onClick={() => voice?.test("Hi, I'm Loopy. This is how I sound.")}
+          onClick={() =>
+            voice?.test(`Hi, I'm ${props.name}. This is how I sound.`)}
         >
           Test voice
         </button>

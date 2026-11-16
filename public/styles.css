@@ -2826,38 +2826,39 @@ kbd {
   animation: none !important;
 }
 
-/* ---- The companion: Loopy -------------------------------------------------------------------
-   Loopy is the face of Denext's examples/companion Loopy (public/styles.css on
+/* ---- The companion's face -----------------------------------------------------------------------
+   The companion is the face of Denext's examples/companion Loopy (public/styles.css on
    feat/loopy-voice-tools: the crossed-triangle wire with a steel bead head and 13 moods; same
    author, MIT) on its own: the bead head, its faces and the moods' extras, without the wire body,
-   drawn 2 times the size it had there (app/companion/loopy.tsx crops and scales the drawing).
-   The speech bubble and every rule of the face (the bead, eyes, brows, mouth, extras, blink, the
-   voice turn) are copied from the example with the same shapes and keyframes: only scoped under
-   .companion-overlay (selectors) and prefixed (keyframe names and custom properties, which are
-   global). The avatar is Qutty's: its size, the stage, the poke target and the moves, re-made for
-   a head alone on `.loopy-face`. Loopy's own colours are the example's: the bare steel, each
-   mood's tint (once the wire's; now the extras' and a rim on the bead), the bead and the face on
-   it. The UI around it (the bubble, its buttons, the thought dots, the sparkles) is coloured from
-   the theme (the palette below, and the overrides after the copy). tests/companion_look_test.ts
-   and tests/e2e/companion_test.ts keep the face, its moods and the avatar's size from drifting.
-   Qutty's own parts (the overlay's placement, the chat box, the brain's status dot, the rim)
-   follow. */
+   drawn 2 times the size it had there (app/companion/companion-face.tsx crops and scales the
+   drawing). The speech bubble and every rule of the face (the bead, eyes, brows, mouth, extras,
+   blink, the voice turn) are copied from the example with the same shapes and keyframes: only
+   scoped under .companion-overlay (selectors) and prefixed (keyframe names and custom properties,
+   which are global). The avatar is Qutty's: its size, the stage, the poke target and the moves,
+   re-made for a head alone on `.companion-face`. The companion's own colours are the example's: the
+   bare steel, each mood's tint (once the wire's; now the extras' and a rim on the bead), the bead
+   and the face on it. The UI around it (the bubble, its buttons, the thought dots, the sparkles) is
+   coloured from the theme (the palette below, and the overrides after the copy).
+   tests/companion_look_test.ts and tests/e2e/companion_test.ts keep the face, its moods and the
+   avatar's size from drifting. Qutty's own parts (the overlay's placement, the chat box, the
+   brain's status dot, the rim) follow. */
 
 .companion-overlay {
   /* The UI's palette, from the theme (the example's teal-on-paper values are commented). */
-  --loopy-wire: var(--accent); /* #17a08a */
-  --loopy-wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow)); /* #0b6b5c */
-  --loopy-wire-shine: rgba(var(--hi-rgb), 0.6); /* #a6efe0 */
-  --loopy-ink: var(--text); /* #1d2b33: the chat box's text */
-  /* Loopy's tint: bare steel, like a real paper clip; each mood has its own (.loopy[data-mood]). */
-  --loopy-clip: #b9c1c8;
-  --loopy-clip-edge: #5c656d;
-  --loopy-clip-shine: #ffffff;
+  --companion-wire: var(--accent); /* #17a08a */
+  --companion-wire-edge: color-mix(in srgb, var(--accent) 55%, var(--shadow)); /* #0b6b5c */
+  --companion-wire-shine: rgba(var(--hi-rgb), 0.6); /* #a6efe0 */
+  --companion-ink: var(--text); /* #1d2b33: the chat box's text */
+  /* The companion's tint: bare steel, like a real paper clip; each mood has its own
+     (.companion-avatar[data-mood]). */
+  --companion-clip: #b9c1c8;
+  --companion-clip-edge: #5c656d;
+  --companion-clip-shine: #ffffff;
   /* The face, drawn on the steel bead whatever the theme. */
-  --loopy-face-ink: #1d2b33;
-  --loopy-bubble: rgb(var(--panel-rgb)); /* #ffffff */
-  --loopy-bubble-edge: var(--line-2); /* #d9d2c3 */
-  --loopy-accent: var(--accent); /* #17a08a */
+  --companion-face-ink: #1d2b33;
+  --companion-bubble: rgb(var(--panel-rgb)); /* #ffffff */
+  --companion-bubble-edge: var(--line-2); /* #d9d2c3 */
+  --companion-accent: var(--accent); /* #17a08a */
   color: var(--text);
   font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system,
     "Segoe UI", sans-serif;
@@ -2877,18 +2878,18 @@ kbd {
   position: relative;
   max-width: 240px;
   padding: 10px 26px 10px 12px;
-  background: var(--loopy-bubble);
-  border: 1.5px solid var(--loopy-bubble-edge);
+  background: var(--companion-bubble);
+  border: 1.5px solid var(--companion-bubble-edge);
   border-radius: 14px;
   box-shadow: 0 3px 10px rgb(0 0 0 / 0.08);
   font-size: 13.5px;
   line-height: 1.35;
-  animation: loopy-bubble-in 220ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
+  animation: companion-bubble-in 220ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
   user-select: text;
   -webkit-user-select: text;
 }
 
-/* The tail points down at Loopy's face, a little left of its middle. */
+/* The tail points down at the companion's face, a little left of its middle. */
 
 .companion-overlay .bubble::after {
   content: "";
@@ -2897,9 +2898,9 @@ kbd {
   left: 62px;
   width: 14px;
   height: 14px;
-  background: var(--loopy-bubble);
-  border-right: 1.5px solid var(--loopy-bubble-edge);
-  border-bottom: 1.5px solid var(--loopy-bubble-edge);
+  background: var(--companion-bubble);
+  border-right: 1.5px solid var(--companion-bubble-edge);
+  border-bottom: 1.5px solid var(--companion-bubble-edge);
   transform: rotate(45deg);
 }
 
@@ -2908,7 +2909,7 @@ kbd {
 }
 
 .companion-overlay .bubble[data-mood="success"] {
-  border-color: var(--loopy-accent);
+  border-color: var(--companion-accent);
 }
 
 .companion-overlay .bubble-text {
@@ -2950,21 +2951,21 @@ kbd {
 
 .companion-overlay .bubble-actions button {
   padding: 3px 10px;
-  border: 1.5px solid var(--loopy-wire-edge);
+  border: 1.5px solid var(--companion-wire-edge);
   border-radius: 999px;
   background: #fff;
-  color: var(--loopy-wire-edge);
+  color: var(--companion-wire-edge);
   font-size: 12px;
   cursor: pointer;
 }
 
 .companion-overlay .bubble-actions button:first-child {
-  background: var(--loopy-wire);
-  border-color: var(--loopy-wire);
+  background: var(--companion-wire);
+  border-color: var(--companion-wire);
   color: #fff;
 }
 
-@keyframes loopy-bubble-in {
+@keyframes companion-bubble-in {
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.92);
@@ -3004,17 +3005,17 @@ kbd {
   cursor: pointer;
 }
 
-/* ---------------------------------------------------------------- Loopy */
+/* ---------------------------------------------------------------- the face */
 
 /* The face avatar: the 62 x 74 crop at 1.5 px a unit (the bead 87 px across). */
-.companion-overlay .loopy {
+.companion-overlay .companion-avatar {
   display: block;
   width: 93px;
   height: 111px;
   overflow: visible;
 }
 
-.companion-overlay .loopy path {
+.companion-overlay .companion-avatar path {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -3022,132 +3023,132 @@ kbd {
 
 /* Each mood's tint (the example's wire colours): steel when neutral, violet while thinking,
    amber for attention, green for success… The extras and the rim on the bead take it. */
-.companion-overlay .loopy[data-mood="thinking"] {
-  --loopy-clip: #a596ff;
-  --loopy-clip-edge: #4a3da6;
-  --loopy-clip-shine: #ebe7ff;
+.companion-overlay .companion-avatar[data-mood="thinking"] {
+  --companion-clip: #a596ff;
+  --companion-clip-edge: #4a3da6;
+  --companion-clip-shine: #ebe7ff;
 }
 
-.companion-overlay .loopy[data-mood="attention"] {
-  --loopy-clip: #f2b544;
-  --loopy-clip-edge: #9a6400;
-  --loopy-clip-shine: #fff2cc;
+.companion-overlay .companion-avatar[data-mood="attention"] {
+  --companion-clip: #f2b544;
+  --companion-clip-edge: #9a6400;
+  --companion-clip-shine: #fff2cc;
 }
 
-.companion-overlay .loopy[data-mood="success"] {
-  --loopy-clip: #3ccf7a;
-  --loopy-clip-edge: #17734a;
-  --loopy-clip-shine: #dbffe9;
+.companion-overlay .companion-avatar[data-mood="success"] {
+  --companion-clip: #3ccf7a;
+  --companion-clip-edge: #17734a;
+  --companion-clip-shine: #dbffe9;
 }
 
-.companion-overlay .loopy[data-mood="confused"] {
-  --loopy-clip: #c58cf5;
-  --loopy-clip-edge: #6b2fa0;
-  --loopy-clip-shine: #f3e3ff;
+.companion-overlay .companion-avatar[data-mood="confused"] {
+  --companion-clip: #c58cf5;
+  --companion-clip-edge: #6b2fa0;
+  --companion-clip-shine: #f3e3ff;
 }
 
-.companion-overlay .loopy[data-mood="mad"] {
-  --loopy-clip: #e5484d;
-  --loopy-clip-edge: #8a1a1f;
-  --loopy-clip-shine: #ffd6d7;
+.companion-overlay .companion-avatar[data-mood="mad"] {
+  --companion-clip: #e5484d;
+  --companion-clip-edge: #8a1a1f;
+  --companion-clip-shine: #ffd6d7;
 }
 
-.companion-overlay .loopy[data-mood="sad"] {
-  --loopy-clip: #5b9cff;
-  --loopy-clip-edge: #1f4f9e;
-  --loopy-clip-shine: #dce9ff;
+.companion-overlay .companion-avatar[data-mood="sad"] {
+  --companion-clip: #5b9cff;
+  --companion-clip-edge: #1f4f9e;
+  --companion-clip-shine: #dce9ff;
 }
 
-.companion-overlay .loopy[data-mood="excited"] {
-  --loopy-clip: #ff8a3d;
-  --loopy-clip-edge: #a84a0c;
-  --loopy-clip-shine: #ffe2cc;
+.companion-overlay .companion-avatar[data-mood="excited"] {
+  --companion-clip: #ff8a3d;
+  --companion-clip-edge: #a84a0c;
+  --companion-clip-shine: #ffe2cc;
 }
 
-.companion-overlay .loopy[data-mood="sleepy"] {
-  --loopy-clip: #8d9bb3;
-  --loopy-clip-edge: #46526a;
-  --loopy-clip-shine: #e7ecf5;
+.companion-overlay .companion-avatar[data-mood="sleepy"] {
+  --companion-clip: #8d9bb3;
+  --companion-clip-edge: #46526a;
+  --companion-clip-shine: #e7ecf5;
 }
 
-.companion-overlay .loopy[data-mood="love"] {
-  --loopy-clip: #ff6fae;
-  --loopy-clip-edge: #a3245f;
-  --loopy-clip-shine: #ffe0ee;
+.companion-overlay .companion-avatar[data-mood="love"] {
+  --companion-clip: #ff6fae;
+  --companion-clip-edge: #a3245f;
+  --companion-clip-shine: #ffe0ee;
 }
 
-.companion-overlay .loopy[data-mood="surprised"] {
-  --loopy-clip: #ffd23f;
-  --loopy-clip-edge: #9c7600;
-  --loopy-clip-shine: #fff6cf;
+.companion-overlay .companion-avatar[data-mood="surprised"] {
+  --companion-clip: #ffd23f;
+  --companion-clip-edge: #9c7600;
+  --companion-clip-shine: #fff6cf;
 }
 
-.companion-overlay .loopy[data-mood="shocked"] {
-  --loopy-clip: #36e2ff;
-  --loopy-clip-edge: #0a7a94;
-  --loopy-clip-shine: #dcfaff;
+.companion-overlay .companion-avatar[data-mood="shocked"] {
+  --companion-clip: #36e2ff;
+  --companion-clip-edge: #0a7a94;
+  --companion-clip-shine: #dcfaff;
 }
 
-.companion-overlay .loopy[data-mood="wow"] {
-  --loopy-clip: #ffc83d;
-  --loopy-clip-edge: #b06f00;
-  --loopy-clip-shine: #fff3c4;
+.companion-overlay .companion-avatar[data-mood="wow"] {
+  --companion-clip: #ffc83d;
+  --companion-clip-edge: #b06f00;
+  --companion-clip-shine: #fff3c4;
 }
 
-.companion-overlay .loopy-eyes ellipse:not(.loopy-eye-white) {
+.companion-overlay .companion-eyes ellipse:not(.companion-eye-white) {
   fill: #3b1e14;
 }
 
-.companion-overlay .loopy .loopy-tongue {
+.companion-overlay .companion-avatar .companion-tongue {
   fill: #e86a7a;
 }
 
-.companion-overlay .loopy-star-eyes path,
-.companion-overlay .loopy-wow-sparks path {
+.companion-overlay .companion-star-eyes path,
+.companion-overlay .companion-wow-sparks path {
   fill: #ffb800;
   stroke: #8a5a00;
   stroke-width: 0.8;
 }
 
-.companion-overlay .loopy-wow-sparks path {
-  animation: loopy-twinkle 0.9s ease-in-out infinite;
+.companion-overlay .companion-wow-sparks path {
+  animation: companion-twinkle 0.9s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.companion-overlay .loopy-wow-sparks path:nth-child(2) {
+.companion-overlay .companion-wow-sparks path:nth-child(2) {
   animation-delay: 0.3s;
 }
 
-.companion-overlay .loopy-wow-sparks path:nth-child(3) {
+.companion-overlay .companion-wow-sparks path:nth-child(3) {
   animation-delay: 0.6s;
 }
 
-.companion-overlay .loopy .loopy-exclaim {
-  fill: var(--loopy-clip-edge);
+.companion-overlay .companion-avatar .companion-exclaim {
+  fill: var(--companion-clip-edge);
   font: 900 24px system-ui, sans-serif;
-  animation: loopy-pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  animation: companion-pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) both;
   transform-box: fill-box;
   transform-origin: bottom;
 }
 
-.companion-overlay .loopy .loopy-zaps path {
-  stroke: var(--loopy-clip-edge);
+.companion-overlay .companion-avatar .companion-zaps path {
+  stroke: var(--companion-clip-edge);
   stroke-width: 2.6;
-  animation: loopy-flicker 0.25s steps(2) infinite;
+  animation: companion-flicker 0.25s steps(2) infinite;
 }
 
 /* surprised: a pop; shocked: a stiff jolt and a jitter (the head's, as the clip's were). */
-.companion-overlay .loopy[data-state="idle"][data-mood="surprised"] .loopy-face {
-  animation: loopy-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+.companion-overlay .companion-avatar[data-state="idle"][data-mood="surprised"] .companion-face {
+  animation: companion-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="shocked"] .loopy-face,
-.companion-overlay .loopy[data-state="blink"][data-mood="shocked"] .loopy-face {
-  animation: loopy-jitter 0.12s linear infinite;
+.companion-overlay .companion-avatar[data-state="idle"][data-mood="shocked"] .companion-face,
+.companion-overlay .companion-avatar[data-state="blink"][data-mood="shocked"] .companion-face {
+  animation: companion-jitter 0.12s linear infinite;
 }
 
-@keyframes loopy-pop {
+@keyframes companion-pop {
   0% {
     transform: scale(0.85);
   }
@@ -3156,7 +3157,7 @@ kbd {
   }
 }
 
-@keyframes loopy-jitter {
+@keyframes companion-jitter {
   0%,
   100% {
     transform: translate(0, 0);
@@ -3172,7 +3173,7 @@ kbd {
   }
 }
 
-@keyframes loopy-twinkle {
+@keyframes companion-twinkle {
   0%,
   100% {
     transform: scale(0.7) rotate(0);
@@ -3184,80 +3185,80 @@ kbd {
   }
 }
 
-@keyframes loopy-flicker {
+@keyframes companion-flicker {
   50% {
     opacity: 0.2;
   }
 }
 
 /* Face parts that only some moods show. */
-.companion-overlay .loopy .loopy-mouth.is-open {
+.companion-overlay .companion-avatar .companion-mouth.is-open {
   fill: #5a1f24;
 }
 
-.companion-overlay .loopy-heart-eyes path {
+.companion-overlay .companion-heart-eyes path {
   fill: #e2306c;
   stroke: none;
 }
 
-.companion-overlay .loopy-extra {
+.companion-overlay .companion-extra {
   pointer-events: none;
 }
 
-.companion-overlay .loopy .loopy-question,
-.companion-overlay .loopy .loopy-zs text {
-  fill: var(--loopy-clip-edge);
+.companion-overlay .companion-avatar .companion-question,
+.companion-overlay .companion-avatar .companion-zs text {
+  fill: var(--companion-clip-edge);
   font: 800 22px system-ui, sans-serif;
 }
 
-.companion-overlay .loopy .loopy-zs text {
+.companion-overlay .companion-avatar .companion-zs text {
   font-size: 13px;
-  animation: loopy-drift 2.4s ease-in-out infinite;
+  animation: companion-drift 2.4s ease-in-out infinite;
 }
 
-.companion-overlay .loopy .loopy-zs text:nth-child(2) {
+.companion-overlay .companion-avatar .companion-zs text:nth-child(2) {
   animation-delay: 0.4s;
 }
 
-.companion-overlay .loopy .loopy-zs text:nth-child(3) {
+.companion-overlay .companion-avatar .companion-zs text:nth-child(3) {
   animation-delay: 0.8s;
 }
 
-.companion-overlay .loopy .loopy-question {
-  animation: loopy-wobble 1.6s ease-in-out infinite;
+.companion-overlay .companion-avatar .companion-question {
+  animation: companion-wobble 1.6s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.companion-overlay .loopy .loopy-steam path {
+.companion-overlay .companion-avatar .companion-steam path {
   stroke: #c9cdd1;
   stroke-width: 3;
-  animation: loopy-drift 1s ease-in-out infinite;
+  animation: companion-drift 1s ease-in-out infinite;
 }
 
-.companion-overlay .loopy .loopy-tear {
+.companion-overlay .companion-avatar .companion-tear {
   fill: #7fc3ff;
   stroke: #3b82c4;
   stroke-width: 0.8;
-  animation: loopy-fall 2.2s ease-in infinite;
+  animation: companion-fall 2.2s ease-in infinite;
 }
 
-.companion-overlay .loopy-blush ellipse {
+.companion-overlay .companion-blush ellipse {
   fill: #ff7aa8;
   opacity: 0.55;
 }
 
-.companion-overlay .loopy-floating-hearts path {
+.companion-overlay .companion-floating-hearts path {
   fill: #ff4f93;
   stroke: none;
-  animation: loopy-drift 2s ease-in-out infinite;
+  animation: companion-drift 2s ease-in-out infinite;
 }
 
-.companion-overlay .loopy-floating-hearts path:nth-child(2) {
+.companion-overlay .companion-floating-hearts path:nth-child(2) {
   animation-delay: 0.7s;
 }
 
-@keyframes loopy-drift {
+@keyframes companion-drift {
   0%,
   100% {
     transform: translateY(0);
@@ -3269,7 +3270,7 @@ kbd {
   }
 }
 
-@keyframes loopy-wobble {
+@keyframes companion-wobble {
   0%,
   100% {
     transform: rotate(-10deg);
@@ -3279,7 +3280,7 @@ kbd {
   }
 }
 
-@keyframes loopy-fall {
+@keyframes companion-fall {
   0% {
     transform: translateY(0);
     opacity: 0;
@@ -3294,24 +3295,24 @@ kbd {
 }
 
 /* Head language for the moods that hold idle: a shake (mad), a droop (sad), a slow nod (sleepy). */
-.companion-overlay .loopy[data-state="idle"][data-mood="mad"] .loopy-face,
-.companion-overlay .loopy[data-state="blink"][data-mood="mad"] .loopy-face {
-  animation: loopy-shake 0.45s ease-in-out infinite;
+.companion-overlay .companion-avatar[data-state="idle"][data-mood="mad"] .companion-face,
+.companion-overlay .companion-avatar[data-state="blink"][data-mood="mad"] .companion-face {
+  animation: companion-shake 0.45s ease-in-out infinite;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="sad"] .loopy-face,
-.companion-overlay .loopy[data-state="blink"][data-mood="sad"] .loopy-face {
+.companion-overlay .companion-avatar[data-state="idle"][data-mood="sad"] .companion-face,
+.companion-overlay .companion-avatar[data-state="blink"][data-mood="sad"] .companion-face {
   animation: none;
   transform: translateY(3px) rotate(-4deg) scale(1.02, 0.97);
   transition: transform 500ms ease-out;
 }
 
-.companion-overlay .loopy[data-state="idle"][data-mood="sleepy"] .loopy-face,
-.companion-overlay .loopy[data-state="blink"][data-mood="sleepy"] .loopy-face {
-  animation: loopy-nod 3.6s ease-in-out infinite;
+.companion-overlay .companion-avatar[data-state="idle"][data-mood="sleepy"] .companion-face,
+.companion-overlay .companion-avatar[data-state="blink"][data-mood="sleepy"] .companion-face {
+  animation: companion-nod 3.6s ease-in-out infinite;
 }
 
-@keyframes loopy-shake {
+@keyframes companion-shake {
   0%,
   100% {
     transform: translateX(0) rotate(0);
@@ -3324,7 +3325,7 @@ kbd {
   }
 }
 
-@keyframes loopy-nod {
+@keyframes companion-nod {
   0%,
   100% {
     transform: rotate(-1deg);
@@ -3334,75 +3335,75 @@ kbd {
   }
 }
 
-.companion-overlay .loopy-eyes circle {
-  fill: var(--loopy-face-ink);
+.companion-overlay .companion-eyes circle {
+  fill: var(--companion-face-ink);
 }
 
-.companion-overlay .loopy-eyes .loopy-eye-white {
+.companion-overlay .companion-eyes .companion-eye-white {
   fill: #ffffff;
-  stroke: var(--loopy-face-ink);
+  stroke: var(--companion-face-ink);
   stroke-width: 1;
 }
 
-.companion-overlay .loopy-bead {
+.companion-overlay .companion-bead {
   stroke: #4b545b;
   stroke-width: 1;
 }
 
-.companion-overlay .loopy .loopy-brows path {
-  stroke: var(--loopy-face-ink);
+.companion-overlay .companion-avatar .companion-brows path {
+  stroke: var(--companion-face-ink);
   stroke-width: 3.4;
 }
 
-.companion-overlay .loopy-brows {
+.companion-overlay .companion-brows {
   transform-box: fill-box;
   transform-origin: center;
   transition: transform 200ms ease-out;
 }
 
-.companion-overlay .loopy-eyes {
+.companion-overlay .companion-eyes {
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.companion-overlay .loopy .loopy-mouth {
-  stroke: var(--loopy-face-ink);
+.companion-overlay .companion-avatar .companion-mouth {
+  stroke: var(--companion-face-ink);
   stroke-width: 2.8;
 }
 
 /* The head moves about the bottom of the bead (80, 105), in the drawing's units. */
-.companion-overlay .loopy-face {
+.companion-overlay .companion-face {
   transform-box: view-box;
   transform-origin: 80px 105px;
 }
 
-.companion-overlay .loopy-thought,
-.companion-overlay .loopy-sparkles {
+.companion-overlay .companion-thought,
+.companion-overlay .companion-sparkles {
   opacity: 0;
 }
 
-.companion-overlay .loopy-thought circle {
-  fill: var(--loopy-wire-edge);
+.companion-overlay .companion-thought circle {
+  fill: var(--companion-wire-edge);
 }
 
-.companion-overlay .loopy-sparkles path {
+.companion-overlay .companion-sparkles path {
   fill: #f2b544;
   stroke: none;
 }
 
 /* hidden: shrunk away */
-.companion-overlay .loopy[data-state="hidden"] .loopy-face {
+.companion-overlay .companion-avatar[data-state="hidden"] .companion-face {
   transform: scale(0.05);
   opacity: 0;
 }
 
 /* idle: a gentle bob with a tilt */
-.companion-overlay .loopy[data-state="idle"] .loopy-face,
-.companion-overlay .loopy[data-state="blink"] .loopy-face {
-  animation: loopy-face-bob 3.4s ease-in-out infinite;
+.companion-overlay .companion-avatar[data-state="idle"] .companion-face,
+.companion-overlay .companion-avatar[data-state="blink"] .companion-face {
+  animation: companion-face-bob 3.4s ease-in-out infinite;
 }
 
-@keyframes loopy-face-bob {
+@keyframes companion-face-bob {
   0%,
   100% {
     transform: translateY(0) rotate(-3deg);
@@ -3413,22 +3414,22 @@ kbd {
 }
 
 /* blink */
-.companion-overlay .loopy[data-state="blink"] .loopy-eyes {
-  animation: loopy-blink 160ms ease-in-out;
+.companion-overlay .companion-avatar[data-state="blink"] .companion-eyes {
+  animation: companion-blink 160ms ease-in-out;
 }
 
-@keyframes loopy-blink {
+@keyframes companion-blink {
   50% {
     transform: scaleY(0.1);
   }
 }
 
 /* appear: pop in, overshoot, settle */
-.companion-overlay .loopy[data-state="appear"] .loopy-face {
-  animation: loopy-face-pop-in 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+.companion-overlay .companion-avatar[data-state="appear"] .companion-face {
+  animation: companion-face-pop-in 650ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
-@keyframes loopy-face-pop-in {
+@keyframes companion-face-pop-in {
   0% {
     transform: scale(0.1);
     opacity: 0;
@@ -3446,41 +3447,41 @@ kbd {
 }
 
 /* think: the head tilts back, eyes up, a trail of dots */
-.companion-overlay .loopy[data-state="think"] .loopy-face {
+.companion-overlay .companion-avatar[data-state="think"] .companion-face {
   transform: translateY(-1px) rotate(-8deg);
   transition: transform 300ms ease-out;
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-eyes {
+.companion-overlay .companion-avatar[data-state="think"] .companion-eyes {
   transform: translate(2px, -2.5px);
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-thought {
+.companion-overlay .companion-avatar[data-state="think"] .companion-thought {
   opacity: 1;
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-brows {
+.companion-overlay .companion-avatar[data-state="think"] .companion-brows {
   transform: translateY(-2px) rotate(-4deg);
 }
 
-.companion-overlay .loopy[data-state="celebrate"] .loopy-brows,
-.companion-overlay .loopy[data-state="appear"] .loopy-brows {
+.companion-overlay .companion-avatar[data-state="celebrate"] .companion-brows,
+.companion-overlay .companion-avatar[data-state="appear"] .companion-brows {
   transform: translateY(-2.5px);
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-thought circle {
-  animation: loopy-dot 1.2s ease-in-out infinite;
+.companion-overlay .companion-avatar[data-state="think"] .companion-thought circle {
+  animation: companion-dot 1.2s ease-in-out infinite;
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-thought circle:nth-child(2) {
+.companion-overlay .companion-avatar[data-state="think"] .companion-thought circle:nth-child(2) {
   animation-delay: 0.2s;
 }
 
-.companion-overlay .loopy[data-state="think"] .loopy-thought circle:nth-child(3) {
+.companion-overlay .companion-avatar[data-state="think"] .companion-thought circle:nth-child(3) {
   animation-delay: 0.4s;
 }
 
-@keyframes loopy-dot {
+@keyframes companion-dot {
   0%,
   100% {
     opacity: 0.25;
@@ -3491,25 +3492,25 @@ kbd {
 }
 
 /* point: a nudge toward the bubble (up here; down in a top corner, see the overlay's rules) */
-.companion-overlay .loopy[data-state="point"] .loopy-face {
+.companion-overlay .companion-avatar[data-state="point"] .companion-face {
   transform: translate(2px, -4px) rotate(5deg);
   transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 
-.companion-overlay .loopy[data-state="point"] .loopy-eyes {
+.companion-overlay .companion-avatar[data-state="point"] .companion-eyes {
   transform: translate(2px, -1.5px);
 }
 
 /* celebrate: two hops and a shimmer */
-.companion-overlay .loopy[data-state="celebrate"] .loopy-face {
-  animation: loopy-face-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
+.companion-overlay .companion-avatar[data-state="celebrate"] .companion-face {
+  animation: companion-face-hop 1.2s cubic-bezier(0.3, 0.7, 0.4, 1);
 }
 
-.companion-overlay .loopy[data-state="celebrate"] .loopy-sparkles {
-  animation: loopy-sparkle 1.2s ease-out;
+.companion-overlay .companion-avatar[data-state="celebrate"] .companion-sparkles {
+  animation: companion-sparkle 1.2s ease-out;
 }
 
-@keyframes loopy-face-hop {
+@keyframes companion-face-hop {
   0%,
   45%,
   100% {
@@ -3528,7 +3529,7 @@ kbd {
   }
 }
 
-@keyframes loopy-sparkle {
+@keyframes companion-sparkle {
   20%,
   70% {
     opacity: 1;
@@ -3536,11 +3537,11 @@ kbd {
 }
 
 /* dismiss: a squash, then shrink away with a turn */
-.companion-overlay .loopy[data-state="dismiss"] .loopy-face {
-  animation: loopy-face-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
+.companion-overlay .companion-avatar[data-state="dismiss"] .companion-face {
+  animation: companion-face-fold 450ms cubic-bezier(0.6, 0, 0.8, 0.4) both;
 }
 
-@keyframes loopy-face-fold {
+@keyframes companion-face-fold {
   30% {
     transform: scale(1.08, 0.92);
   }
@@ -3551,7 +3552,7 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .companion-overlay .loopy *,
+  .companion-overlay .companion-avatar *,
   .companion-overlay .bubble {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
@@ -3561,14 +3562,14 @@ kbd {
 
 /* wow: the mouth says the word once, slowly — small "w", big "O", small "w" — and stays on the last
    "w". The tongue moves with it. */
-.companion-overlay .loopy[data-mood="wow"] .loopy-mouth,
-.companion-overlay .loopy[data-mood="wow"] .loopy-tongue {
+.companion-overlay .companion-avatar[data-mood="wow"] .companion-mouth,
+.companion-overlay .companion-avatar[data-mood="wow"] .companion-tongue {
   transform-box: view-box;
   transform-origin: 80px 92px;
-  animation: loopy-say-wow 2.6s ease-in-out 0.6s both;
+  animation: companion-say-wow 2.6s ease-in-out 0.6s both;
 }
 
-@keyframes loopy-say-wow {
+@keyframes companion-say-wow {
   0%,
   15% {
     transform: scale(0.45, 0.5);
@@ -3585,26 +3586,27 @@ kbd {
 
 /* ---------------------------------------------------------------- voice */
 
-/* Listening: the head swells gently with the microphone's level (--loopy-listen, 0–1) and glows. */
-.companion-overlay .loopy[data-voice="listening"] .loopy-head {
+/* Listening: the head swells gently with the microphone's level (--companion-listen, 0–1) and
+   glows. */
+.companion-overlay .companion-avatar[data-voice="listening"] .companion-head {
   transform-box: view-box;
   transform-origin: 80px 76px;
-  transform: scale(calc(1 + var(--loopy-listen, 0) * 0.07));
+  transform: scale(calc(1 + var(--companion-listen, 0) * 0.07));
   transition: transform 90ms ease-out;
 }
 
-.companion-overlay .loopy[data-voice="listening"] .loopy-bead {
-  filter: drop-shadow(0 0 calc(2px + var(--loopy-listen, 0) * 6px)
+.companion-overlay .companion-avatar[data-voice="listening"] .companion-bead {
+  filter: drop-shadow(0 0 calc(2px + var(--companion-listen, 0) * 6px)
     var(--accent));
 }
 
 /* Speaking: the mouth is the lip-sync shape; the wow mood's own mouth move stays off. */
-.companion-overlay .loopy[data-voice="speaking"] .loopy-mouth,
-.companion-overlay .loopy[data-voice="speaking"] .loopy-tongue {
+.companion-overlay .companion-avatar[data-voice="speaking"] .companion-mouth,
+.companion-overlay .companion-avatar[data-voice="speaking"] .companion-tongue {
   animation: none;
 }
 
-.companion-overlay .loopy[data-voice="speaking"] .loopy-tongue {
+.companion-overlay .companion-avatar[data-voice="speaking"] .companion-tongue {
   display: none;
 }
 
@@ -3621,83 +3623,84 @@ kbd {
   background: transparent;
 }
 .companion-overlay .bubble-actions button:first-child {
-  background: var(--loopy-wire);
+  background: var(--companion-wire);
   color: var(--accent-ink);
 }
-.companion-overlay .loopy-sparkles path {
+.companion-overlay .companion-sparkles path {
   fill: var(--amber);
 }
 /* The moods' extras drawn beside the head (?, z's, !, zap lines) are in the tint's dark edge,
    which a dark theme's terminal swallows: there they take the tint itself instead. */
-.companion-overlay .loopy .loopy-question,
-.companion-overlay .loopy .loopy-zs text,
-.companion-overlay .loopy .loopy-exclaim {
-  fill: light-dark(var(--loopy-clip-edge), var(--loopy-clip));
+.companion-overlay .companion-avatar .companion-question,
+.companion-overlay .companion-avatar .companion-zs text,
+.companion-overlay .companion-avatar .companion-exclaim {
+  fill: light-dark(var(--companion-clip-edge), var(--companion-clip));
 }
-.companion-overlay .loopy .loopy-zaps path {
-  stroke: light-dark(var(--loopy-clip-edge), var(--loopy-clip));
+.companion-overlay .companion-avatar .companion-zaps path {
+  stroke: light-dark(var(--companion-clip-edge), var(--companion-clip));
 }
 
 /* ---- The mood rim: the wire used to carry the mood's colour; now a thin glow of the tint rings
    the bead (none while neutral, and the listening glow takes over while listening). This one rule
    is the whole rim: delete it to go back to bare steel. */
-.companion-overlay .loopy:not([data-mood="neutral"]):not([data-voice="listening"]) .loopy-bead {
-  filter: drop-shadow(0 0 0.6px var(--loopy-clip))
-    drop-shadow(0 0 1.6px var(--loopy-clip));
+.companion-overlay .companion-avatar:not([data-mood="neutral"]):not([data-voice="listening"]) .companion-bead {
+  filter: drop-shadow(0 0 0.6px var(--companion-clip))
+    drop-shadow(0 0 1.6px var(--companion-clip));
   transition: filter 400ms ease-out;
 }
 
-/* ---- Loopy is hot (Qutty's own, not one of the example's moods; app/companion/loopy.tsx HotFace,
-   lib/sysstats.ts): the CPU or the GPU has been busy a while and Loopy is otherwise idle. A red-
-   orange tint (its rim and extras), a flushed bead, cheeks, the wow face's tongue out of a panting
-   mouth, sweat drops falling like the sad face's tear, heat rising like the mad face's steam, and a
-   slow, tired sway. The reduced-motion rules above (`.loopy *`) stop every move. */
-.companion-overlay .loopy[data-mood="hot"] {
-  --loopy-clip: #ff6a2b;
-  --loopy-clip-edge: #a8360c;
-  --loopy-clip-shine: #ffd9c2;
+/* ---- The companion is hot (Qutty's own, not one of the example's moods;
+   app/companion/companion-face.tsx HotFace, lib/sysstats.ts): the CPU or the GPU has been busy a
+   while and the companion is otherwise idle. A red-orange tint (its rim and extras), a flushed
+   bead, cheeks, the wow face's tongue out of a panting mouth, sweat drops falling like the sad
+   face's tear, heat rising like the mad face's steam, and a slow, tired sway. The reduced-motion
+   rules above (`.companion-avatar *`) stop every move. */
+.companion-overlay .companion-avatar[data-mood="hot"] {
+  --companion-clip: #ff6a2b;
+  --companion-clip-edge: #a8360c;
+  --companion-clip-shine: #ffd9c2;
 }
-.companion-overlay .loopy-hot-cheeks ellipse {
+.companion-overlay .companion-hot-cheeks ellipse {
   fill: #ff5a3c;
   opacity: 0.55;
 }
-.companion-overlay .loopy .loopy-sweat path {
+.companion-overlay .companion-avatar .companion-sweat path {
   fill: #9fd4ff;
   stroke: #3b82c4;
   stroke-width: 0.8;
-  animation: loopy-fall 2.2s ease-in infinite;
+  animation: companion-fall 2.2s ease-in infinite;
 }
-.companion-overlay .loopy .loopy-sweat path:nth-child(2) {
+.companion-overlay .companion-avatar .companion-sweat path:nth-child(2) {
   animation-delay: 1.1s;
 }
-.companion-overlay .loopy .loopy-heat path {
+.companion-overlay .companion-avatar .companion-heat path {
   stroke: light-dark(#e0632a, #ff8a4d);
   stroke-width: 2.2;
   opacity: 0.85;
-  animation: loopy-drift 1.4s ease-in-out infinite;
+  animation: companion-drift 1.4s ease-in-out infinite;
 }
-.companion-overlay .loopy .loopy-heat path:nth-child(2) {
+.companion-overlay .companion-avatar .companion-heat path:nth-child(2) {
   animation-delay: 0.45s;
 }
-.companion-overlay .loopy .loopy-heat path:nth-child(3) {
+.companion-overlay .companion-avatar .companion-heat path:nth-child(3) {
   animation-delay: 0.9s;
 }
 /* Panting: the open mouth and the tongue breathe together. */
-.companion-overlay .loopy[data-mood="hot"]:not([data-voice="speaking"]) .loopy-mouth,
-.companion-overlay .loopy[data-mood="hot"] .loopy-hot .loopy-tongue {
+.companion-overlay .companion-avatar[data-mood="hot"]:not([data-voice="speaking"]) .companion-mouth,
+.companion-overlay .companion-avatar[data-mood="hot"] .companion-hot .companion-tongue {
   transform-box: view-box;
   transform-origin: 80px 87px;
-  animation: loopy-pant 0.7s ease-in-out infinite;
+  animation: companion-pant 0.7s ease-in-out infinite;
 }
-.companion-overlay .loopy[data-mood="hot"][data-state="idle"] .loopy-face {
-  animation: loopy-hot-sway 3.2s ease-in-out infinite;
+.companion-overlay .companion-avatar[data-mood="hot"][data-state="idle"] .companion-face {
+  animation: companion-hot-sway 3.2s ease-in-out infinite;
 }
-@keyframes loopy-pant {
+@keyframes companion-pant {
   50% {
     transform: scale(1.04, 0.82);
   }
 }
-@keyframes loopy-hot-sway {
+@keyframes companion-hot-sway {
   0%,
   100% {
     transform: rotate(-2deg);
@@ -3707,23 +3710,23 @@ kbd {
   }
 }
 
-/* ---- Loopy sleeps, wakes and reacts (Qutty's own: Settings → Companion → Reactions;
-   app/companion/use-loopy-sleep.ts, use-loopy-reaction.ts). The faces are the example's sleepy,
-   success and sad moods, untouched: asleep only slows its nod and its z's, and waking up adds a
-   stretch of the head. */
-.companion-overlay .loopy[data-asleep][data-state="idle"] .loopy-face,
-.companion-overlay .loopy[data-asleep][data-state="blink"] .loopy-face {
+/* ---- The companion sleeps, wakes and reacts (Qutty's own: Settings → Companion → Reactions;
+   app/companion/use-companion-sleep.ts, use-companion-reaction.ts). The faces are the example's
+   sleepy, success and sad moods, untouched: asleep only slows its nod and its z's, and waking up
+   adds a stretch of the head. */
+.companion-overlay .companion-avatar[data-asleep][data-state="idle"] .companion-face,
+.companion-overlay .companion-avatar[data-asleep][data-state="blink"] .companion-face {
   animation-duration: 6.4s;
 }
-.companion-overlay .loopy[data-asleep] .loopy-zs text {
+.companion-overlay .companion-avatar[data-asleep] .companion-zs text {
   animation-duration: 4.2s;
 }
-.companion-overlay .loopy[data-stretch] .loopy-head {
+.companion-overlay .companion-avatar[data-stretch] .companion-head {
   transform-box: view-box;
   transform-origin: 80px 105px;
-  animation: loopy-stretch 900ms ease-out;
+  animation: companion-stretch 900ms ease-out;
 }
-@keyframes loopy-stretch {
+@keyframes companion-stretch {
   0%,
   100% {
     scale: 1 1;
@@ -3735,106 +3738,109 @@ kbd {
     scale: 1.05 0.96;
   }
 }
-/* The line beside Loopy when it reacts ("✓ shell-2: cargo test (1m 4s)"), like the voice note. */
-.companion-overlay .loopy-reaction {
+/* The line beside the companion when it reacts ("✓ shell-2: cargo test (1m 4s)"), like the voice
+   note. */
+.companion-overlay .companion-reaction {
   margin: 0 0 6px 4px;
   padding: 3px 9px;
   max-width: 240px;
   border-radius: 999px;
-  background: var(--loopy-bubble);
-  border: 1.5px solid var(--loopy-bubble-edge);
-  color: var(--loopy-ink);
+  background: var(--companion-bubble);
+  border: 1.5px solid var(--companion-bubble-edge);
+  color: var(--companion-ink);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
 }
-.companion-overlay .loopy-reaction[data-kind="celebrate"] {
+.companion-overlay .companion-reaction[data-kind="celebrate"] {
   border-color: var(--accent);
 }
-.companion-overlay .loopy-reaction[data-kind="sad"] {
+.companion-overlay .companion-reaction[data-kind="sad"] {
   border-color: var(--red);
 }
-.companion-overlay[data-corner^="top"] .loopy-reaction {
+.companion-overlay[data-corner^="top"] .companion-reaction {
   margin: 6px 0 0 4px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .companion-overlay .loopy[data-stretch] .loopy-head {
+  .companion-overlay .companion-avatar[data-stretch] .companion-head {
     animation: none;
   }
 }
 
-/* ---- Lively (Settings → Companion; app/companion/use-loopy-life.ts): the pupils follow the
+/* ---- Lively (Settings → Companion; app/companion/use-companion-life.ts): the pupils follow the
    pointer, and the neutral face's micro-expressions (`data-expr`). Only transforms of the face's
    parts, so the shapes stay the example's. The gaze offsets are in drawing units, set on the
    avatar's holder by the pointer loop (which eases them itself); only the neutral face's dot
    pupils follow them, and not while thinking (the eyes look up then). The micro-expressions use
    the separate `translate`, `scale` and `rotate` properties, eased here. */
-.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-state="think"]) .loopy-eyes circle:nth-of-type(1) {
-  transform: translate(var(--loopy-gaze-lx, 0px), var(--loopy-gaze-ly, 0px));
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(1) {
+  transform: translate(var(--companion-gaze-lx, 0px), var(--companion-gaze-ly,
+    0px));
 }
-.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-state="think"]) .loopy-eyes circle:nth-of-type(2) {
-  transform: translate(var(--loopy-gaze-rx, 0px), var(--loopy-gaze-ry, 0px));
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(2) {
+  transform: translate(var(--companion-gaze-rx, 0px), var(--companion-gaze-ry,
+    0px));
 }
-.companion-overlay .loopy[data-lively] .loopy-eyes circle,
-.companion-overlay .loopy[data-lively] .loopy-brows path {
+.companion-overlay .companion-avatar[data-lively] .companion-eyes circle,
+.companion-overlay .companion-avatar[data-lively] .companion-brows path {
   transition: translate 260ms ease-out;
 }
-.companion-overlay .loopy[data-lively][data-mood="neutral"] .loopy-mouth {
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"] .companion-mouth {
   transform-box: view-box;
   transform-origin: 80px 88px;
   transition: scale 320ms ease-out;
 }
-.companion-overlay .loopy[data-lively][data-mood="neutral"]:not([data-voice]) .loopy-head {
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-voice]) .companion-head {
   transform-box: view-box;
   transform-origin: 80px 105px;
   transition: rotate 450ms ease-in-out;
 }
 /* A glance aside (each pupil to the same side, inside its eye white). */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-left"] .loopy-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(1) {
   translate: -3.4px 0;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-left"] .loopy-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(2) {
   translate: -1.4px 0;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-right"] .loopy-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(1) {
   translate: 1.4px 0;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="glance-right"] .loopy-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(2) {
   translate: 3.4px 0;
 }
 /* A thoughtful look up and aside, the brows lifting. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(1) {
   translate: -0.6px -5px;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(2) {
   translate: 3px -5px;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="look-up"] .loopy-brows path {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-brows path {
   translate: 0 -1.5px;
 }
 /* A slow brow raise, the right one higher. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="brow-raise"] .loopy-brows path {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="brow-raise"] .companion-brows path {
   translate: 0 -1px;
   transition-duration: 600ms;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="brow-raise"] .loopy-brows path:nth-child(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="brow-raise"] .companion-brows path:nth-child(2) {
   translate: 0 -3.2px;
 }
 /* A small smile: the mouth a little wider and deeper. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="smile"] .loopy-mouth {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="smile"] .companion-mouth {
   scale: 1.15 1.5;
 }
 /* A curious tilt of the head. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="tilt"] .loopy-head {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="tilt"] .companion-head {
   rotate: 8deg;
 }
 /* A quick double blink. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="double-blink"] .loopy-eyes {
-  animation: loopy-double-blink 600ms ease-in-out;
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="double-blink"] .companion-eyes {
+  animation: companion-double-blink 600ms ease-in-out;
 }
-@keyframes loopy-double-blink {
+@keyframes companion-double-blink {
   0%,
   40%,
   60%,
@@ -3847,23 +3853,23 @@ kbd {
   }
 }
 /* A soft "hm": the mouth pressed small and flat, a brow down a touch. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="hm"] .loopy-mouth {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="hm"] .companion-mouth {
   scale: 0.55 0.3;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="hm"] .loopy-brows path:nth-child(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="hm"] .companion-brows path:nth-child(1) {
   translate: 0 1.2px;
 }
 /* Delighted, while the pointer is over the face: a big smile, the brows up. */
-.companion-overlay .loopy[data-mood="neutral"][data-expr="delighted"] .loopy-mouth {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="delighted"] .companion-mouth {
   scale: 1.25 1.9;
 }
-.companion-overlay .loopy[data-mood="neutral"][data-expr="delighted"] .loopy-brows path {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="delighted"] .companion-brows path {
   translate: 0 -2.4px;
 }
 
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the
-   bubble on top, Loopy below it on the left). Clicks pass through it except on Loopy, the bubble
-   and the chat box. */
+   bubble on top, the companion below it on the left). Clicks pass through it except on the
+   companion, the bubble and the chat box. */
 .companion-overlay {
   position: absolute;
   z-index: 400; /* over the tiles, under the menus and the settings popover */
@@ -3899,24 +3905,24 @@ kbd {
 .companion-overlay .companion-chat {
   pointer-events: auto;
 }
-/* Dragged to another corner (app/companion/use-loopy-drag.ts): it follows the pointer, then snaps.
-   A touch on the bead drags it rather than panning. */
+/* Dragged to another corner (app/companion/use-companion-drag.ts): it follows the pointer, then
+   snaps. A touch on the bead drags it rather than panning. */
 .companion-overlay .poke {
   touch-action: none;
 }
 .companion-overlay[data-dragging] .poke {
   cursor: grabbing;
 }
-/* The bubble stays over the extras that rise beside Loopy's head. */
+/* The bubble stays over the extras that rise beside the companion's head. */
 .companion-overlay .bubble-slot {
   position: relative;
   z-index: 1;
 }
-/* The nudge of `point` goes toward the bubble, which is under Loopy in a top corner. */
-.companion-overlay[data-corner^="top"] .loopy[data-state="point"] .loopy-face {
+/* The nudge of `point` goes toward the bubble, which is under the companion in a top corner. */
+.companion-overlay[data-corner^="top"] .companion-avatar[data-state="point"] .companion-face {
   transform: translate(2px, 4px) rotate(5deg);
 }
-/* Under Loopy (top corners) the tail points up at it instead of down. */
+/* Under the companion (top corners) the tail points up at it instead of down. */
 .companion-overlay[data-corner^="top"] .bubble-slot {
   padding: 4px 0 0 4px;
 }
@@ -3937,7 +3943,7 @@ kbd {
 }
 .companion-overlay .bubble-from > span:first-child {
   font-weight: 600;
-  color: var(--loopy-wire-edge);
+  color: var(--companion-wire-edge);
 }
 .companion-overlay .bubble-note {
   margin: 4px 0 0;
@@ -3953,8 +3959,8 @@ kbd {
   max-width: 100%;
   margin: 0 0 6px 4px;
   padding: 3px;
-  background: var(--loopy-bubble);
-  border: 1.5px solid var(--loopy-bubble-edge);
+  background: var(--companion-bubble);
+  border: 1.5px solid var(--companion-bubble-edge);
   border-radius: 14px;
   box-shadow: 0 3px 10px rgb(0 0 0 / 0.08);
 }
@@ -3968,7 +3974,7 @@ kbd {
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--loopy-ink);
+  color: var(--companion-ink);
   font: inherit;
   font-size: 13.5px;
   user-select: text;
@@ -3980,9 +3986,9 @@ kbd {
 .companion-overlay .companion-chat-send {
   width: 26px;
   padding: 0;
-  border: 1.5px solid var(--loopy-wire);
+  border: 1.5px solid var(--companion-wire);
   border-radius: 999px;
-  background: var(--loopy-wire);
+  background: var(--companion-wire);
   color: var(--accent-ink);
   cursor: pointer;
 }
@@ -3991,7 +3997,7 @@ kbd {
   cursor: default;
 }
 
-/* The brain's status, a dot beside Loopy. */
+/* The brain's status, a dot beside the companion. */
 .companion-overlay .companion-status {
   align-self: flex-end;
   width: 8px;
@@ -3999,15 +4005,15 @@ kbd {
   margin: 0 0 14px 2px;
   border-radius: 50%;
   background: var(--text-3);
-  box-shadow: 0 0 0 2px var(--loopy-bubble);
+  box-shadow: 0 0 0 2px var(--companion-bubble);
 }
 .companion-overlay .companion-status[data-state="ready"] {
-  background: var(--loopy-wire);
+  background: var(--companion-wire);
 }
 .companion-overlay .companion-status[data-state="starting"],
 .companion-overlay .companion-status[data-state="thinking"] {
   background: var(--amber);
-  animation: loopy-dot 1.2s ease-in-out infinite;
+  animation: companion-dot 1.2s ease-in-out infinite;
 }
 .companion-overlay .companion-status[data-state="error"] {
   background: var(--red);
@@ -4018,7 +4024,7 @@ kbd {
 }
 
 /* The app's own reduced-motion switch, as the example's media query. */
-.app.reduced-motion .companion-overlay .loopy *,
+.app.reduced-motion .companion-overlay .companion-avatar *,
 .app.reduced-motion .companion-overlay .bubble,
 .app.reduced-motion .companion-overlay .companion-status {
   animation-duration: 1ms !important;
@@ -4121,8 +4127,8 @@ kbd {
   margin-top: 6px;
 }
 
-/* Voice: the mic, Summarize and Stop buttons beside Loopy, the voice note, and a transcript under
-   review in the chat box (app/companion/companion-overlay.tsx). */
+/* Voice: the mic, Summarize and Stop buttons beside the companion, the voice note, and a
+   transcript under review in the chat box (app/companion/companion-overlay.tsx). */
 .companion-overlay .voice-buttons {
   display: flex;
   flex-direction: column;
@@ -4138,10 +4144,10 @@ kbd {
   width: 26px;
   height: 26px;
   padding: 0;
-  border: 1.5px solid var(--loopy-bubble-edge);
+  border: 1.5px solid var(--companion-bubble-edge);
   border-radius: 999px;
-  background: var(--loopy-bubble);
-  color: var(--loopy-wire-edge);
+  background: var(--companion-bubble);
+  color: var(--companion-wire-edge);
   cursor: pointer;
   touch-action: none;
 }
@@ -4158,7 +4164,7 @@ kbd {
   background: var(--red);
   border-color: var(--red);
   color: #fff;
-  animation: loopy-dot 1.2s ease-in-out infinite;
+  animation: companion-dot 1.2s ease-in-out infinite;
 }
 .companion-overlay .voice-mic[data-phase="transcribing"] {
   background: var(--amber);
@@ -4173,9 +4179,9 @@ kbd {
   padding: 3px 9px;
   max-width: 240px;
   border-radius: 999px;
-  background: var(--loopy-bubble);
-  border: 1.5px solid var(--loopy-bubble-edge);
-  color: var(--loopy-ink);
+  background: var(--companion-bubble);
+  border: 1.5px solid var(--companion-bubble-edge);
+  color: var(--companion-ink);
   font-size: 12px;
   pointer-events: none;
 }
@@ -4203,16 +4209,16 @@ kbd {
 }
 .companion-overlay .voice-review-actions button {
   padding: 2px 9px;
-  border: 1.5px solid var(--loopy-wire-edge);
+  border: 1.5px solid var(--companion-wire-edge);
   border-radius: 999px;
   background: #fff;
-  color: var(--loopy-wire-edge);
+  color: var(--companion-wire-edge);
   font-size: 12px;
   cursor: pointer;
 }
 .companion-overlay .voice-review-actions button:first-child {
-  background: var(--loopy-wire);
-  border-color: var(--loopy-wire);
+  background: var(--companion-wire);
+  border-color: var(--companion-wire);
   color: #fff;
 }
 .companion-overlay .voice-review-actions button:disabled {
