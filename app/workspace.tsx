@@ -48,7 +48,7 @@ import {
   commandForKey,
   detectPlatform,
   isModifierRelease,
-  isPushToTalk,
+  isTalkKey,
   type KeyCommand,
   type KeyPlatform,
   pttAvailable,
@@ -107,6 +107,8 @@ import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
 import { useVoice } from "./use-voice.ts";
+import { dictating, DictatingBadge, DictationNote } from "./dictation.tsx";
+import type { DictateOutcome } from "../lib/voice/controller.ts";
 import { useSysStats } from "./use-sysstats.ts";
 import { useReactions } from "./use-reactions.ts";
 import { HOT_LINE, maySayHot, thresholds } from "../lib/sysstats.ts";
@@ -118,7 +120,7 @@ import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
 import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
-import { webEngine } from "../lib/web/engine.ts";
+import { webEngine, type WebViewHandle } from "../lib/web/engine.ts";
 import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
 import {
   type OllamaPair,
@@ -347,11 +349,16 @@ function WorkspaceView() {
     });
   }, [tileControl]);
 
-  // What web tiles drive their page through.
+  // What web tiles drive their page through; their mounted views, for dictation.
+  const webViewsRef = useRef(new Map<string, WebViewHandle>());
   const webHooks = useMemo<WebTileHooks>(() => ({
     engine: webEngine(),
     onPage: (id, page) => dispatch({ type: "webPage", id, page }),
     openExternal: (url) => linksRef.current.openInBrowser(url),
+    onView: (id, view) => {
+      if (view) webViewsRef.current.set(id, view);
+      else webViewsRef.current.delete(id);
+    },
   }), []);
 
   const session = useSession({
@@ -415,19 +422,27 @@ function WorkspaceView() {
   });
   const broadcastRef = useRef(broadcast);
   broadcastRef.current = broadcast;
+  const companionShown =
+    effectiveMode(state.settings.companion.mode) === "window";
   const voice = useVoice({
     backend: managerRef.current?.backend,
     settings: state.settings.voice,
     platform,
-    enabled: effectiveMode(state.settings.companion.mode) === "window",
-    typeIntoFocused: (text) => {
+    enabled: companionShown,
+    // A dictation goes to the focused tile: its terminal, or a web tile's page.
+    deliverToFocused: (text): DictateOutcome => {
       const manager = managerRef.current;
       const id = stateRef.current.focusedId;
-      const pty = id ? manager?.ptyId(id) : undefined;
-      if (!manager || !pty) return false;
+      if (!manager || !id) return "no-tile";
+      if (isWebTile(stateRef.current.terminals, id)) {
+        const view = webViewsRef.current.get(id);
+        return view?.insertText(text) ? "typed" : "not-editable";
+      }
+      const pty = manager.ptyId(id);
+      if (!pty) return "no-tile";
       void manager.backend.write(pty, text).catch(() => {});
-      manager.focus(id!);
-      return true;
+      manager.focus(id);
+      return "typed";
     },
   });
   // The lite system monitor: the bar meter, and Loopy's hot face (with Lively on).
@@ -466,8 +481,8 @@ function WorkspaceView() {
   });
   const commandDoneRef = useRef(reactions.onCommandDone);
   commandDoneRef.current = reactions.onCommandDone;
-  const pttKeyRef = useRef(state.settings.voice.pttKey);
-  pttKeyRef.current = state.settings.voice.pttKey;
+  const talkKeysRef = useRef(state.settings.voice);
+  talkKeysRef.current = state.settings.voice;
 
   const runCommand = useCallback((cmd: KeyCommand) => {
     const now = Date.now();
@@ -579,7 +594,7 @@ function WorkspaceView() {
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
-        isPushToTalk(e, pttKeyRef.current, plat),
+        isTalkKey(e, talkKeysRef.current, plat),
     });
     managerRef.current = manager;
     if (testMode) installE2eHooks(manager, spy);
@@ -908,14 +923,20 @@ function WorkspaceView() {
                   onForwards={() => setForwardsFor(entry.id)}
                 />
               )}
-            renderHeadLead={(entry) =>
-              broadcast.on && !entry.web && (
-                <BroadcastCheck
-                  checked={broadcast.members.has(entry.id)}
-                  ssh={entry.ssh !== undefined}
-                  onChange={(on) => broadcast.setChecked(entry.id, on)}
-                />
-              )}
+            renderHeadLead={(entry) => (
+              <>
+                {broadcast.on && !entry.web && (
+                  <BroadcastCheck
+                    checked={broadcast.members.has(entry.id)}
+                    ssh={entry.ssh !== undefined}
+                    onChange={(on) => broadcast.setChecked(entry.id, on)}
+                  />
+                )}
+                {entry.id === focusedId && dictating(voice.state) && (
+                  <DictatingBadge state={voice.state} level={voice.level} />
+                )}
+              </>
+            )}
             broadcastIds={broadcast.on ? broadcast.members : undefined}
             renderOverlay={(entry, focused) =>
               entry.ssh && (
@@ -929,7 +950,8 @@ function WorkspaceView() {
               )}
           />
         )}
-        {manager && effectiveMode(settings.companion.mode) === "window" && (
+        {manager && !companionShown && <DictationNote state={voice.state} />}
+        {manager && companionShown && (
           <CompanionOverlay
             backend={manager.backend}
             corner={settings.companion.corner}

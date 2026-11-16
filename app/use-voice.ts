@@ -3,6 +3,10 @@
 // key — through the speech-to-text engine picked in Settings → Voice. The transcript goes to the
 // companion (`companionSend(text, "voice")`), to the summary request, or, in dictate mode, is typed
 // into the focused tile. Talking (or pressing the mic) stops whatever is being said: barge-in.
+// The hold-to-dictate key (Settings → Voice, off until picked) is a second hold key: its capture
+// is always typed into the focused tile (a one-shot dictation), and it works with the companion
+// off too — the controller lives here whenever there is a backend, not only with Loopy shown.
+// Review (Send / Edit / Cancel) happens only while the overlay is shown to hold the review box.
 // While it listens, the microphone's level (0–1, about 20 times a second) is followed for Loopy's
 // pulse, and drops back to 0 when listening stops.
 //
@@ -20,6 +24,7 @@ import {
   type VoiceBackend,
 } from "../lib/voice/client.ts";
 import {
+  type DictateOutcome,
   IDLE_VOICE,
   VoiceController,
   type VoiceState,
@@ -34,9 +39,10 @@ import {
 } from "../lib/voice/engines.ts";
 import { anyAlertOn, tileAlerts } from "../lib/voice/alerts.ts";
 import { SUMMARIZE_PROMPT } from "../lib/voice/routing.ts";
-import type { VoiceSettings } from "../lib/voice/settings.ts";
+import type { PttKey, VoiceSettings } from "../lib/voice/settings.ts";
 import { answerToSpeak, SpeechQueue } from "../lib/voice/tts.ts";
 import {
+  dictateKeyAvailable,
   isPushToTalk,
   isPushToTalkRelease,
   type KeyPlatform,
@@ -46,10 +52,13 @@ export interface UseVoiceOptions {
   backend: PtyBackend | undefined;
   settings: VoiceSettings;
   platform: KeyPlatform;
-  /** Whether the companion overlay is shown (push-to-talk needs it). */
+  /**
+   * Whether the companion overlay is shown: the push-to-talk key and transcript review need it;
+   * the hold-to-dictate key does not.
+   */
   enabled: boolean;
-  /** Type `text` into the focused tile; false when no tile has the focus. */
-  typeIntoFocused(text: string): boolean;
+  /** Type `text` into the focused tile (its terminal, or a web tile's page). */
+  deliverToFocused(text: string): DictateOutcome;
 }
 
 /** What the overlay and Settings → Voice use. */
@@ -123,13 +132,20 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     if (!voice || !backend || !keys) return undefined;
     return new VoiceController({
       engine: () => sttEngine(optsRef.current.settings.sttEngine, voice, keys),
-      settings: () => optsRef.current.settings,
+      // Review only where the review box can be shown (on Loopy).
+      settings: () => {
+        const { settings, enabled } = optsRef.current;
+        return {
+          dictate: settings.dictate,
+          review: settings.review && enabled,
+        };
+      },
       bargeIn: () => void queue.interrupt(),
       toCompanion: (text) =>
         void backend.companionSend(text, "voice").catch(() => {}),
       summarize: () =>
         void backend.companionSend(SUMMARIZE_PROMPT, "voice").catch(() => {}),
-      dictate: (text) => optsRef.current.typeIntoFocused(text),
+      dictate: (text) => optsRef.current.deliverToFocused(text),
       onState: setState,
     });
   }, [voice, backend, queue, keys]);
@@ -179,45 +195,19 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     if (!speakAnswers) void queue.interrupt();
   }, [speakAnswers]);
 
-  // The hold-to-talk key: intercepted at the window (capture) before xterm, like the workspace's
-  // shortcuts; xterm's own handler declines it (app/workspace.tsx `isWorkspaceShortcut`).
-  const { pttKey } = opts.settings;
+  // The hold-to-talk key (with the overlay shown) and the hold-to-dictate key (always, once
+  // picked): intercepted at the window (capture) before xterm, like the workspace's shortcuts;
+  // xterm's own handler declines them (app/workspace.tsx `isWorkspaceShortcut`).
+  const { pttKey, dictateKey } = opts.settings;
   const { platform, enabled } = opts;
-  useEffect(() => {
-    if (!controller || !enabled) return;
-    let downAt: number | undefined;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!isPushToTalk(e, pttKey, platform)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.repeat || downAt !== undefined) return;
-      downAt = Date.now();
-      void controller.press();
-    };
-    const end = () => {
-      if (downAt === undefined) return;
-      const held = Date.now() - downAt;
-      downAt = undefined;
-      void controller.release(held);
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (downAt === undefined || !isPushToTalkRelease(e, pttKey, platform)) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      end();
-    };
-    globalThis.addEventListener("keydown", onKeyDown, true);
-    globalThis.addEventListener("keyup", onKeyUp, true);
-    globalThis.addEventListener("blur", end);
-    return () => {
-      globalThis.removeEventListener("keydown", onKeyDown, true);
-      globalThis.removeEventListener("keyup", onKeyUp, true);
-      globalThis.removeEventListener("blur", end);
-      if (downAt !== undefined) void controller.cancel();
-    };
-  }, [controller, pttKey, platform, enabled]);
+  useHoldKey(controller, pttKey, platform, enabled, false);
+  useHoldKey(
+    controller,
+    dictateKey,
+    platform,
+    dictateKeyAvailable(dictateKey, pttKey, platform),
+    true,
+  );
 
   return {
     state,
@@ -236,4 +226,52 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     },
     alert: (text) => queue.say(text, "alert"),
   };
+}
+
+/**
+ * Hold `key` to talk: down presses the controller (`dictate`: a one-shot dictation), up (its key,
+ * Shift or the modifier let go, or the window losing focus) releases it after the time held.
+ */
+function useHoldKey(
+  controller: VoiceController | undefined,
+  key: PttKey,
+  platform: KeyPlatform,
+  active: boolean,
+  dictate: boolean,
+): void {
+  useEffect(() => {
+    if (!controller || !active) return;
+    let downAt: number | undefined;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPushToTalk(e, key, platform)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat || downAt !== undefined) return;
+      downAt = Date.now();
+      void controller.press(dictate ? { dictate } : {});
+    };
+    const end = () => {
+      if (downAt === undefined) return;
+      const held = Date.now() - downAt;
+      downAt = undefined;
+      void controller.release(held);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (downAt === undefined || !isPushToTalkRelease(e, key, platform)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      end();
+    };
+    globalThis.addEventListener("keydown", onKeyDown, true);
+    globalThis.addEventListener("keyup", onKeyUp, true);
+    globalThis.addEventListener("blur", end);
+    return () => {
+      globalThis.removeEventListener("keydown", onKeyDown, true);
+      globalThis.removeEventListener("keyup", onKeyUp, true);
+      globalThis.removeEventListener("blur", end);
+      if (downAt !== undefined) void controller.cancel();
+    };
+  }, [controller, key, platform, active, dictate]);
 }

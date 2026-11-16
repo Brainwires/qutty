@@ -17,6 +17,12 @@
  * layout, scale transforms, scroll and devicePixelRatio changes (at most one `setBounds` per
  * frame) and hides the view while the element is out of the DOM or `display: none`.
  *
+ * Dictation: `insertText` types a dictated transcript into the page's focused field (the
+ * hold-to-dictate key, app/use-voice.ts). The iframe can do it only for a same-origin page, which
+ * {@linkcode canEmbedInFrame} never shows today, so in practice it answers `false` and the tile
+ * says it can't type into the page; the native engine will implement it through its own text
+ * input (the coming web view's `evaluate` or an insert-text call) once Denext ships it.
+ *
  * Overlays: a native view draws above all HTML. `capabilities.drawsAboveHtml` tells the tile to
  * hide it (`setVisible(false)`) while an HTML menu or dialog is open (lib/web/overlays.ts).
  *
@@ -99,6 +105,15 @@ export interface WebViewHandle {
   setOccluded(occluded: boolean): Promise<void>;
   /** Give the page the keyboard. */
   focus(): Promise<void>;
+  /**
+   * Type `text` into the page's focused editable element (an input, a textarea, a contenteditable)
+   * as if typed: the page sees its input event. `false` when it cannot: a page it may not reach
+   * into (cross-origin), or nothing editable has the focus.
+   *
+   * TODO(native engine): implement with the native view's text input (Denext's coming
+   * `evaluate`, or an insert-text call on the handle).
+   */
+  insertText(text: string): boolean;
   state(): Promise<WebViewState>;
   on<K extends keyof WebViewEventMap>(
     event: K,
@@ -120,6 +135,64 @@ export interface WebEngine {
 /** The iframe's sandbox: scripts, forms, popups, dialogs and downloads, no top navigation. */
 export const FRAME_SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads";
+
+/** The `<input>` types whose text has a selection (`setRangeText` works on them). */
+const RANGE_INPUTS = new Set(["text", "search", "url", "tel", "password"]);
+/** The `<input>` types that take typed text. */
+const TEXT_INPUTS = new Set([...RANGE_INPUTS, "email"]);
+
+/** The part of an element {@linkcode insertIntoDocument} reads. */
+type EditableLike = Element & {
+  isContentEditable?: boolean;
+  disabled?: boolean;
+  readOnly?: boolean;
+  type?: string;
+};
+
+/** Whether `el` takes typed text: a writable text input or textarea, or contenteditable. */
+function isEditable(el: EditableLike): boolean {
+  if (el.isContentEditable) return true;
+  const tag = el.tagName.toUpperCase();
+  if (tag !== "TEXTAREA" && tag !== "INPUT") return false;
+  if (el.disabled || el.readOnly) return false;
+  return tag === "TEXTAREA" ||
+    TEXT_INPUTS.has((el.type ?? "text").toLowerCase());
+}
+
+/**
+ * Type `text` into `doc`'s focused editable element, as {@linkcode WebViewHandle.insertText}
+ * describes: `execCommand("insertText")` (the page's undo history and input event, as typing
+ * does), else `setRangeText` at the selection and an input event. `false` when nothing editable
+ * has the focus.
+ */
+export function insertIntoDocument(doc: Document, text: string): boolean {
+  const el = doc.activeElement as EditableLike | null;
+  if (!el || !isEditable(el)) return false;
+  try {
+    if (doc.execCommand("insertText", false, text)) return true;
+  } catch { /* not supported: the fallback below */ }
+  const field = el as unknown as HTMLInputElement;
+  const tag = el.tagName.toUpperCase();
+  if (
+    tag !== "TEXTAREA" &&
+    !(tag === "INPUT" && RANGE_INPUTS.has((el.type ?? "text").toLowerCase()))
+  ) return false;
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? start;
+  field.setRangeText(text, start, end, "end");
+  const view = doc.defaultView as (typeof globalThis) | null;
+  const Input = view?.InputEvent ?? globalThis.InputEvent;
+  el.dispatchEvent(
+    Input
+      ? new Input("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: text,
+      })
+      : new Event("input", { bubbles: true }),
+  );
+  return true;
+}
 
 type Listeners = { [K in keyof WebViewEventMap]?: Set<(ev: never) => void> };
 
@@ -289,6 +362,16 @@ class IframeView implements WebViewHandle {
   focus(): Promise<void> {
     this.#frame?.focus();
     return Promise.resolve();
+  }
+
+  /** Only a same-origin page: a cross-origin frame has no `contentDocument` for its parent. */
+  insertText(text: string): boolean {
+    if (this.#closed || !this.#frame) return false;
+    let doc: Document | null = null;
+    try {
+      doc = this.#frame.contentDocument;
+    } catch { /* cross-origin */ }
+    return doc ? insertIntoDocument(doc, text) : false;
   }
 
   state(): Promise<WebViewState> {

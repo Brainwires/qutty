@@ -150,7 +150,22 @@ export function pttAvailable(key: PttKey, platform: KeyPlatform): boolean {
   return key !== "Mod+Shift+Space" || platform === "mac";
 }
 
-/** Whether a keydown is the push-to-talk shortcut `key` (held: a repeat is still it). */
+/**
+ * Whether the hold-to-dictate key `dictateKey` can be used on `platform` beside push-to-talk key
+ * `pttKey`: one of the push-to-talk choices ({@linkcode pttAvailable}), and never the same key.
+ */
+export function dictateKeyAvailable(
+  dictateKey: PttKey,
+  pttKey: PttKey,
+  platform: KeyPlatform,
+): boolean {
+  return pttAvailable(dictateKey, platform) && dictateKey !== pttKey;
+}
+
+/**
+ * Whether a keydown is the push-to-talk shortcut `key` (held: a repeat is still it). The
+ * hold-to-dictate key is one of the same choices and is matched by this too.
+ */
 export function isPushToTalk(
   e: KeyLike,
   key: PttKey,
@@ -162,8 +177,8 @@ export function isPushToTalk(
 }
 
 /**
- * Whether a keyup ends a push-to-talk hold of `key`: its own key, Shift or the primary modifier
- * let go.
+ * Whether a keyup ends a push-to-talk (or hold-to-dictate) hold of `key`: its own key, Shift or
+ * the primary modifier let go.
  */
 export function isPushToTalkRelease(
   e: { key: string; code: string },
@@ -173,4 +188,18 @@ export function isPushToTalkRelease(
   if (!pttAvailable(key, platform)) return false;
   return e.code === PTT_CODES[key as Exclude<PttKey, "off">] ||
     e.key === "Shift" || isModifierRelease(e, platform);
+}
+
+/**
+ * Whether a keydown is either talk key: push-to-talk `voice.pttKey` or hold-to-dictate
+ * `voice.dictateKey` (what xterm must decline, like the workspace shortcuts).
+ */
+export function isTalkKey(
+  e: KeyLike,
+  voice: { pttKey: PttKey; dictateKey: PttKey },
+  platform: KeyPlatform,
+): boolean {
+  return isPushToTalk(e, voice.pttKey, platform) ||
+    (dictateKeyAvailable(voice.dictateKey, voice.pttKey, platform) &&
+      isPushToTalk(e, voice.dictateKey, platform));
 }

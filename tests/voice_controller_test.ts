@@ -1,10 +1,12 @@
 // Push-to-talk (lib/voice/controller.ts) over a fake STT engine: barge-in on press, the transcript
 // routed on release (answer → the companion, the summary phrase, dictate → the focused tile),
 // review (Send / Edit / Cancel), the latch click, a release while the mic is still starting,
-// cancel, and engines that cannot run.
+// cancel, engines that cannot run, and the hold-to-dictate key's one-shot dictation.
 
 import { assert, assertEquals } from "@std/assert";
 import {
+  DICTATE_MISS,
+  type DictateOutcome,
   type SttEngine,
   VoiceController,
   type VoiceState,
@@ -40,7 +42,10 @@ class FakeStt implements SttEngine {
   }
 }
 
-function setup(settings = { review: false, dictate: false }, focused = true) {
+function setup(
+  settings = { review: false, dictate: false },
+  focused: boolean | DictateOutcome = true,
+) {
   const stt = new FakeStt();
   const log: string[] = [];
   const states: VoiceState[] = [];
@@ -52,7 +57,11 @@ function setup(settings = { review: false, dictate: false }, focused = true) {
     summarize: () => log.push("summarize"),
     dictate: (t) => {
       log.push(`dictate: ${t}`);
-      return focused;
+      return focused === true
+        ? "typed"
+        : focused === false
+        ? "no-tile"
+        : focused;
     },
     onState: (s) => states.push(s),
   });
@@ -203,4 +212,74 @@ Deno.test("push-to-talk: Summarize barges in and asks", () => {
   const { log, c } = setup();
   c.summarize();
   assertEquals(log, ["barge-in", "summarize"]);
+});
+
+Deno.test("hold-to-dictate: a one-shot dictation types into the focused tile, dictate mode off", async () => {
+  const { stt, log, c } = setup({ review: false, dictate: false });
+  stt.transcript = "git log --oneline.\n";
+  await c.press({ dictate: true });
+  assertEquals(c.state.target, "dictate", "the badge's target while listening");
+  await c.release(900);
+  assertEquals(log, ["barge-in", "dictate: git log --oneline"]);
+  assertEquals(c.state.phase, "idle");
+  assertEquals(c.state.message, "");
+  // The next plain press goes to the companion again: the one-shot is spent.
+  stt.transcript = "hello there";
+  await c.press();
+  assertEquals(c.state.target, "companion");
+  await c.release(900);
+  assertEquals(log.at(-1), "companion: hello there");
+});
+
+Deno.test("hold-to-dictate: review holds the transcript with the dictate target", async () => {
+  const { stt, log, c } = setup({ review: true, dictate: false });
+  stt.transcript = "summarize the window";
+  await c.press({ dictate: true });
+  await c.release(900);
+  // Typed as said, never turned into the summary request.
+  assertEquals(c.state.phase, "review");
+  assertEquals(c.state.target, "dictate");
+  assertEquals(c.state.transcript, "summarize the window");
+  c.send(c.state.transcript);
+  assertEquals(log.at(-1), "dictate: summarize the window");
+});
+
+Deno.test("hold-to-dictate: what could not be typed, and nothing heard, say so", async () => {
+  const page = setup({ review: false, dictate: false }, "not-editable");
+  page.stt.transcript = "hello";
+  await page.c.press({ dictate: true });
+  await page.c.release(900);
+  assertEquals(page.c.state.message, DICTATE_MISS["not-editable"]);
+  assertEquals(page.c.state.target, "dictate");
+
+  const none = setup({ review: false, dictate: false }, false);
+  none.stt.transcript = "hello";
+  await none.c.press({ dictate: true });
+  await none.c.release(900);
+  assertEquals(none.c.state.message, DICTATE_MISS["no-tile"]);
+
+  const quiet = setup({ review: false, dictate: false });
+  quiet.stt.transcript = "[BLANK_AUDIO]";
+  await quiet.c.press({ dictate: true });
+  await quiet.c.release(900);
+  assertEquals(quiet.c.state.message, "I didn't catch that.");
+  assertEquals(quiet.c.state.target, "dictate");
+  assertEquals(quiet.log, ["barge-in"]);
+});
+
+Deno.test("hold-to-dictate: a press while push-to-talk listens is ignored; a cancel drops the one-shot", async () => {
+  const { stt, log, c } = setup({ review: false, dictate: false });
+  stt.transcript = "to Loopy";
+  await c.press();
+  await c.press({ dictate: true });
+  assertEquals(c.state.target, "companion");
+  await c.release(900);
+  assertEquals(log.at(-1), "companion: to Loopy");
+
+  await c.press({ dictate: true });
+  await c.cancel();
+  stt.transcript = "after the cancel";
+  await c.press();
+  await c.release(900);
+  assertEquals(log.at(-1), "companion: after the cancel");
 });

@@ -5,7 +5,8 @@
 // - Listening: the speech-to-text engine (on-device Whisper by default; Deepgram or ElevenLabs
 //   with your key; the webview's Web Speech only where it exists), the native library's and the
 //   model's status with the first-use download (its size said before it starts), the hold-to-talk
-//   key, transcript review, and "Dictate into focused tile".
+//   key, the hold-to-dictate key (off until picked; never the same key as hold-to-talk: each
+//   list greys out the other's key), transcript review, and "Dictate into focused tile".
 // - Cloud keys go to the voice extension, which keeps them in the OS keychain (its own namespace
 //   of Denext's secure store); this page can save, replace or remove a key and see whether one is
 //   saved, never read it back (app/companion/api-key-field.tsx). Nothing goes to a cloud service
@@ -386,14 +387,52 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
         >
           {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform)).map(
             (k) => (
-              <option value={k} key={k}>
+              <option
+                value={k}
+                key={k}
+                disabled={k !== "off" && k === settings.dictateKey}
+              >
                 {k === "off"
                   ? "Off (mic button only)"
                   : shortcutLabel(k, platform)}
+                {k !== "off" && k === settings.dictateKey
+                  ? " (the dictate key)"
+                  : ""}
               </option>
             ),
           )}
         </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Hold to dictate</span>
+        <select
+          class="field-select"
+          data-testid="setting-voice-dictate-key"
+          value={settings.dictateKey}
+          onChange={(e) =>
+            onChange({
+              dictateKey: (e.target as HTMLSelectElement).value as PttKey,
+            })}
+        >
+          {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform)).map(
+            (k) => (
+              <option
+                value={k}
+                key={k}
+                disabled={k !== "off" && k === settings.pttKey}
+              >
+                {k === "off" ? "Off" : shortcutLabel(k, platform)}
+                {k !== "off" && k === settings.pttKey
+                  ? " (the hold-to-talk key)"
+                  : ""}
+              </option>
+            ),
+          )}
+        </select>
+        <span class="field-hint" data-testid="setting-voice-dictate-key-hint">
+          Hold it and speak; let go to type what you said into the focused tile,
+          with or without the companion.
+        </span>
       </label>
       <Check
         label="Show what I said before sending it (Send / Edit / Cancel)"
