@@ -4581,6 +4581,20 @@ kbd {
   position: absolute;
   inset: 0;
 }
+/* The native engine's stand-in for its view while HTML shows over the tile: a picture of the
+   page at its own size, from the element's top left (lib/web/native-engine.ts). */
+.web-view:has(> .web-snapshot) {
+  overflow: hidden;
+}
+.web-snapshot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .web-frame {
   display: block;
   width: 100%;

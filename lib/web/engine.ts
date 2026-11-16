@@ -2,29 +2,37 @@
  * The web tile's engine adapter: what a web tile (app/web-tile.tsx) drives to show a page, kept
  * narrow and backend-agnostic so the engine behind it is one file.
  *
- * The interface mirrors Denext's draft embedded web view (`denext/desktop/window`
- * `createWebView` → `WebViewHandle`: navigate, back, forward, reload, stop, setVisible, focus,
- * state, close; the events title, url, load, focus-change, closed), so the coming
- * `NativeEngine` is a thin wrapper over it. Nothing here imports that API yet: it does not exist.
+ * The interface mirrors Denext's embedded web view (`denext/desktop/window` `createWebView` →
+ * `WebViewHandle`: navigate, back, forward, reload, stop, setVisible, focus, state, close; the
+ * events title, url, load, focus-change, new-window, keydown, closed).
  *
- * Today's engine is {@linkcode IframeEngine}: a sandboxed `<iframe>` inside the tile's body.
- * {@linkcode webEngine} is the one selection point ("native if `webViewCapabilities().supported`,
- * else iframe").
+ * Two engines:
+ *
+ * - {@linkcode IframeEngine} (this file): a sandboxed `<iframe>` inside the tile's body. It shows
+ *   loopback and local dev pages only ({@linkcode canEmbedInFrame}); the browser demo and any
+ *   runtime without web views use it.
+ * - `NativeEngine` (lib/web/native-engine.ts): Denext's native web view (`createWebView` +
+ *   `attachWebView`), which shows any http(s) site. The desktop app uses it.
+ *
+ * {@linkcode webEngine} is the one selection point: the native engine once
+ * {@linkcode detectWebEngine} found `webViewCapabilities().supported`, else the iframe.
  *
  * Bounds: a view follows the element it is mounted in (`mount(host, …)`), and that is the only
  * place bounds are handled. The iframe simply sits in the element (CSS fills it). The native
- * engine will hand the element to Denext's `attachWebView(handle, el)`, which follows it through
- * layout, scale transforms, scroll and devicePixelRatio changes (at most one `setBounds` per
- * frame) and hides the view while the element is out of the DOM or `display: none`.
+ * engine hands the element to Denext's `attachWebView(handle, el)`, which follows it through
+ * resizes, scrolling, window resizes and devicePixelRatio changes and hides the view while the
+ * element is out of the DOM or `display: none`. It does not see a move that changes no size (a
+ * `transform`): the tile says so with `relayout()`.
  *
  * Dictation: `insertText` types a dictated transcript into the page's focused field (the
  * hold-to-dictate key, app/use-voice.ts). The iframe can do it only for a same-origin page, which
- * {@linkcode canEmbedInFrame} never shows today, so in practice it answers `false` and the tile
- * says it can't type into the page; the native engine will implement it through its own text
- * input (the coming web view's `evaluate` or an insert-text call) once Denext ships it.
+ * {@linkcode canEmbedInFrame} never shows, so in practice it answers `false`; the native engine
+ * runs the same insertion in the page (`evaluate`).
  *
- * Overlays: a native view draws above all HTML. `capabilities.drawsAboveHtml` tells the tile to
- * hide it (`setVisible(false)`) while an HTML menu or dialog is open (lib/web/overlays.ts).
+ * Overlays: a native view draws above all HTML (`capabilities.drawsAboveHtml`). While HTML must
+ * show over the tile (a menu, a dialog, Settings, another tile on top, a tile sliding by) the tile
+ * calls `setOccluded(true)` and the native view swaps itself for a snapshot of its page
+ * (lib/web/native-engine.ts, lib/web/overlays.ts). The iframe is HTML and ignores it.
  *
  * Client-safe: DOM APIs are used only inside `mount`.
  *
@@ -32,6 +40,11 @@
  */
 
 import { canEmbedInFrame, parseWebUrl } from "./url.ts";
+import {
+  createNativeEngine,
+  denextWebViews,
+  type NativeWebViews,
+} from "./native-engine.ts";
 import {
   canGoBack,
   canGoForward,
@@ -56,6 +69,23 @@ export interface WebViewEventMap {
     error?: { code: string; message: string };
   };
   "focus-change": { focused: boolean };
+  /** The page asked for a new window (a popup, a `target="_blank"` link); nothing opened. */
+  "new-window": { url: string; disposition: "popup" | "tab" };
+  /**
+   * A key pressed while the page had the keyboard: `forwarded` for one of the engine's forward
+   * keys ({@linkcode WebEngine.setForwardKeys}; the page never saw it), else one the page left
+   * unhandled. No key release is ever reported.
+   */
+  keydown: {
+    key: string;
+    code: string;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+    repeat: boolean;
+    forwarded: boolean;
+  };
   closed: Record<string, never>;
 }
 
@@ -76,10 +106,12 @@ export interface WebEngineCapabilities {
   drawsAboveHtml: boolean;
   /** It reports the page's own title and the navigations the page makes itself. */
   readsPage: boolean;
-  /** `capture()` (a snapshot of the page); not part of this interface until it is needed. */
+  /** It can snapshot the page (what `setOccluded` shows in the view's place). */
   capture: boolean;
-  /** `evaluate()` (run script in the page); not part of this interface until it is needed. */
+  /** It can run script in the page (what `insertText` uses). */
   evaluate: boolean;
+  /** Its forward keys reach the app while a page has the keyboard (`keydown`, `forwarded`). */
+  forwardKeys: boolean;
 }
 
 /** One page view (Denext's `WebViewHandle`, minus `capture`, `evaluate` and `setBounds`). */
@@ -93,27 +125,27 @@ export interface WebViewHandle {
   /** Show or hide the view (it keeps its page). */
   setVisible(visible: boolean): Promise<void>;
   /**
-   * Another tile overlaps this view's tile and is drawn above it (the free-form view; the tile
-   * computes it with `occludedIds`, lib/workspace/freeform.ts, and calls this on each change).
-   *
-   * TODO(native engine): a native view draws above all HTML, so a terminal tile on top of a web
-   * tile would sit under its page. The native engine answers this with Denext's coming web view
-   * stacking: `capture()` the page into an `<img>` in the element and `setVisible(false)` while
-   * occluded (the snapshot swap), or `raise()` / `lower()` / `setZOrder(n)` once views can be
-   * ordered among the tiles. The iframe is ordinary HTML that stacks with the tiles: it ignores it.
+   * HTML must show over this view's tile: another tile overlaps it from above (the free-form
+   * view; `occludedIds`, lib/workspace/freeform.ts), a menu or dialog is open, a tile is moving
+   * (lib/web/overlays.ts). A native view draws above all HTML, so while occluded it shows a
+   * snapshot of its page in its element and hides itself, and comes back when it clears. The
+   * iframe is ordinary HTML that stacks with the tiles: it ignores it.
    */
   setOccluded(occluded: boolean): Promise<void>;
+  /** The view's order among the other views (the tile's z-index); nothing for the iframe. */
+  setZOrder(z: number): Promise<void>;
+  /** The element moved without changing size (a `transform`): measure it again. */
+  relayout(): void;
   /** Give the page the keyboard. */
   focus(): Promise<void>;
+  /** The tile lost the workspace's focus: hand the keyboard back to the app if the page has it. */
+  blur(): Promise<void>;
   /**
    * Type `text` into the page's focused editable element (an input, a textarea, a contenteditable)
    * as if typed: the page sees its input event. `false` when it cannot: a page it may not reach
-   * into (cross-origin), or nothing editable has the focus.
-   *
-   * TODO(native engine): implement with the native view's text input (Denext's coming
-   * `evaluate`, or an insert-text call on the handle).
+   * into (a cross-origin frame), or nothing editable has the focus.
    */
-  insertText(text: string): boolean;
+  insertText(text: string): Promise<boolean>;
   state(): Promise<WebViewState>;
   on<K extends keyof WebViewEventMap>(
     event: K,
@@ -126,6 +158,12 @@ export interface WebViewHandle {
 /** An engine: which pages it can show, and a view of one inside an element. */
 export interface WebEngine {
   readonly capabilities: WebEngineCapabilities;
+  /**
+   * The keys the app keeps while a page has the keyboard (accelerators, `"CmdOrCtrl+Shift+L"`):
+   * each comes back as a `keydown` event with `forwarded: true`. Engines without
+   * `capabilities.forwardKeys` have none.
+   */
+  setForwardKeys?(keys: readonly string[]): void;
   /** Whether this engine can show `url` (else it goes to the default browser). */
   canEmbed(url: string): boolean;
   /** Open `url` in a view that follows `host` (its bounds and visibility). */
@@ -359,19 +397,32 @@ class IframeView implements WebViewHandle {
     return Promise.resolve();
   }
 
+  /** Views are not ordered: the frame stacks with its tile. */
+  setZOrder(_z: number): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** The frame is laid out with its element. */
+  relayout(): void {}
+
   focus(): Promise<void> {
     this.#frame?.focus();
     return Promise.resolve();
   }
 
+  /** The frame is part of the page: focusing anything else takes the keyboard from it. */
+  blur(): Promise<void> {
+    return Promise.resolve();
+  }
+
   /** Only a same-origin page: a cross-origin frame has no `contentDocument` for its parent. */
-  insertText(text: string): boolean {
-    if (this.#closed || !this.#frame) return false;
+  insertText(text: string): Promise<boolean> {
+    if (this.#closed || !this.#frame) return Promise.resolve(false);
     let doc: Document | null = null;
     try {
       doc = this.#frame.contentDocument;
     } catch { /* cross-origin */ }
-    return doc ? insertIntoDocument(doc, text) : false;
+    return Promise.resolve(doc ? insertIntoDocument(doc, text) : false);
   }
 
   state(): Promise<WebViewState> {
@@ -418,7 +469,7 @@ function appOrigin(): string | undefined {
   }
 }
 
-/** Today's engine: a sandboxed iframe that shows loopback and local dev pages only. */
+/** The iframe engine: a sandboxed iframe that shows loopback and local dev pages only. */
 export const IframeEngine: WebEngine = {
   capabilities: {
     engine: "iframe",
@@ -426,22 +477,42 @@ export const IframeEngine: WebEngine = {
     readsPage: false,
     capture: false,
     evaluate: false,
+    forwardKeys: false,
   },
   canEmbed: (url) => canEmbedInFrame(url, appOrigin()),
   mount: (host, url) => Promise.resolve(new IframeView(host, url)),
 };
 
+/** The native engine, once {@linkcode detectWebEngine} found the runtime hosts web views. */
+let native: WebEngine | null = null;
+let detecting: Promise<WebEngine> | null = null;
+
 /**
- * The native engine when the runtime has one, else `null`. A stub until Denext ships its
- * embedded web view: then this awaits `webViewCapabilities().supported` once (at boot) and
- * returns a `NativeEngine` (lib/web/native-engine.ts, wrapping `createWebView` and
- * `attachWebView`).
+ * The engine web tiles use: native if the runtime supports it, else the iframe. Until
+ * {@linkcode detectWebEngine} has answered it is the iframe.
  */
-function nativeEngine(): WebEngine | null {
-  return null;
+export function webEngine(): WebEngine {
+  return native ?? IframeEngine;
 }
 
-/** The engine web tiles use: native if the runtime supports it, else the iframe. */
-export function webEngine(): WebEngine {
-  return nativeEngine() ?? IframeEngine;
+/**
+ * Ask the runtime once whether it hosts web views (`webViewCapabilities().supported`) and pick
+ * the engine: the native one when it does, else the iframe (the browser demo, an older runtime, a
+ * runtime whose answer fails). Every later call answers the same engine.
+ *
+ * @param views The runtime's web views (Denext's; a fake in the tests).
+ */
+export function detectWebEngine(
+  views: NativeWebViews = denextWebViews,
+): Promise<WebEngine> {
+  return detecting ??= views.capabilities().then((caps) => {
+    if (caps.supported) native = createNativeEngine(views, caps, appOrigin());
+    return webEngine();
+  }, () => IframeEngine);
+}
+
+/** Forget the detected engine (tests). */
+export function resetWebEngineForTesting(): void {
+  native = null;
+  detecting = null;
 }

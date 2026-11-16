@@ -94,12 +94,15 @@
     check for denext#134, where a runtime's node-pty substitute had no native
     addon). Streaming transcripts (partials) and a wake word are possible with
     the same library.
-  - Voice, open: hold-to-dictate into a web tile. `WebViewHandle.insertText`
-    (lib/web/engine.ts) reaches only a same-origin page in the iframe engine,
-    which never shows one, so a web tile says it can't take text; the native
-    engine implements it with its own text input. While a page itself has the
-    keyboard (focus inside a cross-origin frame) neither talk key reaches the
-    app.
+  - Voice, done: hold-to-dictate into a web tile with the native engine
+    (`WebViewHandle.insertText`, lib/web/native-engine.ts `insertTextScript`
+    through the view's `evaluate`). The iframe engine still reaches only a
+    same-origin page, which it never shows, so there a web tile says it can't
+    take text.
+  - Voice, open: a native web view reports key presses only, never releases
+    (Denext's `keydown` event; `forwardKeys`). So in a page a talk key is a
+    press, not a hold: it latches like a short click on the mic, and the next
+    press stops it. Holding needs a `keyup` from Denext.
   - Done (phase 2c): the shared Docker sandbox (see below).
   - Done (phase 3): the shell is the harness —
     `resources/shell/qutty.{zsh,bash}` (a `,` line goes to the model, the
@@ -375,20 +378,39 @@
       (`lib/web/`, `app/web-tile.tsx`): back, forward, reload / stop, an address
       field and "Open in default browser"; saved and restored with the workspace
       (`TileSnapshot` `{ web: { url, title? } }`), no PTY.
-  - Today's engine is a sandboxed iframe (`IframeEngine`, `lib/web/engine.ts`).
-    It shows loopback and local dev pages only (most public sites refuse to be
-    framed), and it cannot read a cross-origin page's title or the navigations
-    the page makes itself (the tile keeps its own back/forward list).
-  - [ ] The native engine replaces the iframe when Denext ships its embedded web
-        view (`createWebView` + `attachWebView`, denext.22 or later): write
-        `NativeEngine` (`lib/web/native-engine.ts`) and return it from
-        `webEngine()` when `webViewCapabilities().supported`. Then public sites
-        open in a tile too, titles and in-page navigations are reported, and the
-        HTML overlay count (`lib/web/overlays.ts`) hides the view under menus
-        and dialogs.
-  - [ ] `[::1]` pages open in the default browser: a CSP host-source has no IPv6
-        literal, so the page's `frame-src` cannot allow them (the native engine
-        is not bound by the page's CSP).
+  - The iframe engine (`IframeEngine`, `lib/web/engine.ts`): the browser demo
+    and any runtime without web views. It shows loopback and local dev pages
+    only (most public sites refuse to be framed), and it cannot read a
+    cross-origin page's title or the navigations the page makes itself (the tile
+    keeps its own back/forward list).
+  - [x] The native engine (`lib/web/native-engine.ts`, Denext 4.18's
+        `createWebView` + `attachWebView`): `detectWebEngine()` asks
+        `webViewCapabilities()` at boot and `webEngine()` answers it when
+        `supported`. Any http(s) site opens in a tile, logins persist (the
+        `qutty-web` partition), titles and in-page navigations are reported,
+        popups open in a new tile, downloads ask, permission prompts are
+        refused. A view draws above all HTML, so while HTML must show over a
+        tile the view swaps itself for a snapshot (`setOccluded`: the overlay
+        count and the area overlays of `lib/web/overlays.ts`, a tile on top in
+        the free-form view, any tile moving), and it leaves room for what stays
+        over it (the companion, the broadcast banner). The workspace's shortcuts
+        and the talk keys come back from a page as forwarded keys
+        (`forwardAccelerators`, lib/workspace/keys.ts). Checked in the packaged
+        app without the UI by `QUTTY_PTY_SELFTEST=webview`
+        (desktop/webview-selftest.ts).
+  - [ ] Native engine, not seen on a real window yet: the snapshot swap, the
+        keyboard hand-off (`focusWindow` gives the keyboard back to the app's
+        page) and the forwarded keys are unit-tested against a fake of Denext's
+        views and the self-test covers create / load / title / evaluate /
+        capture; a pass by hand over menus, drags and the cycle is still due.
+  - [ ] Native engine, open: the hub's `read_screen` answers nothing for a web
+        tile (the page's title, URL and visible text through `evaluate`); a
+        page-initiated download or permission has no Qutty UI beyond the OS save
+        panel; no zoom, find-in-page or DevTools controls (Denext has `setZoom`,
+        `find`, `openDevTools`).
+  - [ ] `[::1]` pages open in the default browser with the iframe engine: a CSP
+        host-source has no IPv6 literal, so the page's `frame-src` cannot allow
+        them (the native engine is not bound by the page's CSP and shows them).
 
 ## Pending
 

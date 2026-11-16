@@ -99,8 +99,8 @@ export interface VoiceControllerOptions {
   toCompanion(text: string): void;
   /** Ask the companion for the window summary. */
   summarize(): void;
-  /** Type `text` into the focused tile. */
-  dictate(text: string): DictateOutcome;
+  /** Type `text` into the focused tile (a web page answers once its page took the text). */
+  dictate(text: string): DictateOutcome | Promise<DictateOutcome>;
   onState(state: VoiceState): void;
 }
 
@@ -272,10 +272,23 @@ export class VoiceController {
         return this.#opts.toCompanion(route.text);
       case "dictate": {
         const outcome = this.#opts.dictate(route.text);
-        if (outcome !== "typed") {
-          this.#set({ target: "dictate", message: DICTATE_MISS[outcome] });
-        }
+        if (typeof outcome === "string") return this.#typed(outcome);
+        // A web page answers later: the note shows unless another capture started meanwhile.
+        const generation = this.#generation;
+        const late = (o: DictateOutcome) => {
+          if (generation === this.#generation && this.#state.phase === "idle") {
+            this.#typed(o);
+          }
+        };
+        void outcome.then(late, () => late("not-editable"));
       }
+    }
+  }
+
+  /** What typing a dictation came to: a note when it could not be typed. */
+  #typed(outcome: DictateOutcome): void {
+    if (outcome !== "typed") {
+      this.#set({ target: "dictate", message: DICTATE_MISS[outcome] });
     }
   }
 

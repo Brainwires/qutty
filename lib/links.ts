@@ -442,7 +442,8 @@ export interface LinkSettings {
   command: string;
   /**
    * Where a ⌘-clicked web link opens: `tile` (a Qutty web tile beside the terminal, when the
-   * engine can show the page; lib/web/engine.ts) or `browser` (always the default browser).
+   * engine can show the page: any site with the native engine, local dev pages with the iframe;
+   * lib/web/engine.ts) or `browser` (always the default browser).
    */
   web: WebLinkTarget;
 }

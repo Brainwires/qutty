@@ -203,3 +203,50 @@ export function isTalkKey(
     (dictateKeyAvailable(voice.dictateKey, voice.pttKey, platform) &&
       isPushToTalk(e, voice.dictateKey, platform));
 }
+
+/** The physical keys a shortcut may use: `[KeyboardEvent.code, the accelerator's key]`. */
+const ACCELERATOR_KEYS: readonly (readonly [string, string])[] = [
+  ...[..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((c) => [`Key${c}`, c] as const),
+  ...[..."0123456789"].flatMap((d) =>
+    [[`Digit${d}`, d], [`Numpad${d}`, `Num${d}`]] as const
+  ),
+  ["Minus", "-"],
+  ["Equal", "="],
+  ["BracketLeft", "["],
+  ["BracketRight", "]"],
+  ["Backquote", "`"],
+  // The accelerator `Enter` is the numpad's Enter too.
+  ["Enter", "Enter"],
+  ["Space", "Space"],
+  ["NumpadAdd", "NumAdd"],
+  ["NumpadSubtract", "NumSubtract"],
+];
+
+/**
+ * The workspace's shortcuts and the talk keys as accelerators (`"CmdOrCtrl+Shift+L"`, matched by
+ * physical key): what a native web view hands back to the app while its page has the keyboard
+ * (lib/web/native-engine.ts). Derived from {@linkcode commandForKey} and {@linkcode isTalkKey},
+ * so it names exactly the keys the window's listeners take and no other.
+ */
+export function forwardAccelerators(
+  voice: { pttKey: PttKey; dictateKey: PttKey },
+  platform: KeyPlatform,
+): string[] {
+  const out: string[] = [];
+  for (const [code, key] of ACCELERATOR_KEYS) {
+    for (const shiftKey of [false, true]) {
+      const e: KeyLike = {
+        key: "",
+        code,
+        altKey: false,
+        shiftKey,
+        metaKey: platform === "mac",
+        ctrlKey: platform !== "mac",
+      };
+      if (commandForKey(e, platform) || isTalkKey(e, voice, platform)) {
+        out.push(`CmdOrCtrl+${shiftKey ? "Shift+" : ""}${key}`);
+      }
+    }
+  }
+  return out;
+}

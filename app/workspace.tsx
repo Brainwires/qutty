@@ -47,6 +47,7 @@ import { makeTitle } from "../lib/workspace/format.ts";
 import {
   commandForKey,
   detectPlatform,
+  forwardAccelerators,
   isModifierRelease,
   isTalkKey,
   type KeyCommand,
@@ -120,7 +121,12 @@ import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
 import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
-import { webEngine, type WebViewHandle } from "../lib/web/engine.ts";
+import {
+  detectWebEngine,
+  IframeEngine,
+  type WebEngine,
+  type WebViewHandle,
+} from "../lib/web/engine.ts";
 import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
 import {
   type OllamaPair,
@@ -349,17 +355,31 @@ function WorkspaceView() {
     });
   }, [tileControl]);
 
-  // What web tiles drive their page through; their mounted views, for dictation.
+  // What web tiles drive their page through; their mounted views, for dictation. The engine is
+  // the iframe in the browser, and in the desktop app whatever the runtime hosts (asked at boot:
+  // the native web view, else the iframe).
   const webViewsRef = useRef(new Map<string, WebViewHandle>());
+  const [webEngine, setWebEngine] = useState<WebEngine | null>(null);
+  const cycling = state.cycle !== null;
   const webHooks = useMemo<WebTileHooks>(() => ({
-    engine: webEngine(),
+    engine: webEngine,
     onPage: (id, page) => dispatch({ type: "webPage", id, page }),
     openExternal: (url) => linksRef.current.openInBrowser(url),
     onView: (id, view) => {
       if (view) webViewsRef.current.set(id, view);
       else webViewsRef.current.delete(id);
     },
-  }), []);
+    openTile: (url) => void openWebTile(url),
+    cycling,
+  }), [webEngine, cycling, openWebTile]);
+  // The keys a native web view hands back while its page has the keyboard: the workspace's
+  // shortcuts and the talk keys.
+  const { pttKey, dictateKey } = state.settings.voice;
+  useEffect(() => {
+    webEngine?.setForwardKeys?.(
+      forwardAccelerators({ pttKey, dictateKey }, platform),
+    );
+  }, [webEngine, pttKey, dictateKey, platform]);
 
   const session = useSession({
     manager: ready ? managerRef.current : null,
@@ -430,14 +450,19 @@ function WorkspaceView() {
     platform,
     enabled: companionShown,
     companionName: state.settings.companion.name,
-    // A dictation goes to the focused tile: its terminal, or a web tile's page.
-    deliverToFocused: (text): DictateOutcome => {
+    // A dictation goes to the focused tile: its terminal, or a web tile's page (which answers
+    // once the page took the text, or did not).
+    deliverToFocused: (text): DictateOutcome | Promise<DictateOutcome> => {
       const manager = managerRef.current;
       const id = stateRef.current.focusedId;
       if (!manager || !id) return "no-tile";
       if (isWebTile(stateRef.current.terminals, id)) {
         const view = webViewsRef.current.get(id);
-        return view?.insertText(text) ? "typed" : "not-editable";
+        if (!view) return "not-editable";
+        return view.insertText(text).then(
+          (typed) => typed ? "typed" : "not-editable",
+          () => "not-editable",
+        );
       }
       const pty = manager.ptyId(id);
       if (!pty) return "no-tile";
@@ -524,6 +549,8 @@ function WorkspaceView() {
     const plat = detectPlatform();
     setPlatform(plat);
     setDesktop(isDesktop());
+    if (isDesktop()) void detectWebEngine().then(setWebEngine);
+    else setWebEngine(IframeEngine);
     const mq = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
     setReducedMotion(!!mq?.matches);
     const onMq = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
@@ -668,6 +695,11 @@ function WorkspaceView() {
         setSettingsOpen(false);
         return;
       }
+      // A cycle whose modifier was let go unheard (a native web view had the keyboard, and it
+      // reports no key release) ends at the next key pressed without it.
+      if (
+        stateRef.current.cycle && !(platform === "mac" ? e.metaKey : e.ctrlKey)
+      ) dispatch({ type: "endCycle" });
       const cmd = commandForKey(e, platform);
       if (!cmd) return;
       e.preventDefault();

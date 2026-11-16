@@ -104,6 +104,13 @@ export default {
     // runtime). The page must give itself a drag region (`makeWindowDraggable`). Every opened
     // window (New Window, Reopen Closed Window, the restored session) inherits it (Denext 4.15).
     titleBar: "hiddenInset",
+    // Web tiles (lib/web/native-engine.ts): each is a native web view in its window, up to 16
+    // per window (Denext's default is 8, its most 32; a minimized or parked web tile keeps its
+    // view). No `allowedOrigins`: a web tile opens any http(s) site, as a browser does, and
+    // Denext never lets one load the app's own origin. The views do their own networking in the
+    // engine (WKWebView / CEF), so they need no Deno `net` permission: `netConnect` below stays
+    // as it is.
+    webViews: { limit: 16 },
     capabilities: {
       // The PTY backend (node-pty) runs in the app's Deno process: `desktop/pty.ts`. The SSH
       // backend (`desktop/ssh.ts`: host list, qutty.conf, scp/sftp transfers) runs beside it and

@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Web tiles open any site, in the app (macOS; other systems as their web view
+  gains support, and until then as before). ⌘-click a link in a terminal, or
+  type an address in a web tile, and github.com, google.com or any other web
+  page opens in a tile beside the terminal: no longer only local development
+  pages, with everything else sent to the default browser. Settings → Links →
+  "Open web links in" still picks A Qutty tile or Default browser, and
+  right-click still offers both.
+  - Sign-ins are kept: you stay logged in to a site after restarting Qutty
+    (macOS 14 or later; all web tiles share one set of cookies, separate from
+    your browser's).
+  - Qutty's shortcuts work while you are in a page: new tile, close, switch and
+    cycle tiles, layout, font size, broadcast, the SSH connections. The page
+    keeps every other key.
+  - Dictation types into the page: hold-to-dictate (or "Dictate into the focused
+    tile") puts what you said in the page's focused field. If nothing there
+    takes text, a short note says so.
+  - In a page, a talk key is pressed, not held: press once to start listening,
+    press again to stop (as a short click on the mic button does). Holding works
+    as before everywhere else.
+  - A link that a page opens in a new window opens in a new tile beside it. A
+    download asks where to save the file. Pages are not given the camera, the
+    microphone, your location or notifications.
+  - Menus, dialogs, Settings and the companion's bubble show over a web tile as
+    over any tile; the page stands still for that moment. Where the companion or
+    the broadcast banner sits on a web tile, the page leaves it room.
+  - The page's own title and the links you follow inside it show in the tile's
+    header, the bar and the address field, and back / forward follow the page's
+    real history.
+
 - The companion is now called Companion (was Loopy), and you can rename it in
   Settings → Companion.
 - Hold to dictate: a second voice key, picked in Settings → Voice → "Hold to

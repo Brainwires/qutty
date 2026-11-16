@@ -2,14 +2,18 @@
  * Web tile URLs: which pages the iframe engine may embed, what the address field turns typed
  * text into, and the header's fallback label. Pure and client-safe.
  *
+ * The native engine (lib/web/native-engine.ts, the desktop app) shows any http(s) page but the
+ * app's own origin; the limits below are the iframe engine's (the browser demo, a runtime without
+ * web views).
+ *
  * The iframe engine embeds only loopback and local development hosts, on any port: `localhost`
  * and `127.0.0.1` over http or https, and `*.localhost` and `*.test` over https only. The app page
  * is a secure context (`app://` is registered secure on every engine), so an http frame counts as
  * mixed content unless its host is loopback: an `http://*.test` frame is blocked on every engine,
  * and WebKit may upgrade `http://*.localhost` to https. Those URLs open in the default browser
  * instead (the native engine has no such limit). Most public sites refuse to be
- * framed (`X-Frame-Options`, `frame-ancestors`), so they open in the default browser until the
- * native engine lands. The page's CSP allows exactly these origins ({@linkcode FRAME_SRC}).
+ * framed (`X-Frame-Options`, `frame-ancestors`), so with this engine they open in the default
+ * browser. The page's CSP allows exactly these origins ({@linkcode FRAME_SRC}).
  *
  * `[::1]` is left out: a CSP host-source has no IPv6 literal (Chromium reports
  * `http://[::1]:*` as a `frame-src` violation), so the page could not frame it anyway. Such a

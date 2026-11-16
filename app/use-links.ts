@@ -3,7 +3,8 @@
 //
 // - ⌘-click (Ctrl-click elsewhere) on an http(s) URL opens it in a web tile beside the terminal
 //   when Settings → Links says "A Qutty tile" and the engine can show the page (lib/web/engine.ts:
-//   today loopback and local dev hosts), else in the default browser; any other URL opens in the
+//   any site with the native engine, loopback and local dev hosts with the iframe), else in the
+//   default browser; any other URL opens in the
 //   default browser. OSC 8 hyperlinks behave the same; `file:` links are files. On a local folder
 //   reveals it in Finder (the Linux file manager); on a local file opens it in its default app,
 //   or, when it was printed with a line (`src/x.ts:42:7`), in the editor Settings → Links picks

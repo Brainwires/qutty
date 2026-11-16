@@ -5,7 +5,8 @@
 // heard, an engine that cannot run). The note fades out on its own: its CSS animation's end removes
 // it (no timer).
 
-import { useEffect, useState } from "denext";
+import { useEffect, useRef, useState } from "denext";
+import { boxOf, useAreaOverlays } from "./use-html-overlay.ts";
 import type { VoiceState } from "../lib/voice/controller.ts";
 
 /** Whether `state` is a dictation that is listening or transcribing (the badge shows). */
@@ -62,9 +63,18 @@ export function DictationNote(props: { state: VoiceState }) {
   useEffect(() => {
     if (!message) setGone(null);
   }, [message]);
-  if (!message || gone === state) return null;
+  // A native web tile under the note shows its snapshot while the note is up.
+  const shown = !!message && gone !== state;
+  const rootRef = useRef<HTMLParagraphElement | null>(null);
+  useAreaOverlays(
+    rootRef,
+    (el) => [{ kind: "cover", box: boxOf(el, 4) }],
+    [shown],
+  );
+  if (!shown) return null;
   return (
     <p
+      ref={rootRef}
       class="dictation-note"
       data-testid="dictation-note"
       data-phase={state.phase}

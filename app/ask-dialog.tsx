@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "denext";
 import type { AskRequest } from "../lib/hub/protocol.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
+import { useHtmlOverlay } from "./use-html-overlay.ts";
 
 export interface AskDialogProps {
   backend: PtyBackend;
@@ -55,6 +56,7 @@ export function AskDialog(props: AskDialogProps) {
   }, [backend]);
 
   const current = queue[0];
+  useHtmlOverlay(current !== undefined);
   if (!current) return null;
 
   const reply = (action: string | null) => {
