@@ -9,6 +9,9 @@
  * - With review on, the transcript waits in the chat box (Send / Edit / Cancel); otherwise it goes
  *   at once: to the companion (`userSays(text, "voice")`), to the summary request, or typed into
  *   the focused tile in dictate mode.
+ * - The hold-to-dictate key presses with `{ dictate: true }`: that one capture is typed into the
+ *   focused tile whatever dictate mode says (a one-shot dictation). Where a capture goes is fixed
+ *   by the press that starts it (`state.target`, set while it listens too).
  *
  * Client-safe and pure: the engine and the outlets are injected.
  *
@@ -54,7 +57,7 @@ export interface VoiceState {
   latched: boolean;
   /** The transcript under review. */
   transcript: string;
-  /** Where the transcript under review goes when sent. */
+  /** Where the capture (listening, or the transcript under review) goes. */
   target: "companion" | "dictate";
   /** What went wrong, or a note ("I didn't catch that"). */
   message: string;
@@ -66,6 +69,21 @@ export const IDLE_VOICE: VoiceState = {
   transcript: "",
   target: "companion",
   message: "",
+};
+
+/** What typing a dictated transcript into the focused tile came to. */
+export type DictateOutcome =
+  /** Typed. */
+  | "typed"
+  /** No tile has the focus. */
+  | "no-tile"
+  /** The focused tile cannot take text (a web page the engine cannot type into). */
+  | "not-editable";
+
+/** What the controller says when a dictation could not be typed. */
+export const DICTATE_MISS: Record<Exclude<DictateOutcome, "typed">, string> = {
+  "no-tile": "No tile has the focus to type into.",
+  "not-editable": "Can't type into this page.",
 };
 
 /** A click on the mic button shorter than this latches listening on. */
@@ -80,8 +98,8 @@ export interface VoiceControllerOptions {
   toCompanion(text: string): void;
   /** Ask the companion for the window summary. */
   summarize(): void;
-  /** Type `text` into the focused tile; false when there is none. */
-  dictate(text: string): boolean;
+  /** Type `text` into the focused tile. */
+  dictate(text: string): DictateOutcome;
   onState(state: VoiceState): void;
 }
 
@@ -94,6 +112,8 @@ export class VoiceController {
   #releaseAfterStart = false;
   /** Bumped by cancel: a start or stop in flight from before is ignored. */
   #generation = 0;
+  /** The capture in progress is a one-shot dictation (the hold-to-dictate key). */
+  #oneShot = false;
 
   constructor(opts: VoiceControllerOptions) {
     this.#opts = opts;
@@ -114,8 +134,11 @@ export class VoiceController {
     return p === "starting" || p === "listening" || p === "transcribing";
   }
 
-  /** The talk key went down, or the mic button was pressed. */
-  async press(): Promise<void> {
+  /**
+   * The talk key went down, or the mic button was pressed. `dictate`: the hold-to-dictate key,
+   * whose capture is typed into the focused tile whatever dictate mode says.
+   */
+  async press(opts: { dictate?: boolean } = {}): Promise<void> {
     if (this.#state.latched && this.#state.phase === "listening") {
       return await this.release(Infinity);
     }
@@ -125,10 +148,14 @@ export class VoiceController {
     this.#releaseAfterStart = false;
     const engine = this.#opts.engine();
     this.#engine = engine;
+    this.#oneShot = opts.dictate === true;
     this.#set({
       phase: "starting",
       latched: false,
       transcript: "",
+      target: this.#oneShot || this.#opts.settings().dictate
+        ? "dictate"
+        : "companion",
       message: "",
     });
     try {
@@ -180,6 +207,7 @@ export class VoiceController {
   /** Stop listening and drop the audio, or drop the transcript under review. */
   async cancel(): Promise<void> {
     this.#generation++;
+    this.#oneShot = false;
     const engine = this.#engine;
     const wasActive = this.active;
     this.#engine = undefined;
@@ -205,9 +233,15 @@ export class VoiceController {
 
   #heard(text: string): void {
     const settings = this.#opts.settings();
-    const route = routeTranscript(text, { dictate: settings.dictate });
+    const dictate = this.#oneShot || settings.dictate;
+    this.#oneShot = false;
+    const route = routeTranscript(text, { dictate });
     if (route.kind === "empty") {
-      return this.#set({ ...IDLE_VOICE, message: "I didn't catch that." });
+      return this.#set({
+        ...IDLE_VOICE,
+        target: dictate ? "dictate" : "companion",
+        message: "I didn't catch that.",
+      });
     }
     if (settings.review) {
       const transcript = route.kind === "summarize" ? text.trim() : route.text;
@@ -215,7 +249,7 @@ export class VoiceController {
         ...IDLE_VOICE,
         phase: "review",
         transcript,
-        target: settings.dictate ? "dictate" : "companion",
+        target: dictate ? "dictate" : "companion",
       });
     }
     this.#set({ ...IDLE_VOICE });
@@ -230,18 +264,22 @@ export class VoiceController {
         return this.#opts.summarize();
       case "companion":
         return this.#opts.toCompanion(route.text);
-      case "dictate":
-        if (!this.#opts.dictate(route.text)) {
-          this.#set({ message: "No tile has the focus to type into." });
+      case "dictate": {
+        const outcome = this.#opts.dictate(route.text);
+        if (outcome !== "typed") {
+          this.#set({ target: "dictate", message: DICTATE_MISS[outcome] });
         }
+      }
     }
   }
 
   #fail(e: unknown): void {
     this.#engine = undefined;
+    this.#oneShot = false;
     this.#set({
       ...IDLE_VOICE,
       phase: "error",
+      target: this.#state.target,
       message: e instanceof Error ? e.message : String(e),
     });
   }

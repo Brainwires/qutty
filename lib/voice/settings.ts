@@ -1,8 +1,8 @@
 /**
  * Settings → Voice, as persisted with the workspace settings (lib/workspace/store.ts): whether the
  * companion's answers are read aloud and how (engine, voice, rate, volume), which spoken event
- * alerts are on, the speech-to-text engine, the push-to-talk key, whether a transcript is shown
- * for review before it is sent, and the "Dictate into focused tile" mode.
+ * alerts are on, the speech-to-text engine, the push-to-talk key, the hold-to-dictate key, whether
+ * a transcript is shown for review before it is sent, and the "Dictate into focused tile" mode.
  *
  * Nothing goes to a cloud service unless the user picks a cloud engine here: the defaults are the
  * OS's speech (`speak()` in `denext/mobile`) and the on-device Whisper engine.
@@ -50,7 +50,7 @@ export function isCloudEngine(engine: TtsEngineId | SttEngineId): boolean {
  * offered on macOS only (Ctrl+Shift+Space reaches the terminal as NUL elsewhere).
  */
 export type PttKey = "Mod+Shift+M" | "Mod+Shift+K" | "Mod+Shift+Space" | "off";
-/** Every push-to-talk choice. */
+/** Every push-to-talk choice (the hold-to-dictate key picks from the same list). */
 export const PTT_KEYS: readonly PttKey[] = [
   "Mod+Shift+M",
   "Mod+Shift+K",
@@ -76,6 +76,12 @@ export interface VoiceSettings {
   alertBuildFailed: boolean;
   sttEngine: SttEngineId;
   pttKey: PttKey;
+  /**
+   * The hold-to-dictate key: held, it listens; let go, what was said is typed into the focused
+   * tile, whatever `dictate` says and whether or not the companion is shown. `"off"` by default
+   * (the user picks it), and never the same key as `pttKey`.
+   */
+  dictateKey: PttKey;
   /** Show the transcript in the chat box (Send / Edit / Cancel) before it is sent. */
   review: boolean;
   /** Type transcripts into the focused tile, with no model involved. */
@@ -93,6 +99,7 @@ export const DEFAULT_VOICE: VoiceSettings = {
   alertBuildFailed: false,
   sttEngine: "local",
   pttKey: "Mod+Shift+M",
+  dictateKey: "off",
   review: true,
   dictate: false,
 };
@@ -130,6 +137,13 @@ export function sanitizeVoice(
     out.sttEngine = r.sttEngine as SttEngineId;
   }
   if (PTT_KEYS.includes(r.pttKey as PttKey)) out.pttKey = r.pttKey as PttKey;
+  if (PTT_KEYS.includes(r.dictateKey as PttKey)) {
+    out.dictateKey = r.dictateKey as PttKey;
+  }
+  // The two keys are never the same one: push-to-talk keeps it, dictation goes back to off.
+  if (out.dictateKey !== "off" && out.dictateKey === out.pttKey) {
+    out.dictateKey = "off";
+  }
   if (typeof r.voice === "string" && r.voice.length <= 128) {
     out.voice = r.voice;
   }

@@ -93,6 +93,12 @@
     check for denext#134, where a runtime's node-pty substitute had no native
     addon). Streaming transcripts (partials) and a wake word are possible with
     the same library.
+  - Voice, open: hold-to-dictate into a web tile. `WebViewHandle.insertText`
+    (lib/web/engine.ts) reaches only a same-origin page in the iframe engine,
+    which never shows one, so a web tile says it can't take text; the native
+    engine implements it with its own text input. While a page itself has the
+    keyboard (focus inside a cross-origin frame) neither talk key reaches the
+    app.
   - Done (phase 2c): the shared Docker sandbox (see below).
   - Done (phase 3): the shell is the harness —
     `resources/shell/qutty.{zsh,bash}` (a `,` line goes to the model, the

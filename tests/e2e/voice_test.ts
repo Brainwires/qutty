@@ -2,10 +2,15 @@
 // `createDemoVoice`: scripted transcripts, no microphone; a timed TTS that records what it says):
 // the mic button's hold / latch states, the listening pulse (the fake's level), the hold-to-talk
 // key (never reaching the terminal), the transcript review (Send / Edit / Cancel), dictate mode,
-// spoken answers and barge-in, the Summarize button, spoken event alerts, and Settings → Voice.
+// spoken answers and barge-in, the Summarize button, spoken event alerts, Settings → Voice, and the
+// hold-to-dictate key (with the companion off: typed into the focused terminal, the tile's mic
+// badge; on a web tile whose cross-origin page can't take text, the note saying so; with Loopy
+// shown and review on, the review box aimed at the tile).
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { type App, suite, waitFor } from "./harness.ts";
+import { type App, serveWebPages, suite, waitFor } from "./harness.ts";
+import { hover, modClick } from "./link_helpers.ts";
+import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
 import { SETTINGS_STORAGE_KEY } from "../../lib/workspace/store.ts";
 import type { VoiceSettings } from "../../lib/voice/settings.ts";
@@ -29,6 +34,47 @@ async function withVoice(app: App, patch: Partial<VoiceSettings>) {
   );
   await app.reload();
   await waitFor(() => app.exists(MIC), 3000, "the mic button");
+}
+
+/** Settings as patched (persisted, then the page reloaded), with no wait for the mic button. */
+async function withSettings(
+  app: App,
+  voice: Partial<VoiceSettings>,
+  companionMode: "window" | "off",
+) {
+  const settings = await app.settings();
+  settings.voice = { ...settings.voice, ...voice };
+  settings.companion = { ...settings.companion, mode: companionMode };
+  await app.eval(
+    (k: string, v: string) => localStorage.setItem(k, v),
+    SETTINGS_STORAGE_KEY,
+    JSON.stringify(settings),
+  );
+  await app.reload();
+}
+
+const DICTATING = "[data-testid=tile-dictating]";
+const NOTE = "[data-testid=dictation-note]";
+
+/**
+ * Hold Mod+Shift+`letter` (the hold-to-dictate key here) until the focused tile's mic badge shows,
+ * a moment more (a hold, not the short tap that latches), then let go.
+ */
+async function holdDictateKey(app: App, letter = "K", id?: string) {
+  const kb = app.page.keyboard;
+  await kb.down(app.mod);
+  await kb.down("Shift");
+  await kb.down(`Key${letter}` as never);
+  const badge = id ? `${tileSel(id)} ${DICTATING}` : DICTATING;
+  await waitFor(
+    async () => await app.attr(badge, "data-phase") === "listening",
+    2000,
+    "the dictating badge, listening",
+  );
+  await new Promise((r) => setTimeout(r, 400));
+  await kb.up(`Key${letter}` as never);
+  await kb.up("Shift");
+  await kb.up(app.mod);
 }
 
 /** The demo's voice script (`window.__e2eVoice`). */
@@ -445,6 +491,161 @@ suite("voice", (test) => {
       async () => (await app.settings()).voice.pttKey === "off",
       2000,
       "ptt off saved",
+    );
+  });
+
+  test("hold-to-dictate with the companion off: the badge shows, the transcript is typed, no Enter", async (app) => {
+    // Review is on, but with no Loopy to hold the review box the dictation is typed at once.
+    await withSettings(app, { dictateKey: "Mod+Shift+K", review: true }, "off");
+    assert(!(await app.exists(OVERLAY)), "no companion");
+    const id = (await app.focusedId())!;
+    await app.focusTerminalInput(id);
+    await willHear(app, "echo held dictation.");
+    await holdDictateKey(app, "K", id);
+    await app.waitForText(id, "echo held dictation");
+    // Typed, not run, one line, and the key itself never reached the terminal.
+    assert(
+      (await app.lastLine(id)).trimEnd().endsWith("echo held dictation"),
+      await app.lastLine(id),
+    );
+    await waitFor(
+      async () => !(await app.exists(DICTATING)),
+      2000,
+      "the badge gone",
+    );
+    assert(!(await app.exists(NOTE)));
+    assertEquals((await script(app)).starts, ["local"]);
+    // The push-to-talk key stays Loopy's: with the companion off it does nothing.
+    const kb = app.page.keyboard;
+    await kb.down(app.mod);
+    await kb.down("Shift");
+    await kb.down("KeyM" as never);
+    await kb.up("KeyM" as never);
+    await kb.up("Shift");
+    await kb.up(app.mod);
+    await new Promise((r) => setTimeout(r, 300));
+    assertEquals((await script(app)).starts, ["local"]);
+  });
+
+  test("hold-to-dictate on a web tile: its cross-origin page can't take text, and a note says so", async (app) => {
+    await withSettings(
+      app,
+      { dictateKey: "Mod+Shift+K", review: false },
+      "off",
+    );
+    const pages = await serveWebPages();
+    try {
+      const term = (await app.focusedId())!;
+      const url = `${pages.origin}/a`;
+      await app.run(term, `echo ${url}`);
+      await app.settle();
+      await hover(app, term, url, url);
+      await modClick(app, term, url);
+      const web = await waitFor(
+        () =>
+          app.eval(() =>
+            document.querySelector<HTMLElement>(
+              "[data-testid=tile][data-web=true][data-focused=true]",
+            )?.dataset.id ?? null
+          ),
+        5000,
+        "the focused web tile",
+      );
+      await waitFor(
+        async () =>
+          (await app.attr(
+            `${tileSel(web)} [data-testid=web-body]`,
+            "data-load",
+          )) ===
+            "complete",
+        5000,
+        "the page loaded",
+      );
+      await willHear(app, "hello page");
+      await holdDictateKey(app, "K", web);
+      const note = await waitFor(
+        () =>
+          app.eval(
+            (s: string) => document.querySelector(s)?.textContent ?? null,
+            NOTE,
+          ),
+        3000,
+        "the note",
+      );
+      assertStringIncludes(note, "Can't type into this page");
+      // It fades out on its own (its animation's end removes it).
+      await waitFor(
+        async () => !(await app.exists(NOTE)),
+        6000,
+        "the note gone",
+      );
+      assert(!(await app.lastLine(term)).includes("hello page"));
+    } finally {
+      await pages.close();
+    }
+  });
+
+  test("hold-to-dictate with Loopy shown and review on: the review box is aimed at the tile", async (app) => {
+    await withVoice(app, { dictateKey: "Mod+Shift+K", review: true });
+    const id = (await app.focusedId())!;
+    await app.focusTerminalInput(id);
+    await willHear(app, "echo reviewed dictation");
+    await holdDictateKey(app, "K", id);
+    await waitFor(() => app.exists(REVIEW), 3000, "the review box");
+    assertEquals(await app.attr(REVIEW, "data-target"), "dictate");
+    await app.click("[data-testid=voice-review-send]");
+    await app.waitForText(id, "echo reviewed dictation");
+  });
+
+  test("Settings → Voice: the dictate key is off by default, and never the hold-to-talk key", async (app) => {
+    await app.openSettings();
+    await waitFor(
+      () => app.exists("[data-testid=voice-settings]"),
+      2000,
+      "the section",
+    );
+    const options = (testid: string) =>
+      app.eval((t: string) =>
+        [
+          ...document.querySelectorAll<HTMLOptionElement>(
+            `[data-testid=${t}] option`,
+          ),
+        ].map((o) => ({ value: o.value, disabled: o.disabled })), testid);
+    assertEquals(
+      await app.eval(() =>
+        document.querySelector<HTMLSelectElement>(
+          "[data-testid=setting-voice-dictate-key]",
+        )!.value
+      ),
+      "off",
+    );
+    // The hold-to-talk key (⌘⇧M / Ctrl+Shift+M) is greyed out in the dictate list.
+    const dictate = await options("setting-voice-dictate-key");
+    assertEquals(
+      dictate.filter((o) => o.disabled).map((o) => o.value),
+      ["Mod+Shift+M"],
+    );
+    await app.eval(() => {
+      const s = document.querySelector<HTMLSelectElement>(
+        "[data-testid=setting-voice-dictate-key]",
+      )!;
+      s.value = "Mod+Shift+K";
+      s.dispatchEvent(new Event("input", { bubbles: true }));
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitFor(
+      async () => (await app.settings()).voice.dictateKey === "Mod+Shift+K",
+      2000,
+      "the dictate key saved",
+    );
+    // And the other way round.
+    await waitFor(
+      async () =>
+        (await options("setting-voice-ptt")).filter((o) => o.disabled).map((
+          o,
+        ) => o.value).join() === "Mod+Shift+K",
+      2000,
+      "the dictate key greyed out in the hold-to-talk list",
     );
   });
 });

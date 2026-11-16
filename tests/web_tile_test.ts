@@ -1,6 +1,7 @@
 // Web tiles without a DOM: which URLs the iframe engine embeds (and the CSP that must allow them),
 // the address field, the tile-kept back/forward list, the HTML overlay count, the store's web tile
-// (a tile with no PTY) and its snapshot round-trip through a restore.
+// (a tile with no PTY) and its snapshot round-trip through a restore, and dictation typed into a
+// same-origin page's focused field (`insertIntoDocument`, over fake elements).
 
 import { assert, assertEquals, assertStrictEquals } from "@std/assert";
 import {
@@ -22,7 +23,11 @@ import {
   startHistory,
 } from "../lib/web/history.ts";
 import { onOverlays, openOverlay, openOverlays } from "../lib/web/overlays.ts";
-import { FRAME_SANDBOX, IframeEngine } from "../lib/web/engine.ts";
+import {
+  FRAME_SANDBOX,
+  IframeEngine,
+  insertIntoDocument,
+} from "../lib/web/engine.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
 import { planRestore, snapshotOf } from "../lib/workspace/session.ts";
 import { csp } from "../app/page.tsx";
@@ -344,4 +349,85 @@ Deno.test("session: a web tile saves its page and comes back at it, with no PTY"
     planRestore(forged, [])!.terminals.find((t) => t.id === "t1")!.web,
     undefined,
   );
+});
+
+/** A fake focused field: records what reached it. */
+function fakeField(tagName: string, opts: Record<string, unknown> = {}) {
+  const events: Event[] = [];
+  const field = {
+    tagName,
+    type: "text",
+    value: "abc",
+    selectionStart: 1 as number | null,
+    selectionEnd: 2 as number | null,
+    disabled: false,
+    readOnly: false,
+    isContentEditable: false,
+    setRangeText(text: string, start: number, end: number) {
+      this.value = this.value.slice(0, start) + text + this.value.slice(end);
+    },
+    dispatchEvent(e: Event) {
+      events.push(e);
+      return true;
+    },
+    ...opts,
+  };
+  return { field, events };
+}
+
+/** A fake document with `activeElement` focused; `exec` answers `execCommand`. */
+function fakeDoc(activeElement: unknown, exec: () => boolean = () => false) {
+  const calls: unknown[][] = [];
+  const doc = {
+    activeElement,
+    defaultView: null,
+    execCommand: (...args: unknown[]) => {
+      calls.push(args);
+      return exec();
+    },
+  };
+  return { doc: doc as unknown as Document, calls };
+}
+
+Deno.test("web: dictation goes through execCommand insertText when the page has it", () => {
+  const { field, events } = fakeField("TEXTAREA");
+  const { doc, calls } = fakeDoc(field, () => true);
+  assert(insertIntoDocument(doc, "hello"));
+  assertEquals(calls, [["insertText", false, "hello"]]);
+  assertEquals(field.value, "abc", "execCommand did the typing");
+  assertEquals(events.length, 0);
+});
+
+Deno.test("web: without execCommand, the selection is replaced and an input event sent", () => {
+  const { field, events } = fakeField("INPUT", { type: "search" });
+  const { doc } = fakeDoc(field, () => {
+    throw new Error("unsupported");
+  });
+  assert(insertIntoDocument(doc, "XY"));
+  assertEquals(field.value, "aXYc");
+  assertEquals(events.map((e) => [e.type, e.bubbles]), [["input", true]]);
+});
+
+Deno.test("web: dictation is refused where nothing editable has the focus", () => {
+  const refuse = (el: unknown) => {
+    const { doc, calls } = fakeDoc(el, () => true);
+    assertEquals(insertIntoDocument(doc, "x"), false);
+    assertEquals(calls, [], "never typed");
+  };
+  refuse(null);
+  refuse(fakeField("DIV").field);
+  refuse(fakeField("BUTTON").field);
+  refuse(fakeField("INPUT", { type: "checkbox" }).field);
+  refuse(fakeField("INPUT", { disabled: true }).field);
+  refuse(fakeField("TEXTAREA", { readOnly: true }).field);
+  // contenteditable takes it (through execCommand).
+  const { doc } = fakeDoc(
+    fakeField("DIV", { isContentEditable: true }).field,
+    () => true,
+  );
+  assert(insertIntoDocument(doc, "x"));
+  // An email field has no selection: only execCommand can type into it.
+  const email = fakeField("INPUT", { type: "email" });
+  assertEquals(insertIntoDocument(fakeDoc(email.field).doc, "x"), false);
+  assertEquals(email.field.value, "abc");
 });

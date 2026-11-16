@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Hold to dictate: a second voice key, picked in Settings → Voice → "Hold to
+  dictate" (off until you choose one, from the same choices as Hold to talk and
+  never the same key). Hold it and speak; let go and what you said is typed into
+  the focused tile as one line, with no Enter, whatever "Dictate into the
+  focused tile" says, and with the companion off too. A mic badge in the tile's
+  header shows it listening (with the microphone's level); with Loopy shown and
+  review on, the transcript waits in the review box first. A tile that can't
+  take the text (no focused tile, a web page Qutty can't type into) gets a short
+  note that fades away.
+
 ## 0.5.1 — Denext 4.18: browser tiles, free-form view, Minimize / Maximize / Restore, activity indicators, tray mode
 
 - Denext 4.18 (runtime 3.0.0-denext.22). A Window-menu click (Minimize Tile,

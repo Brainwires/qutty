@@ -1,6 +1,7 @@
 // Settings → Voice (lib/voice/settings.ts) through the workspace store, and the hold-to-talk key
 // (lib/workspace/keys.ts): always the app's Mod+Shift space, never a workspace shortcut, never a
-// key the terminal receives.
+// key the terminal receives — and the hold-to-dictate key, picked from the same choices, off by
+// default and never the push-to-talk key.
 
 import { assert, assertEquals } from "@std/assert";
 import {
@@ -17,8 +18,10 @@ import {
 } from "../lib/workspace/store.ts";
 import {
   commandForKey,
+  dictateKeyAvailable,
   isPushToTalk,
   isPushToTalkRelease,
+  isTalkKey,
   type KeyLike,
   pttAvailable,
 } from "../lib/workspace/keys.ts";
@@ -157,4 +160,73 @@ Deno.test("push-to-talk key: no choice is a workspace shortcut", () => {
       assertEquals(commandForKey(e, platform), null, `${k} on ${platform}`);
     }
   }
+});
+
+Deno.test("dictate key: off by default; old settings, junk and a clash with push-to-talk fall back", () => {
+  assertEquals(DEFAULT_VOICE.dictateKey, "off");
+  // Saved before the field existed.
+  const { dictateKey: _gone, ...old } = {
+    ...DEFAULT_VOICE,
+    pttKey: "Mod+Shift+K",
+  };
+  assertEquals(sanitizeVoice(old), {
+    ...DEFAULT_VOICE,
+    pttKey: "Mod+Shift+K",
+    dictateKey: "off",
+  });
+  assertEquals(
+    sanitizeVoice({ dictateKey: "Mod+Shift+K" }).dictateKey,
+    "Mod+Shift+K",
+  );
+  assertEquals(sanitizeVoice({ dictateKey: "F9" }).dictateKey, "off");
+  assertEquals(sanitizeVoice({ dictateKey: 3 }).dictateKey, "off");
+  // Never the push-to-talk key: push-to-talk keeps it.
+  assertEquals(sanitizeVoice({ dictateKey: "Mod+Shift+M" }).dictateKey, "off");
+  const both = sanitizeVoice({ pttKey: "off", dictateKey: "Mod+Shift+M" });
+  assertEquals([both.pttKey, both.dictateKey], ["off", "Mod+Shift+M"]);
+  const moved = sanitizeVoice({ pttKey: "Mod+Shift+K" }, {
+    ...DEFAULT_VOICE,
+    dictateKey: "Mod+Shift+K",
+  });
+  assertEquals([moved.pttKey, moved.dictateKey], ["Mod+Shift+K", "off"]);
+  // Through the store, persisted and read back.
+  const s1 = reduce(initialState(), {
+    type: "setVoice",
+    patch: { dictateKey: "Mod+Shift+K" },
+  });
+  const saved = JSON.parse(JSON.stringify(s1.settings));
+  assertEquals(sanitizeSettings(saved).voice.dictateKey, "Mod+Shift+K");
+});
+
+Deno.test("dictate key: detected like push-to-talk, never when it clashes or is off", () => {
+  const macK = key("KeyK", { metaKey: true, shiftKey: true });
+  const macM = key("KeyM", { metaKey: true, shiftKey: true });
+  assert(dictateKeyAvailable("Mod+Shift+K", "Mod+Shift+M", "mac"));
+  assert(!dictateKeyAvailable("Mod+Shift+M", "Mod+Shift+M", "mac"));
+  assert(!dictateKeyAvailable("off", "Mod+Shift+M", "mac"));
+  assert(!dictateKeyAvailable("Mod+Shift+Space", "off", "other"));
+  assert(dictateKeyAvailable("Mod+Shift+M", "off", "other"));
+  // Both talk keys are declined by xterm; any other key is not.
+  const voice = {
+    pttKey: "Mod+Shift+M" as const,
+    dictateKey: "Mod+Shift+K" as const,
+  };
+  assert(isTalkKey(macK, voice, "mac"));
+  assert(isTalkKey(macM, voice, "mac"));
+  assert(
+    !isTalkKey(key("KeyJ", { metaKey: true, shiftKey: true }), voice, "mac"),
+  );
+  assert(!isTalkKey(macK, { ...voice, dictateKey: "off" }, "mac"));
+  assert(
+    isTalkKey(
+      key("KeyK", { ctrlKey: true, shiftKey: true }),
+      voice,
+      "other",
+    ),
+  );
+  // Its release is push-to-talk's: its own key, Shift or the modifier.
+  assert(isPushToTalkRelease({ key: "k", code: "KeyK" }, "Mod+Shift+K", "mac"));
+  assert(
+    !isPushToTalkRelease({ key: "m", code: "KeyM" }, "Mod+Shift+K", "mac"),
+  );
 });

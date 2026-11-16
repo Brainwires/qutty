@@ -28,6 +28,8 @@ export interface WebTileHooks {
   onPage(id: string, page: WebPage): void;
   /** Open `url` in the default browser (the backend's `linkOpen`). */
   openExternal(url: string): void;
+  /** Tile `id`'s view was mounted (`null`: closed); dictation types into it (`insertText`). */
+  onView?(id: string, view: WebViewHandle | null): void;
 }
 
 /** A web tile's view as its header and body draw it. */
@@ -120,6 +122,7 @@ export function useWebTile(
     void engine.mount(host, target).then((v) => {
       if (!live) return void v.close();
       viewRef.current = v;
+      hooksRef.current?.onView?.(id, v);
       const report = (patch: Partial<WebPage>) => {
         void v.state().then((s) =>
           hooksRef.current?.onPage(id, {
@@ -156,6 +159,7 @@ export function useWebTile(
     return () => {
       live = false;
       for (const off of offs) off();
+      if (viewRef.current) hooksRef.current?.onView?.(id, null);
       void viewRef.current?.close();
       viewRef.current = null;
     };
