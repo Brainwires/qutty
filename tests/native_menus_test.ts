@@ -23,6 +23,7 @@ import {
   menuActionAllowed,
   menuInput,
   menuItemStates,
+  moveItemId,
   type NativeMenuInput,
   patternItemId,
   shellMenu,
@@ -676,4 +677,40 @@ Deno.test("native menus: the self-test renders the bar the runtime got", () => {
       "Next Tile  CmdOrCtrl+]  {qutty:tiles:next}",
     ],
   );
+});
+
+Deno.test("native menus: the Window menu's Move Tile to items, and their clicks", () => {
+  const moves = {
+    targets: [{ window: "w2", name: "Work" }, { window: "w3", name: "Ops" }],
+    newWindow: true,
+  };
+  const items = windowMenuItems(INPUT, moves);
+  const tail = items.slice(items.findLastIndex((i) => i.type === "separator"));
+  assertEquals(tail, [
+    { type: "separator" },
+    { id: moveItemId("w2"), label: "Move Tile to Work" },
+    { id: moveItemId("w3"), label: "Move Tile to Ops" },
+    { id: moveItemId("new"), label: "Move Tile to New Window" },
+  ]);
+  assertEquals(menuAction(moveItemId("w2")), { kind: "moveTile", to: "w2" });
+  assertEquals(menuAction(moveItemId("new")), { kind: "moveTile", to: "new" });
+  assertEquals(menuAction(moveItemId("")), null);
+  // Without moves (the browser), no focused tile, or nowhere to go: none.
+  assertEquals(windowMenuItems(INPUT), windowMenuItems(INPUT, undefined));
+  assert(!windowMenuItems(INPUT).some((i) => i.id?.startsWith(moveItemId(""))));
+  assert(
+    !windowMenuItems({ ...INPUT, focusedId: null }, moves).some((i) =>
+      i.id?.startsWith(moveItemId(""))
+    ),
+  );
+  assertEquals(
+    windowMenuItems(INPUT, { targets: [], newWindow: false }),
+    windowMenuItems(INPUT),
+  );
+  // A window's only tile does not tear off into a new window.
+  const one = windowMenuItems(
+    { ...INPUT, tiles: [INPUT.tiles[1]] },
+    { targets: [], newWindow: true },
+  );
+  assert(!one.some((i) => i.id === moveItemId("new")));
 });

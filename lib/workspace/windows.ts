@@ -138,3 +138,17 @@ export function createCloseGuard(deps: CloseGuardDeps): {
     },
   };
 }
+
+/**
+ * How old (ms) a one-shot menu request may be when a page gets it (a Window-menu "Move to
+ * Window": `moveRequest`, desktop/session.ts). A runtime that ignores `retain: false` replays it to
+ * a page that subscribes later, so after a reload an old click would otherwise act again.
+ */
+export const MENU_EVENT_MAX_AGE_MS = 2000;
+
+/** Whether a menu request sent at `at` is still fresh at `now` (both ms since the epoch). */
+export function isFreshMenuEvent(at: unknown, now: number): boolean {
+  return typeof at === "number" && Number.isFinite(at) &&
+    now - at >= -MENU_EVENT_MAX_AGE_MS &&
+    now - at <= MENU_EVENT_MAX_AGE_MS;
+}

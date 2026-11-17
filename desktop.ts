@@ -34,6 +34,7 @@ import {
 } from "./desktop/windows.ts";
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
+import { moveSelfTest } from "./desktop/move-selftest.ts";
 import { webviewSelfTest } from "./desktop/webview-selftest.ts";
 import { installNativeMenus } from "./desktop/menus.ts";
 import { menusSelfTest } from "./desktop/menus-selftest.ts";
@@ -59,6 +60,13 @@ if (!app.sidecarChild) {
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
       console.error(`detach self-test: FAILED: ${e?.message ?? e}`);
+      Deno.exit(1);
+    });
+  }
+  // `QUTTY_PTY_SELFTEST=move`: a shell's tile moved to another window (desktop/move-selftest.ts).
+  if (Deno.env.get("QUTTY_PTY_SELFTEST") === "move") {
+    moveSelfTest(app).then(() => Deno.exit(0), (e) => {
+      console.error(`move self-test: FAILED: ${e?.message ?? e}`);
       Deno.exit(1);
     });
   }

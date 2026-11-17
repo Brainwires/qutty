@@ -92,6 +92,8 @@ export interface NativeMenuHandlers {
   /** The web tiles' bookmark manager or History. */
   openWebDialog(dialog: "bookmarks" | "history"): void;
   openOllama(): void;
+  /** Move the focused tile to window `to` (`"new"`: a new window). */
+  moveTile(to: string): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
 }
@@ -111,6 +113,11 @@ export interface NativeMenusOptions {
   webDialogs: boolean;
   /** A modal dialog has the keyboard. */
   modalOpen: boolean;
+  /** Where tiles can move ("Move Tile to" in the Window menu); absent where they cannot. */
+  moves?: {
+    targets(): Promise<readonly { window: string; name: string }[]>;
+    newWindow: boolean;
+  };
   handlers: NativeMenuHandlers;
 }
 
@@ -164,8 +171,36 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
     }
   }, [windowId, input, epoch]);
 
+  // The other windows a tile can move to: asked again on focus and as this window's tiles change.
+  const [moveTargets, setMoveTargets] = useState<
+    readonly { window: string; name: string }[]
+  >([]);
+  const [targetsEpoch, setTargetsEpoch] = useState(0);
+  const hasMoves = opts.moves !== undefined;
+  const tileCount = opts.state.terminals.length;
+  useEffect(() => {
+    const moves = optsRef.current.moves;
+    if (windowId === null || !moves) return;
+    let live = true;
+    moves.targets().then((t) => {
+      if (live) setMoveTargets(t.map(({ window, name }) => ({ window, name })));
+    }, (e) => warnOnce("move targets", e));
+    return () => {
+      live = false;
+    };
+  }, [windowId, hasMoves, tileCount, targetsEpoch]);
+  const moveNewWindow = opts.moves?.newWindow === true;
+  const moveInput = useMemo(
+    () =>
+      hasMoves ? { targets: moveTargets, newWindow: moveNewWindow } : undefined,
+    [hasMoves, moveTargets, moveNewWindow],
+  );
+
   // This window's tiles in the Window menu.
-  const windowItems = useMemo(() => windowMenuItems(input), [input]);
+  const windowItems = useMemo(() => windowMenuItems(input, moveInput), [
+    input,
+    moveInput,
+  ]);
   const windowItemsRef = useRef<DesktopWindowMenuAppItem[]>([]);
   windowItemsRef.current = windowItems;
   const windowItemsKey = JSON.stringify(windowItems);
@@ -200,6 +235,7 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
     if (windowId === null) return;
     return onWindowFocus(() => {
       optsRef.current.handlers.onFocus();
+      setTargetsEpoch((n) => n + 1);
       setMenu(MENU_IDS.shell, shellRef.current).catch((e) =>
         warnOnce("setMenu", e)
       );
@@ -270,6 +306,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.openWebDialog(action.dialog);
         case "ollama":
           return h.openOllama();
+        case "moveTile":
+          return h.moveTile(action.to);
       }
     });
   }, [windowId, guard]);

@@ -89,6 +89,13 @@ export const ITEM = {
 export const REPO_URL = "https://github.com/Brainwires/qutty";
 
 const LAYOUT_PREFIX = "qutty:layout:pattern:";
+/** The Window menu's "Move Tile to <window>" items: this prefix and the window's id. */
+const MOVE_PREFIX = "qutty:window:move-tile:";
+
+/** The id of the Window menu's "Move Tile to" item for window `window` (`"new"`: a new window). */
+export function moveItemId(window: string): string {
+  return `${MOVE_PREFIX}${window}`;
+}
 const LAYOUT_GROUP = "qutty:layout";
 const BAR_PREFIX = "qutty:bar:position:";
 const BAR_GROUP = "qutty:bar";
@@ -484,8 +491,22 @@ export function stateChanges(
  * The window's own Window-menu items: its tiles in the switcher bar's order (the focused one
  * checked, ⌘1..9 on the first nine), then Next / Previous / Last Used Tile.
  */
+/** Where the Window menu can move the focused tile (desktop/tile-move.ts `MoveTarget`s). */
+export interface MoveMenuInput {
+  /** The other windows: their ids and workspace names. */
+  targets: readonly { window: string; name: string }[];
+  /** A tile can tear off into a new window. */
+  newWindow: boolean;
+}
+
+/**
+ * The window's own Window-menu items: its tiles (⌘1–⌘9), next / previous / last tile, and with
+ * `moves` "Move Tile to <window>" for each other window and "Move Tile to New Window" (as the tile
+ * header's menu; flat items, since the window items have no submenus).
+ */
 export function windowMenuItems(
   input: NativeMenuInput,
+  moves?: MoveMenuInput,
 ): DesktopWindowMenuAppItem[] {
   const tiles = input.tiles.map((t, i): DesktopWindowMenuAppItem => ({
     id: tileItemId(t.id),
@@ -501,12 +522,25 @@ export function windowMenuItems(
     accelerator: ACCELERATORS[id],
     enabled: many,
   });
+  const move: DesktopWindowMenuAppItem[] = input.focusedId === null || !moves
+    ? []
+    : [
+      ...moves.targets.map((t) => ({
+        id: moveItemId(t.window),
+        label: `Move Tile to ${t.name}`,
+      })),
+      // A window's only tile tearing off would just be the window again.
+      ...(moves.newWindow && input.tiles.length > 1
+        ? [{ id: moveItemId("new"), label: "Move Tile to New Window" }]
+        : []),
+    ].filter((t) => plain(t.id, MAX_ID) && plain(t.label, MAX_LABEL));
   return [
     ...tiles,
     { type: "separator" },
     nav(ITEM.nextTile, "Next Tile"),
     nav(ITEM.previousTile, "Previous Tile"),
     nav(ITEM.lastTile, "Last Used Tile"),
+    ...(move.length > 0 ? [{ type: "separator" as const }, ...move] : []),
   ];
 }
 
@@ -527,7 +561,9 @@ export type MenuAction =
   | { kind: "webPage" }
   /** The web tiles' bookmark manager or History (app/web-stores.ts `openWebDialog`). */
   | { kind: "webDialog"; dialog: "bookmarks" | "history" }
-  | { kind: "ollama" };
+  | { kind: "ollama" }
+  /** Move the focused tile to window `to` (`"new"`: a new window). */
+  | { kind: "moveTile"; to: string };
 
 const KEY_ITEMS: Record<string, KeyCommand> = {
   [ITEM.newTile]: { kind: "newTerminal" },
@@ -567,6 +603,9 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.ollama) return { kind: "ollama" };
+  if (id.startsWith(MOVE_PREFIX) && id.length > MOVE_PREFIX.length) {
+    return { kind: "moveTile", to: id.slice(MOVE_PREFIX.length) };
+  }
   if (
     VIEW_IDS.has(id) ||
     (id.startsWith(tileItemId("")) && id.length > tileItemId("").length)

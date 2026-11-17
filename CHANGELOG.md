@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Move a tile to another window: drag its header out of the window and let go
+  over another Qutty window, or right-click the header and pick "Move to
+  Workspace N" (or "Move to New Window"); in the app the Window menu has the
+  same "Move Tile to" items for the focused tile. A terminal keeps running: the
+  same shell, with its scrollback, its folder and whatever it was doing, and
+  agents still know it by the same name. It lands where you let go (the slot
+  under the pointer when tiles keep their places, the pointer in free-form). Let
+  go over no Qutty window and the tile opens in a new window there. A web tile
+  moves as its page and loads again. The last tile leaving a window closes that
+  window. A sandboxed tile keeps running in its first window's sandbox.
 - A native menu bar (Denext 4.18's app menus). macOS: Qutty (About, Settings…
   ⌘,, Hide, Quit), Shell, Edit, View, Window and Help; Linux: Shell, View,
   Window and Help, with Settings… at the end of Shell and no Edit menu (its

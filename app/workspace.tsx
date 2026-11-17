@@ -12,6 +12,8 @@
 // Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
 // terminals that kept running while no window showed it, or started with its first shell, and the
 // page saves its snapshot as it changes. Unmounting (the page going away) leaves the PTYs running.
+// A tile moves to another window by its header's menu or by dragging its header out of the window
+// (`useTileMove`): its PTY only changes owner; tiles moved here arrive the same way.
 //
 // The view: each workspace is tiled (the layout engine) or free-form (MDI: tiles as windows the
 // user moves and resizes), picked in the bar's View menu, Settings → Layout or the native View
@@ -88,6 +90,9 @@ import {
   type TileControl,
 } from "../lib/workspace/tile-controls.ts";
 import { useSession } from "./use-session.ts";
+import { useTileMove } from "./use-tile-move.ts";
+import { WindowDrop } from "./window-drop.tsx";
+import type { TileArrival } from "../lib/session-client.ts";
 import { useWindowClose } from "./use-window-close.ts";
 import { CloseWindowDialog } from "./close-window-dialog.tsx";
 import type { WindowClose } from "../lib/workspace/windows.ts";
@@ -440,7 +445,10 @@ function WorkspaceView() {
     );
   }, [webEngine, pttKey, dictateKey, platform]);
 
+  // A tile moved here from another window (`useTileMove`, below: it needs the layout).
+  const arriveRef = useRef<(a: TileArrival) => string | null>(() => null);
   const session = useSession({
+    arrive: (a) => arriveRef.current(a),
     manager: ready ? managerRef.current : null,
     state,
     seqRef,
@@ -909,6 +917,19 @@ function WorkspaceView() {
     run,
     focus: focusTerminal,
   });
+  const tileMove = useTileMove({
+    manager: ready ? managerRef.current : null,
+    moves: ready ? managerRef.current?.backend.session.moves : undefined,
+    state,
+    seqRef,
+    tiles: view.tiles,
+    bounds,
+    cluster: clusterRef,
+    run,
+    focus: focusKeyboard,
+    forget: (id) => sshRef.current.forget(id),
+  });
+  arriveRef.current = tileMove.arrive;
   const nativeMenus = useNativeMenus({
     ready: ready && desktop,
     platform,
@@ -919,6 +940,9 @@ function WorkspaceView() {
     webPage: webEngine?.capabilities.drawsAboveHtml === true,
     webDialogs: webEngine !== null,
     modalOpen,
+    ...(tileMove.enabled && managerRef.current?.backend.session.moves
+      ? { moves: managerRef.current.backend.session.moves }
+      : {}),
     handlers: {
       runCommand,
       openSettings,
@@ -930,6 +954,10 @@ function WorkspaceView() {
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
+      moveTile: (to) => {
+        const id = stateRef.current.focusedId;
+        if (id) void tileMove.moveTo(id, to);
+      },
       onFocus: launcher.refresh,
     },
   });
@@ -1073,6 +1101,8 @@ function WorkspaceView() {
             onMaximize={(id) => tileControl("maximize", id)}
             onRestore={(id) => tileControl("restoreTile", id)}
             onHeadDoubleClick={headDoubleClick}
+            windowDrag={tileMove.drag}
+            onHeadMenu={tileMove.enabled ? tileMove.openMenu : undefined}
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
             web={webHooks}
@@ -1109,6 +1139,16 @@ function WorkspaceView() {
                   {...ssh.tile(entry.id)}
                 />
               )}
+          />
+        )}
+        {tileMove.hover && (
+          <WindowDrop
+            hover={tileMove.hover}
+            view={state.view}
+            keepsPlaces={keep}
+            tiles={view.tiles}
+            bounds={bounds}
+            cluster={clusterRef.current}
           />
         )}
         {manager && !companionShown && <DictationNote state={voice.state} />}
@@ -1273,6 +1313,16 @@ function WorkspaceView() {
           title={links.menu.title}
           items={links.menu.items}
           onClose={links.closeMenu}
+        />
+      )}
+      {tileMove.menu && (
+        <LinkMenu
+          x={tileMove.menu.x}
+          y={tileMove.menu.y}
+          title={tileMove.menu.title}
+          items={tileMove.menu.items}
+          onClose={tileMove.closeMenu}
+          testId="tile-move-menu"
         />
       )}
       {manager && forwardsFor && (
