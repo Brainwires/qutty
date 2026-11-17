@@ -2,13 +2,15 @@
 // squircle, on the macOS 824/1024 grid (a 1024 canvas, a 100 px margin, a continuous-corner
 // squircle and the standard soft drop shadow).
 //
-// The face is the component's "excited" mood, drawn here as a standalone SVG: the bead, brows, eyes
-// and mouth are the component's shapes (its FACES.excited) with the styles of public/styles.css
-// (.companion-avatar …) resolved into it: the ink, the eye whites, the colour accents (the teal
-// irises with their catch-lights, the warm open mouth, the rosy cheeks) and the mood's tinted rim. Change the face there, then mirror it in `face()` below and run this again.
+// The face is the component's default mood, "neutral" (the face it wears at rest), drawn here as a
+// standalone SVG: the bead, brows, eyes and mouth are the component's shapes (its FACES.neutral)
+// with the styles of public/styles.css (.companion-avatar …) resolved into it: the ink, the eye
+// whites, the colour accents (the teal irises with their catch-lights) and the small closed smile.
+// The neutral face has no cheeks and no tinted rim (the rim is for the other moods), so neither
+// does the icon. Change the face there, then mirror it in `face()` below and run this again.
 // Every size is rasterized by headless Chromium (Astral, as the e2e harness launches it) at its own
-// size, so each one is sharp; 32 px and under draw a simpler face (no rim, bolder ink, dark pupils,
-// no cheeks) that still reads.
+// size, so each one is sharp; 32 px and under draw a simpler face (bolder ink, dark pupils looking
+// straight out) that still reads.
 //
 // Writes icons/source.png (the 1024 master), icons/app-1024.png, icons/app.png (512, Linux),
 // icons/app.icns (iconutil, 16–1024 @1x/@2x), icons/app.ico (16–256) and public/favicon.png (64).
@@ -39,13 +41,12 @@ function squirclePath(): string {
 
 // ---- The face ---------------------------------------------------------------------------------
 
-// The component's colours (public/styles.css): --companion-face-ink, the bead's edge, the excited
-// mood's tint (--companion-clip), and the accents' gradients (companion-face.tsx AccentDefs).
+// The component's colours (public/styles.css): --companion-face-ink, the bead's edge, and the
+// iris gradient (companion-face.tsx AccentDefs).
 const INK = "#1d2b33";
 const BEAD_EDGE = "#4b545b";
-const TINT = "#ff8a3d";
 
-/** The accents' gradients: the iris, the open mouth, the cheeks (as `AccentDefs` draws them). */
+/** The iris gradient, as `AccentDefs` draws it. */
 const ACCENT_DEFS = `
       <radialGradient id="iris" cx="0.5" cy="0.5" r="0.5">
         <stop offset="0" stop-color="#0c1a22"/>
@@ -53,16 +54,6 @@ const ACCENT_DEFS = `
         <stop offset="0.5" stop-color="#1b7f8e"/>
         <stop offset="0.86" stop-color="#14606f"/>
         <stop offset="1" stop-color="#0c3a44"/>
-      </radialGradient>
-      <linearGradient id="mouth" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#4f1a22"/>
-        <stop offset="0.55" stop-color="#7a2632"/>
-        <stop offset="1" stop-color="#d0566a"/>
-      </linearGradient>
-      <radialGradient id="cheek" cx="0.5" cy="0.5" r="0.5">
-        <stop offset="0" stop-color="#ff5f86" stop-opacity="0.9"/>
-        <stop offset="0.55" stop-color="#ff7d9b" stop-opacity="0.55"/>
-        <stop offset="1" stop-color="#ff9ab2" stop-opacity="0"/>
       </radialGradient>`;
 
 /** A dot pupil's catch-light, as the component's `glint` draws it. */
@@ -74,34 +65,39 @@ function glint(x: number, y: number, r: number): string {
 }
 
 /**
- * The companion's excited face, in the drawing's own units (the bead: centre (80, 76), radius 29),
- * as the component draws it, for an icon `px` wide. From 32 px down it drops the tinted rim and
- * thickens the ink; at 16 px the eyes are plain dark ovals (white eyes on the light steel are a
- * grey smudge at that size).
+ * The companion's neutral face, in the drawing's own units (the bead: centre (80, 76), radius 29),
+ * as the component draws it, for an icon `px` wide. From 32 px down it thickens the ink, widens
+ * the smile and centres the dark pupils (a glance to the side is lost at that size); at 16 px the
+ * eyes are plain
+ * dark ovals (white eyes on the light steel are a grey smudge at that size).
  */
 function face(px: number): string {
   const small = px <= 32, tiny = px <= 16;
   const brow = small ? 5 : 3.4;
-  const mouthStroke = small ? 3.6 : 2.8;
+  const mouthStroke = small ? 4 : 2.8;
+  // FACES.neutral's small closed smile (SMILE); from 32 px down a little wider and deeper, or it
+  // reads as a flat dash.
+  const mouth = small ? "M72 88 Q80 95 88 88" : "M74 89 Q80 93 86 89";
   const eyeStroke = small ? 2.4 : 1;
   const pupil = small ? 4.4 : 3.6;
+  // FACES.neutral's pupils look in and down a little (dx ±1.8, dy 1.8).
+  const [lx, rx, py] = small ? [70, 90, 72] : [71.8, 88.2, 73.8];
   const eyes = tiny
     ? `<g fill="${INK}">
-      <ellipse cx="70" cy="71" rx="5.6" ry="8"/>
-      <ellipse cx="90" cy="71" rx="5.6" ry="8"/>
+      <ellipse cx="70" cy="71" rx="5.6" ry="7.4"/>
+      <ellipse cx="90" cy="71" rx="5.6" ry="7.4"/>
     </g>`
     : `<g stroke="${INK}" stroke-width="${eyeStroke}">
-      <ellipse cx="70" cy="72" rx="7.2" ry="9.8" fill="#ffffff"/>
-      <ellipse cx="90" cy="72" rx="7.2" ry="9.8" fill="#ffffff"/>
+      <ellipse cx="70" cy="72" rx="7.2" ry="8.8" fill="#ffffff"/>
+      <ellipse cx="90" cy="72" rx="7.2" ry="8.8" fill="#ffffff"/>
     </g>
-    <circle cx="70" cy="72" r="${pupil}" fill="${small ? INK : "url(#iris)"}"/>
-    <circle cx="90" cy="72" r="${pupil}" fill="${small ? INK : "url(#iris)"}"/>
-    ${small ? "" : glint(70, 72, pupil) + glint(90, 72, pupil)}`;
-  // The rosy cheeks of the happy moods (the component's `Cheeks`), from 48 px up.
-  const cheeks = small ? "" : `<g fill="url(#cheek)">
-      <ellipse cx="61" cy="84.5" rx="6" ry="3.6"/>
-      <ellipse cx="99" cy="84.5" rx="6" ry="3.6"/>
-    </g>`;
+    <circle cx="${lx}" cy="${py}" r="${pupil}" fill="${
+      small ? INK : "url(#iris)"
+    }"/>
+    <circle cx="${rx}" cy="${py}" r="${pupil}" fill="${
+      small ? INK : "url(#iris)"
+    }"/>
+    ${small ? "" : glint(lx, py, pupil) + glint(rx, py, pupil)}`;
   return `
     <defs>
       <radialGradient id="bead" cx="0.36" cy="0.32" r="0.75">
@@ -110,25 +106,19 @@ function face(px: number): string {
         <stop offset="0.8" stop-color="#8b959e"/>
         <stop offset="1" stop-color="#5d666e"/>
       </radialGradient>${ACCENT_DEFS}
-      <filter id="rim" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="0" stdDeviation="0.6" flood-color="${TINT}"/>
-        <feDropShadow dx="0" dy="0" stdDeviation="1.6" flood-color="${TINT}"/>
-      </filter>
       <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
         <feDropShadow dx="0" dy="1.6" stdDeviation="1.8" flood-color="#000" flood-opacity="0.45"/>
       </filter>
     </defs>
     <g filter="url(#lift)">
-      <circle cx="80" cy="76" r="29" fill="url(#bead)" stroke="${BEAD_EDGE}" stroke-width="1"
-        ${small ? "" : `filter="url(#rim)"`}/>
+      <circle cx="80" cy="76" r="29" fill="url(#bead)" stroke="${BEAD_EDGE}" stroke-width="1"/>
     </g>
     <g fill="none" stroke="${INK}" stroke-width="${brow}" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M62 60 Q68.5 55 76 58.4"/>
-      <path d="M84 58.4 Q91.5 55 98 60"/>
+      <path d="M61 61 Q68 55 76 59.5"/>
+      <path d="M84 59.5 Q92 55 99 61"/>
     </g>
-    ${cheeks}
     ${eyes}
-    <path d="M67 84 Q80 104 93 84 Z" fill="url(#mouth)" stroke="${INK}"
+    <path d="${mouth}" fill="none" stroke="${INK}"
       stroke-width="${mouthStroke}" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
 
