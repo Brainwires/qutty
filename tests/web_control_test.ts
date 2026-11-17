@@ -89,6 +89,12 @@ class FakeView {
       blur: () => Promise.resolve(),
       insertText: () => Promise.resolve(false),
       state: () => Promise.resolve({ ...this.state }),
+      setZoom: () => Promise.resolve(),
+      getZoom: () => Promise.resolve(1),
+      find: () => Promise.resolve(),
+      stopFind: () => Promise.resolve(),
+      print: () => Promise.resolve(),
+      openDevTools: () => Promise.resolve(),
       on: (event, fn) => {
         const set = this.listeners.get(event) ?? new Set();
         this.listeners.set(event, set);
@@ -119,6 +125,11 @@ const engine = (kind: "iframe" | "native"): WebEngine => ({
     capture: kind === "native",
     evaluate: kind === "native",
     forwardKeys: false,
+    zoom: false,
+    find: false,
+    print: false,
+    devTools: false,
+    contextMenu: false,
   },
   canEmbed: (url) => kind === "native" || new URL(url).hostname === "localhost",
   mount: () => Promise.reject(new Error("not here")),

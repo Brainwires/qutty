@@ -58,3 +58,22 @@ export function goBack(h: WebHistory): WebHistory {
 export function goForward(h: WebHistory): WebHistory {
   return canGoForward(h) ? { entries: h.entries, index: h.index + 1 } : h;
 }
+
+/**
+ * The view reported `url` after a step of `step` through this list (`-1` back, `1` forward, `0`
+ * any other navigation): how a tile keeps the list of a view that has its own (the native
+ * engine's), for the Back and Forward menus. A step lands on the entry it goes to (taking the
+ * URL the view reports); any other navigation is {@linkcode pushUrl}.
+ */
+export function followUrl(
+  h: WebHistory,
+  url: string,
+  step: number,
+): WebHistory {
+  if (step === 0) return pushUrl(h, url);
+  const index = Math.max(0, Math.min(h.entries.length - 1, h.index + step));
+  if (h.entries[index] === url && index === h.index) return h;
+  const entries = [...h.entries];
+  entries[index] = url;
+  return { entries, index };
+}

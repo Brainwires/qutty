@@ -66,12 +66,8 @@ import {
   type TileTitle,
 } from "../lib/workspace/activity.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
-import {
-  useWebTile,
-  WebBody,
-  type WebTileHooks,
-  WebToolbar,
-} from "./web-tile.tsx";
+import { useWebTile, WebBody, type WebTileHooks } from "./web-tile.tsx";
+import { WebChrome, WebToolbar } from "./web-chrome.tsx";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 
 /** The workspace's additions to a tile (SSH tiles, agent badges). */
@@ -487,14 +483,21 @@ function TerminalTile(props: TerminalTileProps) {
             </button>
           </span>
         </header>
-        {web ? <WebBody view={web} /> : (
-          <div
-            class="tile-body"
-            data-testid="tile-body"
-            ref={hostRef}
-            style={full ? scaledBodyStyle(full, rect, focused) : undefined}
-          />
-        )}
+        {web
+          ? (
+            <>
+              <WebChrome view={web} />
+              <WebBody view={web} />
+            </>
+          )
+          : (
+            <div
+              class="tile-body"
+              data-testid="tile-body"
+              ref={hostRef}
+              style={full ? scaledBodyStyle(full, rect, focused) : undefined}
+            />
+          )}
         {full && (
           // Hidden (CSS) rather than unmounted once focused: the pointerdown that focuses the
           // tile re-renders it, and the mousedown that follows must still land here so its
