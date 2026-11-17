@@ -28,6 +28,8 @@
  *   window is the active one again (`focusWindow` would bring it to the front).
  * - **Dictation.** `insertText` runs {@linkcode insertTextScript} in the page (`evaluate`, an
  *   isolated world that shares the DOM).
+ * - **The companion's web tools** read and act on the page through the same `evaluate`, and
+ *   picture it with `capture` (lib/web/web-control.ts).
  *
  * Policies: logins persist (the named partition {@linkcode WEB_PARTITION}); a popup opens nothing
  * in the view and is reported (`new-window`: the tile opens it in a new tile); a download asks
@@ -475,6 +477,24 @@ class NativeView implements WebViewHandle {
       // The page's CSP may refuse the evaluation (WKWebView), or the view closed.
       return false;
     }
+  }
+
+  evaluate(script: string): Promise<unknown> {
+    if (this.#closed) return Promise.reject(new Error("the view is closed"));
+    if (!this.#shared.caps.evaluate) {
+      return Promise.reject(new Error("this runtime cannot evaluate"));
+    }
+    return this.#raw.evaluate<unknown>(script);
+  }
+
+  capture(
+    opts: { format: "jpeg" | "png"; quality?: number; scale?: number },
+  ): Promise<Blob> {
+    if (this.#closed) return Promise.reject(new Error("the view is closed"));
+    if (!this.#shared.caps.capture) {
+      return Promise.reject(new Error("this runtime cannot capture"));
+    }
+    return this.#raw.capture(opts);
   }
 
   async state(): Promise<WebViewState> {

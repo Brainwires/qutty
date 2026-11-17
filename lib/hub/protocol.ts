@@ -13,10 +13,20 @@ export type TileStatus = "busy" | "idle" | "waiting";
 /** Every status, for validation. */
 export const TILE_STATUSES: readonly TileStatus[] = ["busy", "idle", "waiting"];
 
-/** One tile (one PTY) as the hub knows it. */
+/**
+ * One tile as the hub knows it: a terminal (one PTY), or a web tile (`kind: "web"`: a page the
+ * window shows, lib/hub/web-tiles.ts).
+ */
 export interface TileInfo {
-  /** The PTY id (`pty-3`): `QUTTY_TILE_ID` in the tile's environment. */
+  /**
+   * The PTY id (`pty-3`): `QUTTY_TILE_ID` in the tile's environment. A web tile's is `web-<n>`,
+   * given by the hub.
+   */
   id: string;
+  /** `web` for a web tile (no PTY, no agent: the companion's web tools drive it). */
+  kind?: "web";
+  /** A web tile's page. */
+  url?: string;
   /** A unique, user-friendly name (`claude`, `codex-2`, `shell-4`), settable with `set_name`. */
   name: string;
   /** The agent harness in the tile (`claude`, `codex`, …), once it is known. */
@@ -109,22 +119,32 @@ export const TILE_TOOLS = [
   "wait_for_message",
   "read_screen",
   "read_scrollback",
+  "read_page",
   "ask_user",
 ] as const;
 
-/** The tools only the companion may call: they act on other tiles. */
+/** The tools only the companion may call: they act on other tiles (and drive web tiles). */
 export const COMPANION_TOOLS = [
   "write_tile",
   "spawn_tile",
   "close_tile",
   "focus_tile",
   "deliver",
+  "open_web",
+  "web_navigate",
+  "web_go",
+  "web_click",
+  "web_type",
+  "web_scroll",
+  "web_eval",
+  "web_screenshot",
 ] as const;
 
 /**
  * The permission matrix: a tile may call the tile tools; the companion may call everything. A
  * tile never types into another tile; it asks that tile's agent (`send_message`) or the
- * companion. Unknown tools are nobody's.
+ * companion. Web tiles likewise: a tile's agent may read a page (`read_page`, like
+ * `read_screen`); only the companion acts on one. Unknown tools are nobody's.
  */
 export function canCall(identity: HubIdentity, tool: string): boolean {
   if ((TILE_TOOLS as readonly string[]).includes(tool)) return true;

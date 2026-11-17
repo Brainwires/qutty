@@ -1,7 +1,9 @@
 /**
  * The audit log of the companion's privileged actions: every call of a companion-only hub tool
- * (`write_tile`, `spawn_tile`, `close_tile`, `focus_tile`, `deliver`), and every refused attempt
- * by a tile. Entries are appended, never changed: one JSON line each to `companion-audit.jsonl`
+ * (`write_tile`, `spawn_tile`, `close_tile`, `focus_tile`, `deliver`, and the web tools that act
+ * on a page: `open_web`, `web_navigate`, `web_go`, `web_click`, `web_type`, `web_scroll`,
+ * `web_eval`, `web_screenshot`), and every refused attempt by a tile. Reads (`read_page`,
+ * `read_screen`) are not logged. Entries are appended, never changed: one JSON line each to `companion-audit.jsonl`
  * in the app-support folder (desktop/companion.ts writes it), and the most recent ones are kept
  * in memory for Settings → Companion activity.
  *

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The companion can now browse. Ask it to look something up or use a site, and
+  it opens a web tile, reads the page, clicks links and buttons, types into
+  fields and submits forms, goes back and forward, scrolls, and can take a
+  picture of the page to look at it. It asks you before submitting anything like
+  a purchase, a payment or a sign-in. Agents in your tiles see web tiles too
+  (with their address and title) and may read a page, but only the companion
+  acts on one. Everything the companion does in a page is listed in Settings →
+  Companion activity. Reading and acting on pages needs the app's own web view
+  (macOS); in the browser demo the companion can only open and navigate local
+  pages.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that

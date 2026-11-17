@@ -23,8 +23,9 @@
 //   pre-auth), which then names the tile; the next line is routed as above.
 // - The screen mirror: a headless xterm per terminal, fed the PTY's output (lib/hub/mirror.ts).
 // - The page: `snapshot` + the `tiles` event (badges), `ask` / `askClosed` (ask_user), `answer`,
-//   `control` (companion commands, answered with `controlDone`), and the Agent integration
-//   panel's methods.
+//   `control` (companion commands, answered with `controlDone`; a web tile's go to the window
+//   showing it), `webTiles` (the page's web tiles, which agents see as tiles `web-<n>`,
+//   lib/hub/web-tiles.ts), and the Agent integration panel's methods.
 // - The companion (desktop/companion.ts): its own socket and privileged identity, the brain
 //   runtime (`companion` events, `companionSend` / `companionConfigure` / `companionStatus`), the
 //   audit log, and `qutty-hook say …` lines (`say` events, answered with `companionSayDone`).
@@ -76,6 +77,7 @@ import {
 } from "./hub-socket.ts";
 import { askVisibleIn, hubEventTarget, workspaces } from "./workspace-host.ts";
 import { HubCore } from "../lib/hub/core.ts";
+import type { WebTileReport } from "../lib/hub/web-tiles.ts";
 import {
   type BrainConfig,
   CompanionHost,
@@ -376,7 +378,22 @@ export class HubService {
       write,
       ask: (request) => this.#emit("ask", request),
       askClosed: (id) => this.#emit("askClosed", { id }),
-      control: (command) => this.companion.control(command),
+      control: (command) => {
+        // A web tile's command goes to the window showing its workspace (desktop/workspace-host.ts
+        // `hubEventTarget`); a closed one answers at once.
+        if (
+          command.kind === "web" && command.owner !== undefined &&
+          workspaces.windowOf(command.owner) === undefined
+        ) {
+          return Promise.resolve({
+            ok: false,
+            error:
+              "that web tile's window is closed (its workspace runs without one; reopen it from " +
+              "the Workspaces menu)",
+          });
+        }
+        return this.companion.control(command);
+      },
       changed: () => this.#queueTiles(),
       companionMail: () => this.companion.runtime.mailArrived(),
     });
@@ -865,6 +882,8 @@ async function start(host: DesktopExtensionHost): Promise<void> {
   await hub.companion.start().catch((e) =>
     console.error("hub: the companion did not start", e)
   );
+  // An ended workspace's web tiles go with it.
+  workspaces.onEnded((id) => hub.core.setWebTiles(id, []));
   // The quit guard asks before it kills an agent that is working (desktop.ts).
   workspaces.setBusyProvider(() =>
     hub.core.snapshot().tiles.filter((t) => t.status === "busy").map((t) => ({
@@ -934,6 +953,41 @@ const labelInput = objectSchema<{ id: string; label: string }>((v, issues) => ({
   label: str(v, "label", issues, 200),
 }));
 
+const webTilesInput = objectSchema<{ tiles: WebTileReport[] }>(
+  (v, issues) => {
+    const list = Array.isArray(v.tiles) ? v.tiles : null;
+    if (!list || list.length > 500) {
+      issues.push({ message: "tiles is a list", path: ["tiles"] });
+      return { tiles: [] };
+    }
+    const tiles: WebTileReport[] = [];
+    for (const t of list) {
+      const r = (t ?? {}) as Record<string, unknown>;
+      if (
+        typeof r.id !== "string" || r.id === "" || r.id.length > 64 ||
+        typeof r.url !== "string" || r.url.length > 8192
+      ) {
+        issues.push({
+          message: "a tile is { id, url, title? }",
+          path: ["tiles"],
+        });
+        continue;
+      }
+      tiles.push({
+        id: r.id,
+        url: r.url,
+        ...(typeof r.title === "string"
+          ? { title: r.title.slice(0, 300) }
+          : {}),
+      });
+    }
+    return { tiles };
+  },
+);
+
+/** The largest web command answer the page may send (a screenshot, as base64). */
+const MAX_CONTROL_VALUE = 6 * 1024 * 1024;
+
 const sayDoneInput = objectSchema<{ id: string; action: string | null }>(
   (v, issues) => ({
     id: str(v, "id", issues, 64),
@@ -980,13 +1034,30 @@ const keySetInput = objectSchema<{ key: string }>((v, issues) => ({
 }));
 
 const controlDoneInput = objectSchema<
-  { requestId: string; ok: boolean; tileId?: string; error?: string }
->((v, issues) => ({
-  requestId: str(v, "requestId", issues, 64),
-  ok: v.ok === true,
-  ...(typeof v.tileId === "string" ? { tileId: v.tileId.slice(0, 64) } : {}),
-  ...(typeof v.error === "string" ? { error: v.error.slice(0, 500) } : {}),
-}));
+  {
+    requestId: string;
+    ok: boolean;
+    tileId?: string;
+    error?: string;
+    value?: unknown;
+  }
+>((v, issues) => {
+  // A web command's value is JSON (lib/web/web-control.ts), bounded.
+  let value: unknown;
+  if (v.value !== undefined) {
+    const json = JSON.stringify(v.value) ?? "";
+    if (json.length > MAX_CONTROL_VALUE) {
+      issues.push({ message: "value is too large", path: ["value"] });
+    } else value = JSON.parse(json);
+  }
+  return {
+    requestId: str(v, "requestId", issues, 64),
+    ok: v.ok === true,
+    ...(typeof v.tileId === "string" ? { tileId: v.tileId.slice(0, 64) } : {}),
+    ...(typeof v.error === "string" ? { error: v.error.slice(0, 500) } : {}),
+    ...(value !== undefined ? { value } : {}),
+  };
+});
 
 export default defineDesktopExtension({
   name: "hub",
@@ -1095,21 +1166,43 @@ export default defineDesktopExtension({
         return requireService().companion.sayDone(id, action);
       },
     },
-    /** The page carried out a `control` command (spawn / close / focus a tile). */
+    /**
+     * The page carried out a `control` command (spawn / close / focus a tile, a web command); its
+     * window's workspace is the owner of a web tile it opened.
+     */
     controlDone: {
       input: controlDoneInput,
-      handler: (args: unknown): boolean => {
+      handler: (args: unknown, ctx): boolean => {
         const a = args as {
           requestId: string;
           ok: boolean;
           tileId?: string;
           error?: string;
+          value?: unknown;
         };
+        const owner = workspaces.workspaceOfWindow(ctx.windowId ?? "main");
         return requireService().companion.controlDone(
           a.requestId,
           a.ok
-            ? { ok: true, ...(a.tileId ? { tileId: a.tileId } : {}) }
+            ? {
+              ok: true,
+              ...(a.tileId ? { tileId: a.tileId } : {}),
+              ...(a.value !== undefined ? { value: a.value } : {}),
+              ...(owner !== undefined ? { owner } : {}),
+            }
             : { ok: false, error: a.error ?? "failed" },
+        );
+      },
+    },
+    /** The page's web tiles (all of them, whenever they change): agents see them as tiles. */
+    webTiles: {
+      input: webTilesInput,
+      handler: (args: unknown, ctx): void => {
+        const owner = workspaces.workspaceOfWindow(ctx.windowId ?? "main");
+        if (owner === undefined) return;
+        service?.core.setWebTiles(
+          owner,
+          (args as { tiles: WebTileReport[] }).tiles,
         );
       },
     },

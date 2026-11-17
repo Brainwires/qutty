@@ -146,6 +146,16 @@ export interface WebViewHandle {
    * into (a cross-origin frame), or nothing editable has the focus.
    */
   insertText(text: string): Promise<boolean>;
+  /**
+   * Run `script` in the page (an isolated world that shares its DOM) and resolve with its JSON
+   * completion value: the companion's web tools (lib/web/web-control.ts). Absent where the engine
+   * cannot (the iframe).
+   */
+  evaluate?(script: string): Promise<unknown>;
+  /** A picture of the page (`web_screenshot`). Absent where the engine cannot (the iframe). */
+  capture?(
+    opts: { format: "jpeg" | "png"; quality?: number; scale?: number },
+  ): Promise<Blob>;
   state(): Promise<WebViewState>;
   on<K extends keyof WebViewEventMap>(
     event: K,
