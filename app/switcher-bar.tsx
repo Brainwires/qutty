@@ -73,8 +73,11 @@ export interface SwitcherBarProps {
   /** The SSH connection manager (the button next to `+`). */
   connectionsOpen: boolean;
   onConnections(): void;
-  /** Broadcast input (cluster ssh): whether it is on, and how many tiles are checked. */
-  broadcast: { on: boolean; count: number };
+  /**
+   * Broadcast input (cluster ssh): whether it is on, how many tiles are checked, and which (their
+   * chips get a badge).
+   */
+  broadcast: { on: boolean; count: number; members?: ReadonlySet<string> };
   onBroadcast(): void;
   onPattern(pattern: LayoutPattern): void;
   /** An item of the View menu's model (the view, an arrange command, a tile of the list). */
@@ -429,11 +432,9 @@ export function SwitcherBar(props: SwitcherBarProps) {
           data-testid="bar-broadcast"
           onClick={props.onBroadcast}
           aria-pressed={props.broadcast.on}
-          title={`${
-            props.broadcast.on
-              ? "Stop broadcasting"
-              : "Broadcast input to several tiles"
-          } ${mod("Mod+Shift+I")}`}
+          title={`Broadcast: type into several tiles at once (cluster SSH). ${
+            mod("Mod+Shift+I")
+          }`}
           aria-label="Broadcast input"
         >
           <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
@@ -529,6 +530,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
                 {ordinal <= 9 && <span class="chip-ordinal">{ordinal}</span>}
                 <span class="chip-dot" aria-hidden="true" />
                 <span class="chip-title">{title}</span>
+                {props.broadcast.on && props.broadcast.members?.has(id) && (
+                  <span
+                    class="chip-bcast"
+                    data-testid="chip-broadcast"
+                    title="Broadcasting: typing here goes to every checked tile"
+                  />
+                )}
                 {t.exited && <span class="chip-exit">exited</span>}
                 <button
                   type="button"

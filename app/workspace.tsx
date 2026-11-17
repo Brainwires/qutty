@@ -546,6 +546,8 @@ function WorkspaceView() {
   const broadcast = useBroadcast({
     manager: managerRef.current,
     terminals: state.terminals,
+    // Read on a click (viewRef is set further down, by then).
+    visibleIds: () => visibleIdSet({ tiles: viewRef.current.tiles }),
     refocus,
   });
   const broadcastRef = useRef(broadcast);
@@ -975,6 +977,9 @@ function WorkspaceView() {
     run,
     focus: focusTerminal,
   });
+  // The shown tiles, for callbacks made before the view (broadcast's default members).
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const tileMove = useTileMove({
     manager: ready ? managerRef.current : null,
     moves: ready ? managerRef.current?.backend.session.moves : undefined,
@@ -1121,7 +1126,11 @@ function WorkspaceView() {
         }}
         connectionsOpen={ssh.dialog !== null}
         onConnections={ssh.toggleDialog}
-        broadcast={{ on: broadcast.on, count: broadcast.state.members.length }}
+        broadcast={{
+          on: broadcast.on,
+          count: broadcast.state.members.length,
+          members: broadcast.members,
+        }}
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
@@ -1186,7 +1195,7 @@ function WorkspaceView() {
               )}
             renderHeadLead={(entry) => (
               <>
-                {broadcast.on && !entry.web && (
+                {broadcast.on && !entry.web && !entry.chat && (
                   <BroadcastCheck
                     checked={broadcast.members.has(entry.id)}
                     ssh={entry.ssh !== undefined}
@@ -1255,6 +1264,8 @@ function WorkspaceView() {
           <BroadcastBanner
             state={broadcast.state}
             nonSsh={broadcast.nonSsh}
+            sshTiles={broadcast.sshTiles()}
+            onSelect={broadcast.select}
             held={broadcast.held}
             shortcut={shortcutLabel("Mod+Shift+I", platform)}
             onStop={broadcast.toggle}

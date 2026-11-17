@@ -2416,27 +2416,49 @@ kbd {
     transparent 6px 12px
   );
 }
+/* The header's toggle pill: easy to find in an unchecked tile, loud in a checked one. */
 .tile-bcast {
   flex: none;
+  appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 5px 1px 3px;
-  border-radius: 4px;
-  border: 1px dashed var(--line-2);
-  color: var(--text-3);
-  font: 600 9px/1 var(--sans);
-  letter-spacing: 0.06em;
+  gap: 0;
+  white-space: pre;
+  height: 18px;
+  padding: 0 8px 0 6px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  color: var(--amber);
+  font: 600 10.5px/1 var(--sans);
+  letter-spacing: 0.02em;
   cursor: pointer;
 }
-.tile-bcast input {
-  margin: 0;
-  accent-color: var(--amber);
+.tile-bcast:hover {
+  background: color-mix(in srgb, var(--amber) 20%, transparent);
+}
+.tile-bcast-dot {
+  font-size: 10px;
 }
 .tile-bcast.is-checked {
-  border: 1px solid var(--amber);
+  border-color: var(--amber);
   background: var(--amber);
   color: var(--ink);
+}
+/* While broadcast is on, a tile left out is dimmed (its header and pill stay clear), so the
+   selection reads at a glance. */
+.tile:has(.tile-bcast:not(.is-checked)) .tile-body {
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+/* A checked tile's chip in the switcher bar. */
+.chip-bcast {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 30%, transparent);
 }
 .bcast-banner {
   position: absolute;
@@ -2499,7 +2521,8 @@ kbd {
   color: var(--red);
   font-size: 11.5px;
 }
-.bcast-paste {
+.bcast-paste,
+.bcast-actions {
   display: flex;
   align-items: center;
   gap: 6px;

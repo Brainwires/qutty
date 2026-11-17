@@ -1,5 +1,6 @@
 // Broadcast input (cluster ssh) in the UI, against the demo backend: the mode's toggles (bar
-// button, ⌘⇧I, Stop), the banner and the header checkboxes, typing that reaches the checked
+// button, ⌘⇧I, Stop), the visible terminals it checks when turned on, the banner (its All / None /
+// Only SSH and the hint while fewer than two are checked), the header pills, the chips' badges, typing that reaches the checked
 // tiles and no others, terminal replies that stay in their own tile, and the confirmation for a
 // big paste.
 
@@ -9,6 +10,16 @@ import { connectVia, textOf, tileSel } from "./ssh_helpers.ts";
 
 const BANNER = "[data-testid=broadcast-banner]";
 const check = (id: string) => `${tileSel(id)} [data-testid=tile-broadcast]`;
+const LABEL = "[data-testid=broadcast-label]";
+const HINT =
+  "Tick at least two tiles (the Broadcast pill in each tile's header) to broadcast";
+const live = (n: number) =>
+  `Broadcasting to ${n} tiles: typing in any checked tile goes to all of them.`;
+
+/** Whether tile `id`'s header pill is on. */
+async function isChecked(app: App, id: string): Promise<boolean> {
+  return (await app.attr(check(id), "aria-pressed")) === "true";
+}
 
 /** Two SSH tiles (web-1 and db) next to the first, local, tile. */
 async function threeTiles(
@@ -32,13 +43,12 @@ async function setOn(app: App, on: boolean): Promise<void> {
 }
 
 async function checkTile(app: App, id: string, on: boolean): Promise<void> {
-  const checked = () =>
-    app.eval(
-      (s: string) => document.querySelector<HTMLInputElement>(s)?.checked,
-      check(id),
-    );
-  if ((await checked()) !== on) await app.click(check(id));
-  await waitFor(async () => (await checked()) === on, 2000, `${id} checked`);
+  if ((await isChecked(app, id)) !== on) await app.click(check(id));
+  await waitFor(
+    async () => (await isChecked(app, id)) === on,
+    2000,
+    `${id} checked`,
+  );
 }
 
 /** Wait until terminal `id` shows `text` on a line of its own (a command's output). */
@@ -69,7 +79,7 @@ async function paste(app: App, id: string, text: string): Promise<void> {
 
 suite("broadcast", (test) => {
   test("mode: bar button, ⌘⇧I and Stop toggle it; Escape still reaches the terminal", async (app) => {
-    const { local } = await threeTiles(app);
+    const { local, a, b } = await threeTiles(app);
     assertEquals(await app.count("[data-testid=tile-broadcast]"), 0);
     await app.click("[data-testid=bar-broadcast]");
     await waitFor(() => app.exists(BANNER), 2000, "the banner");
@@ -78,9 +88,15 @@ suite("broadcast", (test) => {
       "true",
     );
     assertEquals(await app.count("[data-testid=tile-broadcast]"), 3);
-    assertEquals(
-      await textOf(app, "[data-testid=broadcast-label]"),
-      "Broadcast: check the tiles to type into",
+    // Turning it on checks every visible terminal tile: it works at once.
+    for (const id of [local, a, b]) assert(await isChecked(app, id), id);
+    assertEquals(await app.attr(BANNER, "data-count"), "3");
+    assertEquals(await textOf(app, LABEL), live(3));
+    assertEquals(await app.count("[data-testid=chip-broadcast]"), 3);
+    assert(
+      (await app.attr("[data-testid=bar-broadcast]", "title"))!.startsWith(
+        "Broadcast: type into several tiles at once (cluster SSH).",
+      ),
     );
     // Escape is the terminal's: it does not end the mode.
     const focused = (await app.focusedId())!;
@@ -91,23 +107,77 @@ suite("broadcast", (test) => {
     await app.shortcut("KeyI", { shift: true });
     await waitFor(async () => !(await app.exists(BANNER)), 2000, "off");
     assertEquals(await app.count("[data-testid=tile-broadcast]"), 0);
+    assertEquals(await app.count("[data-testid=chip-broadcast]"), 0);
     await setOn(app, true);
     await app.click("[data-testid=broadcast-stop]");
     await waitFor(async () => !(await app.exists(BANNER)), 2000, "stopped");
     // The keyboard is back in a terminal.
     await waitFor(() => app.xtermHasFocus(focused), 2000, "focus back");
-    assert(local);
+  });
+
+  test("selection: the header pill, All, None, Only SSH and the hint below two", async (app) => {
+    const { local, a, b } = await threeTiles(app);
+    await setOn(app, true);
+    // The pill says what it does and flips on a click.
+    assertEquals((await textOf(app, check(local))).trim(), "● Broadcast");
+    await app.click(check(local));
+    await waitFor(async () => !(await isChecked(app, local)), 2000, "off");
+    assertEquals((await textOf(app, check(local))).trim(), "○ Broadcast");
+    assertEquals(await app.attr(tileSel(local), "data-broadcast"), null);
+    assertEquals(await textOf(app, LABEL), live(2));
+    assertEquals(await app.count("[data-testid=chip-broadcast]"), 2);
+    await app.click(check(local));
+    await waitFor(() => isChecked(app, local), 2000, "on again");
+
+    // None: nothing checked, and the banner says what to do.
+    await app.click("[data-testid=broadcast-none]");
+    await waitFor(
+      async () => (await app.attr(BANNER, "data-count")) === "0",
+      2000,
+      "none",
+    );
+    for (const id of [local, a, b]) assert(!(await isChecked(app, id)), id);
+    assertEquals(await textOf(app, LABEL), HINT);
+    assertEquals(await app.attr(BANNER, "data-live"), "false");
+    assertEquals(await app.count("[data-testid=chip-broadcast]"), 0);
+    // One checked is still too few.
+    await checkTile(app, a, true);
+    assertEquals(await textOf(app, LABEL), HINT);
+
+    // Only SSH: the two SSH tiles, not the local shell (and no warning).
+    await app.click("[data-testid=broadcast-only-ssh]");
+    await waitFor(
+      async () => (await app.attr(BANNER, "data-count")) === "2",
+      2000,
+      "only ssh",
+    );
+    assert(await isChecked(app, a));
+    assert(await isChecked(app, b));
+    assert(!(await isChecked(app, local)));
+    assertEquals(await textOf(app, LABEL), live(2));
+    assertEquals(await app.exists("[data-testid=broadcast-warn]"), false);
+
+    // All: every visible terminal again, with the local one's warning.
+    await app.click("[data-testid=broadcast-all]");
+    await waitFor(
+      async () => (await app.attr(BANNER, "data-count")) === "3",
+      2000,
+      "all",
+    );
+    for (const id of [local, a, b]) assert(await isChecked(app, id), id);
+    assertEquals(
+      await textOf(app, "[data-testid=broadcast-warn]"),
+      "1 is not an SSH tile",
+    );
   });
 
   test("typing: reaches every checked tile and no other; replies stay in their tile", async (app) => {
     const { local, a, b } = await threeTiles(app);
     await setOn(app, true);
+    await checkTile(app, local, false);
     await checkTile(app, a, true);
     await checkTile(app, b, true);
-    assertEquals(
-      await textOf(app, "[data-testid=broadcast-label]"),
-      "Broadcasting to 2 tiles",
-    );
+    assertEquals(await textOf(app, LABEL), live(2));
     assertEquals(await app.attr(BANNER, "data-live"), "true");
     assertEquals(await app.attr(tileSel(a), "data-broadcast"), "true");
     assertEquals(await app.attr(tileSel(b), "data-broadcast"), "true");
@@ -148,10 +218,7 @@ suite("broadcast", (test) => {
       await textOf(app, "[data-testid=broadcast-warn]"),
       "1 is not an SSH tile",
     );
-    assertEquals(
-      await textOf(app, "[data-testid=broadcast-label]"),
-      "Broadcasting to 3 tiles",
-    );
+    assertEquals(await textOf(app, LABEL), live(3));
     assertEquals(await textOf(app, "[data-testid=bar-broadcast-count]"), "3");
 
     // Unchecked: b no longer hears a; turned off: nobody hears anybody.
@@ -167,14 +234,15 @@ suite("broadcast", (test) => {
     const bText = await app.readTerminalText(b);
     assert(!bText.includes("after-uncheck"), "unchecked tile got keys");
     assert(!bText.includes("after-off"), "keys broadcast after off");
-    // Turning it on again starts with nothing checked.
+    // Turning it on again starts from the visible terminals, not the last selection.
     await setOn(app, true);
-    assertEquals(await app.attr(BANNER, "data-count"), "0");
+    assertEquals(await app.attr(BANNER, "data-count"), "3");
   });
 
   test("paste: a short one goes to all, a big one waits for Paste to all / This tile only", async (app) => {
-    const { a, b } = await threeTiles(app);
+    const { local, a, b } = await threeTiles(app);
     await setOn(app, true);
+    await checkTile(app, local, false);
     await checkTile(app, a, true);
     await checkTile(app, b, true);
 

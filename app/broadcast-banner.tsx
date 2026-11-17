@@ -1,6 +1,7 @@
 // The broadcast banner: while the mode is on, a strip at the bottom of the tile area says how
-// many tiles the keyboard reaches, warns about checked tiles that are not SSH tiles, and has the
-// Stop button (the mode never uses Escape: Escape goes to the terminal as always). A big paste
+// many tiles the keyboard reaches (or, with fewer than two checked, to tick the box in the tiles'
+// headers), warns about checked tiles that are not SSH tiles, and has All / None / Only SSH to
+// change the selection at once and the Stop button (the mode never uses Escape: Escape goes to the terminal as always). A big paste
 // held for confirmation is asked about here.
 
 import { useEffect, useRef } from "denext";
@@ -18,6 +19,10 @@ export interface BroadcastBannerProps {
   held: HeldPaste | null;
   /** The shortcut's label (`⌘⇧I`). */
   shortcut: string;
+  /** How many visible SSH tiles there are (Only SSH shows when there are any). */
+  sshTiles: number;
+  /** All (every visible terminal tile), None, Only SSH. */
+  onSelect(which: "all" | "none" | "ssh"): void;
   onStop(): void;
   onPaste(to: "all" | "one" | "none"): void;
 }
@@ -99,41 +104,83 @@ export function BroadcastBanner(props: BroadcastBannerProps) {
           </span>
         )
         : (
-          <button
-            type="button"
-            class="btn-quiet bcast-stop"
-            data-testid="broadcast-stop"
-            onClick={props.onStop}
-          >
-            Stop <kbd>{props.shortcut}</kbd>
-          </button>
+          <span class="bcast-actions">
+            <button
+              type="button"
+              class="btn-quiet"
+              data-testid="broadcast-all"
+              title="Check every visible terminal tile"
+              onClick={() => props.onSelect("all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              class="btn-quiet"
+              data-testid="broadcast-none"
+              title="Uncheck every tile"
+              onClick={() => props.onSelect("none")}
+            >
+              None
+            </button>
+            {props.sshTiles > 0 && (
+              <button
+                type="button"
+                class="btn-quiet"
+                data-testid="broadcast-only-ssh"
+                title="Check the visible SSH tiles only"
+                onClick={() => props.onSelect("ssh")}
+              >
+                Only SSH
+              </button>
+            )}
+            <button
+              type="button"
+              class="btn-quiet bcast-stop"
+              data-testid="broadcast-stop"
+              onClick={props.onStop}
+            >
+              Stop <kbd>{props.shortcut}</kbd>
+            </button>
+          </span>
         )}
     </div>
   );
 }
 
-/** The tile header's checkbox while broadcast is on. */
+/**
+ * The tile header's broadcast toggle while broadcast is on: a labelled pill (`● Broadcast` when
+ * the tile is checked, `○ Broadcast` when not), loud when on. A press keeps the keyboard in the
+ * terminal.
+ */
 export function BroadcastCheck(props: {
   checked: boolean;
   ssh: boolean;
   onChange(checked: boolean): void;
 }) {
   return (
-    <label
+    <button
+      type="button"
       class={`tile-bcast${props.checked ? " is-checked" : ""}`}
+      data-testid="tile-broadcast"
       data-keep-focus
-      title={props.ssh
-        ? "Type into this tile with the other checked ones"
-        : "Not an SSH tile: typing here would also go to the other checked tiles"}
+      aria-pressed={props.checked}
+      title={props.checked
+        ? "Typing here goes to every checked tile: click to leave this tile out"
+        : props.ssh
+        ? "Click to type into this tile with the other checked ones"
+        : "Not an SSH tile: click to include it (typing here would go to the other checked tiles)"}
       onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        props.onChange(!props.checked);
+      }}
     >
-      <input
-        type="checkbox"
-        data-testid="tile-broadcast"
-        checked={props.checked}
-        onChange={(e) => props.onChange(e.currentTarget.checked)}
-      />
-      <span>{props.checked ? "BROADCAST" : "broadcast"}</span>
-    </label>
+      <span class="tile-bcast-dot" aria-hidden="true">
+        {props.checked ? "●" : "○"}
+      </span>{" "}
+      <span>Broadcast</span>
+    </button>
   );
 }

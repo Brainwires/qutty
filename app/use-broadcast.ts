@@ -1,5 +1,6 @@
 // The workspace's broadcast state (cluster ssh, lib/broadcast.ts): the mode, the checked tiles,
-// and a big paste waiting for confirmation. The selection follows the open tiles (a closed tile
+// and a big paste waiting for confirmation. Turning it on checks every visible terminal tile
+// (`defaultMembers`); the banner's All / None / Only SSH replace the selection. The selection follows the open tiles (a closed tile
 // leaves it) and is handed to the terminal manager, which does the routing. Never persisted.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "denext";
@@ -7,8 +8,11 @@ import {
   activeMembers,
   BROADCAST_OFF,
   type BroadcastState,
+  defaultMembers,
   pruneMembers,
   setMember,
+  setMembers,
+  sshMembers,
   toggleBroadcast,
 } from "../lib/broadcast.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
@@ -25,6 +29,8 @@ export interface HeldPaste {
 export interface UseBroadcastOptions {
   manager: TerminalManager | null;
   terminals: TerminalEntry[];
+  /** The tiles the cluster shows right now (read when the mode is turned on, and by All). */
+  visibleIds(): ReadonlySet<string>;
   /** Put the keyboard back in the focused terminal. */
   refocus(): void;
 }
@@ -35,6 +41,13 @@ export function useBroadcast(opts: UseBroadcastOptions) {
   const [held, setHeld] = useState<HeldPaste | null>(null);
   const refocusRef = useRef(opts.refocus);
   refocusRef.current = opts.refocus;
+  const visibleRef = useRef(opts.visibleIds);
+  visibleRef.current = opts.visibleIds;
+  const terminalsRef = useRef(terminals);
+  terminalsRef.current = terminals;
+  /** The visible terminal tiles: what turning it on, and All, check. */
+  const defaults = () =>
+    defaultMembers(terminalsRef.current, visibleRef.current());
 
   const openIds = terminals.map((t) => t.id).join(" ");
   useEffect(() => {
@@ -51,7 +64,19 @@ export function useBroadcast(opts: UseBroadcastOptions) {
   }, [state.on]);
 
   const toggle = useCallback(() => {
-    setState(toggleBroadcast);
+    const members = defaults();
+    setState((s) => toggleBroadcast(s, members));
+    refocusRef.current();
+  }, []);
+
+  /** The banner's All, None and Only SSH. */
+  const select = useCallback((which: "all" | "none" | "ssh") => {
+    const ids = which === "none"
+      ? []
+      : which === "all"
+      ? defaults()
+      : sshMembers(terminalsRef.current, visibleRef.current());
+    setState((s) => setMembers(s, ids));
     refocusRef.current();
   }, []);
 
@@ -80,6 +105,10 @@ export function useBroadcast(opts: UseBroadcastOptions) {
     () => terminals.filter((t) => members.has(t.id) && !t.ssh).length,
     [terminals, members],
   );
+  // How many visible SSH tiles there are (Only SSH shows when there are any). A function: the
+  // visible tiles are known only later in the workspace's render, where the banner asks.
+  const sshTiles = () =>
+    sshMembers(terminalsRef.current, visibleRef.current()).length;
 
   return {
     on: state.on,
@@ -87,8 +116,11 @@ export function useBroadcast(opts: UseBroadcastOptions) {
     members,
     /** How many checked tiles are not SSH tiles (the banner warns). */
     nonSsh,
+    /** How many visible SSH tiles there are (call it after the layout is known). */
+    sshTiles,
     held,
     toggle,
+    select,
     setChecked,
     hold,
     resolvePaste,
