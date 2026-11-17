@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Broadcast input (cluster SSH) is easier to aim. Turning it on (the bar's
+  broadcast button or ⇧⌘I) now checks every visible terminal tile in the
+  workspace at once, so typing reaches them all straight away and you untick the
+  ones you don't want. Starting with nothing checked made the mode look broken
+  until you found the boxes, and starting with only SSH tiles would have done
+  nothing in a workspace of local shells; web tiles (no terminal), agent tiles
+  and hidden (minimized or overflow) tiles are never checked for you. The banner
+  says "Broadcasting to N tiles: typing in any checked tile goes to all of
+  them.", or, with fewer than two checked, how to tick more, and has All, None,
+  Only SSH (when there are SSH tiles) and Stop. Each tile's header shows a "●
+  Broadcast" / "○ Broadcast" pill instead of a tiny checkbox, tiles left out are
+  dimmed, and checked tiles' chips in the bar get an amber badge. The bar
+  button's tooltip explains the mode. The warning about checked tiles that are
+  not SSH tiles, the paste confirmation and which input is repeated are
+  unchanged.
+
 - Settings is a dialog in the middle of the window instead of one long popover.
   Categories down the left (General, Appearance, Layout, Tiles, Links & web,
   Sandbox, Agents, Companion, Voice, System monitor), the chosen one on the

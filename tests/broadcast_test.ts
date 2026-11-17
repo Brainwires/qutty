@@ -8,12 +8,15 @@ import {
   BROADCAST_OFF,
   broadcastLabel,
   broadcastTargets,
+  defaultMembers,
   isTerminalReport,
   pasteFor,
   pasteNeedsConfirm,
   pasteSummary,
   pruneMembers,
   setMember,
+  setMembers,
+  sshMembers,
   toggleBroadcast,
   unbracketPaste,
 } from "../lib/broadcast.ts";
@@ -42,8 +45,43 @@ Deno.test("broadcast: the selection", () => {
   assertEquals(activeMembers(setMember(on, "a", true)), null);
   assertEquals([...activeMembers(two)!], ["a", "b"]);
   assertEquals(activeMembers({ on: false, members: ["a", "b"] }), null);
-  assertEquals(broadcastLabel(on), "Broadcast: check the tiles to type into");
-  assertEquals(broadcastLabel(two), "Broadcasting to 2 tiles");
+  const hint =
+    "Tick at least two tiles (the box in each tile's header) to broadcast";
+  assertEquals(broadcastLabel(on), hint);
+  assertEquals(broadcastLabel(setMember(on, "a", true)), hint);
+  assertEquals(
+    broadcastLabel(two),
+    "Broadcasting to 2 tiles: typing in any checked tile goes to all of them.",
+  );
+});
+
+Deno.test("broadcast: turning it on checks the visible terminal tiles", () => {
+  const ssh = { host: "h" };
+  const entries = [
+    { id: "local" },
+    { id: "web", web: { url: "https://x" } },
+    { id: "s1", ssh },
+    { id: "agent", agent: { name: "claude" } },
+    { id: "hidden", ssh },
+    { id: "s2", ssh },
+  ];
+  const visible = new Set(["local", "web", "s1", "agent", "s2"]);
+  assertEquals(defaultMembers(entries, visible), ["local", "s1", "s2"]);
+  assertEquals(sshMembers(entries, visible), ["s1", "s2"]);
+  assertEquals(defaultMembers(entries, new Set()), []);
+  assertEquals(sshMembers([{ id: "local" }], new Set(["local"])), []);
+  const on = toggleBroadcast(BROADCAST_OFF, defaultMembers(entries, visible));
+  assertEquals(on, { on: true, members: ["local", "s1", "s2"] });
+  assertEquals(
+    toggleBroadcast(on, ["x"]),
+    BROADCAST_OFF,
+    "off ignores defaults",
+  );
+  // All / None / Only SSH replace the selection, only while on.
+  assertEquals(setMembers(on, []).members, []);
+  assertEquals(setMembers(on, ["s1", "s2"]).members, ["s1", "s2"]);
+  assertEquals(setMembers(on, ["local", "s1", "s2"]), on, "same: unchanged");
+  assertEquals(setMembers(BROADCAST_OFF, ["a"]), BROADCAST_OFF);
 });
 
 Deno.test("broadcast: typing in a member reaches every other live member", () => {

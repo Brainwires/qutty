@@ -494,6 +494,8 @@ function WorkspaceView() {
   const broadcast = useBroadcast({
     manager: managerRef.current,
     terminals: state.terminals,
+    // Read on a click (viewRef is set further down, by then).
+    visibleIds: () => visibleIdSet({ tiles: viewRef.current.tiles }),
     refocus,
   });
   const broadcastRef = useRef(broadcast);
@@ -1002,7 +1004,11 @@ function WorkspaceView() {
         }}
         connectionsOpen={ssh.dialog !== null}
         onConnections={ssh.toggleDialog}
-        broadcast={{ on: broadcast.on, count: broadcast.state.members.length }}
+        broadcast={{
+          on: broadcast.on,
+          count: broadcast.state.members.length,
+          members: broadcast.members,
+        }}
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
@@ -1114,6 +1120,8 @@ function WorkspaceView() {
           <BroadcastBanner
             state={broadcast.state}
             nonSsh={broadcast.nonSsh}
+            sshTiles={broadcast.sshTiles()}
+            onSelect={broadcast.select}
             held={broadcast.held}
             shortcut={shortcutLabel("Mod+Shift+I", platform)}
             onStop={broadcast.toggle}
