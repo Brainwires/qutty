@@ -24,8 +24,9 @@
  *   lib/workspace/keys.ts `forwardAccelerators`) skip the page and come back as `keydown` events
  *   with `forwarded: true`, and their releases as `keyup` (where the runtime reports `keyUp`).
  * - **Focus.** A click in the page reports `focus-change` before the page has the click. Hiding a
- *   view hands the keyboard to the app's page (`reason: "hidden"`), so a view that had it when it
- *   was hidden takes it back when shown again. `blur()` hands the keyboard to the app's page
+ *   view hands the keyboard to the app's page (`reason: "hidden"`; an engine without `blur` gives
+ *   no reason, and the engine marks its own hiding), so a view that had it when it was hidden
+ *   takes it back when shown again. `blur()` hands the keyboard to the app's page
  *   without activating the app (the view's `blur`). On an engine without `blur` it calls
  *   `focusWindow` instead, unless another view asks for the keyboard in the same turn, and with
  *   another app in front it waits until the window is the active one again (`focusWindow` would
@@ -307,6 +308,11 @@ class NativeView implements WebViewHandle {
   #focused = false;
   /** The page should have the keyboard when the view shows. */
   #wantFocus = false;
+  /**
+   * An engine without `blur` (and so without focus reasons): the view is being hidden with the
+   * keyboard, so the focus loss that follows is the engine's.
+   */
+  #hidingFocused = false;
   #z: number | undefined;
 
   constructor(raw: RawWebView, host: HTMLElement, shared: Shared) {
@@ -388,8 +394,10 @@ class NativeView implements WebViewHandle {
     if (focused) {
       this.#wantFocus = true;
       this.#shared.takeKeyboard();
-    } else if (reason !== "hidden") {
+    } else if (reason === "hidden" || this.#hidingFocused) {
       // Hidden (under a snapshot, parked), it takes the keyboard back when it shows again.
+      this.#hidingFocused = false;
+    } else {
       this.#wantFocus = false;
     }
     this.#emit("focus-change", { focused });
@@ -433,6 +441,7 @@ class NativeView implements WebViewHandle {
     if (this.#wanted() && !this.#shown) {
       await this.#raw.setVisible(true);
       this.#shown = true;
+      this.#hidingFocused = false;
       if (this.#wantFocus && !this.#focused && !this.#closed) {
         await this.#raw.focus().catch(() => {});
       }
@@ -440,6 +449,8 @@ class NativeView implements WebViewHandle {
       if (this.#occluded && this.#shared.caps.capture) await this.#snapshot();
       // It may have cleared while the page was captured: then the view just stays.
       if (!this.#closed && !this.#wanted()) {
+        // Focus reasons come with the view's `blur` (the same runtime feature).
+        this.#hidingFocused = !this.#shared.caps.blur && this.#focused;
         await this.#raw.setVisible(false);
         this.#shown = false;
       }

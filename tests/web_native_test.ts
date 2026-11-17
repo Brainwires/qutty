@@ -484,8 +484,9 @@ Deno.test("native: a view hidden with the keyboard takes it back when it shows a
   await settle();
   frames.shift()!();
   await occluding;
-  // The runtime hands the keyboard to the app's page when a view hides, and says so.
-  raws[0].fire("focus-change", { focused: false, reason: "hidden" });
+  // The runtime hands the keyboard to the app's page when a view hides (an engine without
+  // `blur` gives no reason: the engine knows it is its own hiding).
+  raws[0].fire("focus-change", { focused: false });
   log.length = 0;
   await view.setOccluded(false);
   await place();
@@ -598,6 +599,21 @@ Deno.test("native: with the view's blur and keyUp, the keyboard goes back withou
   f.log.length = 0;
   await a.blur();
   assertEquals(f.log, []);
+  // Hidden with the keyboard: the runtime says so (`reason: "hidden"`), and the view takes it
+  // back when it shows again. A loss with no reason is the user's: it does not.
+  await a.focus();
+  f.raws[0].fire("focus-change", { focused: true });
+  await a.setVisible(false);
+  f.raws[0].fire("focus-change", { focused: false, reason: "hidden" });
+  f.log.length = 0;
+  await a.setVisible(true);
+  assertEquals(f.log, ["setVisible true", "focus"]);
+  f.raws[0].fire("focus-change", { focused: true });
+  await a.setVisible(false);
+  f.raws[0].fire("focus-change", { focused: false });
+  f.log.length = 0;
+  await a.setVisible(true);
+  assertEquals(f.log, ["setVisible true"]);
 });
 
 Deno.test("native: the forward keys reach every view, now and later", async () => {
