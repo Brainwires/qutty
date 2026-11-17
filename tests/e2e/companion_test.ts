@@ -92,7 +92,7 @@ async function chat(app: App, text: string): Promise<void> {
 
 /** Open Settings → Companion (open by default). */
 async function companionSettings(app: App): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("companion");
   await waitFor(
     () => app.exists("[data-testid=companion-settings]"),
     2000,
@@ -561,6 +561,30 @@ suite("companion", (test) => {
       (await app.attr(INPUT, "placeholder")) ?? "",
       "Settings",
     );
+    // Its Settings button is a deep link: the Companion tab, at the brain switch.
+    await app.click("[data-testid=companion-chat-settings]");
+    await waitFor(
+      () => app.exists("[data-testid=settings-panel]"),
+      2000,
+      "Settings open",
+    );
+    assertEquals(
+      await app.attr(
+        "[data-testid=settings-tab][aria-selected=true]",
+        "data-tab",
+      ),
+      "companion",
+    );
+    await waitFor(
+      () =>
+        app.eval(() =>
+          document.activeElement?.getAttribute("data-testid") ===
+            "setting-companion-brain"
+        ),
+      2000,
+      "the brain switch focused",
+    );
+    await app.closeSettings();
     await waitFor(
       async () =>
         (await app.attr("[data-testid=companion-status]", "data-state")) ===

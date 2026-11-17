@@ -208,7 +208,7 @@ suite("web browser", (test) => {
     await withPages(async (pages) => {
       const { web } = await openPageA(app, pages);
       assert(await app.exists(`${tileSel(web)} [data-testid=bm-bar]`));
-      await app.openSettings();
+      await app.openSettings("links");
       await app.eval(() =>
         document.querySelector<HTMLInputElement>(
           "[data-testid=setting-links-bookmarks-bar]",

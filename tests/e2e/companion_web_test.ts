@@ -171,8 +171,8 @@ suite("companion web tools", (test) => {
       assertEquals(google.tile, "web-2");
       assertStringIncludes(String(google.note), "shows only local pages");
 
-      // The acting calls are in Settings → Companion activity.
-      await app.openSettings();
+      // The acting calls are in Settings → Companion → activity.
+      await app.openSettings("companion");
       const rows = await waitFor(
         () =>
           app.eval(() =>

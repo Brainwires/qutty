@@ -37,7 +37,7 @@ async function ask(app: App): Promise<void> {
 
 /** Pick `value` in Settings → Windows. */
 async function setWindowClose(app: App, value: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("general");
   await app.eval((v: string) => {
     const el = document.querySelector<HTMLSelectElement>(
       "[data-testid=setting-window-close]",
@@ -169,7 +169,7 @@ suite("window close", (test) => {
       "remembered",
     );
     // Settings → Windows shows the remembered choice.
-    await app.openSettings();
+    await app.openSettings("general");
     assertEquals(
       await app.eval(() =>
         document.querySelector<HTMLSelectElement>(

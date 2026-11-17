@@ -234,7 +234,7 @@ suite("web tiles", (test) => {
 
   test("Settings → Links → Default browser: ⌘-click opens the browser", async (app) => {
     await withPages(async (pages) => {
-      await app.openSettings();
+      await app.openSettings("links");
       await app.eval(() => {
         const el = document.querySelector<HTMLSelectElement>(
           "[data-testid=setting-links-web]",

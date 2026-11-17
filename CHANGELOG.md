@@ -12,6 +12,16 @@
   Companion activity. Reading and acting on pages needs the app's own web view
   (macOS); in the browser demo the companion can only open and navigate local
   pages.
+- Settings is a dialog in the middle of the window instead of one long popover.
+  Categories down the left (General, Appearance, Layout, Tiles, Links & web,
+  Sandbox, Agents, Companion, Voice, System monitor), the chosen one on the
+  right in small groups, and a search field on top that finds a setting by its
+  name or hint in any category. ↑/↓ move between categories; Escape or a click
+  beside the dialog closes it and the focused tile has the keyboard again.
+  Settings opens on the category you used last. Links such as "Settings →
+  Agents" inside it go straight there, and the companion's chat box, while its
+  brain is off, has a Settings button that opens the brain switch.
+
 - A new app icon: the companion's face.
 - Web tiles work like a browser for everyday use.
   - Bookmarks: click the star in the address field to bookmark the page (or
