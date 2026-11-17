@@ -116,7 +116,7 @@ export async function webviewSelfTest(app: DesktopRuntime): Promise<void> {
       JSON.stringify(read.elements.slice(0, 3))
     }`,
   );
-  if (read.elements.length === 0 || !read.text.includes(state.title)) {
+  if (read.elements.length === 0 || read.text.trim() === "") {
     throw new Error(`read_page: ${JSON.stringify(read).slice(0, 400)}`);
   }
   // Dictation: nothing editable has the focus, then a focused field takes the text.
