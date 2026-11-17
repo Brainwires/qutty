@@ -20,6 +20,7 @@ import {
   MOODS,
   moodState,
   nextTimer,
+  QUTTY_MOODS,
   stateDurationMs,
   transition,
 } from "../lib/companion/face-machine.ts";
@@ -88,8 +89,10 @@ Deno.test("face machine: show springs up and settles; blinks only while idle; mo
   }
 });
 
-Deno.test("face machine: the 13 moods each take the example's move", () => {
-  assertEquals(MOODS.length, 13);
+Deno.test("face machine: the 13 moods each take the example's move; Qutty's blush stands idle", () => {
+  assertEquals(MOODS.length, 14);
+  assertEquals(QUTTY_MOODS, ["blush"]);
+  assertEquals(MOODS.at(-1), "blush", "after the example's 13");
   const moves: Record<FaceMood, FaceState> = {
     neutral: "idle",
     thinking: "think",
@@ -104,6 +107,7 @@ Deno.test("face machine: the 13 moods each take the example's move", () => {
     surprised: "idle",
     shocked: "idle",
     wow: "celebrate",
+    blush: "idle",
   };
   assertEquals(Object.keys(moves), [...MOODS]);
   const idle = run([{ type: "show" }, { type: "settle" }]);
@@ -242,7 +246,7 @@ Deno.test("say: the example's message shape and validation", () => {
   });
   assertEquals(asked.message.timeoutMs, 0);
   assertEquals(asked.wait, true);
-  // Every one of the 13 moods; Qutty's state names are aliases of three of them.
+  // Every mood (the example's 13 and Qutty's blush); Qutty's state names are aliases of three.
   for (const mood of MOODS) {
     assertEquals(parseSayRequest({ text: "x", mood }).message.mood, mood);
   }
@@ -260,7 +264,7 @@ Deno.test("say: the example's message shape and validation", () => {
   assertMatch(
     assertThrows(() => parseSayRequest({ text: "x", mood: "angry" }), SayError)
       .message,
-    /neutral, thinking, attention, success, confused, mad, sad, excited, sleepy, love, surprised, shocked, wow/,
+    /neutral, thinking, attention, success, confused, mad, sad, excited, sleepy, love, surprised, shocked, wow, blush/,
   );
   for (
     const [body, reason] of [
@@ -289,6 +293,11 @@ Deno.test("qutty-hook say: words and flags become the say request; usage errors 
     text: "Night",
     mood: "sleepy",
   });
+  assertEquals(
+    parseSayRequest(parseSayArgs(["Aw", "thanks", "--mood", "blush"]))
+      .message.mood,
+    "blush",
+  );
   assertEquals(
     parseSayArgs([
       "Deploy?",
@@ -392,6 +401,33 @@ Deno.test("bubbles: a user turn shows at once and streams; an agents' turn only 
     "codex says hi",
   );
   assert(replyTimeoutMs("x".repeat(4000)) <= 30_000);
+});
+
+Deno.test("bubbles: a reply's mood (its tag, taken off by the runtime) is the face while it streams and once done", () => {
+  const base = { kind: "turn" as const, turn: 5, source: "user" as const };
+  // The tag still streaming in: nothing to show yet, the companion thinks.
+  const hidden = turnBubble({ ...base, text: "", done: false })!;
+  assertEquals([hidden.text, hidden.mood], ["…", "thinking"]);
+  const streaming = turnBubble({
+    ...base,
+    text: "Aw,",
+    mood: "blush",
+    done: false,
+  })!;
+  assertEquals([streaming.text, streaming.mood], ["Aw,", "blush"]);
+  const done = turnBubble({
+    ...base,
+    text: "Aw, thank you!",
+    mood: "blush",
+    done: true,
+  })!;
+  assertEquals([done.text, done.mood], ["Aw, thank you!", "blush"]);
+  assertEquals(
+    turnBubble({ ...base, text: "x", mood: "love", done: true, isError: true })!
+      .mood,
+    "sad",
+    "a failed turn is sad whatever the tag",
+  );
 });
 
 // --- settings -----------------------------------------------------------------------------------

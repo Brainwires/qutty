@@ -9,6 +9,7 @@
 import type { BrainState } from "./brain.ts";
 import type { AuditEntry } from "./audit.ts";
 import type { CompanionMessage } from "./messages.ts";
+import type { FaceMood } from "./face-machine.ts";
 
 export type { AuditEntry, BrainState };
 
@@ -59,7 +60,10 @@ export type CompanionUpdate =
     kind: "turn";
     turn: number;
     source: TurnSource;
+    /** The reply so far, without its mood tag (lib/companion/mood-tag.ts). */
     text: string;
+    /** The mood the reply's tag names (`[mood: blush]`): the face while it is on screen. */
+    mood?: FaceMood;
     done: boolean;
     isError?: boolean;
     /** A turn on agents' messages that the user need not hear about (`(quiet)`). */

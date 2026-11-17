@@ -5,6 +5,7 @@
  *
  * - "tile 2" / "what's in tile 2": which tile that is and what it is doing (from the registry);
  * - "open a tile" / "new tile": asks the page to spawn one (the companion's `spawn_tile`);
+ * - "you're cute" (a compliment): a blush (the `[mood: blush]` tag, lib/companion/mood-tag.ts);
  * - "/crash": the session dies mid-turn (the runtime's re-attach path);
  * - anything else: an echo.
  *
@@ -105,6 +106,9 @@ export class DemoBrain implements BrainAdapter {
       return `${tiles.length} tile${tiles.length === 1 ? "" : "s"}: ${
         tiles.map((t) => `${t.name} is ${t.status}`).join(", ")
       }.`;
+    }
+    if (/\b(cute|adorable|sweet|you'?re (the )?best)\b/.test(lower)) {
+      return "[mood: blush] Aw, stop it… thank you!";
     }
     if (/\b(open|new|spawn)\b.*\btile\b/.test(lower)) {
       const r = await this.#world.control({ kind: "spawn" });

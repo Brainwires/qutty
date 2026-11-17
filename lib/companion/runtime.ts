@@ -10,6 +10,8 @@
  *   and the next use starts a new session, which gets those messages again.
  * - Voice plugs in here: a transcript is `userSays(text, "voice")`, and spoken answers follow the
  *   `turn` updates (`subscribe`).
+ * - Moods: a reply that starts with a mood tag (`[mood: blush]`, lib/companion/mood-tag.ts) has
+ *   it taken off its text, and its `turn` updates carry the mood instead.
  *
  * Pure apart from timers: the hub's mailbox and the brain are injected.
  *
@@ -20,6 +22,7 @@ import { COMPANION, type HubMessage } from "../hub/protocol.ts";
 import { formatMessages } from "../hub/hooks.ts";
 import type { BrainAdapter, BrainEvent, BrainState } from "./brain.ts";
 import { toolShortName } from "./brain.ts";
+import { splitMoodTag } from "./mood-tag.ts";
 import type {
   CompanionStatus,
   CompanionUpdate,
@@ -354,11 +357,13 @@ export class CompanionRuntime {
   }
 
   #emitTurn(turn: Turn, done: boolean, isError = false, quiet = false): void {
+    const { text, mood } = splitMoodTag(turn.text, !done);
     this.#emit({
       kind: "turn",
       turn: turn.id,
       source: turn.source,
-      text: turn.text,
+      text,
+      ...(mood ? { mood } : {}),
       done,
       ...(isError ? { isError } : {}),
       ...(quiet ? { quiet } : {}),
@@ -369,8 +374,9 @@ export class CompanionRuntime {
     clearTimeout(this.#textTimer);
     this.#textTimer = undefined;
     turn.text = text.trim();
+    const said = splitMoodTag(turn.text).text.trim();
     const quiet = turn.source === "mail" && !isError &&
-      (turn.text === "" || turn.text.toLowerCase() === QUIET);
+      (said === "" || said.toLowerCase() === QUIET);
     this.#emitTurn(turn, true, isError, quiet);
   }
 }

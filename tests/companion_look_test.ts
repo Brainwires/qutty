@@ -11,6 +11,11 @@
 // git ref DENEXT_COMPANION_REF, default origin/feat/loopy-voice-tools; an empty ref reads the
 // checkout's files), the face in the snapshot is also compared with it, and
 // `UPDATE_COMPANION_SNAPSHOT=1` rewrites the snapshot from it (and the avatar from the render).
+//
+// Qutty diverges from the example on purpose in a few listed ways (tests/companion_face_shape.ts:
+// lower brows, a gentler smile, catch-lights, cheeks, smaller brow lifts), which the comparison
+// applies to the snapshot (the snapshot itself stays the example's); Qutty's own `blush` mood has
+// no counterpart in the example and is checked on its own.
 
 import { assert, assertEquals } from "@std/assert";
 import { join, toFileUrl } from "@std/path";
@@ -21,7 +26,19 @@ import {
   COMPANION_VIEWBOX,
   CompanionFace,
 } from "../app/companion/companion-face.tsx";
-import { MOODS } from "../lib/companion/face-machine.ts";
+import {
+  type FaceMood,
+  MOODS,
+  QUTTY_MOODS,
+} from "../lib/companion/face-machine.ts";
+import {
+  QUTTY_RULES,
+  quttyHead,
+  withoutQuttyParts,
+} from "./companion_face_shape.ts";
+
+/** The example's 13 moods (Qutty's own, `blush`, has no counterpart there). */
+const EXAMPLE_MOODS = MOODS.filter((m) => !QUTTY_MOODS.includes(m));
 
 const ROOT = new URL("../", import.meta.url);
 const SNAPSHOT = new URL(
@@ -243,7 +260,7 @@ async function drawnFace(
     head: {},
     voice: {},
   };
-  for (const mood of MOODS) {
+  for (const mood of EXAMPLE_MOODS) {
     out.head[mood] = head(await draw({ mood }));
   }
   const turns: [string, Record<string, unknown>][] = [
@@ -386,24 +403,81 @@ async function example(): Promise<Shape | null> {
 Deno.test("The companion's look: the face in every mood and voice turn, the tints, the face's CSS and the avatar's size match the snapshot", async () => {
   const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Snapshot;
   const mine = await qutty();
-  assertEquals(Object.keys(snap.head), [...MOODS], "the 13 moods");
-  for (const mood of MOODS) {
+  assertEquals(Object.keys(snap.head), [...EXAMPLE_MOODS], "the 13 moods");
+  for (const mood of EXAMPLE_MOODS) {
     assertEquals(
-      mine.head[mood],
-      snap.head[mood],
+      withoutQuttyParts(mine.head[mood]),
+      quttyHead(mood, snap.head[mood]),
       `the companion's face ${mood}`,
     );
   }
   assertEquals(mine.defs, snap.defs, "the bead's shading");
   assertEquals(
-    mine.voice,
-    snap.voice,
+    Object.fromEntries(
+      Object.entries(mine.voice).map(([k, v]) => [k, withoutQuttyParts(v)]),
+    ),
+    Object.fromEntries(
+      Object.entries(snap.voice).map(([k, v]) => [k, quttyHead("neutral", v)]),
+    ),
     "the companion listening, thinking, speaking",
   );
   assertEquals(mine.tints, snap.tints, "each mood's tint");
   assertEquals(mine.keyframes, snap.keyframes, "the face's keyframes");
-  assertEquals(mine.rules, snap.rules, "the face's CSS");
+  assertEquals(
+    mine.rules,
+    { ...snap.rules, ...QUTTY_RULES },
+    "the face's CSS (with Qutty's smaller brow lifts)",
+  );
   assertEquals(await avatar(), snap.avatar, "the avatar's crop and size");
+});
+
+Deno.test("The companion's look: Qutty's divergences are only the listed ones, and each is real", async () => {
+  const snap = JSON.parse(await Deno.readTextFile(SNAPSHOT)) as Snapshot;
+  const mine = await qutty();
+  // Each listed change does change the example's face (none is stale).
+  for (const mood of EXAMPLE_MOODS) {
+    assert(
+      quttyHead(mood, snap.head[mood]) !== snap.head[mood],
+      `${mood}: Qutty's brows differ from the example's`,
+    );
+  }
+  for (const [selector, decls] of Object.entries(QUTTY_RULES)) {
+    assert(snap.rules[selector], `the example has ${selector}`);
+    assert(
+      Object.entries(decls).some(([p, v]) => snap.rules[selector][p] !== v),
+      `${selector} differs from the example's`,
+    );
+  }
+  // The catch-lights: one per dot pupil, after the pupils.
+  for (const mood of EXAMPLE_MOODS) {
+    const dots = (mine.head[mood].match(/<circle cx/g) ?? []).length;
+    const glints = (mine.head[mood].match(/companion-glint/g) ?? []).length;
+    assertEquals(glints, dots, `${mood}: a catch-light per pupil`);
+  }
+  // Rosy cheeks on the happy moods (love keeps the example's blush, coloured by the CSS).
+  const cheeks = EXAMPLE_MOODS.filter((m) =>
+    mine.head[m].includes("companion-cheeks")
+  );
+  assertEquals(cheeks, ["success", "excited"]);
+});
+
+Deno.test("The companion's look: Qutty's blush, rosy cheeks with blush lines and a sparkle, eyes aside", async () => {
+  const html = head(await render(CompanionFace, { mood: "blush" as FaceMood }));
+  for (
+    const part of [
+      'class="companion-cheeks"',
+      'class="companion-blush-lines"',
+      'class="companion-blush-sparkle"',
+      'class="companion-glint"',
+      'class="companion-eye-white"',
+    ]
+  ) assert(html.includes(part), part);
+  assert(!html.includes("is-open"), "a closed, shy smile");
+  const css = await Deno.readTextFile(new URL("public/styles.css", ROOT));
+  assert(
+    css.includes('.companion-avatar[data-mood="blush"] {'),
+    "a tint for its rim",
+  );
 });
 
 Deno.test("The companion's look: the avatar is the head alone, 2 times the clip's, smaller than the clip was", async () => {

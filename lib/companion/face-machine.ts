@@ -1,5 +1,6 @@
 // Ported from Denext's examples/companion (lib/loopy-machine.ts on feat/loopy-voice-tools: the
-// crossed-triangle the companion with 13 moods; same author, MIT) unchanged.
+// crossed-triangle the companion with 13 moods; same author, MIT), plus Qutty's own `blush` mood
+// ({@linkcode QUTTY_MOODS}).
 //
 // The companion's animation state machine: a pure reducer the page runs with `useReducer`. Each
 // state is one of the companion's moves (styles.css draws them from the `data-state` attribute);
@@ -35,9 +36,11 @@ export type FaceMood =
   | "love"
   | "surprised"
   | "shocked"
-  | "wow";
+  | "wow"
+  /** Qutty's own: flattered and a little shy (rosy cheeks, a glance away, a small smile). */
+  | "blush";
 
-/** Every mood, for validation. */
+/** Every mood, for validation: the example's 13, then Qutty's own ({@linkcode QUTTY_MOODS}). */
 export const MOODS: readonly FaceMood[] = [
   "neutral",
   "thinking",
@@ -52,7 +55,11 @@ export const MOODS: readonly FaceMood[] = [
   "surprised",
   "shocked",
   "wow",
+  "blush",
 ];
+
+/** The moods Qutty added to the example's 13 (tests/companion_look_test.ts leaves them out). */
+export const QUTTY_MOODS: readonly FaceMood[] = ["blush"];
 
 /** What the machine holds. */
 export interface FaceModel {
@@ -95,6 +102,7 @@ export function moodState(mood: FaceMood): FaceState {
     case "sleepy":
     case "surprised":
     case "shocked":
+    case "blush":
       return "idle";
   }
 }

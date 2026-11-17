@@ -1,6 +1,7 @@
 // The companion's hot face (Qutty's own, app/companion/companion-face.tsx `hot`): drawn only over
 // the neutral face, in the example's parts (the same eye whites, pupils, brows and mouth classes),
-// and kept out of the example's 13 moods, which tests/companion_look_test.ts checks unchanged.
+// and kept out of the moods (the example's 13 and Qutty's blush), which tests/companion_look_test.ts
+// checks.
 
 import { assert, assertEquals } from "@std/assert";
 import { renderToString } from "denext";
@@ -14,7 +15,7 @@ const render = (props: Record<string, unknown>) =>
   );
 
 Deno.test("The companion hot: not one of the example's moods", () => {
-  assertEquals(MOODS.length, 13);
+  assertEquals(MOODS.length, 14, "the example's 13 and Qutty's blush");
   assert(!(MOODS as readonly string[]).includes("hot"));
 });
 
