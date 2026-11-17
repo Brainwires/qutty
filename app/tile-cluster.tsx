@@ -46,6 +46,12 @@
 // maximize), the others behind it; a maximized tile does not drag. A web tile hears when another
 // tile covers it from above (`setOccluded`, for a native engine that draws above HTML).
 //
+// The harness overlay (`harnessOf` says a terminal runs a coding-agent harness and the overlay is
+// on for it; app/harness-overlay.tsx): the header shows the harness's card and the body frames the
+// terminal with a side rail and a prompt box. The terminal's host is the body frame's first child
+// either way, so the overlay coming or going never remounts the xterm; the host's ResizeObserver
+// refits the terminal as the prompt box grows. Such a tile is never scaled.
+//
 // With the native web engine (whose views draw above all HTML) a tile that is being dragged,
 // entering, leaving or sliding to a new place counts as an open overlay (`useHtmlOverlay`): every
 // web view shows its snapshot while tiles move, so no tile passes under a page.
@@ -75,6 +81,12 @@ import { useWebTile, WebBody, type WebTileHooks } from "./web-tile.tsx";
 import { WebChrome, WebToolbar } from "./web-chrome.tsx";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 import { AgentBody, AgentHead, type AgentTileHooks } from "./agent-tile.tsx";
+import {
+  HarnessControls,
+  HarnessHead,
+  type HarnessHooks,
+  type HarnessView,
+} from "./harness-overlay.tsx";
 
 /** The workspace's additions to a tile (SSH tiles, agent badges). */
 interface TileExtras {
@@ -92,6 +104,10 @@ interface TileExtras {
   web?: WebTileHooks;
   /** What agent tiles (an entry with `chat`) are drawn with (app/agent-tile.tsx). */
   agent?: AgentTileHooks;
+  /** The harness a terminal runs, when its overlay shows (app/harness-overlay.tsx). */
+  harnessOf?(entry: TerminalEntry): HarnessView | undefined;
+  /** What harness overlays are drawn with. */
+  harness?: HarnessHooks;
   /** The free-form view (absent: the tiled view). */
   freeform?: FreeformTiles;
   /** A header dragged out of the window may move its tile to another window. */
@@ -168,6 +184,8 @@ export function TileCluster(props: TileClusterProps) {
           broadcastIds={props.broadcastIds}
           web={props.web}
           agent={props.agent}
+          harnessOf={props.harnessOf}
+          harness={props.harness}
           freeform={props.freeform}
           windowDrag={props.windowDrag}
           onHeadMenu={props.onHeadMenu}
@@ -352,10 +370,21 @@ function TerminalTile(props: TerminalTileProps) {
 
   // An agent tile: its chat instead of a terminal (the manager never knows its id either).
   const agent = entry.chat ? props.agent : undefined;
-  // A web or agent tile's body is never scaled: it has no terminal to keep at one size.
-  const full = web || agent ? null : props.full;
+  // A terminal running a harness, framed by its overlay.
+  const harnessView = !web && !agent && props.harness
+    ? props.harnessOf?.(entry)
+    : undefined;
+  const harness = harnessView && props.harness;
+  // The harness's brand colour, for its cards (the theme's accent when it has none).
+  const tileStyle = harnessView?.spec.color
+    ? { ...style, "--harness": harnessView.spec.color }
+    : style;
+  // A web or agent tile's body is never scaled: it has no terminal to keep at one size. Nor is a
+  // harness overlay's (its frame is not the plain body the scale maths measures).
+  const full = web || agent || harnessView ? null : props.full;
   const classes = ["tile", `is-${phase}`];
   if (agent) classes.push("is-agent");
+  if (harnessView) classes.push("is-harness");
   if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
@@ -382,7 +411,7 @@ function TerminalTile(props: TerminalTileProps) {
     <div
       ref={rootRef}
       class={classes.join(" ")}
-      style={style}
+      style={tileStyle}
       data-testid="tile"
       data-id={id}
       data-rank={visible ? rank : ""}
@@ -392,6 +421,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-ssh={entry.ssh ? "true" : undefined}
       data-web={web ? "true" : undefined}
       data-agent-tile={agent ? "true" : undefined}
+      data-harness={harnessView?.spec.id}
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
       data-broadcast={broadcasting ? "true" : undefined}
@@ -480,6 +510,9 @@ function TerminalTile(props: TerminalTileProps) {
           </span>
           {web && <WebToolbar view={web} />}
           {agent && <AgentHead entry={entry} hooks={agent} />}
+          {harness && harnessView && (
+            <HarnessHead entry={entry} view={harnessView} hooks={harness} />
+          )}
           <span class="tile-meta">
             {props.renderHeadActions?.(entry)}
             {entry.exited && (
@@ -545,12 +578,29 @@ function TerminalTile(props: TerminalTileProps) {
             />
           )
           : (
+            // The terminal's frame: just its host (`display: contents`), or, with the harness
+            // overlay, the host as a card beside the side rail, over the prompt box.
             <div
-              class="tile-body"
-              data-testid="tile-body"
-              ref={hostRef}
-              style={full ? scaledBodyStyle(full, rect, focused) : undefined}
-            />
+              class={`term-frame${harnessView ? " harness-frame" : ""}`}
+              data-testid={harnessView ? "harness-frame" : undefined}
+            >
+              <div
+                class="tile-body"
+                data-testid="tile-body"
+                ref={hostRef}
+                style={full ? scaledBodyStyle(full, rect, focused) : undefined}
+              />
+              {harness && harnessView && (
+                <HarnessControls
+                  entry={entry}
+                  view={harnessView}
+                  hooks={harness}
+                  maximized={props.maximized}
+                  onMaximize={() => props.onMaximize(id)}
+                  onRestore={() => props.onRestore(id)}
+                />
+              )}
+            </div>
           )}
         {full && (
           // Hidden (CSS) rather than unmounted once focused: the pointerdown that focuses the

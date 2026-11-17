@@ -1,6 +1,7 @@
 // Settings → Tiles: the activity indicators an unfocused tile and its chip wear (Full, Subtle or
-// Off, and which states show; lib/workspace/activity.ts), and what a tile's header is titled
-// (the program's own title, or the process and folder).
+// Off, and which states show; lib/workspace/activity.ts), what a tile's header is titled (the
+// program's own title, or the process and folder), and whether a terminal running a coding-agent
+// harness gets the GUI overlay (app/harness-overlay.tsx).
 
 import {
   ACTIVITY_INDICATORS,
@@ -15,8 +16,10 @@ import { SettingsGroup } from "./settings-ui.tsx";
 export interface TileSettingsProps {
   activity: ActivitySettings;
   tileTitle: TileTitle;
+  harnessOverlay: boolean;
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
+  onHarnessOverlay(on: boolean): void;
 }
 
 const INDICATOR_LABELS: Record<ActivityIndicators, string> = {
@@ -118,6 +121,24 @@ export function TileSettingsSection(props: TileSettingsProps) {
               : "The foreground process and its folder, whatever the program sets."}
           </span>
         </label>
+      </SettingsGroup>
+      <SettingsGroup title="Agent harnesses" testid="harness-section">
+        <label class="field field-check">
+          <input
+            type="checkbox"
+            data-testid="setting-harness-overlay"
+            checked={props.harnessOverlay}
+            onChange={(e) =>
+              props.onHarnessOverlay((e.target as HTMLInputElement).checked)}
+          />
+          <span class="field-label">Show a GUI around agent harnesses</span>
+        </label>
+        <span class="field-hint">
+          A terminal running Claude Code, Codex, Gemini CLI, opencode, aider or
+          another harness gets a header card, a prompt box and a side rail
+          around its own terminal UI. A tile's header menu (right click) turns
+          it off or on for that tile.
+        </span>
       </SettingsGroup>
     </div>
   );

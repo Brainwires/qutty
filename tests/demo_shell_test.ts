@@ -696,3 +696,30 @@ Deno.test(
     assertEquals(exits, [{ exitCode: 0, signal: null }]);
   }),
 );
+
+Deno.test(
+  "demo: an agent tool turns bracketed paste on, takes a paste's line breaks as text, Esc interrupts",
+  withTime(async (time) => {
+    const be = createDemoBackend();
+    const sp = await be.spawn({ cols: 80, rows: 24, program: "claude" });
+    let out = "";
+    be.onData(sp.id, (d) => out += d);
+    await time.tickAsync(0);
+    assert(out.includes("\x1b[?2004h"), "DECSET 2004");
+    out = "";
+    // A paste split over two writes, a line break inside it, Enter after it.
+    await be.write(sp.id, "\x1b[200~fix\nthe ");
+    await be.write(sp.id, "build\x1b[201~");
+    await be.write(sp.id, "\r");
+    await time.tickAsync(0);
+    assertEquals(
+      plain(out),
+      "fix the build\r\n(demo) claude heard (pasted): fix the build\r\n> ",
+    );
+    out = "";
+    await be.write(sp.id, "\x1b");
+    await time.tickAsync(0);
+    assertEquals(plain(out), "\r\n(demo) interrupted\r\n> ");
+    await be.kill(sp.id);
+  }),
+);

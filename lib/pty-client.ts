@@ -295,6 +295,11 @@ export interface PtyBackend {
   hubAnswer(id: string, action: AskAnswer["action"]): Promise<boolean>;
   /** Tell the hub terminal `ptyId`'s title (agents see it in `list_peers`). */
   hubSetLabel(ptyId: string, label: string): Promise<void>;
+  /**
+   * Rename terminal `ptyId`'s hub tile (the harness overlay's header): the name it got; rejects
+   * with the reason (taken, unusable).
+   */
+  hubRename(ptyId: string, name: string): Promise<string>;
   /** Tell the hub this window's web tiles (all of them; agents see them as tiles `web-<n>`). */
   hubWebTiles(tiles: WebTileReport[]): Promise<void>;
   /** A full snapshot of the tiles after every change. */
@@ -776,6 +781,9 @@ export function createDesktopBackend(
     async hubSetLabel(ptyId, label) {
       await hub.setLabel({ id: ptyId, label });
     },
+    async hubRename(ptyId, name) {
+      return await hub.rename({ id: ptyId, name });
+    },
     async hubWebTiles(tiles) {
       await hub.webTiles({ tiles });
     },
@@ -981,6 +989,9 @@ const DEMO_AGENT_HELP = [
 
 /** How long a demo agent stays busy after a line. */
 const DEMO_BUSY_MS = 1500;
+/** Bracketed paste's markers (a demo agent turns the mode on, as Claude Code and Codex do). */
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
 
 /** What the demo backend says is installed (the e2e suite launches these). */
 const DEMO_LAUNCHABLES: Launchables = {
@@ -1038,6 +1049,11 @@ class DemoShell {
   exited = false;
   /** Answers to `query` received (cursor position and device attributes reports). */
   replies = 0;
+  /** A demo agent is inside a bracketed paste (its end marker not seen yet). */
+  pasting = false;
+  /** Some of the line being typed came in a bracketed paste; what the line just run had. */
+  pasted = false;
+  linePasted = false;
 
   constructor(
     readonly id: string,
@@ -1069,6 +1085,8 @@ class DemoShell {
       }
     }
     if (agent) {
+      // Bracketed paste on (DECSET 2004), as the real harnesses' TUIs turn it on.
+      this.out(`${ESC}[?2004h`);
       this.out(
         `${
           fg(209)
@@ -1204,6 +1222,11 @@ class DemoShell {
     // The terminal's answers to `query`, counted for `replies` (the broadcast e2e checks that a
     // tile's answers never reach another tile).
     this.replies += (data.match(QUERY_REPLY) ?? []).length;
+    if (this.mode.agent) {
+      // Esc alone interrupts a demo agent's turn, as it does Claude Code's.
+      if (data === ESC) return this.interrupt();
+      if (this.pasting || data.includes(PASTE_START)) data = this.unpaste(data);
+    }
     // Drop escape sequences (arrows, function keys); the demo has no history or cursor motion.
     // deno-lint-ignore no-control-regex
     const clean = data.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1bO.|\x1b./g, "");
@@ -1212,6 +1235,8 @@ class DemoShell {
         this.out("\r\n");
         const cmd = this.line;
         this.line = "";
+        this.linePasted = this.pasted;
+        this.pasted = false;
         this.markRun(cmd);
         this.run(cmd);
         if (this.exited) return;
@@ -1244,6 +1269,44 @@ class DemoShell {
         this.out(c);
       }
     }
+  }
+
+  /**
+   * A demo agent's bracketed paste: the text between the markers is typed, its line breaks as
+   * spaces (a real harness keeps them in its input box), so nothing in it is Enter.
+   */
+  unpaste(data: string): string {
+    let out = "";
+    let rest = data;
+    while (rest) {
+      if (this.pasting) {
+        const end = rest.indexOf(PASTE_END);
+        out += (end < 0 ? rest : rest.slice(0, end)).replace(/\r\n?|\n/g, " ");
+        this.pasted = true;
+        if (end < 0) break;
+        this.pasting = false;
+        rest = rest.slice(end + PASTE_END.length);
+      } else {
+        const start = rest.indexOf(PASTE_START);
+        if (start < 0) {
+          out += rest;
+          break;
+        }
+        out += rest.slice(0, start);
+        this.pasting = true;
+        rest = rest.slice(start + PASTE_START.length);
+      }
+    }
+    return out;
+  }
+
+  /** Esc in a demo agent: its turn (if any) stops, the line typed so far stays. */
+  interrupt(): void {
+    clearTimeout(this.idleTimer);
+    this.hub.setStatus(this.id, "idle");
+    this.out(`\r\n${DIM}(demo) interrupted${RESET}\r\n`);
+    this.prompt();
+    this.out(this.line);
   }
 
   /**
@@ -1285,7 +1348,11 @@ class DemoShell {
       this.hub.setStatus(this.id, "idle", note);
       println(`${DIM}(demo) set_status idle, note: ${note}${RESET}`);
     } else {
-      println(`${DIM}(demo) ${this.mode.agent!.name} heard: ${text}${RESET}`);
+      println(
+        `${DIM}(demo) ${this.mode.agent!.name} heard${
+          this.linePasted ? " (pasted)" : ""
+        }: ${text}${RESET}`,
+      );
       this.hub.setStatus(this.id, "busy");
       clearTimeout(this.idleTimer);
       this.idleTimer = setTimeout(
@@ -1746,6 +1813,7 @@ export function createDemoBackend(): PtyBackend {
     hubSnapshot: () => hub.snapshot(),
     hubAnswer: (id, action) => hub.answer(id, action),
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
+    hubRename: (ptyId, name) => attempt(() => hub.rename(ptyId, name.trim())),
     hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
     onHubAsk: (cb) => hubAsks.on(cb),

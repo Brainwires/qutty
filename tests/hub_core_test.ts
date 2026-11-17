@@ -15,8 +15,8 @@ import {
   buildToolRegistry,
   createHubHandler,
   harnessOfClient,
-  tileInput,
 } from "../lib/hub/tools.ts";
+import { tileInput } from "../lib/hub/tile-input.ts";
 import { formatMessages, notificationStatus } from "../lib/hub/hooks.ts";
 import { ScreenMirror } from "../lib/hub/mirror.ts";
 import {
