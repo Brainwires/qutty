@@ -44,6 +44,14 @@ export interface WorkspaceInfo {
   detachedAt?: number;
 }
 
+/** A workspace kept for the next launch (desktop/kept-shells.ts): what the page saved, its terminals. */
+export interface KeptWorkspace {
+  id: string;
+  name: string;
+  snapshot: unknown;
+  ptys: string[];
+}
+
 /** An agent tile that is working right now (the hub's status, desktop/hub.ts). */
 export interface BusyTile {
   /** The PTY id (`pty-3`). */
@@ -399,6 +407,41 @@ export class WorkspaceRegistry {
    */
   answerQuit(quit: boolean): void {
     this.#confirmedAt = quit ? this.#now() : undefined;
+  }
+
+  /**
+   * Bring back a workspace an earlier launch kept (its shells ran on in the PTY daemon): detached,
+   * with its name and the page's last snapshot, until a window with its key shows it. Its
+   * terminals are added as they are adopted ({@linkcode addPty}). An existing one is left as is.
+   */
+  restore(ws: { id: string; name: string; snapshot: unknown }): void {
+    if (this.#workspaces.has(ws.id)) return;
+    this.#workspaces.set(ws.id, {
+      id: ws.id,
+      name: ws.name,
+      window: undefined,
+      ptys: new Set(),
+      snapshot: ws.snapshot ?? null,
+      detachedAt: this.#now(),
+    });
+    // New workspaces are named after the restored ones.
+    const n = /^Workspace (\d+)$/.exec(ws.name)?.[1];
+    if (n !== undefined) this.#named = Math.max(this.#named, Number(n));
+    this.#notify();
+  }
+
+  /**
+   * The workspaces with any of `ptys` (the terminals kept for the next launch), as {@linkcode
+   * restore} takes them back, each with those of its terminals.
+   */
+  keptWorkspaces(ptys: ReadonlySet<string>): KeptWorkspace[] {
+    const out: KeptWorkspace[] = [];
+    for (const ws of this.#workspaces.values()) {
+      const kept = [...ws.ptys].filter((p) => ptys.has(p));
+      if (kept.length === 0) continue;
+      out.push({ id: ws.id, name: ws.name, snapshot: ws.snapshot, ptys: kept });
+    }
+    return out;
   }
 
   /** Forget everything (the app is quitting; tests). */

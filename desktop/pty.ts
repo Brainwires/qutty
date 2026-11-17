@@ -42,6 +42,8 @@ import {
 } from "denext/desktop";
 import { workspaces } from "./workspace-host.ts";
 import { TerminalSessions } from "./terminal-sessions.ts";
+import { desktopKeeperDeps, shellKeeper } from "./kept-shells.ts";
+import { persistSelfTest, runSelfTest } from "./persist-selftest.ts";
 import {
   dim,
   emptyInput,
@@ -202,12 +204,11 @@ const resizeInput = objectSchema<{ id: string; cols: number; rows: number }>((
 }));
 
 // ---------------------------------------------------------------------------------------------
-// libc over FFI: the file writes below (desktop/ssh.ts, companion.ts, voice.ts, hub.ts), errno
-// (desktop/hub-socket.ts), the executable check and macOS's process queries
+// libc over FFI: the executable check and macOS's process queries (the file writes and errno are
+// desktop/libc.ts's)
 // ---------------------------------------------------------------------------------------------
 
 const IS_DARWIN = Deno.build.os === "darwin";
-const EINTR = 4;
 const X_OK = 1;
 /** `proc_pidinfo` flavors and the layouts read here (`<sys/proc_info.h>`). */
 const PROC_PIDTBSDINFO = 3;
@@ -218,29 +219,15 @@ const VNODE_INFO_SIZE = 152;
 const MAXPATHLEN = 1024;
 const VNODEPATHINFO_SIZE = 2 * (VNODE_INFO_SIZE + MAXPATHLEN);
 
-// mode_t is 16-bit on macOS, 32-bit on Linux (a non-variadic argument, so the width matters).
-const MODE_T = IS_DARWIN ? "u16" : "u32";
-
 const LIBC_SYMBOLS = {
-  write: { parameters: ["i32", "buffer", "usize"], result: "isize" },
-  close: { parameters: ["i32"], result: "i32" },
   access: { parameters: ["buffer", "i32"], result: "i32" },
-  creat: { parameters: ["buffer", MODE_T], result: "i32" },
-  chmod: { parameters: ["buffer", MODE_T], result: "i32" },
-  mkdir: { parameters: ["buffer", MODE_T], result: "i32" },
-  rename: { parameters: ["buffer", "buffer"], result: "i32" },
 } as const;
 
 const DARWIN_SYMBOLS = {
-  __error: { parameters: [], result: "pointer" },
   proc_pidinfo: {
     parameters: ["i32", "i32", "u64", "buffer", "i32"],
     result: "i32",
   },
-} as const;
-
-const LINUX_SYMBOLS = {
-  __errno_location: { parameters: [], result: "pointer" },
 } as const;
 
 const LIBC_PATH = IS_DARWIN ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
@@ -249,9 +236,6 @@ type Libc = Deno.DynamicLibrary<typeof LIBC_SYMBOLS>["symbols"];
 let libcCache: Libc | undefined;
 let darwinCache:
   | Deno.DynamicLibrary<typeof DARWIN_SYMBOLS>["symbols"]
-  | undefined;
-let linuxCache:
-  | Deno.DynamicLibrary<typeof LINUX_SYMBOLS>["symbols"]
   | undefined;
 
 /** libc, opened on first use (nothing runs at import). */
@@ -263,70 +247,8 @@ function darwinLibc() {
   return (darwinCache ??= Deno.dlopen(LIBC_PATH, DARWIN_SYMBOLS).symbols);
 }
 
-/** The calling thread's errno (read right after the failing call, on the same JS thread). */
-export function errno(): number {
-  const ptr = IS_DARWIN
-    ? darwinLibc().__error()
-    : (linuxCache ??= Deno.dlopen(LIBC_PATH, LINUX_SYMBOLS).symbols)
-      .__errno_location();
-  return ptr ? new Deno.UnsafePointerView(ptr).getInt32() : 0;
-}
-
 const encoder = new TextEncoder();
 const cstr = (s: string) => encoder.encode(`${s}\0`);
-
-// ---------------------------------------------------------------------------------------------
-// File writes through libc (the app needs no --allow-write; FFI is already full trust). Also
-// used by desktop/ssh.ts for ~/.ssh/qutty.conf and the recents file.
-// ---------------------------------------------------------------------------------------------
-
-/** `mkdir(path, mode)`; an existing directory is fine (its mode is left alone). */
-export function ensureDir(path: string, mode: number): void {
-  libc().mkdir(cstr(path), mode);
-}
-
-/**
- * Write `bytes` to `path` with `mode`, atomically: a temp file beside it, written, chmod'ed,
- * then renamed over the target (a reader never sees a partial file, and a crash leaves the old
- * one). The target's directory must exist.
- */
-export function writeFileAtomic(
-  path: string,
-  bytes: Uint8Array,
-  mode: number,
-): void {
-  const c = libc();
-  const tmp = `${path}.${Deno.pid}.tmp`;
-  const fd = c.creat(cstr(tmp), mode);
-  if (fd < 0) throw new Error(`cannot create ${tmp} (errno ${errno()})`);
-  try {
-    let off = 0;
-    while (off < bytes.length) {
-      const n = Number(
-        c.write(fd, bytes.subarray(off), BigInt(bytes.length - off)),
-      );
-      if (n < 0) {
-        if (errno() === EINTR) continue;
-        throw new Error(`cannot write ${tmp} (errno ${errno()})`);
-      }
-      off += n;
-    }
-  } finally {
-    c.close(fd);
-  }
-  // creat applies the umask; the caller's mode is meant exactly (0600 for ssh files).
-  c.chmod(cstr(tmp), mode);
-  if (c.rename(cstr(tmp), cstr(path)) !== 0) {
-    throw new Error(`cannot install ${path} (errno ${errno()})`);
-  }
-}
-
-/** `rename(from, to)`, replacing `to` (both in one file system). */
-export function renamePath(from: string, to: string): void {
-  if (libc().rename(cstr(from), cstr(to)) !== 0) {
-    throw new Error(`cannot move ${from} to ${to} (errno ${errno()})`);
-  }
-}
 
 /** The bin folders a Finder-launched app's `PATH` lacks, searched after `PATH` itself. */
 const FALLBACK_BIN = [
@@ -639,6 +561,26 @@ export interface PtySpawnOptions {
    * (the extension registers it for routing and replay there).
    */
   onCreated?: (id: string) => void;
+  /**
+   * Where the terminal runs: given its id and the options `Deno.openPty` would get, its PTY (the
+   * PTY daemon's, desktop/ptyd-client.ts), or `undefined` for this process's `Deno.openPty` (the
+   * default).
+   */
+  open?: (id: string, options: DenoPtyOptions) => Promise<DenoPty | undefined>;
+  /** Text shown before the program's own output (a restored shell's dimmed history). */
+  prelude?: string;
+}
+
+/** What {@linkcode PtyHost.adopt} is told about a terminal that runs already. */
+export interface PtyAdoption {
+  /** The program (its path), as `spawn` reported it. */
+  shell: string;
+  cwd: string;
+  owner?: string;
+  /** What it printed before (it is emitted first). */
+  replay?: string;
+  /** Called with its id once it is registered, before any of its output is emitted. */
+  onCreated?: (id: string) => void;
 }
 
 /** Options for a {@linkcode PtyHost}. */
@@ -688,7 +630,7 @@ export class PtyHost {
       );
     }
     const open = this.#openPty ?? runtimeOpenPty();
-    if (!open) {
+    if (!open && !opts.open) {
       throw new DesktopCapError(
         "unsupported",
         "terminals need denext's Deno runtime (Deno.openPty, 3.0.0-denext.12 or later)",
@@ -773,7 +715,7 @@ export class PtyHost {
 
     let pty: DenoPty;
     try {
-      pty = open({
+      const options: DenoPtyOptions = {
         cmd: file,
         args: argv,
         cwd,
@@ -781,7 +723,10 @@ export class PtyHost {
         clearEnv: true,
         cols: args.cols,
         rows: args.rows,
-      });
+      };
+      const remote = opts.open ? await opts.open(id, options) : undefined;
+      if (!remote && !open) throw new Error("this runtime has no Deno.openPty");
+      pty = remote ?? open!(options);
     } catch (err) {
       if (taps?.ended) tap("ended", () => taps.ended!(id));
       // The runtime's message names the path; it stays in the app's log, not the page.
@@ -794,14 +739,56 @@ export class PtyHost {
         `could not start ${args.program ? "the program" : "the shell"}${why}`,
       );
     }
+    this.#run(id, pty, {
+      shell: file,
+      cwd,
+      ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+      ...(opts.prelude ? { replay: opts.prelude } : {}),
+      ...(opts.onCreated ? { onCreated: opts.onCreated } : {}),
+    });
+    return { id, pid: pty.pid, shell: file, cwd };
+  }
+
+  /**
+   * Take on a terminal that runs already (one the PTY daemon kept from the app's last launch) as
+   * terminal `id`: its `replay` is emitted first, then its output and its exit as usual. Later
+   * spawns get ids after it.
+   */
+  adopt(id: string, pty: DenoPty, info: PtyAdoption): void {
+    if (this.#terms.has(id)) {
+      throw new DesktopCapError("internal", `terminal ${id} exists already`);
+    }
+    const n = /^pty-(\d+)$/.exec(id)?.[1];
+    if (n !== undefined) this.#nextId = Math.max(this.#nextId, Number(n));
+    this.#run(id, pty, info);
+  }
+
+  /**
+   * Forget terminal `id` without ending it (it runs on in the PTY daemon: the quit that keeps the
+   * shells). No `exit` is emitted.
+   */
+  release(id: string): void {
+    const t = this.#terms.get(id);
+    if (!t || t.finalized) return;
+    t.finalized = true;
+    if (t.killTimer !== undefined) clearTimeout(t.killTimer);
+    if (t.flushTimer !== undefined) clearTimeout(t.flushTimer);
+    this.#terms.delete(id);
+    (t.pty as { detach?: () => void }).detach?.();
+    const taps = this.#taps();
+    if (taps?.ended) tap("ended", () => taps.ended!(id));
+  }
+
+  /** Register `pty` as terminal `id` and start reading it. */
+  #run(id: string, pty: DenoPty, info: PtyAdoption): void {
     const term: Term = {
       id,
       pid: pty.pid,
       pty,
       writer: pty.writable.getWriter(),
-      shell: file,
-      cwd,
-      owner: opts.owner ?? "main",
+      shell: info.shell,
+      cwd: info.cwd,
+      owner: info.owner ?? "main",
       decoder: new TextDecoder("utf-8"),
       pending: [],
       pendingBytes: 0,
@@ -810,7 +797,8 @@ export class PtyHost {
       finalized: false,
     };
     this.#terms.set(id, term);
-    if (opts.onCreated) opts.onCreated(id);
+    if (info.onCreated) info.onCreated(id);
+    if (info.replay) this.#push(term, encoder.encode(info.replay));
     const pumped = this.#readLoop(term);
     pty.status.then(
       async (status) => {
@@ -828,7 +816,21 @@ export class PtyHost {
         this.#finalize(term, { exitCode: -1, signal: null });
       },
     );
-    return { id, pid: pty.pid, shell: file, cwd };
+  }
+
+  /** Whether terminal `id` runs in the PTY daemon (its PTY can be let go and kept). */
+  isRemote(id: string): boolean {
+    const t = this.#terms.get(id);
+    return t !== undefined && !t.finalized &&
+      typeof (t.pty as { detach?: unknown }).detach === "function";
+  }
+
+  /** Terminal `id`'s pid (and the program, and where it started), while it is known. */
+  describe(
+    id: string,
+  ): { pid: number; shell: string; cwd: string } | undefined {
+    const t = this.#terms.get(id);
+    return t ? { pid: t.pid, shell: t.shell, cwd: t.cwd } : undefined;
   }
 
   /**
@@ -1216,7 +1218,20 @@ export default defineDesktopExtension({
   name: "pty",
   events: ["data", "exit"],
   setup: (h: DesktopExtensionHost) => {
-    terminalSessions().connect(h);
+    const sessions = terminalSessions();
+    sessions.connect(h);
+    // The shells kept by the last quit come back, and new tiles' shells run in the PTY daemon
+    // (desktop/kept-shells.ts). Only in the app (a test's host has no app-support folder).
+    if (h.appSupportDir) {
+      const keeper = shellKeeper();
+      void keeper.start(desktopKeeperDeps(sessions, workspaces, {
+        appSupportDir: h.appSupportDir,
+        confirm: (o) => h.confirm(o),
+      }));
+      if (Deno.env.get("QUTTY_PTY_SELFTEST") === "persist") {
+        runSelfTest("persist", () => persistSelfTest(sessions, keeper));
+      }
+    }
     // (`QUTTY_PTY_SELFTEST=detach`, the detach / reattach check, runs from desktop.ts: it needs
     // the app's windows.)
     if (Deno.env.get("QUTTY_PTY_SELFTEST") !== "1") return;

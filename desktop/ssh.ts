@@ -35,13 +35,8 @@ import {
   str,
   strList,
 } from "./schema.ts";
-import {
-  ensureDir,
-  type PtyDataEvent,
-  type PtyExitEvent,
-  PtyHost,
-  writeFileAtomic,
-} from "./pty.ts";
+import { type PtyDataEvent, type PtyExitEvent, PtyHost } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import {
   deleteHost,
   ensureInclude,

@@ -108,6 +108,8 @@ Qutty is built with [Denext](https://jsr.io/@denext/denext) on Deno **2.9.8**
 - `lib/workspace/`: state, shortcuts, fonts and the switcher bar logic.
 - `desktop/pty.ts`: the desktop extension that runs shells through the runtime's
   `Deno.openPty`.
+- `desktop/ptyd.ts`, `desktop/kept-shells.ts`: the per-user PTY daemon that
+  keeps shells running after the app quits, and the app's side of it.
 - `tests/`: unit tests; `tests/e2e/`: browser tests.
 
 ### Contributing and releasing

@@ -17,9 +17,22 @@
     and rebuilds from it (`lib/workspace/session.ts`, `app/use-session.ts`). A
     reload reattaches too. ⌘Q quits and kills everything, asking first when an
     agent is busy; the Workspaces menu ends a workspace for real.
-  - Open: detach that survives quitting the app (a separate PTY daemon), and
-    restoring the shells themselves (cwd, scrollback) at the next launch: today
-    the windows and layouts come back with fresh shells.
+  - Done: detach that survives quitting the app. With Settings → Windows → "Keep
+    shells running after quitting" (on by default) the tiles' shells run in a
+    per-user PTY daemon (`desktop/ptyd.ts`, `qutty-ptyd`: the app's own
+    executable started headless by the `ptyd` sidecar, detached; a versioned
+    protocol on `/tmp/qutty-<uid>/ptyd-<v>.sock`, peer uid checked). ⌘Q asks
+    "Keep Shells Running" (the default) / "End Shells" / Cancel (naming a busy
+    agent); the next launch adopts every kept shell with its replay and the
+    page's snapshot, so the restored windows come back on their running shells
+    (`desktop/kept-shells.ts`). Without the daemon (a reboot) the shell tiles
+    start again in their last folder with their old text dimmed above the
+    prompt. `QUTTY_PTY_SELFTEST=persist` checks it in the packaged app.
+  - Open: kept agent tiles keep their old `QUTTY_SOCK` / hub env (the hub's
+    per-launch socket folder is gone): their hub integration needs a restart.
+    Sandboxed tiles are not kept. Denext has no supported way to run a process
+    that outlives the app (sidecars end with it), so the daemon is a detached
+    `spawnSelf` child; a Denext "detached sidecar" would make it first-class.
   - Off macOS there is no Dock to come back through: closing the last window
     quits (through the same busy-agent question). Not tried on Linux yet.
 

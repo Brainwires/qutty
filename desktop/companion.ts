@@ -17,7 +17,7 @@
 // - Page round trips: a `say` waiting for its button, and a `control` command (spawn / close /
 //   focus) waiting for the page to carry it out.
 
-import { ensureDir, writeFileAtomic } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { chmodPath, removeDir, unlinkPath } from "./hub-socket.ts";
 import {
   anthropicCompanionBrain,

@@ -17,7 +17,8 @@
 
 import { ChatOptions, Message } from "@rullama/core";
 import { OllamaChatProvider } from "@rullama/provider";
-import { ensureDir, PtyHost, resolveProgram } from "./pty.ts";
+import { PtyHost, resolveProgram } from "./pty.ts";
+import { ensureDir } from "./libc.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
 import {
   abortable,

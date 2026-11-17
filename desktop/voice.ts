@@ -35,13 +35,8 @@ import {
   optStr,
   str,
 } from "./schema.ts";
-import {
-  ensureDir,
-  PtyHost,
-  renamePath,
-  resolveProgram,
-  writeFileAtomic,
-} from "./pty.ts";
+import { PtyHost, resolveProgram } from "./pty.ts";
+import { ensureDir, renamePath, writeFileAtomic } from "./libc.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
 import { unlinkPath } from "./hub-socket.ts";
 import {

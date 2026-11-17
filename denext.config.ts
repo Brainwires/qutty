@@ -21,7 +21,8 @@ export default {
       },
       // Detachable sessions: closing a window detaches its workspace (its terminals keep running
       // in the app's process) and the app stays up with no window, in the menu bar / tray (the
-      // backend tray, desktop.ts); Cmd+Q quits and kills them (desktop/workspace-host.ts). The
+      // backend tray, desktop.ts); Cmd+Q quits and ends them, or leaves them running in the PTY
+      // daemon for the next launch (desktop/kept-shells.ts, the `ptyd` sidecar below). The
       // last window's close quits when no terminal is left, and off macOS when there is no tray
       // (desktop/tray.ts).
       keepAlive: true,
@@ -30,7 +31,8 @@ export default {
       // On macOS a relaunch from Finder or Spotlight is the Dock's reopen (`onDockReopen`).
       singleInstance: true,
       // The workspace windows open at the last quit come back at launch, at their frames (each
-      // window's key is its workspace's id; their terminals start afresh, a quit ended them).
+      // window's key is its workspace's id; their terminals are the kept ones, adopted from the
+      // PTY daemon, or start afresh when the quit ended them).
       restoreWindows: true,
       maxWindows: 16,
     },
@@ -164,6 +166,16 @@ export default {
       // PasswordVault through PowerShell, gets `--allow-run=powershell.exe`).
       secureStore: true,
     },
+    // The PTY daemon's starter (desktop/ptyd-sidecar.ts): at each launch, unless a daemon of this
+    // protocol version answers, it starts `qutty-ptyd` (desktop/ptyd.ts) as a headless child of
+    // the app's own executable, detached, so the shells it holds outlive the app's quit when the
+    // user keeps them (desktop/kept-shells.ts). The worker itself has nothing else to do.
+    sidecars: [{
+      name: "ptyd",
+      run: { module: "./desktop/ptyd-sidecar.ts" },
+      ready: { signal: true, timeoutMs: 10_000 },
+      restart: { on: "never" },
+    }],
     // Never `/usr/bin/security` (no item of Qutty's was ever stored through it): the runtime's own
     // Keychain store only, so no `--allow-run=security` is baked.
     secureStore: { legacy: false },

@@ -48,13 +48,8 @@ import {
   StreamServerTransport,
 } from "@rullama/mcp-server";
 import { asValidation, emptyInput, objectSchema, str } from "./schema.ts";
-import {
-  ensureDir,
-  resolveProgram,
-  setPtyTaps,
-  writeFileAtomic,
-  writeTerminal,
-} from "./pty.ts";
+import { resolveProgram, setPtyTaps, writeTerminal } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { listCodexHooks } from "./codex-trust.ts";
 import {
   type CodexTrustCheck,
@@ -68,8 +63,8 @@ import {
   FdReactor,
   FdTcpListener,
   FdUnixListener,
-  getuid,
   makeDir,
+  privateUserDir,
   processAlive,
   removeDir,
   unlinkPath,
@@ -237,18 +232,7 @@ function fileExists(path: string): boolean {
  * Returns the process folder.
  */
 export async function prepareSocketDir(base = "/tmp"): Promise<string> {
-  const uid = getuid();
-  const userDir = `${base}/qutty-${uid}`;
-  makeDir(userDir, 0o700);
-  const st = await Deno.lstat(userDir);
-  if (
-    !st.isDirectory || st.isSymlink || st.uid !== uid ||
-    ((st.mode ?? 0) & 0o077) !== 0
-  ) {
-    throw new Error(
-      `${userDir} is not a private folder of this user; not using it`,
-    );
-  }
+  const userDir = await privateUserDir(base);
   for await (const entry of Deno.readDir(userDir)) {
     const pid = Number(entry.name);
     if (!entry.isDirectory || !/^\d+$/.test(entry.name) || pid === Deno.pid) {

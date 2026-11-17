@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Shells survive quitting Qutty. ⌘Q asks whether to keep the shells running (the
+  default) or end them; kept shells come back at the next launch in their tiles,
+  as they were, with what they printed meanwhile. After a restart of the
+  computer the shell tiles come back in their last folder, their old text shown
+  dimmed above the new prompt. Settings → Windows → "Keep shells running after
+  quitting" turns it off.
+- Terminals run on the desktop runtime's own PTYs: no native terminal library to
+  build any more, and no file descriptor is left behind per terminal.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that
