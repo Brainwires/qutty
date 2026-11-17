@@ -94,6 +94,8 @@ export interface NativeMenuHandlers {
   openOllama(): void;
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   moveTile(to: string): void;
+  /** "Claude Code (chat)": a new agent tile. */
+  openAgentChat(): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
 }
@@ -111,6 +113,8 @@ export interface NativeMenusOptions {
   webPage: boolean;
   /** "Bookmarks…" and "History…" in the Shell menu (a web engine). */
   webDialogs: boolean;
+  /** "Claude Code (chat)" in the launch submenu. */
+  agentChat: boolean;
   /** A modal dialog has the keyboard. */
   modalOpen: boolean;
   /** Where tiles can move ("Move Tile to" in the Window menu); absent where they cannot. */
@@ -219,8 +223,16 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         ollama: opts.ollama,
         webPage: opts.webPage,
         webDialogs: opts.webDialogs,
+        agentChat: opts.agentChat,
       }),
-    [platform, opts.sections, opts.ollama, opts.webPage, opts.webDialogs],
+    [
+      platform,
+      opts.sections,
+      opts.ollama,
+      opts.webPage,
+      opts.webDialogs,
+      opts.agentChat,
+    ],
   );
   const shellKey = JSON.stringify(shell);
   const shellRef = useRef(shell);
@@ -308,6 +320,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.openOllama();
         case "moveTile":
           return h.moveTile(action.to);
+        case "agentChat":
+          return h.openAgentChat();
       }
     });
   }, [windowId, guard]);

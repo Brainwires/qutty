@@ -714,3 +714,56 @@ Deno.test("native menus: the Window menu's Move Tile to items, and their clicks"
   );
   assert(!one.some((i) => i.id === moveItemId("new")));
 });
+
+Deno.test("native menus: Claude Code's entry has its (chat) twin, as in the + menu", () => {
+  const sub = shellMenu("mac", {
+    sections: [{
+      id: "agents",
+      title: "Agents",
+      entries: [
+        {
+          id: "agent:claude",
+          label: "Claude Code",
+          kind: "agent",
+          agent: { name: "claude" },
+        },
+        {
+          id: "agent:codex",
+          label: "Codex",
+          kind: "agent",
+          agent: { name: "codex" },
+        },
+      ],
+    }],
+    ollama: false,
+    webPage: false,
+    agentChat: true,
+  }).items[1].items!;
+  assertEquals(sub.map((i) => i.label ?? "-"), [
+    "Agents",
+    "Claude Code",
+    "Claude Code (chat)",
+    "Codex",
+    "-",
+    "Connections…",
+  ]);
+  assertEquals(sub[2].id, ITEM.agentChat);
+  assertEquals(menuAction(ITEM.agentChat), { kind: "agentChat" });
+  // Without agent tiles: no twin.
+  assert(
+    !shellMenu("mac", {
+      sections: [{
+        id: "agents",
+        title: "Agents",
+        entries: [{
+          id: "agent:claude",
+          label: "Claude Code",
+          kind: "agent",
+          agent: { name: "claude" },
+        }],
+      }],
+      ollama: false,
+      webPage: false,
+    }).items[1].items!.some((i) => i.id === ITEM.agentChat),
+  );
+});

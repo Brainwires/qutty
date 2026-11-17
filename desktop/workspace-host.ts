@@ -552,13 +552,16 @@ type HubEventName =
   | "askClosed"
   | "control"
   | "companion"
-  | "say";
+  | "say"
+  | "agent";
 
 /**
  * Where one of the hub's events goes with several windows: `{}` is every window, `{ window }`
  * one, `null` none.
  *
  * - `tiles` and `askClosed` are idempotent: every window (each shows only its own tiles).
+ * - `agent` (an agent tile's session) goes to every window: each follows only its own tiles'
+ *   sessions, by id.
  * - An agent's `ask` goes to the window showing its tile; while its workspace is detached it
  *   waits in the hub (the page reads it from the snapshot when the workspace is shown again). The
  *   companion's own questions go to the active window.
@@ -572,7 +575,9 @@ export function hubEventTarget(
   event: HubEventName,
   data: unknown,
 ): { window?: string } | null {
-  if (event === "tiles" || event === "askClosed") return {};
+  if (event === "tiles" || event === "askClosed" || event === "agent") {
+    return {};
+  }
   if (event === "control") {
     const owner = (data as { command?: { owner?: unknown } } | null)?.command
       ?.owner;

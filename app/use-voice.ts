@@ -74,6 +74,8 @@ export interface VoiceApi {
   /** The cloud keys (set / clear / whether set; kept by the voice extension in the OS keychain). */
   keys: KeyStore | undefined;
   press(): void;
+  /** Start a one-shot dictation into the focused tile (an agent tile's mic button). */
+  pressDictate(): void;
   release(heldMs: number): void;
   cancel(): void;
   send(text: string): void;
@@ -219,6 +221,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     voice,
     keys,
     press: () => void controller?.press(),
+    pressDictate: () => void controller?.press({ dictate: true }),
     release: (heldMs) => void controller?.release(heldMs),
     cancel: () => void controller?.cancel(),
     send: (text) => controller?.send(text),

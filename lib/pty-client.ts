@@ -89,6 +89,18 @@ import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 import {
+  AgentSessions,
+  type AgentSnapshot,
+  type AgentStartRequest,
+  type AgentUpdate,
+} from "./agent/sessions.ts";
+import type {
+  AgentMessage,
+  PermissionDecision,
+  PermissionMode,
+} from "./agent/adapter.ts";
+import { DemoAgentAdapter } from "./agent/demo.ts";
+import {
   createDemoSession,
   createDesktopSession,
   type DemoRecord,
@@ -344,7 +356,36 @@ export interface PtyBackend {
   onHubControl(
     cb: (request: { requestId: string; command: ControlCommand }) => void,
   ): () => void;
+
+  // --- Agent tiles (lib/agent/sessions.ts, in the hub) ----------------------------------------
+
+  /** Open an agent tile's session, or attach to the one it had (`attach`); its snapshot. */
+  agentStart(req: AgentStartArgs): Promise<AgentSnapshot>;
+  /** A message for the agent (queued while a turn runs). */
+  agentSend(id: string, message: AgentMessage): Promise<boolean>;
+  /** Stop the turn under way. */
+  agentInterrupt(id: string): Promise<boolean>;
+  /** Answer a permission question. */
+  agentAnswer(
+    id: string,
+    requestId: string,
+    decision: PermissionDecision,
+  ): Promise<boolean>;
+  /** Another model (`""`: the default) or mode, or a new session (`fresh`). */
+  agentRestart(
+    id: string,
+    patch: { model?: string; permissionMode?: PermissionMode; fresh?: boolean },
+  ): Promise<AgentSnapshot | null>;
+  /** Rename the agent tile (its hub name); the name it got (rejects with the reason). */
+  agentRename(id: string, name: string): Promise<string>;
+  /** End the session (its tile closed). */
+  agentStop(id: string): Promise<void>;
+  /** Every agent session's updates (each page follows its own tiles' ids). */
+  onAgent(cb: (update: AgentUpdate) => void): () => void;
 }
+
+/** What the page asks `agentStart` for (the backend adds the owner). */
+export type AgentStartArgs = Omit<AgentStartRequest, "owner">;
 
 /** A companion command as the page receives it. */
 export interface ControlRequest {
@@ -570,6 +611,15 @@ export function createDesktopBackend(
     });
   };
 
+  // Agent tiles' updates: numbered per session, so a replayed one is dropped by its `seq`.
+  const agentUpdates = fanout<AgentUpdate>();
+  let listeningAgents = false;
+  const listenAgents = () => {
+    if (listeningAgents) return;
+    listeningAgents = true;
+    onDesktopEvent<AgentUpdate>("hub", "agent", agentUpdates.emit);
+  };
+
   const listenTransfers = () => {
     if (listeningTransfers) return;
     listeningTransfers = true;
@@ -790,6 +840,31 @@ export function createDesktopBackend(
     onHubControl: (cb) => {
       listenCompanion();
       return controls.on(cb);
+    },
+    async agentStart(req) {
+      return await hub.agentStart(req) as AgentSnapshot;
+    },
+    async agentSend(id, message) {
+      return await hub.agentSend({ id, message });
+    },
+    async agentInterrupt(id) {
+      return await hub.agentInterrupt({ id });
+    },
+    async agentAnswer(id, requestId, decision) {
+      return await hub.agentAnswer({ id, requestId, decision });
+    },
+    async agentRestart(id, patch) {
+      return await hub.agentRestart({ id, ...patch }) as AgentSnapshot | null;
+    },
+    async agentRename(id, name) {
+      return await hub.agentRename({ id, name });
+    },
+    async agentStop(id) {
+      await hub.agentStop({ id });
+    },
+    onAgent: (cb) => {
+      listenAgents();
+      return agentUpdates.on(cb);
     },
   };
 }
@@ -1471,6 +1546,19 @@ export function createDemoBackend(): PtyBackend {
     (globalThis as { __e2eCompanionTool?: unknown }).__e2eCompanionTool =
       hub.companion.tool;
   }
+  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts), each
+  // session a tile of the demo hub.
+  const agentUpdates = fanout<AgentUpdate>();
+  const agents = new AgentSessions({
+    emit: agentUpdates.emit,
+    createAdapter: () => new DemoAgentAdapter(),
+    hub: {
+      open: (id) => ({ env: {}, name: hub.add(id, "claude") }),
+      close: (id) => hub.remove(id),
+      setStatus: (id, status, note) => hub.setStatus(id, status, note),
+      rename: (id, name) => hub.rename(id, name),
+    },
+  });
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
@@ -1678,6 +1766,24 @@ export function createDemoBackend(): PtyBackend {
     onCompanion: (cb) => hubCompanion.on(cb),
     onHubSay: (cb) => hubSays.on(cb),
     onHubControl: (cb) => hubControls.on(cb),
+    agentStart: (req) =>
+      attempt(() =>
+        agents.start({
+          ...req,
+          cwd: req.cwd.trim() === "~" || !req.cwd.trim()
+            ? "/Users/demo"
+            : req.cwd.trim().replace(/^~\//, "/Users/demo/"),
+        })
+      ),
+    agentSend: (id, message) => attempt(() => agents.send(id, message)),
+    agentInterrupt: (id) => agents.interrupt(id),
+    agentAnswer: (id, requestId, decision) =>
+      attempt(() => agents.answer(id, requestId, decision)),
+    agentRestart: (id, patch) =>
+      attempt(() => agents.restart(id, patch) ?? null),
+    agentRename: (id, name) => attempt(() => agents.rename(id, name)),
+    agentStop: (id) => attempt(() => agents.stop(id)),
+    onAgent: (cb) => agentUpdates.on(cb),
   };
 }
 

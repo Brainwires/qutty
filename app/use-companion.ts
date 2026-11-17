@@ -30,6 +30,8 @@ export interface UseCompanionOptions {
   launchSsh(entryId: string): boolean;
   closeTile(id: string): void;
   focusTile(id: string): void;
+  /** The tile of a hub tile with no PTY (an agent tile's session `agent-3`). */
+  tileOfHub?(hubId: string): string | undefined;
   /** Carry out a web tile command (app/use-web-control.ts). */
   web?(command: WebCommand): Promise<ControlResult>;
 }
@@ -119,7 +121,8 @@ export function useCompanion(opts: UseCompanionOptions): void {
         }
         case "close":
         case "focus": {
-          const id = byPty(manager, o.terminals(), command.tileId);
+          const id = byPty(manager, o.terminals(), command.tileId) ??
+            o.tileOfHub?.(command.tileId);
           if (!id) {
             return { ok: false, error: "that tile is not in this window" };
           }

@@ -358,6 +358,10 @@ export function createDemoHub(
     setStatus(id: string, status: TileStatus, note?: string): void {
       registry.setStatus(id, status, note);
     },
+    /** Rename tile `id` (an agent tile's header); the name. Throws with the reason. */
+    rename(id: string, name: string): string {
+      return registry.rename(id, name).name;
+    },
     /**
      * Ask the user from tile `from`: the tile waits until `reply` gets the answer (`null` when
      * dismissed). Returns the question's id.

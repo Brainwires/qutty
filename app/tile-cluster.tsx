@@ -74,6 +74,7 @@ import { isTintId } from "../lib/workspace/themes.ts";
 import { useWebTile, WebBody, type WebTileHooks } from "./web-tile.tsx";
 import { WebChrome, WebToolbar } from "./web-chrome.tsx";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
+import { AgentBody, AgentHead, type AgentTileHooks } from "./agent-tile.tsx";
 
 /** The workspace's additions to a tile (SSH tiles, agent badges). */
 interface TileExtras {
@@ -89,6 +90,8 @@ interface TileExtras {
   broadcastIds?: ReadonlySet<string>;
   /** What web tiles (an entry with `web`) drive their page through (app/web-tile.tsx). */
   web?: WebTileHooks;
+  /** What agent tiles (an entry with `chat`) are drawn with (app/agent-tile.tsx). */
+  agent?: AgentTileHooks;
   /** The free-form view (absent: the tiled view). */
   freeform?: FreeformTiles;
   /** A header dragged out of the window may move its tile to another window. */
@@ -164,6 +167,7 @@ export function TileCluster(props: TileClusterProps) {
           renderOverlay={props.renderOverlay}
           broadcastIds={props.broadcastIds}
           web={props.web}
+          agent={props.agent}
           freeform={props.freeform}
           windowDrag={props.windowDrag}
           onHeadMenu={props.onHeadMenu}
@@ -346,9 +350,12 @@ function TerminalTile(props: TerminalTileProps) {
     "--rank-dim": String(dim),
   };
 
-  // A web tile's body is never scaled: it has no terminal to keep at one size.
-  const full = web ? null : props.full;
+  // An agent tile: its chat instead of a terminal (the manager never knows its id either).
+  const agent = entry.chat ? props.agent : undefined;
+  // A web or agent tile's body is never scaled: it has no terminal to keep at one size.
+  const full = web || agent ? null : props.full;
   const classes = ["tile", `is-${phase}`];
+  if (agent) classes.push("is-agent");
   if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
   if (entry.exited) classes.push("is-exited");
@@ -384,6 +391,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-exited={entry.exited ? "true" : "false"}
       data-ssh={entry.ssh ? "true" : undefined}
       data-web={web ? "true" : undefined}
+      data-agent-tile={agent ? "true" : undefined}
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
       data-broadcast={broadcasting ? "true" : undefined}
@@ -471,6 +479,7 @@ function TerminalTile(props: TerminalTileProps) {
             {props.title}
           </span>
           {web && <WebToolbar view={web} />}
+          {agent && <AgentHead entry={entry} hooks={agent} />}
           <span class="tile-meta">
             {props.renderHeadActions?.(entry)}
             {entry.exited && (
@@ -502,7 +511,11 @@ function TerminalTile(props: TerminalTileProps) {
               // Not focused first (the tile's capture-phase pointerdown): focusing an unfocused
               // tile moves it to the top slot, so the click would land on whatever is there now.
               data-keep-focus
-              aria-label={web ? "Close web tile" : "Close terminal"}
+              aria-label={web
+                ? "Close web tile"
+                : agent
+                ? "Close agent"
+                : "Close terminal"}
               title="Close"
               onClick={(e) => {
                 e.stopPropagation();
@@ -520,6 +533,8 @@ function TerminalTile(props: TerminalTileProps) {
               <WebBody view={web} />
             </>
           )
+          : agent
+          ? <AgentBody entry={entry} hooks={agent} focused={focused} />
           : (
             <div
               class="tile-body"

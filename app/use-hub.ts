@@ -27,6 +27,8 @@ export function useHub(
   manager: TerminalManager | null,
   terminals: TerminalEntry[],
   tileTitle: TileTitle,
+  /** The hub tile id of a tile with no PTY (an agent tile's session). */
+  hubIdOf?: (id: string) => string | undefined,
 ): HubTileOf {
   const [tiles, setTiles] = useState<TileInfo[]>([]);
 
@@ -82,7 +84,8 @@ export function useHub(
   }, [manager, byPty, titles]);
 
   return useCallback((id: string) => {
-    const ptyId = manager?.ptyId(id);
+    // An agent tile has no PTY: its hub tile is its session's (`agent-3`).
+    const ptyId = manager?.ptyId(id) ?? hubIdOf?.(id);
     return ptyId ? byPty.get(ptyId) : undefined;
-  }, [manager, byPty]);
+  }, [manager, byPty, hubIdOf]);
 }

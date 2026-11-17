@@ -69,6 +69,7 @@ export const ITEM = {
   webPage: "qutty:launch-web",
   bookmarks: "qutty:web:bookmarks",
   history: "qutty:web:history",
+  agentChat: "qutty:launch-agent-chat",
   ollama: "qutty:launch-ollama",
   nextLayout: "qutty:layout:next",
   minimizeTile: "qutty:tile:minimize",
@@ -221,6 +222,9 @@ export function appMenu(platform: KeyPlatform): AppMenuItem[] | null {
 export interface LaunchMenuEntry {
   id: string;
   label: string;
+  /** The entry's kind and agent (an `"agent"` entry for `claude` gets its "(chat)" twin). */
+  kind?: string;
+  agent?: { name: string };
 }
 
 /** The `+` menu's entries (app/launch-menu.tsx) as the Shell menu's "New Tile With" submenu. */
@@ -236,6 +240,8 @@ export interface LaunchMenuInput {
   webPage: boolean;
   /** "Bookmarks…" and "History…" (web tiles can be shown: any engine). */
   webDialogs?: boolean;
+  /** "Claude Code (chat)" after the Claude Code entry: a new agent tile (app/agent-tile.tsx). */
+  agentChat?: boolean;
 }
 
 /** Whether `text` is something Denext takes as an id or label (no control characters). */
@@ -260,7 +266,14 @@ function launchItems(
         enabled: false,
       }),
     );
-    for (const e of entries) out.push(item(launchItemId(e.id), e.label));
+    for (const e of entries) {
+      out.push(item(launchItemId(e.id), e.label));
+      if (
+        launch?.agentChat && e.kind === "agent" && e.agent?.name === "claude"
+      ) {
+        out.push(item(ITEM.agentChat, `${e.label} (chat)`));
+      }
+    }
     if (section.id === "ollama" && launch?.ollama) {
       out.push(item(ITEM.ollama, "Ollama Models…"));
     }
@@ -563,7 +576,9 @@ export type MenuAction =
   | { kind: "webDialog"; dialog: "bookmarks" | "history" }
   | { kind: "ollama" }
   /** Move the focused tile to window `to` (`"new"`: a new window). */
-  | { kind: "moveTile"; to: string };
+  | { kind: "moveTile"; to: string }
+  /** "Claude Code (chat)": a new agent tile. */
+  | { kind: "agentChat" };
 
 const KEY_ITEMS: Record<string, KeyCommand> = {
   [ITEM.newTile]: { kind: "newTerminal" },
@@ -602,6 +617,7 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.webPage) return { kind: "webPage" };
   if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
+  if (id === ITEM.agentChat) return { kind: "agentChat" };
   if (id === ITEM.ollama) return { kind: "ollama" };
   if (id.startsWith(MOVE_PREFIX) && id.length > MOVE_PREFIX.length) {
     return { kind: "moveTile", to: id.slice(MOVE_PREFIX.length) };

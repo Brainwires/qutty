@@ -113,7 +113,8 @@ export function useTileMove(opts: {
   const movedTile = useCallback((id: string): MovedTile | undefined => {
     const o = optsRef.current;
     const entry = o.state.terminals.find((t) => t.id === id);
-    if (!entry) return undefined;
+    // An agent tile's session belongs to this window's hub: it does not move.
+    if (!entry || entry.chat) return undefined;
     const tile = o.tiles.find((t) => t.id === id);
     const size = tile ? { size: { w: tile.rect.w, h: tile.rect.h } } : {};
     if (entry.web) return { entry, tile: { web: entry.web }, ...size };
@@ -215,6 +216,7 @@ export function useTileMove(opts: {
   const openMenu = useCallback((id: string, x: number, y: number) => {
     const o = optsRef.current;
     if (!o.moves) return;
+    if (o.state.terminals.find((t) => t.id === id)?.chat) return;
     const many = o.state.terminals.length > 1;
     void o.moves.targets().then((targets) => {
       const items: LinkMenuItem[] = targets.map((t) => ({

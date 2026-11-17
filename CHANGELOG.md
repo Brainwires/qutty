@@ -2,24 +2,52 @@
 
 ## Unreleased
 
+- Agent tiles: Claude Code as a chat tile that looks like a terminal. The `+`
+  menu's "Claude Code (chat)" (beside Claude Code) asks for a folder (the
+  focused tile's by default) and opens one.
+  - The transcript streams in the terminal's font and colours: your prompts, the
+    answer's markdown (code highlighted, links open in a web tile), thinking
+    (dimmed), and each tool call as a compact `● Edit(src/x.ts)` row with a
+    `⎿ Applied 3-line change` line that opens to the diff, the command and its
+    output, or the input and result. Reads in a row are one line ("Read 2
+    files"). Each turn ends with how it went, its speed, time and cost.
+  - Claude Code asks before it edits or runs something: Allow, Allow always (for
+    that tool, this session) or Deny, right in the transcript.
+  - The prompt box grows with what you type; Enter sends, Shift+Enter is a new
+    line, ↑ brings back the previous prompt, files attach by button, drop or
+    paste (images go to the model as images), Esc or Stop interrupts, and what
+    you type while it works waits its turn. Hold-to-dictate types into it.
+  - The header: the agent's name (click to rename; other agents address it by
+    it), the model (default, fable, opus, opus 1M, sonnet, sonnet 1M, haiku),
+    what it is doing, and a menu with Open in terminal (the same session in
+    Claude Code's own UI), New session and Close.
+  - The bar's Agents button lists your agent tiles as Needs you, To review and
+    Working; its badge counts those waiting for you. Tiles and chips show the
+    same activity as agent terminals.
+  - An agent tile comes back with the window (and after a restart, resuming its
+    session under the transcript it had). It is a hub peer like any agent tile:
+    the companion and other agents can read its screen, and the companion can
+    give it a prompt.
+
 - Move a tile to another window: drag its header out of the window and let go
   over another Qutty window, or right-click the header and pick "Move to
   Workspace N" (or "Move to New Window"); in the app the Window menu has the
-  same "Move Tile to" items for the focused tile. A terminal keeps running: the
-  same shell, with its scrollback, its folder and whatever it was doing, and
-  agents still know it by the same name. It lands where you let go (the slot
-  under the pointer when tiles keep their places, the pointer in free-form). Let
-  go over no Qutty window and the tile opens in a new window there. A web tile
-  moves as its page and loads again. The last tile leaving a window closes that
-  window. A sandboxed tile keeps running in its first window's sandbox.
+  same "Move Tile to" items for the focused tile. Agent (chat) tiles stay in
+  their window. A terminal keeps running: the same shell, with its scrollback,
+  its folder and whatever it was doing, and agents still know it by the same
+  name. It lands where you let go (the slot under the pointer when tiles keep
+  their places, the pointer in free-form). Let go over no Qutty window and the
+  tile opens in a new window there. A web tile moves as its page and loads
+  again. The last tile leaving a window closes that window. A sandboxed tile
+  keeps running in its first window's sandbox.
 - A native menu bar (Denext 4.18's app menus). macOS: Qutty (About, Settings…
   ⌘,, Hide, Quit), Shell, Edit, View, Window and Help; Linux: Shell, View,
   Window and Help, with Settings… at the end of Shell and no Edit menu (its
   Ctrl+C would never reach the shell).
-  - Shell: New Tile ⌘T, New Tile With (the `+` menu's shells, agents, SSH hosts,
-    Web page and Connections…), New Window ⌘N, the web tiles' Bookmarks… and
-    History…, Close Tile ⌘W, Close Window and End Its Shells, and Broadcast
-    Input ⇧⌘I.
+  - Shell: New Tile ⌘T, New Tile With (the `+` menu's shells, agents (Claude
+    Code also as a chat tile), SSH hosts, Web page and Connections…), New Window
+    ⌘N, the web tiles' Bookmarks… and History…, Close Tile ⌘W, Close Window and
+    End Its Shells, and Broadcast Input ⇧⌘I.
   - View: Tiled View / Free-form View, Layout (every pattern, and Next Layout
     ⇧⌘L), the free-form arrange commands, Minimize / Maximize / Restore Tile and
     Zoom Tile ⌘↩, Bigger / Smaller / Actual Size, Switcher Bar (Top, Bottom,

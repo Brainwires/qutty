@@ -25,6 +25,12 @@ import { type HubCore, HubError } from "./core.ts";
 import { MAX_WAIT_MS } from "./mailbox.ts";
 import { MAX_READ_LINES } from "./mirror.ts";
 import type { CompanionTools } from "../companion/inference-brain.ts";
+import type {
+  PermissionDecision,
+  PermissionRequest,
+} from "../agent/adapter.ts";
+import { approveToolArgs, approveToolReply } from "../agent/permissions.ts";
+import { APPROVE_TOOL } from "../agent/claude-stream.ts";
 import { optBool, optInt, optStr, str } from "./tool-args.ts";
 import {
   contentText,
@@ -472,11 +478,47 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   return reg;
 }
 
+/** The agent tiles' side of the hub (lib/agent/sessions.ts): their permission questions. */
+export interface HubAgentTiles {
+  /** Whether tile `tileId` is an agent tile. */
+  has(tileId: string): boolean;
+  /** Ask the user, in the tile, whether its agent may run a tool. */
+  approve(tileId: string, req: PermissionRequest): Promise<PermissionDecision>;
+}
+
 /** Options of {@linkcode createHubHandler}. */
 export interface HubHandlerOptions {
   /** Every companion-only tool call, allowed or refused (the audit log). */
   audit?(call: PrivilegedCall): void;
+  /** The agent tiles: `approve_tool` is theirs alone (their `--permission-prompt-tool`). */
+  agents?: HubAgentTiles;
 }
+
+/**
+ * `approve_tool`, listed only on an agent tile's own connections: Claude Code's permission prompt
+ * tool (lib/agent/claude-stream.ts). The question is shown in the tile; the answer is the JSON
+ * Claude Code expects (`{"behavior":"allow","updatedInput":…}` or `{"behavior":"deny",…}`).
+ */
+const APPROVE_TOOL_DEF = {
+  name: APPROVE_TOOL,
+  description:
+    "(Agent tiles only; Claude Code's permission prompt tool.) Ask the user in the tile whether " +
+    "a tool may run.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      tool_name: { type: "string" },
+      input: { type: "object" },
+      tool_use_id: { type: "string" },
+    },
+    required: ["tool_name"],
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+};
 
 /** A result's text, for the audit log and the in-process brains (an image is only named). */
 const textOf = (r: CallToolResult) =>
@@ -523,13 +565,28 @@ export function createHubHandler(
   return {
     serverInfo: () => ({ name: SERVER_NAME, version: SERVER_VERSION }),
     capabilities: () => ({ tools: { listChanged: false } }),
-    listTools: () => tools.listTools(),
+    listTools: (ctx) => {
+      const listed = tools.listTools();
+      const who = ctx?.connection?.identity as HubIdentity | undefined;
+      return who?.role === "tile" && opts.agents?.has(who.tileId)
+        ? [...listed, APPROVE_TOOL_DEF]
+        : listed;
+    },
     async callTool(name, args, ctx) {
       let who: HubIdentity;
       try {
         who = identityOf(ctx);
       } catch (e) {
         return fail((e as Error).message);
+      }
+      if (name === APPROVE_TOOL && opts.agents) {
+        if (who.role !== "tile" || !opts.agents.has(who.tileId)) {
+          return fail(`${APPROVE_TOOL} is for agent tiles only`);
+        }
+        const req = approveToolArgs(args);
+        if (!req) return fail('"tool_name" must be the name of a tool');
+        const decision = await opts.agents.approve(who.tileId, req);
+        return ok(JSON.stringify(approveToolReply(decision, req.input)));
       }
       if (!tools.hasTool(name)) return fail(`unknown tool: ${name}`);
       if (!canCall(who, name)) {
