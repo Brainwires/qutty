@@ -22,7 +22,7 @@
 // lands in the prompt box while it has the keyboard (`insertIntoHarnessPrompt`), else in the
 // terminal as before. No shortcuts of its own, no timers.
 
-import { useCallback, useRef, useState } from "denext";
+import { type ReactNode, useCallback, useRef, useState } from "denext";
 import type { AgentAttachment } from "../lib/agent/adapter.ts";
 import type { TileInfo, TileStatus } from "../lib/hub/protocol.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
@@ -36,7 +36,7 @@ import { NameField } from "./agent-tile.tsx";
 import {
   type Dictation,
   PromptBox,
-  SideRail,
+  RailButton,
   type Speech,
   useDismiss,
 } from "./prompt-box.tsx";
@@ -98,6 +98,28 @@ const STATUS_TEXT: Record<TileStatus, string> = {
   waiting: "waiting for you",
 };
 
+/** An 18px line icon. */
+function Icon(props: { children: ReactNode; size?: number }) {
+  const size = props.size ?? 18;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.35"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      {props.children}
+    </svg>
+  );
+}
+
+const MAIL = <path d="M2 4.25h12v8.5H2zM2.25 4.5 8 9l5.75-4.5" />;
+
 /** The header card's controls (after the tile's title, which CSS hides). */
 export function HarnessHead(
   props: { entry: TerminalEntry; view: HarnessView; hooks: HarnessHooks },
@@ -117,24 +139,32 @@ export function HarnessHead(
       data-testid="harness-head"
       data-harness={spec.id}
     >
-      <span class="harness-glyph" aria-hidden="true">{spec.glyph}</span>
-      {hub
-        ? (
-          <NameField
-            name={hub.name}
-            testid="harness-name"
-            onRename={(name) => hooks.rename(id, name)}
-          />
-        )
-        : <span class="harness-plain-name">{spec.id}</span>}
-      <span class="harness-label" data-testid="harness-label">
-        {spec.label}
-      </span>
-      {hub?.model && (
-        <span class="harness-model" title="Model" data-testid="harness-model">
-          {hub.model}
+      <span class="harness-avatar" aria-hidden="true">{spec.glyph}</span>
+      <span class="harness-ident">
+        {hub
+          ? (
+            <NameField
+              name={hub.name}
+              testid="harness-name"
+              onRename={(name) => hooks.rename(id, name)}
+            />
+          )
+          : <span class="harness-plain-name">{spec.id}</span>}
+        <span class="harness-chips">
+          <span class="harness-chip is-brand" data-testid="harness-label">
+            {spec.label}
+          </span>
+          {hub?.model && (
+            <span
+              class="harness-chip"
+              title="Model"
+              data-testid="harness-model"
+            >
+              {hub.model}
+            </span>
+          )}
         </span>
-      )}
+      </span>
       <span
         class="harness-status"
         data-testid="harness-status"
@@ -154,21 +184,13 @@ export function HarnessHead(
           } for this agent: ask it to read them`}
           onClick={() => inserts.get(id)?.(READ_MESSAGES)}
         >
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            <path
-              d="M2.5 4.5h11v7h-11zM2.5 4.5 8 9l5.5-4.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linejoin="round"
-            />
-          </svg>
+          <Icon size={15}>{MAIL}</Icon>
           {unread}
         </button>
       )}
       <button
         type="button"
-        class="agent-more harness-more"
+        class="harness-icon-btn"
         data-testid="harness-menu"
         title="More"
         aria-label="Harness overlay menu"
@@ -176,7 +198,11 @@ export function HarnessHead(
         aria-expanded={menu}
         onClick={() => setMenu(!menu)}
       >
-        ⋯
+        <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+          <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+          <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
+        </svg>
       </button>
       {menu && (
         <div
@@ -228,6 +254,125 @@ export function HarnessHead(
   );
 }
 
+/**
+ * The side rail: round buttons floating at the terminal's right edge, maximize and messages at the
+ * top, jump top / latest, help and read aloud at the bottom.
+ */
+function HarnessRail(
+  props: {
+    id: string;
+    view: HarnessView;
+    hooks: HarnessHooks;
+    maximized: boolean;
+    onMaximize(): void;
+    onRestore(): void;
+  },
+) {
+  const { id, view, hooks } = props;
+  const { manager, speech } = hooks;
+  const unread = view.hub?.unread ?? 0;
+  const [help, setHelp] = useState(false);
+  const helpRef = useRef<HTMLDivElement | null>(null);
+  useDismiss(help, helpRef, () => setHelp(false));
+  const interruptKey = view.spec.interrupt === "\x03" ? "Ctrl+C" : "Esc";
+  return (
+    <div class="harness-rail" data-testid="harness-rail">
+      <div class="harness-rail-group">
+        <RailButton
+          testid="harness-maximize"
+          label={props.maximized ? "Restore tile" : "Maximize tile"}
+          pressed={props.maximized}
+          onClick={props.maximized ? props.onRestore : props.onMaximize}
+        >
+          {props.maximized
+            ? (
+              <path d="M6 2.5V6H2.5M10 13.5V10h3.5M2.5 2.5 6 6M13.5 13.5 10 10" />
+            )
+            : 
+            <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" />}
+        </RailButton>
+        <span class="harness-rail-badged">
+          <RailButton
+            testid="harness-messages"
+            label={unread > 0
+              ? `${unread} unread message${
+                unread === 1 ? "" : "s"
+              }: ask the agent to read them`
+              : "No unread messages from other agents"}
+            disabled={unread === 0}
+            onClick={() => inserts.get(id)?.(READ_MESSAGES)}
+          >
+            <path d="M2.5 3.5h11v7.5H8l-3 2.5V11H2.5z" />
+          </RailButton>
+          {unread > 0 && <span class="harness-badge">{unread}</span>}
+        </span>
+      </div>
+      <div class="harness-rail-group" ref={helpRef}>
+        <RailButton
+          testid="harness-top"
+          label="Jump to top"
+          onClick={() => manager.scrollTo(id, "top")}
+        >
+          <path d="M3.5 2.5h9M8 13.5V5.5M4.5 9 8 5.5 11.5 9" />
+        </RailButton>
+        <RailButton
+          testid="harness-latest"
+          label="Jump to latest"
+          onClick={() => manager.scrollTo(id, "bottom")}
+        >
+          <path d="M3.5 13.5h9M8 2.5v8M4.5 7 8 10.5 11.5 7" />
+        </RailButton>
+        <RailButton
+          testid="harness-help"
+          label="How the overlay works"
+          pressed={help}
+          onClick={() => setHelp(!help)}
+        >
+          <circle cx="8" cy="8" r="5.75" />
+          <path d="M6.4 6.3a1.7 1.7 0 0 1 3.3.5c0 1.1-1.7 1.4-1.7 2.5M8 11.3v.1" />
+        </RailButton>
+        {speech && (
+          <RailButton
+            testid="harness-speak"
+            label={speech.speaking ? "Stop reading" : "Read the screen aloud"}
+            pressed={speech.speaking}
+            onClick={() => {
+              if (speech.speaking) return speech.stop();
+              const text = speakableScreen(manager.screenText(id));
+              if (text) speech.say(text);
+            }}
+          >
+            <path d="M2.5 6H5l3.5-3v10L5 10H2.5z" />
+            {speech.speaking
+              ? <path d="M11 6.5l3 3M14 6.5l-3 3" />
+              : (
+                <path d="M10.75 5.75a3.2 3.2 0 0 1 0 4.5M12.6 4a5.6 5.6 0 0 1 0 8" />
+              )}
+          </RailButton>
+        )}
+        {help && (
+          <div class="harness-help" role="note" data-testid="harness-help-card">
+            <div class="harness-help-title">{view.spec.label}, with a GUI</div>
+            <ul>
+              <li>
+                The terminal is the harness's own: click it to type there.
+              </li>
+              <li>
+                <b>Enter</b> sends the prompt box, <b>Shift+Enter</b>{" "}
+                is a new line, <b>↑ ↓</b> walk your prompts.
+              </li>
+              <li>Interrupt sends {interruptKey}.</li>
+              <li>
+                Right-click the header to turn the overlay off for this tile.
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** The side rail and the prompt box, after the terminal's host in the tile's body frame. */
 export function HarnessControls(
   props: {
@@ -263,31 +408,27 @@ export function HarnessControls(
   const interruptKey = view.spec.interrupt === "\x03" ? "Ctrl+C" : "Esc";
   return (
     <>
-      <SideRail
-        testPrefix="harness"
-        class="harness-rail"
-        speech={hooks.speech}
-        canSpeak
-        speakText={() => speakableScreen(manager.screenText(id))}
-        speakLabel="Read the screen aloud"
+      <HarnessRail
+        id={id}
+        view={view}
+        hooks={hooks}
         maximized={props.maximized}
-        onTop={() => manager.scrollTo(id, "top")}
-        onLatest={() => manager.scrollTo(id, "bottom")}
-        onMaximize={props.maximized ? props.onRestore : props.onMaximize}
+        onMaximize={props.onMaximize}
+        onRestore={props.onRestore}
       />
       <PromptBox
         testPrefix="harness"
         class="harness-prompt"
         disabled={false}
-        placeholder={`Message ${view.spec.label}: Enter to send, Shift+Enter for a new line`}
-        hint="types into the terminal · ↑↓ history"
-        sendLabel="Send ↵"
-        sendTitle="Type it into the terminal and press Enter"
+        placeholder={`Ask ${view.spec.label} anything…`}
+        hint="Enter sends · Shift+Enter new line · ↑↓ history"
+        sendLabel="Send"
+        sendTitle="Send: type it into the terminal and press Enter"
         images={false}
         own={() => sent.current}
         onSend={send}
         stop={{
-          label: "■ Interrupt",
+          label: "Interrupt",
           title: `Interrupt ${view.spec.label} (sends ${interruptKey})`,
           testid: "harness-interrupt",
           run: () => manager.sendKeys(id, view.spec.interrupt),

@@ -151,6 +151,8 @@ suite("harness overlay", (test) => {
       3000,
       "renamed in the hub",
     );
+    // The pointer off the card (no hover outlines in the picture).
+    await app.page.mouse.move(1000, 400);
     await shot(app, "harness-overlay-dark.png");
   });
 

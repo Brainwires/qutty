@@ -375,6 +375,10 @@ function TerminalTile(props: TerminalTileProps) {
     ? props.harnessOf?.(entry)
     : undefined;
   const harness = harnessView && props.harness;
+  // The harness's brand colour, for its cards (the theme's accent when it has none).
+  const tileStyle = harnessView?.spec.color
+    ? { ...style, "--harness": harnessView.spec.color }
+    : style;
   // A web or agent tile's body is never scaled: it has no terminal to keep at one size. Nor is a
   // harness overlay's (its frame is not the plain body the scale maths measures).
   const full = web || agent || harnessView ? null : props.full;
@@ -407,7 +411,7 @@ function TerminalTile(props: TerminalTileProps) {
     <div
       ref={rootRef}
       class={classes.join(" ")}
-      style={style}
+      style={tileStyle}
       data-testid="tile"
       data-id={id}
       data-rank={visible ? rank : ""}

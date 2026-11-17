@@ -30,6 +30,8 @@ export interface HarnessSpec {
   label: string;
   /** The header's glyph. */
   glyph: string;
+  /** Its brand colour (the avatar, the chips, the prompt card's border); `""`: the theme's accent. */
+  color: string;
   /** What its Interrupt button sends: Esc for most TUIs, Ctrl+C where Esc does nothing. */
   interrupt: string;
 }
@@ -44,6 +46,7 @@ const KNOWN:
       id: "claude",
       label: "Claude Code",
       glyph: "✻",
+      color: "#d97757",
       interrupt: ESC,
       processes: ["claude"],
       title: /\bclaude code\b/i,
@@ -52,6 +55,7 @@ const KNOWN:
       id: "codex",
       label: "Codex",
       glyph: "◎",
+      color: "#10a37f",
       interrupt: ESC,
       processes: ["codex"],
       title: /\bcodex\b/i,
@@ -60,6 +64,7 @@ const KNOWN:
       id: "gemini",
       label: "Gemini CLI",
       glyph: "✦",
+      color: "#4c8df6",
       interrupt: ESC,
       processes: ["gemini"],
       title: /\bgemini\b/i,
@@ -68,6 +73,7 @@ const KNOWN:
       id: "opencode",
       label: "OpenCode",
       glyph: "◇",
+      color: "#e0a03a",
       interrupt: ESC,
       processes: ["opencode"],
       title: /\bopencode\b/i,
@@ -76,6 +82,7 @@ const KNOWN:
       id: "aider",
       label: "aider",
       glyph: "◆",
+      color: "#14b8a6",
       // aider reads its prompt with prompt_toolkit: Ctrl+C stops a reply, Esc does nothing.
       interrupt: CTRL_C,
       processes: ["aider"],
@@ -107,7 +114,13 @@ export function harnessSpec(name: string): HarnessSpec {
     const { processes: _p, title: _t, ...spec } = known;
     return spec;
   }
-  return { id, label: harnessLabel(id), glyph: "◆", interrupt: ESC };
+  return {
+    id,
+    label: harnessLabel(id),
+    glyph: "◆",
+    color: "",
+    interrupt: ESC,
+  };
 }
 
 /** A harness name from a foreground process name (`claude`, `/usr/local/bin/codex`). */

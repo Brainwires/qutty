@@ -9,7 +9,9 @@
     hook), the agent tool the tile was opened as, the program in the foreground
     or the title it set. When the harness quits back to the shell, or the tile
     ends, the frame goes.
-  - The header card: the harness's glyph, the tile's agent name (click to
+  - Floating cards in the harness's own colour (Claude orange, Codex green, …),
+    in dark and light themes.
+  - The header card: the harness's avatar, the tile's agent name (click to
     rename), the harness, its model when known, a status dot (working, idle,
     waiting for you), a Messages button while other agents' messages wait for
     it, and a menu (hide the frame, its setting, close).

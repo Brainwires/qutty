@@ -71,7 +71,7 @@ export function useDismiss(
 // ---------------------------------------------------------------------------------------------
 
 /** A side rail button (an icon; a press does not take the keyboard from where it is). */
-function RailButton(
+export function RailButton(
   props: {
     testid: string;
     label: string;
@@ -628,101 +628,128 @@ export function PromptBox(props: PromptBoxProps) {
             });
           }}
         />
-        <ToolButton
-          testid={`${p}-attach`}
-          label={props.images
-            ? "Attach files (or drop or paste them)"
-            : "Attach text files (or drop them): typed after the prompt"}
-          onClick={() => fileRef.current?.click()}
-        >
-          <path d="M10.5 4.5 5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2" />
-        </ToolButton>
-        {capture && (
+        {
+          /* Groups: what goes with the prompt, the voice, what sends or stops it (a plain row in
+            an agent tile; pill tabs under the harness overlay's card). */
+        }
+        <span class="agent-tool-group" data-group="compose">
           <ToolButton
-            testid={`${p}-screenshot`}
-            label="Attach a picture of a web tile"
-            expanded={menu === "shot"}
-            onClick={() => openMenu("shot")}
+            testid={`${p}-attach`}
+            label={props.images
+              ? "Attach files (or drop or paste them)"
+              : "Attach text files (or drop them): typed after the prompt"}
+            onClick={() => fileRef.current?.click()}
           >
-            <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.8l1-1.5h3.4l1 1.5h1.8A1.5 1.5 0 0 1 14 5.5v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
-            <circle cx="8" cy="8.5" r="2.3" />
+            <path d="M10.5 4.5 5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2" />
           </ToolButton>
-        )}
-        <ToolButton
-          testid={`${p}-saved`}
-          label="Saved prompts"
-          expanded={menu === "saved"}
-          onClick={() => openMenu("saved")}
-        >
-          <path d="M4 2.5h8v11l-4-3-4 3z" />
-        </ToolButton>
-        <ToolButton
-          testid={`${p}-history`}
-          label="Prompt history (↑ / ↓ in the box)"
-          expanded={menu === "history"}
-          onClick={() => openMenu("history")}
-        >
-          <path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8M2.5 2.5v2.3h2.3M8 5v3.2l2.2 1.4" />
-        </ToolButton>
-        {dictation && (
-          <button
-            type="button"
-            class="agent-tool-btn"
-            data-testid={`${p}-mic`}
-            title="Hold to dictate into the prompt"
-            aria-label="Dictate"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              pressAt.current = Date.now();
-              dictation.press();
-            }}
-            onPointerUp={release}
-            onPointerLeave={release}
+          {capture && (
+            <ToolButton
+              testid={`${p}-screenshot`}
+              label="Attach a picture of a web tile"
+              expanded={menu === "shot"}
+              onClick={() => openMenu("shot")}
+            >
+              <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.8l1-1.5h3.4l1 1.5h1.8A1.5 1.5 0 0 1 14 5.5v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
+              <circle cx="8" cy="8.5" r="2.3" />
+            </ToolButton>
+          )}
+          <ToolButton
+            testid={`${p}-saved`}
+            label="Saved prompts"
+            expanded={menu === "saved"}
+            onClick={() => openMenu("saved")}
           >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <rect
-                x="5.5"
-                y="1.75"
-                width="5"
-                height="8.5"
-                rx="2.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-              />
-              <path
-                d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
+            <path d="M4 2.5h8v11l-4-3-4 3z" />
+          </ToolButton>
+          <ToolButton
+            testid={`${p}-history`}
+            label="Prompt history (↑ / ↓ in the box)"
+            expanded={menu === "history"}
+            onClick={() => openMenu("history")}
+          >
+            <path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8M2.5 2.5v2.3h2.3M8 5v3.2l2.2 1.4" />
+          </ToolButton>
+        </span>
+        {dictation && (
+          <span class="agent-tool-group" data-group="voice">
+            <button
+              type="button"
+              class="agent-tool-btn"
+              data-testid={`${p}-mic`}
+              title="Hold to dictate into the prompt"
+              aria-label="Dictate"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                pressAt.current = Date.now();
+                dictation.press();
+              }}
+              onPointerUp={release}
+              onPointerLeave={release}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                aria-hidden="true"
+              >
+                <rect
+                  x="5.5"
+                  y="1.75"
+                  width="5"
+                  height="8.5"
+                  rx="2.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <path
+                  d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </span>
         )}
         <span class="agent-hint">{props.hint}</span>
-        {props.stop && (
+        <span class="agent-tool-group" data-group="send">
+          {props.stop && (
+            <button
+              type="button"
+              class="agent-stop"
+              data-testid={props.stop.testid}
+              title={props.stop.title}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={props.stop.run}
+            >
+              {props.stop.label}
+            </button>
+          )}
           <button
             type="button"
-            class="agent-stop"
-            data-testid={props.stop.testid}
-            title={props.stop.title}
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={props.stop.run}
+            class="agent-send"
+            data-testid={`${p}-send`}
+            title={props.sendTitle}
+            disabled={props.disabled || (!text.trim() && files.length === 0)}
+            onClick={send}
           >
-            {props.stop.label}
+            <span class="agent-send-label">{props.sendLabel}</span>
+            <svg
+              class="agent-send-icon"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />
+            </svg>
           </button>
-        )}
-        <button
-          type="button"
-          class="agent-send"
-          data-testid={`${p}-send`}
-          title={props.sendTitle}
-          disabled={props.disabled || (!text.trim() && files.length === 0)}
-          onClick={send}
-        >
-          {props.sendLabel}
-        </button>
+        </span>
         {menu === "saved" && (
           <div
             class="menu agent-menu agent-pop"

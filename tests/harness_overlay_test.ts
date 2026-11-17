@@ -32,6 +32,7 @@ Deno.test("detectHarness: the hub's registration names the harness", () => {
     id: "hermes",
     label: "Hermes Agent",
     glyph: "◆",
+    color: "",
     interrupt: "\x1b",
   });
 });
