@@ -12,6 +12,40 @@
   Agents" inside it go straight there, and the companion's chat box, while its
   brain is off, has a Settings button that opens the brain switch.
 
+- Web tiles work like a browser for everyday use.
+  - Bookmarks: click the star in the address field to bookmark the page (or
+    press ⌘D, Ctrl+D elsewhere); a small popover lets you rename it, pick its
+    folder or remove it. Bookmarks show on a bookmarks bar under every web
+    tile's toolbar: click one to open it in that tile, middle-click or ⌘-click
+    to open it in a new tile beside it. Folders open as menus, what doesn't fit
+    goes under », you can drag entries to reorder them or drop them on a folder,
+    and right-click has Open, Open in new tile, Open in default browser, Edit…,
+    Delete and New folder…. Settings → Links → "Show bookmarks bar" hides the
+    bar. Bookmarks are shared by all of Qutty's windows.
+  - The bookmark manager ("Bookmarks…" in the `+` menu, the bar's » menu or its
+    right-click menu): folders on the left, search across all bookmarks, rename
+    and change addresses in place, select several and delete them (with Undo),
+    new folders, and drag to reorder or move. Import reads the bookmarks file
+    Chrome, Safari, Firefox and Edge export into an "Imported" folder; Export
+    copies yours as such a file's contents to the clipboard.
+  - History: the pages you visit are listed in History ("History…" in the `+`
+    menu), with search and Clear history. Right-click Back or Forward (or hold
+    the button) to jump several pages at once. The address field suggests your
+    bookmarks and visited pages as you type: ↓ picks one, Enter goes.
+  - Browser keys while a web tile is focused: ⌘L the address field, ⌘R reload
+    (⌘⇧R past the cache), ⌘. or Escape in the address field to stop, ⌘[ and ⌘]
+    back and forward, ⌘F find in the page (⌘G / ⌘⇧G next and previous), ⌘+, ⌘−
+    and ⌘0 page zoom (a small pill shows the zoom, and each site remembers it),
+    ⌘P print and ⌘⌥I the page inspector where available. Off macOS they are the
+    same keys with Ctrl. On a web tile ⌘[ and ⌘] now go back and forward instead
+    of cycling tiles, and ⌘+ / ⌘− zoom the page instead of the terminals' font;
+    from a terminal they work as before.
+  - Right-click in a page: open a link in a new tile or the default browser,
+    copy a link or the selection, paste, back, forward, reload, bookmark the
+    page.
+  - A new look for the web tile's toolbar: rounded address field with a lock (or
+    "Not secure" for http), the site's name stands out, crisp icons, and a thin
+    loading bar.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that

@@ -239,6 +239,24 @@ suite("settings", (test) => {
       "found by its hint",
     );
     assertEquals(await visible("[data-testid=setting-gap]"), false);
+    // Links & web: the home page and the bookmarks bar are found too.
+    await search("home page");
+    await waitFor(
+      () => visible("[data-testid=setting-links-home]"),
+      2000,
+      "the home page field found",
+    );
+    assertEquals(
+      await visible("[data-testid=setting-links-bookmarks-bar]"),
+      false,
+    );
+    await search("bookmarks bar");
+    await waitFor(
+      () => visible("[data-testid=setting-links-bookmarks-bar]"),
+      2000,
+      "the bookmarks bar switch found",
+    );
+    assertEquals(await visible("[data-testid=setting-links-home]"), false);
     // Nothing matches.
     await search("zzzqqq");
     await waitFor(
