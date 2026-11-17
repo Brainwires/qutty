@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- A native menu bar (Denext 4.18's app menus). macOS: Qutty (About, Settings…
+  ⌘,, Hide, Quit), Shell, Edit, View, Window and Help; Linux: Shell, View,
+  Window and Help, with Settings… at the end of Shell and no Edit menu (its
+  Ctrl+C would never reach the shell).
+  - Shell: New Tile ⌘T, New Tile With (the `+` menu's shells, agents, SSH hosts,
+    Web page and Connections…), New Window ⌘N, the web tiles' Bookmarks… and
+    History…, Close Tile ⌘W, Close Window and End Its Shells, and Broadcast
+    Input ⇧⌘I.
+  - View: Tiled View / Free-form View, Layout (every pattern, and Next Layout
+    ⇧⌘L), the free-form arrange commands, Minimize / Maximize / Restore Tile and
+    Zoom Tile ⌘↩, Bigger / Smaller / Actual Size, Switcher Bar (Top, Bottom,
+    Left, Right, Next Position ⇧⌘B) and full screen (⌃⌘F, macOS).
+  - Window: the window's tiles in bar order, the focused one checked, ⌘1–⌘9 on
+    the first nine, Next / Previous / Last Used Tile (⌘] ⌘[ ⌘`), then Denext's
+    window list and Reopen Closed Window. Help: Qutty on GitHub.
+  - The checks and greyed items follow each window (Restore Tile only with a
+    tile maximized, the layouts only in the tiled view), and the menus act on
+    the window in front. The menus use only Qutty's existing shortcuts, and a
+    shortcut runs once.
+  - "Minimize Tile", "Zoom Tile", the view and arrange items left the Window
+    menu for View, "Close Window and End Its Shells" moved to Shell, and the
+    layout button's menu no longer lists the tiles (the Window menu does). The
+    web version keeps its in-page menus as they were.
 - The companion can now browse. Ask it to look something up or use a site, and
   it opens a web tile, reads the page, clicks links and buttons, types into
   fields and submits forms, goes back and forward, scrolls, and can take a

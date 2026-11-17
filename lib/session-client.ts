@@ -1,6 +1,6 @@
 // The page side of the workspaces (desktop/session.ts): join the window's workspace (its snapshot
 // and its terminals with their replay), save the snapshot, list / reopen / end workspaces, and
-// close this window and end its shells (the Window menu's "Close Window and End Its Shells" and
+// close this window and end its shells (the Shell menu's "Close Window and End Its Shells" and
 // the quit question are the app process's own: desktop/session.ts). `createDesktopSession` talks
 // to the `session` extension; `createDemoSession` is the in-browser stand-in (one workspace, kept while the page lives), so a
 // remount of the workspace (the e2e suite's stand-in for a closed and reopened window) goes
@@ -10,18 +10,11 @@
 
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
 import type sessionExtension from "../desktop/session.ts";
-import type {
-  SessionJoin,
-  TileMenuEvent,
-  WorkspaceInfo,
-} from "../desktop/session.ts";
+import type { SessionJoin, WorkspaceInfo } from "../desktop/session.ts";
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
-  isFreshTileMenu,
-  isPageMenuItem,
   newWorkspaceId,
-  type PageMenuItem,
   workspaceTitle,
   workspaceWindow,
 } from "./workspace/windows.ts";
@@ -75,11 +68,6 @@ export interface SessionBackend {
   /** This window took the focus. */
   focus(): Promise<void>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
-  /**
-   * The Window menu's tile items ("Minimize Tile", "Zoom Tile") and view / arrange items ("Tiled
-   * View", "Cascade Tiles", ...), chosen with this window key.
-   */
-  onTileMenu(cb: (item: PageMenuItem) => void): () => void;
 }
 
 /** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
@@ -156,12 +144,6 @@ export function createDesktopSession(deps: {
         "changed",
         (e) => cb(e.workspaces),
       ),
-    onTileMenu: (cb) =>
-      deps.onDesktopEvent<TileMenuEvent>("session", "tileMenu", (e) => {
-        if (isPageMenuItem(e.item) && isFreshTileMenu(e.at, Date.now())) {
-          cb(e.item);
-        }
-      }),
   };
 }
 
@@ -221,7 +203,6 @@ export function createDemoSession(): SessionBackend & {
     guardClose: () => Promise.resolve(null),
     focus: () => Promise.resolve(),
     onChanged: none,
-    onTileMenu: none,
     recordSpawn(id, cols, rows) {
       records.set(id, { chunks: [], size: 0, seq: 0, cols, rows });
     },
