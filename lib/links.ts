@@ -25,6 +25,7 @@
  */
 
 import { join, normalize } from "@std/path/posix";
+import { addressToUrl } from "./web/url.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Detection
@@ -446,7 +447,12 @@ export interface LinkSettings {
    * lib/web/engine.ts) or `browser` (always the default browser).
    */
   web: WebLinkTarget;
+  /** The web tiles' home page (the toolbar's Home, the `+` menu's "Web page"): an http(s) URL. */
+  home: string;
 }
+
+/** The home page until the user picks one. */
+export const DEFAULT_HOME_PAGE = "https://www.google.com/";
 
 /** Settings → Links → "Open web links in". */
 export type WebLinkTarget = "tile" | "browser";
@@ -455,6 +461,7 @@ export const DEFAULT_LINKS: LinkSettings = {
   editor: "auto",
   command: "",
   web: "tile",
+  home: DEFAULT_HOME_PAGE,
 };
 
 const EDITOR_CHOICES = new Set(["auto", "default", "tile", "custom"]);
@@ -478,6 +485,11 @@ export function sanitizeLinks(
     );
   }
   if (r.web === "tile" || r.web === "browser") out.web = r.web;
+  if (typeof r.home === "string") {
+    out.home = r.home.trim() === ""
+      ? DEFAULT_HOME_PAGE
+      : addressToUrl(r.home.slice(0, 2048)) ?? out.home;
+  }
   return out;
 }
 

@@ -63,6 +63,8 @@ export interface WebTileHooks {
   openTile?(url: string): void;
   /** An alt-tab style cycle is under way: the keyboard stays with the app until it ends. */
   cycling?: boolean;
+  /** The home page (Settings → Links → Home page): the toolbar's Home button goes there. */
+  home?: string;
 }
 
 /** Where a web tile is, as its frame knows it (app/tile-cluster.tsx). */
@@ -96,6 +98,10 @@ export interface WebTileView {
   /** The room the view leaves for what stays over the tile (`null`: none). */
   inset: Insets | null;
   navigate(input: string): boolean;
+  /** Go to the home page (Settings → Links). */
+  home(): void;
+  /** Whether there is a home page this tile can show. */
+  hasHome: boolean;
   back(): void;
   forward(): void;
   reload(): void;
@@ -367,7 +373,8 @@ export function useWebTile(
   }, [layout.key]);
 
   const navigate = useCallback((input: string): boolean => {
-    const url = addressToUrl(input);
+    // The native view shows any site, so words that are not an address become a search.
+    const url = addressToUrl(input, { search: native });
     if (!url) return false;
     const v = viewRef.current;
     if (v && engine?.canEmbed(url)) {
@@ -400,6 +407,11 @@ export function useWebTile(
     failed,
     inset,
     navigate,
+    home: () => {
+      const home = hooksRef.current?.home;
+      if (home) navigate(home);
+    },
+    hasHome: !!hooks?.home && (native || !!engine?.canEmbed(hooks.home)),
     back: () => void viewRef.current?.back(),
     forward: () => void viewRef.current?.forward(),
     reload: () => void viewRef.current?.reload(),
@@ -444,6 +456,7 @@ export function WebToolbar(props: { view: WebTileView }) {
       {loading && view.embeddable
         ? tool("web-stop", "Stop", "×", view.stop)
         : tool("web-reload", "Reload", "↻", view.reload, !view.embeddable)}
+      {tool("web-home", "Home", "⌂", view.home, !view.hasHome)}
       <input
         type="text"
         class="web-address"
