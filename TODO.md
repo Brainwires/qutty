@@ -507,6 +507,10 @@
 - [x] v0.5.1: Denext 4.18, browser tiles, free-form (MDI) view, tile Minimize /
       Maximize / Restore, activity indicators and program titles, tray mode, the
       close-button question.
+- [x] v0.6.0: Claude Code chat tiles, native browser tiles with bookmarks and
+      history, the companion drives web tiles, Settings dialog, native menus,
+      Denext PTY + qutty-ptyd (shells survive quitting), tiles move between
+      windows, companion rename and new icon, broadcast picker.
 - [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
       doesn't run, so the focused chip (first in the strip) can stay scrolled
       out of view on the left (seen while hardening the e2e chip clicks, #43).
