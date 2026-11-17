@@ -14,8 +14,9 @@
 // page saves its snapshot as it changes. Unmounting (the page going away) leaves the PTYs running.
 //
 // The view: each workspace is tiled (the layout engine) or free-form (MDI: tiles as windows the
-// user moves and resizes), picked in the bar's View menu, Settings → Layout or the Window menu
-// (`useFreeformView`, lib/workspace/freeform.ts, lib/workspace/mdi-menu.ts).
+// user moves and resizes), picked in the bar's View menu, Settings → Layout or the native View
+// menu (`useFreeformView`, lib/workspace/freeform.ts, lib/workspace/mdi-menu.ts). The native menu
+// bar (desktop app) follows the workspace and acts on it through `useNativeMenus`.
 //
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
@@ -83,13 +84,13 @@ import {
 import {
   headDoubleClickControl,
   type TileControl,
-  tileMenuControl,
 } from "../lib/workspace/tile-controls.ts";
 import { useSession } from "./use-session.ts";
 import { useWindowClose } from "./use-window-close.ts";
 import { CloseWindowDialog } from "./close-window-dialog.tsx";
-import { isTileMenuItem, type WindowClose } from "../lib/workspace/windows.ts";
+import type { WindowClose } from "../lib/workspace/windows.ts";
 import { useFreeformView } from "./use-freeform-view.ts";
+import { useNativeMenus } from "./use-native-menus.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -733,18 +734,6 @@ function WorkspaceView() {
     };
   }, [ready, platform, runCommand, settingsOpen, modalOpen]);
 
-  // The Window menu's "Minimize Tile" / "Zoom Tile", chosen with this window key: the focused tile.
-  useEffect(() => {
-    const session = ready ? managerRef.current?.backend.session : undefined;
-    if (!session) return;
-    return session.onTileMenu((item) => {
-      if (!isTileMenuItem(item)) return void viewRef.current.menuItem(item);
-      const id = stateRef.current.focusedId;
-      if (!id) return;
-      tileControl(tileMenuControl(item, isMaximized(stateRef.current, id)), id);
-    });
-  }, [ready, tileControl]);
-
   // Title polling: the focused terminal, right away on focus and every couple of seconds.
   const focusedId = state.focusedId;
   useEffect(() => {
@@ -841,8 +830,30 @@ function WorkspaceView() {
     run,
     focus: focusTerminal,
   });
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  // Settings, opened from the native app menu (Settings…, ⌘,).
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const nativeMenus = useNativeMenus({
+    ready: ready && desktop,
+    platform,
+    state,
+    broadcast: broadcast.on,
+    sections: launcher.sections,
+    ollama: ollama.status.installed,
+    webPage: webEngine?.capabilities.drawsAboveHtml === true,
+    modalOpen,
+    handlers: {
+      runCommand,
+      openSettings,
+      menuItem: view.menuItem,
+      setPattern: (pattern) => run({ type: "setLayout", patch: { pattern } }),
+      setBarPosition: (position) => run({ type: "setBarPosition", position }),
+      tileControl,
+      launch: launcher.launchFromMenu,
+      openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
+      openOllama: () => setOllamaOpen(true),
+      onFocus: launcher.refresh,
+    },
+  });
   const visibleIds = useMemo(
     () => visibleIdSet({ tiles: view.tiles }),
     [view.tiles],
@@ -940,6 +951,7 @@ function WorkspaceView() {
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
+        nativeMenus={nativeMenus}
         onToggleSettings={() => setSettingsOpen((o) => !o)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={

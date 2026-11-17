@@ -1,10 +1,4 @@
 import type { DenextConfig } from "denext/server";
-import {
-  CLOSE_AND_END_ITEM,
-  MINIMIZE_TILE_ITEM,
-  ZOOM_TILE_ITEM,
-} from "./lib/workspace/windows.ts";
-import { STATIC_WINDOW_ITEMS } from "./lib/workspace/mdi-menu.ts";
 
 export default {
   desktop: {
@@ -71,33 +65,17 @@ export default {
     // page's own CSS paints the dark background.
     // Its key is the first workspace's id, so its frame comes back too.
     window: { width: 1600, height: 1000, title: "Qutty", key: "main" },
-    // New Window (Cmd+N: a new workspace, its key chosen in desktop.ts), Reopen Closed Window (a
-    // submenu of the closed workspace windows by title, most recent first; the first keeps
-    // Cmd+Shift+T) and the open windows, as the Window menu. Denext serves these items with no
-    // window open. An ended workspace's key is forgotten (desktop/windows.ts), so it is never
-    // listed. Qutty's own item, "Close Window and End Its Shells" (no shortcut), reaches the
-    // `session` extension once per click with the key window (`host.onWindowMenuItem`,
-    // desktop/session.ts), never the pages (Denext 4.16). "Minimize Tile" and "Zoom Tile" (no
-    // shortcuts) arrive there too and are handed on to the key window's page, which acts on its
-    // focused tile. The items are static (no enabled state): Zoom Tile maximizes the focused tile,
-    // or restores it when it is maximized. So do the view items ("Tiled View", "Free-form View")
-    // and the free-form arrange commands ("Cascade Tiles", "Arrange Tiles in Rows" / "in
-    // Columns"; nothing in the tiled view), from the menu model (lib/workspace/mdi-menu.ts), which
-    // will also feed Denext's coming dynamic View menu and window items.
+    // The Window menu: Reopen Closed Window (a submenu of the closed workspace windows by title,
+    // most recent first; the first keeps Cmd+Shift+T) and the open windows. Denext serves these
+    // items with no window open. An ended workspace's key is forgotten (desktop/windows.ts), so it
+    // is never listed. The rest of the menu bar is Qutty's native menus (lib/workspace/menus.ts):
+    // the Shell, View and Help menus the backend sets at launch (desktop/menus.ts), New Window
+    // (Cmd+N) among them, and each window's own state and tiles, which its page keeps up
+    // (app/use-native-menus.ts).
     menu: {
       window: {
-        newWindow: "/",
         reopenClosed: "list",
         list: true,
-        items: [
-          { id: CLOSE_AND_END_ITEM, label: "Close Window and End Its Shells" },
-          // The focused tile's Minimize and Zoom (maximize / restore), as the window's own
-          // Minimize and Zoom above them; no shortcuts (⌘M stays the window's).
-          { id: MINIMIZE_TILE_ITEM, label: "Minimize Tile" },
-          { id: ZOOM_TILE_ITEM, label: "Zoom Tile" },
-          // The workspace's view and the free-form arrange commands; no shortcuts.
-          ...STATIC_WINDOW_ITEMS,
-        ],
       },
     },
     // macOS: the page draws under a transparent title bar with inset traffic lights (pinned

@@ -7,8 +7,6 @@
  * @module
  */
 
-import { isMdiItem, type MdiItemId } from "./mdi-menu.ts";
-
 /** What a workspace window opens with (denext's `windows.open` / `openWindow`). */
 export interface WorkspaceWindowOptions {
   url: string;
@@ -43,42 +41,11 @@ export function workspaceWindow(
 }
 
 /**
- * The id of the Window menu's "Close Window and End Its Shells" (no keyboard shortcut): one of
- * the app's own items (`desktop.menu.window.items` in denext.config.ts), whose clicks reach the
- * `session` extension with the key window (desktop/session.ts).
+ * The id of the Shell menu's "Close Window and End Its Shells" (no keyboard shortcut): an item of
+ * the native menus (lib/workspace/menus.ts), whose clicks reach the `session` extension with the
+ * key window (`host.onAppMenuItem`, desktop/session.ts).
  */
 export const CLOSE_AND_END_ITEM = "qutty:window:close-end";
-
-/**
- * The Window menu's "Minimize Tile" (no keyboard shortcut: ⌘M stays the window's): the key
- * window's focused tile goes to the switcher bar. Its click reaches the `session` extension,
- * which hands it to that window's page (`tileMenu`, desktop/session.ts).
- */
-export const MINIMIZE_TILE_ITEM = "qutty:tile:minimize";
-/**
- * The Window menu's "Zoom Tile" (no shortcut): the focused tile is maximized (shown alone), or
- * restored to the tiled layout when it is maximized already, as the window menu's Zoom does.
- */
-export const ZOOM_TILE_ITEM = "qutty:tile:zoom";
-
-/** The tile items of the Window menu, as the page gets them. */
-export type TileMenuItem = typeof MINIMIZE_TILE_ITEM | typeof ZOOM_TILE_ITEM;
-
-/** Whether a Window-menu item id is one of the tile items. */
-export function isTileMenuItem(id: unknown): id is TileMenuItem {
-  return id === MINIMIZE_TILE_ITEM || id === ZOOM_TILE_ITEM;
-}
-
-/**
- * A Window-menu item the key window's page acts on: a tile item, or a view / arrange item of the
- * menu model (lib/workspace/mdi-menu.ts: "Tiled View", "Free-form View", "Cascade Tiles", ...).
- */
-export type PageMenuItem = TileMenuItem | MdiItemId;
-
-/** Whether a Window-menu item id is one the page acts on (see {@linkcode PageMenuItem}). */
-export function isPageMenuItem(id: unknown): id is PageMenuItem {
-  return isTileMenuItem(id) || isMdiItem(id);
-}
 
 /** A workspace window's title (its label in the Window menu's lists). */
 export function workspaceTitle(name: string): string {
@@ -114,7 +81,7 @@ export type CloseDecision = "allow" | "end" | "ask";
 /**
  * What the page does with a close request (`denext/desktop/window`'s `onCloseRequested`):
  * `"allow"` lets the window close (it detaches: its shells keep running), `"end"` keeps it open
- * and ends its shells the way the Window menu's "Close Window and End Its Shells" does, `"ask"`
+ * and ends its shells the way the Shell menu's "Close Window and End Its Shells" does, `"ask"`
  * keeps it open and asks in the page.
  *
  * A quit is always allowed (the app's quit guard asks about busy agents). While the page is
@@ -136,7 +103,7 @@ export interface CloseGuardDeps {
   setting(): WindowClose;
   /** Show the page's close question (answered through `settle`). */
   ask(): void;
-  /** End the window's shells as the Window menu does (it resolves once that is done or declined). */
+  /** End the window's shells as the Shell menu does (it resolves once that is done or declined). */
   end(): Promise<void>;
 }
 
@@ -170,18 +137,4 @@ export function createCloseGuard(deps: CloseGuardDeps): {
       busy = false;
     },
   };
-}
-
-/**
- * How old a Window-menu tile event may be when the page gets it. Denext replays retained events
- * to a page that subscribes later, so after a reload an old "Minimize Tile" click would otherwise
- * act again.
- */
-export const TILE_MENU_MAX_AGE_MS = 2000;
-
-/** Whether a tile menu event sent at `at` is still fresh at `now` (both ms since the epoch). */
-export function isFreshTileMenu(at: unknown, now: number): boolean {
-  return typeof at === "number" && Number.isFinite(at) &&
-    now - at >= -TILE_MENU_MAX_AGE_MS &&
-    now - at <= TILE_MENU_MAX_AGE_MS;
 }
