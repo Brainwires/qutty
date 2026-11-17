@@ -91,6 +91,7 @@ function fakeViews(caps: NativeCapabilities = ALL) {
         reload: act("reload"),
         stop: act("stop"),
         focus: act("focus"),
+        blur: act("blur"),
         setZOrder: act("setZOrder"),
         setForwardKeys: act("setForwardKeys"),
         setZoom: act("setZoom"),
@@ -137,8 +138,11 @@ function fakeViews(caps: NativeCapabilities = ALL) {
       const a = { view, detached: false };
       attached.push(a);
       log.push("attach");
-      return () => {
-        a.detached = true;
+      return {
+        detach: () => {
+          a.detached = true;
+        },
+        relayout: () => void log.push("relayout"),
       };
     },
     focusPage: () => {
@@ -218,6 +222,7 @@ Deno.test("native: the engine is picked when the runtime hosts web views, else t
     capture: true,
     evaluate: true,
     forwardKeys: true,
+    keyUp: false,
     zoom: false,
     find: false,
     print: false,
@@ -281,6 +286,7 @@ Deno.test("native: the view's events and state come through the tile's interface
       "focus-change",
       "new-window",
       "keydown",
+      "keyup",
       "closed",
     ] as const
   ) view.on(name, (e) => seen.push([name, e]));
@@ -309,7 +315,9 @@ Deno.test("native: the view's events and state come through the tile's interface
     repeat: false,
     forwarded: true,
   };
-  raw.fire("keydown", key);
+  raw.fire("keydown", { ...key, type: "keydown" });
+  const { repeat: _, ...up } = key;
+  raw.fire("keyup", { ...up, type: "keyup" });
   // Events the tile has no use for are not passed on.
   raw.fire("console", { level: "log", message: "hi" });
   assertEquals(seen, [
@@ -328,6 +336,7 @@ Deno.test("native: the view's events and state come through the tile's interface
     ["focus-change", { focused: true }],
     ["new-window", { url: "https://example.org/", disposition: "tab" }],
     ["keydown", key],
+    ["keyup", up],
   ]);
   assertEquals(await view.state(), {
     url: "https://example.com/",
@@ -426,7 +435,7 @@ Deno.test("native: with no picture the view still hides, and comes back", async 
 });
 
 Deno.test("native: the element hidden or shown by the attachment, setVisible, relayout, z-order", async () => {
-  const { view, log, attached, place } = await shownView();
+  const { view, log, attached, place, frames } = await shownView();
   // The tile is parked (display: none): no picture, the view just goes.
   await attached[0].view.setVisible(false);
   assertEquals(log, ["setVisible false"]);
@@ -436,13 +445,23 @@ Deno.test("native: the element hidden or shown by the attachment, setVisible, re
   await view.setVisible(false);
   await view.setVisible(true);
   assertEquals(log, ["setVisible false", "setVisible true"]);
-  // A move that changes no size: a fresh attachment measures, the view stays shown meanwhile.
+  // A move no event reports: the attachment measures again, the view stays shown.
   log.length = 0;
   view.relayout();
+  assertEquals(log, ["relayout"]);
+  assert(!attached[0].detached);
+  // Occluded, it waits: the end of the occlusion attaches afresh.
+  const occluding = view.setOccluded(true);
+  await settle();
+  frames.shift()!();
+  await occluding;
+  log.length = 0;
+  view.relayout();
+  assertEquals(log, []);
+  await view.setOccluded(false);
   assertEquals(log, ["attach"]);
   assert(attached[0].detached);
   await place();
-  assertEquals(log.filter((l) => l.startsWith("setVisible")), []);
   log.length = 0;
   await view.setZOrder(7);
   await view.setZOrder(7);
@@ -465,8 +484,8 @@ Deno.test("native: a view hidden with the keyboard takes it back when it shows a
   await settle();
   frames.shift()!();
   await occluding;
-  // The runtime hands the keyboard to the app's page when a view hides.
-  raws[0].fire("focus-change", { focused: false });
+  // The runtime hands the keyboard to the app's page when a view hides, and says so.
+  raws[0].fire("focus-change", { focused: false, reason: "hidden" });
   log.length = 0;
   await view.setOccluded(false);
   await place();
@@ -544,6 +563,40 @@ Deno.test("native: a tile that loses the focus hands the keyboard to the app, un
   await settle();
   f.raws[1].fire("focus-change", { focused: true });
   f.windowActive[0](true);
+  assertEquals(f.log, []);
+});
+
+Deno.test("native: with the view's blur and keyUp, the keyboard goes back without the window", async () => {
+  const caps = { ...ALL, blur: true, keyUp: true };
+  const f = fakeViews(caps);
+  const engine = createNativeEngine(f.views, caps);
+  assertEquals(engine.capabilities.keyUp, true);
+  assertEquals(
+    createNativeEngine(f.views, { ...caps, forwardKeys: false }).capabilities
+      .keyUp,
+    false,
+    "no releases without forwarded keys",
+  );
+  const a = await engine.mount(fakeHost().host, "https://a.example/");
+  await f.place(0);
+  f.raws[0].fire("focus-change", { focused: true });
+  f.log.length = 0;
+  // The view hands the keyboard back itself: no focusWindow, even with another app in front.
+  f.windowActive[0](false);
+  await a.blur();
+  await settle();
+  assertEquals(f.log, ["blur"]);
+  f.windowActive[0](true);
+  assertEquals(f.log, ["blur"]);
+  // Its blur's focus loss: it does not take the keyboard back when it shows again.
+  f.raws[0].fire("focus-change", { focused: false, reason: "blur" });
+  f.log.length = 0;
+  await a.setVisible(false);
+  await a.setVisible(true);
+  assertEquals(f.log, ["setVisible false", "setVisible true"]);
+  // A view without the keyboard has nothing to hand back.
+  f.log.length = 0;
+  await a.blur();
   assertEquals(f.log, []);
 });
 

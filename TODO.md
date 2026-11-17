@@ -111,10 +111,10 @@
     through the view's `evaluate`). The iframe engine still reaches only a
     same-origin page, which it never shows, so there a web tile says it can't
     take text.
-  - Voice, open: a native web view reports key presses only, never releases
-    (Denext's `keydown` event; `forwardKeys`). So in a page a talk key is a
-    press, not a hold: it latches like a short click on the mic, and the next
-    press stops it. Holding needs a `keyup` from Denext.
+  - Voice, done (Denext 4.20): a native web view reports a forwarded key's
+    release (`keyup`, `webViewCapabilities().keyUp`), so a talk key held in a
+    page is a hold. An engine without `keyUp` still latches it like a short
+    click on the mic until the next press.
   - Done (phase 2c): the shared Docker sandbox (see below).
   - Done (phase 3): the shell is the harness —
     `resources/shell/qutty.{zsh,bash}` (a `,` line goes to the model, the
@@ -438,10 +438,11 @@
         app without the UI by `QUTTY_PTY_SELFTEST=webview`
         (desktop/webview-selftest.ts).
   - [ ] Native engine, not seen on a real window yet: the snapshot swap, the
-        keyboard hand-off (`focusWindow` gives the keyboard back to the app's
-        page) and the forwarded keys are unit-tested against a fake of Denext's
-        views and the self-test covers create / load / title / evaluate /
-        capture; a pass by hand over menus, drags and the cycle is still due.
+        keyboard hand-off (the view's `blur()` gives the keyboard back to the
+        app's page, Denext 4.20) and the forwarded keys are unit-tested against
+        a fake of Denext's views and the self-test covers create / load / title
+        / evaluate / capture; a pass by hand over menus, drags and the cycle is
+        still due.
   - [ ] Native engine, open: the hub's `read_screen` answers nothing for a web
         tile (the page's title, URL and visible text through `evaluate`); a
         page-initiated download or permission has no Qutty UI beyond the OS save

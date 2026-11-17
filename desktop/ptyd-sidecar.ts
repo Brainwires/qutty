@@ -10,6 +10,11 @@
 //
 // Under `deno run` (`deno task desktop`) the child is `deno run` of the app's entry with the
 // app's own flags, the same way.
+//
+// Kept on Denext 4.20: its sidecar child contract still has an IPC channel and no detached
+// option (`spawnSelf`'s `detached` / `stdio` are Node's, passed through untyped), so the child
+// drops the channel itself and the starter unrefs it. A detached sidecar contract in Denext would
+// replace this.
 
 import { connectPtyd, ptydDir, ptydSocketPath } from "./ptyd-client.ts";
 import { runPtyDaemon } from "./ptyd.ts";

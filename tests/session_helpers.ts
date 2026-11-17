@@ -128,6 +128,10 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     onAppMenuItem: on(appMenuItems),
     onNotificationClick: () => () => {},
     onWillNavigate: () => () => {},
+    // Denext 4.20's: the backend's notifications (unused by these tests).
+    notify: (): never => {
+      throw new Error("unused");
+    },
   };
   const fake = {
     host,

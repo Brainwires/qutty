@@ -48,6 +48,17 @@ export async function webviewSelfTest(app: DesktopRuntime): Promise<void> {
     win = app.windows.get("main");
   }
   log("main window is up");
+  // The engine's keyboard features the native engine follows (lib/web/native-engine.ts).
+  const caps = await (Deno as unknown as {
+    desktop?: { webViewCapabilities?(): Promise<Record<string, unknown>> };
+  }).desktop?.webViewCapabilities?.();
+  log(
+    `capabilities: ${
+      ["blur", "keyUp", "forwardKeysBeforeMenu"].map((k) =>
+        `${k}=${caps?.[k] === true}`
+      ).join(" ")
+    }`,
+  );
   // Every key a web tile may forward: all three talk-key choices on top of the shortcuts.
   const platform = Deno.build.os === "darwin" ? "mac" : "other";
   const keys = [

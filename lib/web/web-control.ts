@@ -165,12 +165,21 @@ async function base64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
-/** An evaluation's failure, in words. */
+/**
+ * An evaluation's failure, in words. A page's Content-Security-Policy no longer refuses it
+ * (Denext 4.20), but where that policy refuses `eval` (WKWebView, WebKitGTK) a promise result is
+ * not awaited and comes back `not_serializable`.
+ */
 function evalError(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
-  return `the page did not run the script (${
-    m.slice(0, 300)
-  }); its Content-Security-Policy may refuse it`;
+  const unserializable = (e as { code?: unknown } | null)?.code ===
+    "not_serializable";
+  return `the page did not run the script (${m.slice(0, 300)})${
+    unserializable
+      ? "; its result is not JSON, or it is a promise on a page whose Content-Security-Policy " +
+        "refuses eval (end the script with a plain value there)"
+      : ""
+  }`;
 }
 
 class Refusal extends Error {}

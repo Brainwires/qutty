@@ -125,6 +125,7 @@ const engine = (kind: "iframe" | "native"): WebEngine => ({
     capture: kind === "native",
     evaluate: kind === "native",
     forwardKeys: false,
+    keyUp: false,
     zoom: false,
     find: false,
     print: false,
@@ -256,11 +257,20 @@ Deno.test("web control, native: read runs the page script once the page has load
   });
 
   fake.answer = () => {
-    throw new Error("EvalError: refused by CSP");
+    throw new Error("ReferenceError: x is not defined");
+  };
+  const failed = error(await run({ op: "eval", script: "x" }));
+  assertStringIncludes(failed, "x is not defined");
+  assert(!failed.includes("Content-Security-Policy"), failed);
+  // A promise on a page whose CSP refuses eval (WKWebView, WebKitGTK) is not awaited.
+  fake.answer = () => {
+    throw Object.assign(new Error("not serializable"), {
+      code: "not_serializable",
+    });
   };
   assertStringIncludes(
-    error(await run({ op: "eval", script: "1" })),
-    "Content-Security-Policy",
+    error(await run({ op: "eval", script: "fetch('/')" })),
+    "end the script with a plain value",
   );
 });
 

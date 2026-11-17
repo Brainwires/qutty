@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Denext 4.20 (runtime 3.0.0-denext.25). In a web tile, holding the talk or
+  dictate key now holds it, as in a terminal: the page reports the key's
+  release, where before a press latched until the next one. A web tile that
+  loses the focus hands the keyboard back without bringing Qutty's window to the
+  front, and a page moving with a sliding tile is followed frame by frame. The
+  companion's web tools run on pages whose Content-Security-Policy refuses
+  `eval`.
+
 ## 0.6.0 — Claude Code chat tiles, an everyday in-app browser, the companion browses, Settings dialog, native menus, shells survive quitting, tiles move between windows
 
 - Broadcast input (cluster SSH) is easier to aim. Turning it on (the bar's
