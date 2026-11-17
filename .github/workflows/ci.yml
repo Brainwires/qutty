@@ -19,9 +19,32 @@ env:
   FALLOW_VERSION: 3.20.0
 
 jobs:
+  # Each job's runner: our self-hosted pool while it has a free slot, else the GitHub image at
+  # once (fork pull requests: GitHub only). Each fallback after `||` is that job's GitHub image,
+  # so a failed pick still runs everything.
+  runners:
+    name: pick runners
+    runs-on: ubuntu-latest # GitHub's image: the pick must not wait in the queue it shortens
+    timeout-minutes: 5
+    permissions:
+      actions: read # the repository's queued / running jobs
+    outputs:
+      plan: ${{ steps.pick.outputs.plan }}
+    steps:
+      - id: pick
+        uses: Brainwires/.github/actions/pick-runners@b9684b2d976ff61b754793f7f934f7e853205862 # pick-runners
+        with:
+          jobs: >-
+            checks=macos-arm64@macos-15 test_arm64=macos-arm64@macos-15
+            test_x86_64=macos-x64@macos-15-intel test_linux=linux-x64@ubuntu-24.04
+            e2e=macos-arm64@macos-15
+          vars: ${{ toJSON(vars) }}
+
   checks:
     name: Lint, types, fallow
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').checks || 'macos-15' }}
     # A hang fails in minutes, not at GitHub's 6 h job limit.
     timeout-minutes: 15
     steps:
@@ -44,18 +67,16 @@ jobs:
 
   test:
     name: Unit tests (${{ matrix.arch }})
+    needs: runners
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
-            arch: arm64
-          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
-            arch: x86_64
-          # The self-hosted Linux runner RUNNER_LINUX_X64 names, else ubuntu-24.04 (always the image on a fork's pull_request / pull_request_target).
-          - runner: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-24.04"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-24.04'))) }}
-            arch: linux-x86_64
-    runs-on: ${{ matrix.runner }}
+          - { arch: arm64, pick: test_arm64, os: macos-15 }
+          - { arch: x86_64, pick: test_x86_64, os: macos-15-intel }
+          - { arch: linux-x86_64, pick: test_linux, os: ubuntu-24.04 }
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}')[matrix.pick] || matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -67,7 +88,9 @@ jobs:
 
   e2e:
     name: End-to-end (Chromium)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').e2e || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7

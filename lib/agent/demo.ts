@@ -10,7 +10,8 @@
  * - a prompt with `plan`: only the looking (thinking, text, the read and the grep), no edit;
  * - a prompt with `slow`: the same, a step every 400 ms (time to interrupt it);
  * - a prompt with `fail`: the turn fails with an API error;
- * - a prompt with `hello`: a one-line answer, no tools.
+ * - a prompt with `hello`: a one-line answer, no tools;
+ * - a prompt `link <url>`: a one-line answer linking to `<url>`, no tools.
  *
  * Client-safe.
  *
@@ -219,6 +220,12 @@ export class DemoAgentAdapter implements AgentAdapter {
     if (!live()) return;
     if (prompt.includes("fail")) {
       return end(true, "API Error: 529 overloaded (demo)", 0);
+    }
+    const link = /^link (\S+)$/i.exec(message.text.trim());
+    if (link) {
+      const answer = `Here is [the page](${link[1]}).`;
+      await text(answer);
+      return end(false, answer, 9);
     }
     if (prompt.includes("hello") && !prompt.includes("slow")) {
       await text("Hello! I am the demo agent.");

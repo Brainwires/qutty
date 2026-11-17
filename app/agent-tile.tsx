@@ -11,13 +11,21 @@
 //   command and its output, or the input and result; permission questions with Allow, Allow
 //   always and Deny; a footer per turn (done · tok/s · time · cost). It sticks to the bottom
 //   unless you scrolled up ("Jump to latest").
-// - The prompt box: it grows with its text; Enter sends, Shift+Enter is a new line, ↑ in an empty
-//   box recalls the previous prompt; files attach by button, drop or paste (images go as images);
-//   Escape or Stop interrupts; typing while the agent works queues the message.
+// - The side rail: jump to the top, jump to the latest, maximize / restore the tile (the tile's
+//   own control), and read the last reply aloud (the companion's voice; again to stop).
+// - The prompt box: two lines at least, it grows with its text; Enter sends, Shift+Enter is a new
+//   line; ↑ at the text's start (↓ at its end; either end of one line) walks the prompt history
+//   (lib/agent/prompt-box.ts: every tile's prompts, this tile's first). Its toolbar: attach files
+//   (also by drop or paste; images go as images), a picture of a web tile (where the engine can
+//   take one), saved prompts (inserted at the caret; the current prompt saved), the history menu,
+//   hold-to-dictate (with the companion), Stop (or Escape) and Send; typing while the agent works
+//   queues the message. History and saved prompts live in localStorage. The rail and the box
+//   are app/prompt-box.tsx, shared with the harness overlay (app/harness-overlay.tsx).
 //
 // Focus: the focused tile's prompt box takes the keyboard (`focusAgentTile`, and an effect once it
 // renders focused), as a terminal does. No new shortcuts: inside the box the usual text keys.
-// No timers: the elapsed time while working follows animation frames.
+// No timers: the elapsed time while working follows animation frames; the caret goes where an
+// insert left it in a layout effect.
 
 import {
   type ReactNode,
@@ -27,10 +35,7 @@ import {
   useRef,
   useState,
 } from "denext";
-import type {
-  AgentAttachment,
-  PermissionDecision,
-} from "../lib/agent/adapter.ts";
+import type { PermissionDecision } from "../lib/agent/adapter.ts";
 import {
   diffLines,
   displayItems,
@@ -53,10 +58,18 @@ import {
   parseInline,
   parseMarkdown,
 } from "../lib/agent/markdown.ts";
+import { lastReply } from "../lib/agent/prompt-box.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import { type AgentStore, type AgentTileState } from "./use-agents.ts";
-import { useHtmlOverlay } from "./use-html-overlay.ts";
 import { Modal } from "./modal.tsx";
+import {
+  type Capture,
+  type Dictation,
+  PromptBox,
+  SideRail,
+  type Speech,
+  useDismiss,
+} from "./prompt-box.tsx";
 
 /** What the workspace gives agent tiles. */
 export interface AgentTileHooks {
@@ -73,7 +86,11 @@ export interface AgentTileHooks {
   rename(tileId: string, name: string): Promise<void>;
   close(tileId: string): void;
   /** Hold-to-dictate from the mic button (absent: no voice). */
-  dictation?: { press(): void; release(heldMs: number): void };
+  dictation?: Dictation;
+  /** Read markdown aloud in the companion's voice; `speaking` while anything is said. */
+  speech?: Speech;
+  /** Pictures of other tiles to attach (web tiles where the engine can take one; absent: none). */
+  capture?: Capture;
 }
 
 /** The selector of agent tile `id`'s prompt box. */
@@ -123,33 +140,6 @@ function useElapsed(since: number | undefined): number {
     return () => cancelAnimationFrame(raf);
   }, [since]);
   return since === undefined ? 0 : Math.max(0, now - since);
-}
-
-/** Close a popover on a press outside `ref` or Escape. */
-function useDismiss(
-  open: boolean,
-  ref: { current: HTMLElement | null },
-  close: () => void,
-): void {
-  useHtmlOverlay(open);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (e.target instanceof Node && !ref.current?.contains(e.target)) close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    };
-    globalThis.addEventListener("pointerdown", onDown, true);
-    globalThis.addEventListener("keydown", onKey, true);
-    return () => {
-      globalThis.removeEventListener("pointerdown", onDown, true);
-      globalThis.removeEventListener("keydown", onKey, true);
-    };
-  }, [open]);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -289,9 +279,16 @@ export function AgentHead(
   );
 }
 
-/** The agent's name: text until clicked, then a field (Enter or leaving it renames). */
-function NameField(
-  props: { name: string; onRename(name: string): Promise<void> },
+/**
+ * The agent's name: text until clicked, then a field (Enter or leaving it renames). The harness
+ * overlay's header has one too (`testid` `harness-name`).
+ */
+export function NameField(
+  props: {
+    name: string;
+    onRename(name: string): Promise<void>;
+    testid?: string;
+  },
 ) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -307,7 +304,7 @@ function NameField(
   return (
     <input
       class={`agent-name${error ? " is-error" : ""}`}
-      data-testid="agent-name"
+      data-testid={props.testid ?? "agent-name"}
       aria-label="Agent name"
       spellcheck={false}
       title={error || "Rename"}
@@ -340,7 +337,15 @@ const STICK_PX = 24;
 
 /** An agent tile's transcript and prompt box. */
 export function AgentBody(
-  props: { entry: TerminalEntry; hooks: AgentTileHooks; focused: boolean },
+  props: {
+    entry: TerminalEntry;
+    hooks: AgentTileHooks;
+    focused: boolean;
+    /** The tile is maximized (the rail's button reads Restore). */
+    maximized: boolean;
+    onMaximize(): void;
+    onRestore(): void;
+  },
 ) {
   const { entry, hooks } = props;
   const id = entry.id;
@@ -370,6 +375,13 @@ export function AgentBody(
     setStuck(true);
     el.scrollTop = el.scrollHeight;
   };
+  const toTop = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stuckRef.current = false;
+    setStuck(false);
+    el.scrollTop = 0;
+  };
 
   // The focused tile's prompt box takes the keyboard once it renders (and once a dialog that
   // had it, the folder question, has gone).
@@ -386,6 +398,7 @@ export function AgentBody(
     ...hooks.palette,
   };
   const elapsed = useElapsed(t?.running ? t.turnStartedAt : undefined);
+  const reply = lastReply(t?.rows ?? []);
 
   return (
     <div
@@ -435,6 +448,17 @@ export function AgentBody(
           )}
         </div>
       </div>
+      <SideRail
+        testPrefix="agent"
+        speech={hooks.speech}
+        canSpeak={reply !== ""}
+        speakText={() => reply}
+        speakLabel="Read the last reply aloud"
+        maximized={props.maximized}
+        onTop={toTop}
+        onLatest={jump}
+        onMaximize={props.maximized ? props.onRestore : props.onMaximize}
+      />
       {!stuck && (
         <button
           type="button"
@@ -930,48 +954,8 @@ function Markdown(props: { text: string; openUrl(url: string): void }) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The prompt box
+// The prompt box (app/prompt-box.tsx, shared with the harness overlay)
 // ---------------------------------------------------------------------------------------------
-
-/** The largest file attached as text (characters). */
-const MAX_TEXT_FILE = 512 * 1024;
-/** The largest image attached (bytes). */
-const MAX_IMAGE = 3 * 1024 * 1024;
-const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/;
-const TEXT_NAME =
-  /\.(txt|md|markdown|json|jsonc|ya?ml|toml|ini|csv|tsv|log|xml|html?|css|scss|less|[cm]?[jt]sx?|py|rb|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|php|sh|zsh|bash|fish|sql|lua|pl|r|ex|exs|erl|hs|ml|scala|clj|vue|svelte|dockerfile|gitignore|env)$/i;
-
-/** A dropped or pasted file as an attachment, or why not. */
-async function attachmentOf(file: File): Promise<AgentAttachment | string> {
-  if (IMAGE_TYPES.test(file.type)) {
-    if (file.size > MAX_IMAGE) {
-      return `${file.name} is too large (3 MB at most)`;
-    }
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    }
-    return {
-      name: file.name || "image.png",
-      kind: "image",
-      mediaType: file.type,
-      data: btoa(bin),
-    };
-  }
-  if (file.type.startsWith("text/") || TEXT_NAME.test(file.name)) {
-    if (file.size > MAX_TEXT_FILE) {
-      return `${file.name} is too large (512 KB at most)`;
-    }
-    return {
-      name: file.name,
-      kind: "text",
-      mediaType: file.type || "text/plain",
-      data: await file.text(),
-    };
-  }
-  return `${file.name}: only images and text files can be attached`;
-}
 
 function Prompt(
   props: {
@@ -983,299 +967,53 @@ function Prompt(
   },
 ) {
   const { id, hooks, transcript: t } = props;
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<AgentAttachment[]>([]);
-  const [note, setNote] = useState("");
-  const [dragging, setDragging] = useState(false);
-  /** Where ↑ is in the prompt history (-1: not recalling). */
-  const recall = useRef(-1);
-  const pressAt = useRef<number | undefined>(undefined);
-
-  const grow = useCallback(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
-  }, []);
-  useLayoutEffect(grow, [text]);
-
-  // Dictation and the companion type here.
-  useEffect(() =>
-    hooks.store.onInsert(id, (s) => {
-      const el = inputRef.current;
-      if (!el) return;
-      const start = el.selectionStart ?? el.value.length;
-      const end = el.selectionEnd ?? start;
-      const next = el.value.slice(0, start) + s + el.value.slice(end);
-      setText(next);
-      el.focus({ preventScroll: true });
-      requestAnimationFrame(() => {
-        el.selectionStart = el.selectionEnd = start + s.length;
-      });
-    }), [hooks.store, id]);
-
-  const history = (t?.rows ?? []).filter((r) => r.type === "user").map((r) =>
-    (r as Extract<Row, { type: "user" }>).text
-  );
-
-  const add = async (list: FileList | File[] | null | undefined) => {
-    if (!list) return;
-    const out: AgentAttachment[] = [];
-    const notes: string[] = [];
-    for (const f of Array.from(list)) {
-      const a = await attachmentOf(f);
-      if (typeof a === "string") notes.push(a);
-      else out.push(a);
-    }
-    if (out.length > 0) setFiles((cur) => [...cur, ...out].slice(0, 8));
-    setNote(notes.join(" · "));
-  };
-
-  const send = () => {
-    const body = text.trim();
-    if ((!body && files.length === 0) || props.disabled) return;
-    hooks.store.send(id, {
-      text: body,
-      ...(files.length > 0 ? { attachments: files } : {}),
-    });
-    setText("");
-    setFiles([]);
-    setNote("");
-    recall.current = -1;
-    props.onSent();
-  };
-
-  // Files dropped anywhere on the tile's body attach.
-  const addRef = useRef(add);
-  addRef.current = add;
-  const promptRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const body = promptRef.current?.closest<HTMLElement>(".agent-body");
-    if (!body) return;
-    const over = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
-      e.preventDefault();
-      setDragging(true);
-    };
-    const leave = (e: DragEvent) => {
-      if (e.target === body) setDragging(false);
-    };
-    const drop = (e: DragEvent) => {
-      setDragging(false);
-      if (!e.dataTransfer?.files.length) return;
-      e.preventDefault();
-      e.stopPropagation();
-      void addRef.current(e.dataTransfer.files);
-    };
-    body.addEventListener("dragover", over);
-    body.addEventListener("dragleave", leave);
-    body.addEventListener("drop", drop);
-    return () => {
-      body.removeEventListener("dragover", over);
-      body.removeEventListener("dragleave", leave);
-      body.removeEventListener("drop", drop);
-    };
-  }, []);
-
   const running = t?.running ?? false;
-  const queue = t?.queue ?? [];
+  const store = hooks.store;
+  const onInsert = useCallback(
+    (cb: (s: string) => void) => store.onInsert(id, cb),
+    [store, id],
+  );
   return (
-    <div
-      class={`agent-prompt${dragging ? " is-dragging" : ""}`}
-      data-testid="agent-prompt"
-      ref={promptRef}
-    >
-      {queue.length > 0 && (
-        <div class="agent-queue" data-testid="agent-queue">
-          {queue.map((q, i) => (
-            <div class="agent-queued" key={i}>
-              <span class="agent-dim">queued ›</span> {q}
-            </div>
-          ))}
-        </div>
-      )}
-      {(files.length > 0 || note) && (
-        <div class="agent-files" data-testid="agent-files">
-          {files.map((f, i) => (
-            <span class="agent-file" key={`${f.name}-${i}`}>
-              {f.kind === "image" ? "▣" : "▤"} {f.name}
-              <button
-                type="button"
-                class="agent-file-x"
-                aria-label={`Remove ${f.name}`}
-                onClick={() =>
-                  setFiles(files.filter((_, j) => j !== i))}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {note && <span class="agent-note">{note}</span>}
-        </div>
-      )}
-      <div class="agent-input-row">
-        <span class="agent-caret-mark" aria-hidden="true">&gt;</span>
-        <textarea
-          ref={inputRef}
-          class="agent-input"
-          data-testid="agent-input"
-          rows={1}
-          spellcheck={false}
-          placeholder={running
-            ? "Queue a message for when it's done…"
-            : "Give your agent a prompt or a task: Enter to send, Shift+Enter for a new line"}
-          value={text}
-          onInput={(e) => {
-            recall.current = -1;
-            setText((e.target as HTMLTextAreaElement).value);
-          }}
-          onPaste={(e) => {
-            const cd = (e as unknown as ClipboardEvent).clipboardData;
-            if (cd && cd.files.length > 0) {
-              e.preventDefault();
-              void add(cd.files);
-            }
-          }}
-          onKeyDown={(e) => {
-            if ((e as unknown as KeyboardEvent).isComposing) return;
-            if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
-              e.preventDefault();
-              send();
-              return;
-            }
-            if (e.key === "Escape" && running) {
-              e.preventDefault();
-              e.stopPropagation();
-              hooks.store.interrupt(id);
-              return;
-            }
-            const el = e.target as HTMLTextAreaElement;
-            if (
-              e.key === "ArrowUp" && history.length > 0 &&
-              (el.value === "" || recall.current >= 0) &&
-              !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
-            ) {
-              e.preventDefault();
-              recall.current = Math.min(recall.current + 1, history.length - 1);
-              setText(history[history.length - 1 - recall.current]);
-            } else if (
-              e.key === "ArrowDown" && recall.current >= 0 && !e.shiftKey
-            ) {
-              e.preventDefault();
-              recall.current--;
-              setText(
-                recall.current >= 0
-                  ? history[history.length - 1 - recall.current]
-                  : "",
-              );
-            }
-          }}
-        />
-      </div>
-      <div class="agent-tools">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          hidden
-          data-testid="agent-file-input"
-          onChange={(e) => {
-            const input = e.target as HTMLInputElement;
-            void add(input.files).then(() => {
-              input.value = "";
-            });
-          }}
-        />
-        <button
-          type="button"
-          class="agent-tool-btn"
-          data-testid="agent-attach"
-          title="Attach files (or drop or paste them)"
-          aria-label="Attach files"
-          onClick={() => fileRef.current?.click()}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              d="M10.5 4.5 5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linecap="round"
-            />
-          </svg>
-        </button>
-        {hooks.dictation && (
-          <button
-            type="button"
-            class="agent-tool-btn"
-            data-testid="agent-mic"
-            title="Hold to dictate into the prompt"
-            aria-label="Dictate"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              pressAt.current = Date.now();
-              hooks.dictation?.press();
-            }}
-            onPointerUp={() => {
-              if (pressAt.current === undefined) return;
-              hooks.dictation?.release(Date.now() - pressAt.current);
-              pressAt.current = undefined;
-            }}
-            onPointerLeave={() => {
-              if (pressAt.current === undefined) return;
-              hooks.dictation?.release(Date.now() - pressAt.current);
-              pressAt.current = undefined;
-            }}
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <rect
-                x="5.5"
-                y="1.75"
-                width="5"
-                height="8.5"
-                rx="2.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-              />
-              <path
-                d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-        )}
-        <span class="agent-hint">
-          {running ? "esc to interrupt" : "↑ previous prompt"}
-        </span>
-        {running && (
-          <button
-            type="button"
-            class="agent-stop"
-            data-testid="agent-stop"
-            title="Stop (Esc)"
-            onClick={() => hooks.store.interrupt(id)}
-          >
-            ■ Stop
-          </button>
-        )}
-        <button
-          type="button"
-          class="agent-send"
-          data-testid="agent-send"
-          title={running ? "Queue (Enter)" : "Send (Enter)"}
-          disabled={props.disabled || (!text.trim() && files.length === 0)}
-          onClick={send}
-        >
-          {running ? "Queue ↵" : "Send ↵"}
-        </button>
-      </div>
-    </div>
+    <PromptBox
+      testPrefix="agent"
+      disabled={props.disabled}
+      placeholder={running
+        ? "Queue a message for when it's done…"
+        : "Give your agent a prompt or a task: Enter to send, Shift+Enter for a new line"}
+      hint={running ? "esc to interrupt" : "↑↓ history · shift+enter new line"}
+      sendLabel={running ? "Queue ↵" : "Send ↵"}
+      sendTitle={running ? "Queue (Enter)" : "Send (Enter)"}
+      queue={t?.queue ?? []}
+      images
+      own={() =>
+        (t?.rows ?? []).flatMap((r) => r.type === "user" ? [r.text] : [])}
+      onSend={(text, files) => {
+        store.send(id, {
+          text,
+          ...(files.length > 0 ? { attachments: files } : {}),
+        });
+        props.onSent();
+      }}
+      onEscape={() => {
+        if (!running) return false;
+        store.interrupt(id);
+        return true;
+      }}
+      {...(running
+        ? {
+          stop: {
+            label: "■ Stop",
+            title: "Stop (Esc)",
+            testid: "agent-stop",
+            run: () => store.interrupt(id),
+          },
+        }
+        : {})}
+      onInsert={onInsert}
+      {...(hooks.dictation ? { dictation: hooks.dictation } : {})}
+      {...(hooks.capture ? { capture: hooks.capture } : {})}
+      dropZone=".agent-body"
+    />
   );
 }
 

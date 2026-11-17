@@ -65,6 +65,7 @@ import {
   trustedRemoteCwd,
 } from "./ssh-ui.ts";
 import { parseOsc7 } from "./osc7.ts";
+import { promptChunks } from "./workspace/harness.ts";
 import {
   broadcastTargets,
   type InputOrigin,
@@ -913,6 +914,49 @@ export class TerminalManager {
     if (!m || m.disposed || !m.term.element) return;
     m.term.focus();
     if (this.hasFocus(id)) this.#pendingFocus = null;
+  }
+
+  /**
+   * Type prompt `text` into terminal `id` as a paste of it would arrive (bracketed when its
+   * program turned that mode on), then press Enter (lib/workspace/harness.ts `promptChunks`): the
+   * harness overlay's Send. Only this tile gets it, broadcasting or not. `false`: no running PTY.
+   */
+  async sendPrompt(id: string, text: string): Promise<boolean> {
+    const m = this.#writable(id);
+    if (!m?.ptyId) return false;
+    const pty = m.ptyId;
+    m.term.scrollToBottom();
+    for (const chunk of promptChunks(text, m.term.modes.bracketedPasteMode)) {
+      await this.#backend.write(pty, chunk);
+    }
+    return true;
+  }
+
+  /** Keys for terminal `id`'s program, as they are (the harness overlay's Interrupt). */
+  sendKeys(id: string, data: string): void {
+    const m = this.#writable(id);
+    if (m) this.#write(m, data);
+  }
+
+  /** Scroll terminal `id` to the top of its scrollback or to the latest output. */
+  scrollTo(id: string, where: "top" | "bottom"): void {
+    const m = this.#terms.get(id);
+    if (!m || m.disposed) return;
+    if (where === "top") m.term.scrollToTop();
+    else m.term.scrollToBottom();
+  }
+
+  /** The text on terminal `id`'s screen (its last rows, not the scrollback); `""` when unknown. */
+  screenText(id: string): string {
+    const m = this.#terms.get(id);
+    if (!m || m.disposed) return "";
+    const buf = m.term.buffer.active;
+    const lines: string[] = [];
+    const top = buf.length - m.term.rows;
+    for (let i = Math.max(0, top); i < buf.length; i++) {
+      lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+    }
+    return lines.join("\n");
   }
 
   /** Whether xterm's textarea for `id` currently has keyboard focus. */

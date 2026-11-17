@@ -3,7 +3,8 @@
 // The workspace island: owns the store, the terminal manager, the keyboard and the layout
 // measurement, and renders the switcher bar, the tile cluster and the settings popover. The
 // SSH half (connection manager, download picker, transfers, drops) lives in `useSsh`; the agent
-// hub's tiles (the agent badges) in `useHub`; the companion (`CompanionFace`, in a corner of the
+// hub's tiles (the agent badges) in `useHub`; the GUI around a terminal that runs a coding-agent
+// harness in app/harness-overlay.tsx (`harnessOf`, lib/workspace/harness.ts); the companion (`CompanionFace`, in a corner of the
 // tile area: `ask_user` questions, `qutty-hook say`, the chat with its brain) in
 // `CompanionOverlay`, its settings and commands in `useCompanion`. With the companion Off,
 // `AskDialog` asks instead. Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the
@@ -146,6 +147,13 @@ import { BookmarkManager } from "./bookmark-manager.tsx";
 import { HistoryDialog } from "./history-dialog.tsx";
 import type { OpenWhere } from "./bookmarks-bar.tsx";
 import { focusAgentTile } from "./agent-tile.tsx";
+import {
+  type HarnessHooks,
+  type HarnessView,
+  insertIntoHarnessPrompt,
+} from "./harness-overlay.tsx";
+import { detectHarness } from "../lib/workspace/harness.ts";
+import type { LinkMenuItem } from "./link-menu.tsx";
 import { type AgentTilesView, useAgentTiles } from "./use-agent-tiles.tsx";
 import { AgentsMenu } from "./agents-panel.tsx";
 import {
@@ -154,6 +162,7 @@ import {
   type WebEngine,
   type WebViewHandle,
 } from "../lib/web/engine.ts";
+import { speakableText } from "../lib/voice/tts.ts";
 import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
 import {
   type OllamaPair,
@@ -215,6 +224,8 @@ function WorkspaceView() {
         r.home,
         entry?.agent?.name ?? (entry?.sandbox ? "sandbox" : undefined),
       ),
+      // What runs in the foreground: a harness, or the shell it quit back to.
+      process: r.info.process,
     });
   }, []);
 
@@ -580,6 +591,8 @@ function WorkspaceView() {
           () => "not-editable",
         );
       }
+      // A harness overlay's prompt box with the keyboard: into it.
+      if (insertIntoHarnessPrompt(id, text)) return "typed";
       const pty = manager.ptyId(id);
       if (!pty) return "no-tile";
       void manager.backend.write(pty, text).catch(() => {});
@@ -594,12 +607,45 @@ function WorkspaceView() {
     press: () => voiceRef.current.pressDictate(),
     release: (heldMs: number) => voiceRef.current.release(heldMs),
   }), []);
-  // A link in a transcript: a web tile where they show any site (the native engine), else the
-  // default browser.
-  const openAgentUrl = useCallback((url: string) => {
-    if (webEngine?.capabilities.drawsAboveHtml) void openWebTile(url);
-    else linksRef.current.openInBrowser(url);
-  }, [webEngine, openWebTile]);
+  // An agent tile's "Read aloud": the companion's voice (interrupting whatever it was saying).
+  const speech = useMemo(() => ({
+    speaking: voice.speaking,
+    say: (text: string) => voiceRef.current.test(speakableText(text)),
+    stop: () => voiceRef.current.stopSpeaking(),
+  }), [voice.speaking]);
+  // An agent tile's screenshot button: a picture of a web tile, where the engine can take one
+  // (the native view; the iframe cannot, and nothing can picture a terminal or the window).
+  const capture = useMemo(() => {
+    if (!webEngine?.capabilities.capture) return undefined;
+    return {
+      tiles: () =>
+        stateRef.current.terminals.filter((t) =>
+          t.web && webViewsRef.current.get(t.id)?.capture
+        ).map((t) => ({ id: t.id, title: t.title })),
+      take: async (id: string) => {
+        const view = webViewsRef.current.get(id);
+        if (!view?.capture) return "that tile is not showing a page";
+        const shot = await view.capture({
+          format: "jpeg",
+          quality: 80,
+          scale: 1,
+        });
+        const title = stateRef.current.terminals.find((t) => t.id === id)
+          ?.title ?? "tile";
+        return new File(
+          [shot],
+          `${title.replace(/[^\w.-]+/g, "-").slice(0, 40)}.jpg`,
+          { type: shot.type || "image/jpeg" },
+        );
+      },
+    };
+  }, [webEngine]);
+  // A link in a transcript opens as a ⌘-clicked one in a terminal does (Settings → Links →
+  // "Open web links in", and whether the engine can show the page).
+  const openAgentUrl = useCallback(
+    (url: string) => linksRef.current.openLink(url),
+    [],
+  );
   const agentTiles = useAgentTiles({
     backend: ready ? managerRef.current?.backend ?? null : null,
     manager: ready ? managerRef.current : null,
@@ -612,6 +658,8 @@ function WorkspaceView() {
     closeTile: closeTerminal,
     refocus,
     ...(companionShown ? { dictation } : {}),
+    speech,
+    ...(capture ? { capture } : {}),
   });
   agentsRef.current = agentTiles;
 
@@ -751,6 +799,8 @@ function WorkspaceView() {
       onBroadcastPaste: (id, data, tiles) =>
         broadcastRef.current.hold(id, data, tiles),
       onCommandDone: (id, done) => {
+        // A harness that quit back to its shell: the next prompt's foreground process says so.
+        void pollTitle(id);
         dispatch({
           type: "commandDone",
           id,
@@ -915,6 +965,18 @@ function WorkspaceView() {
   // An agent that starts waiting for the user while its tile is not focused latches attention,
   // as a bell does (the hub's status alone shows it only while it waits).
   const hubStatusRef = useRef(new Map<string, string>());
+  // A harness that (re)started a session in a tile: read its foreground process now (the harness
+  // overlay goes by it), rather than at the next poll of the focused tile.
+  const hubSessionRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    const sessions = hubSessionRef.current;
+    for (const t of state.terminals) {
+      const session = hubTileOf(t.id)?.session;
+      if (session && sessions.get(t.id) !== session) void pollTitle(t.id);
+      if (session) sessions.set(t.id, session);
+      else sessions.delete(t.id);
+    }
+  }, [hubTileOf, state.terminals, pollTitle]);
   useEffect(() => {
     const seen = hubStatusRef.current;
     for (const t of state.terminals) {
@@ -1051,6 +1113,64 @@ function WorkspaceView() {
     return out;
   }, [state.terminals, focusedId, hubTileOf, settings.activity, now]);
 
+  // The harness overlay (app/harness-overlay.tsx): which terminal runs a harness, and whether
+  // its overlay shows (the tile's own choice, else Settings → Tiles).
+  const overlayDefault = settings.harnessOverlay;
+  /** The harness tile `entry` runs now (whether or not its overlay shows). */
+  const harnessIn = useCallback((entry: (typeof state.terminals)[number]) => {
+    if (entry.web || entry.chat) return undefined;
+    const hub = hubTileOf(entry.id);
+    const spec = detectHarness({
+      ...(hub?.harness ? { hubHarness: hub.harness } : {}),
+      ...(entry.agent ? { agent: entry.agent.name } : {}),
+      ...(entry.process !== undefined ? { process: entry.process } : {}),
+      ...(entry.programTitle ? { programTitle: entry.programTitle } : {}),
+      exited: entry.exited,
+      ssh: entry.ssh !== undefined,
+    });
+    return spec ? { spec, ...(hub ? { hub } : {}) } : undefined;
+  }, [hubTileOf]);
+  const harnessOf = useCallback(
+    (entry: (typeof state.terminals)[number]): HarnessView | undefined =>
+      (entry.guiOverlay ?? overlayDefault) ? harnessIn(entry) : undefined,
+    [harnessIn, overlayDefault],
+  );
+  const harnessHooks = useMemo<HarnessHooks | undefined>(() => {
+    const m = managerRef.current;
+    if (!ready || !m) return undefined;
+    return {
+      manager: m,
+      rename: async (id, name) => {
+        const pty = m.ptyId(id);
+        if (!pty) throw new Error("the terminal is not running");
+        await m.backend.hubRename(pty, name);
+      },
+      setOverlay: (id, on) => dispatch({ type: "setGuiOverlay", id, on }),
+      openSettings: () => openSettings("tiles", "setting-harness-overlay"),
+      close: (id) => closeRef.current(id),
+      ...(companionShown ? { dictation } : {}),
+      speech,
+    };
+  }, [ready, companionShown, dictation, speech, openSettings]);
+  /**
+   * A right click on tile `id`'s header: "GUI overlay" (on a terminal running a harness), then the
+   * windows it can move to.
+   */
+  const openHeadMenu = useCallback((id: string, x: number, y: number) => {
+    const entry = stateRef.current.terminals.find((t) => t.id === id);
+    const extra: LinkMenuItem[] = [];
+    if (entry && harnessIn(entry)) {
+      const on = entry.guiOverlay ?? stateRef.current.settings.harnessOverlay;
+      extra.push({
+        action: "gui-overlay",
+        label: "GUI overlay",
+        checked: on,
+        run: () => dispatch({ type: "setGuiOverlay", id, on: !on }),
+      });
+    }
+    tileMove.openMenu(id, x, y, extra);
+  }, [harnessIn, tileMove.openMenu]);
+
   const manager = managerRef.current;
   const showStrip = desktop && barPosition !== "top";
 
@@ -1180,11 +1300,13 @@ function WorkspaceView() {
             onRestore={(id) => tileControl("restoreTile", id)}
             onHeadDoubleClick={headDoubleClick}
             windowDrag={tileMove.drag}
-            onHeadMenu={tileMove.enabled ? tileMove.openMenu : undefined}
+            onHeadMenu={openHeadMenu}
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
             web={webHooks}
             agent={agentTiles.hooks}
+            harnessOf={harnessOf}
+            harness={harnessHooks}
             renderHeadActions={(entry) =>
               entry.ssh && (
                 <SshHeadActions
@@ -1308,6 +1430,7 @@ function WorkspaceView() {
           onFocusToMain={(on) => run({ type: "setFocusToMain", on })}
           onActivity={(patch) => run({ type: "setActivity", patch })}
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
+          onHarnessOverlay={(on) => run({ type: "setHarnessOverlay", on })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           onTab={(tab) => run({ type: "setSettingsTab", tab })}

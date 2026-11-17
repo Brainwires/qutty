@@ -70,8 +70,11 @@ export interface TileMoveApi {
   drag: WindowDrag | undefined;
   /** Another window's tile dragged over this one. */
   hover: DropHover | null;
-  /** Open the header menu of tile `id` at (`x`, `y`). */
-  openMenu(id: string, x: number, y: number): void;
+  /**
+   * Open the header menu of tile `id` at (`x`, `y`): `extra` items first (the harness overlay's
+   * "GUI overlay"), then the windows it can move to.
+   */
+  openMenu(id: string, x: number, y: number, extra?: LinkMenuItem[]): void;
   menu: TileMoveMenu | null;
   closeMenu(): void;
   /** Move tile `id` to window `to` (`"new"`: a new window). Resolves whether it moved. */
@@ -213,17 +216,28 @@ export function useTileMove(opts: {
     };
   }, [moves, leave, moveTo]);
 
-  const openMenu = useCallback((id: string, x: number, y: number) => {
+  const openMenu = useCallback((
+    id: string,
+    x: number,
+    y: number,
+    extra: LinkMenuItem[] = [],
+  ) => {
     const o = optsRef.current;
-    if (!o.moves) return;
-    if (o.state.terminals.find((t) => t.id === id)?.chat) return;
+    const title = extra.length > 0 ? "Tile" : "Move to Window";
+    if (!o.moves || o.state.terminals.find((t) => t.id === id)?.chat) {
+      if (extra.length > 0) setMenu({ x, y, title, items: extra });
+      return;
+    }
     const many = o.state.terminals.length > 1;
     void o.moves.targets().then((targets) => {
-      const items: LinkMenuItem[] = targets.map((t) => ({
-        action: `move:${t.window}`,
-        label: `Move to ${t.name}`,
-        run: () => void moveTo(id, t.window),
-      }));
+      const items: LinkMenuItem[] = [
+        ...extra,
+        ...targets.map((t) => ({
+          action: `move:${t.window}`,
+          label: `Move to ${t.name}`,
+          run: () => void moveTo(id, t.window),
+        })),
+      ];
       // A window's only tile tearing off would just be the window again.
       if (o.moves?.newWindow && many) {
         items.push({
@@ -232,10 +246,10 @@ export function useTileMove(opts: {
           run: () => void moveTo(id, "new"),
         });
       }
-      if (items.length > 0) {
-        setMenu({ x, y, title: "Move to Window", items });
-      }
-    }, () => {});
+      if (items.length > 0) setMenu({ x, y, title, items });
+    }, () => {
+      if (extra.length > 0) setMenu({ x, y, title, items: extra });
+    });
   }, [moveTo]);
 
   const closeMenu = useCallback(() => setMenu(null), []);

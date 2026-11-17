@@ -11,6 +11,8 @@ export interface LinkMenuItem {
   /** `open`, `edit`, `reveal`, `download`, `copy`. */
   action: string;
   label: string;
+  /** A check box item: a check mark beside it when `true`. */
+  checked?: boolean;
   run(): void;
 }
 
@@ -76,11 +78,17 @@ export function LinkMenu(props: LinkMenuProps) {
           key={item.action}
           data-testid={`${props.testId ?? "link-menu"}-item`}
           data-action={item.action}
+          aria-checked={item.checked}
           onClick={() => {
             props.onClose();
             item.run();
           }}
         >
+          {item.checked !== undefined && (
+            <span class="menu-check" aria-hidden="true">
+              {item.checked ? "✓" : ""}
+            </span>
+          )}
           <span class="menu-label">{item.label}</span>
         </button>
       ))}

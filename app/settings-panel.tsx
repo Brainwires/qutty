@@ -93,6 +93,8 @@ export interface SettingsPanelProps {
   onInactiveTiles(mode: InactiveTiles): void;
   /** Settings → Layout: whether the focused tile moves to the main spot. */
   onFocusToMain(on: boolean): void;
+  /** Settings → Tiles → "Show a GUI around agent harnesses". */
+  onHarnessOverlay(on: boolean): void;
   /** Settings → Tiles. */
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
@@ -627,8 +629,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <TileSettingsSection
         activity={settings.activity}
         tileTitle={settings.tileTitle}
+        harnessOverlay={settings.harnessOverlay}
         onActivity={props.onActivity}
         onTileTitle={props.onTileTitle}
+        onHarnessOverlay={props.onHarnessOverlay}
       />
     ),
     links: (
