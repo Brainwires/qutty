@@ -449,6 +449,8 @@ export interface LinkSettings {
   web: WebLinkTarget;
   /** The web tiles' home page (the toolbar's Home, the `+` menu's "Web page"): an http(s) URL. */
   home: string;
+  /** Whether web tiles show the bookmarks bar under their toolbar (app/bookmarks-bar.tsx). */
+  bookmarksBar: boolean;
 }
 
 /** The home page until the user picks one. */
@@ -462,6 +464,7 @@ export const DEFAULT_LINKS: LinkSettings = {
   command: "",
   web: "tile",
   home: DEFAULT_HOME_PAGE,
+  bookmarksBar: true,
 };
 
 const EDITOR_CHOICES = new Set(["auto", "default", "tile", "custom"]);
@@ -485,6 +488,7 @@ export function sanitizeLinks(
     );
   }
   if (r.web === "tile" || r.web === "browser") out.web = r.web;
+  if (typeof r.bookmarksBar === "boolean") out.bookmarksBar = r.bookmarksBar;
   if (typeof r.home === "string") {
     out.home = r.home.trim() === ""
       ? DEFAULT_HOME_PAGE
