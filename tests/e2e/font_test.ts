@@ -19,7 +19,7 @@ async function setFontSlider(
   key: "fontSize" | "lineHeight",
   value: number,
 ): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("appearance");
   await app.eval(
     (k: string, v: number) => {
       const el = document.querySelector<HTMLInputElement>(
@@ -131,7 +131,7 @@ suite("font", (test) => {
 
   test("steppers: − and + change the size by one and stop at the range ends", async (app) => {
     const id = (await app.focusedId())!;
-    await app.openSettings();
+    await app.openSettings("appearance");
     await app.click("[data-testid=setting-fontSize-inc]");
     await waitForFont(app, id, 14);
     await app.click("[data-testid=setting-fontSize-dec]");
@@ -299,7 +299,7 @@ suite("font", (test) => {
   });
 
   test("picker: every family listed, installed first, missing ones marked, previewed in their face", async (app) => {
-    await app.openSettings();
+    await app.openSettings("appearance");
     const opts = await app.eval(() =>
       [
         ...document.querySelectorAll<HTMLElement>(
@@ -356,7 +356,7 @@ suite("font", (test) => {
 
   test("custom family: typed (with a space), applied, and round-trips through a reload", async (app) => {
     const id = (await app.focusedId())!;
-    await app.openSettings();
+    await app.openSettings("appearance");
     await app.click("[data-testid=setting-font-family][data-value=custom]");
     await waitFor(
       () => app.exists("[data-testid=setting-font-custom]"),
@@ -382,7 +382,7 @@ suite("font", (test) => {
       (await app.terminal((await app.focusedId())!))!.fontFamily,
       '"Courier New", monospace',
     );
-    await app.openSettings();
+    await app.openSettings("appearance");
     assertEquals(
       await app.eval(() =>
         document.querySelector<HTMLInputElement>(
@@ -394,7 +394,7 @@ suite("font", (test) => {
   });
 
   test("persistence: family, size, line height and weight survive a reload", async (app) => {
-    await app.openSettings();
+    await app.openSettings("appearance");
     await app.click(
       "[data-testid=setting-font-family][data-value=courier-new]",
     );
@@ -413,7 +413,7 @@ suite("font", (test) => {
     assertEquals(s.fontSize, 17);
     assertEquals(s.lineHeight, 1.3);
     assertEquals(s.fontWeight, "500");
-    await app.openSettings();
+    await app.openSettings("appearance");
     assertEquals(
       await app.attr(
         "[data-testid=setting-font-family][aria-selected=true]",
@@ -476,7 +476,7 @@ suite("font", (test) => {
   });
 
   test("shortcut list: the font shortcuts are listed", async (app) => {
-    await app.openSettings();
+    await app.openSettings("general");
     const items = await app.eval(() =>
       [...document.querySelectorAll(".shortcuts div")].map((d) => d.textContent)
     );

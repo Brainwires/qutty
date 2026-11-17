@@ -160,6 +160,7 @@ export function withBackendSpy(
     hubSnapshot: () => backend.hubSnapshot(),
     hubAnswer: (id, action) => backend.hubAnswer(id, action),
     hubSetLabel: (ptyId, label) => backend.hubSetLabel(ptyId, label),
+    hubWebTiles: (tiles) => backend.hubWebTiles(tiles),
     onHubTiles: (cb) => backend.onHubTiles(cb),
     onHubAsk: (cb) => backend.onHubAsk(cb),
     onHubAskClosed: (cb) => backend.onHubAskClosed(cb),

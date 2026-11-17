@@ -13,6 +13,7 @@ import {
   type LayoutOptions,
   type LayoutPattern,
   PATTERN_INFO,
+  type Rect,
   touch,
 } from "../layout/mod.ts";
 import {
@@ -62,6 +63,7 @@ import {
 } from "./windows.ts";
 import {
   type ActivitySettings,
+  clearSignals,
   DEFAULT_ACTIVITY,
   sanitizeActivity,
   sanitizeProgramTitle,
@@ -78,6 +80,7 @@ import {
   sanitizeFreeform,
   sanitizeViewMode,
   setMaximized,
+  setRect,
   type ViewMode,
 } from "./freeform.ts";
 import { reduceView, type ViewAction } from "./view.ts";
@@ -106,34 +109,30 @@ export const BAR_POSITIONS: readonly BarPosition[] = [
   "left",
   "right",
 ];
-/** A collapsible section of the settings panel. */
-export type SettingsSection =
+/** A category (tab) of the Settings dialog (app/settings-panel.tsx), in sidebar order. */
+export type SettingsTab =
+  | "general"
+  | "appearance"
   | "layout"
   | "tiles"
-  | "theme"
-  | "font"
+  | "links"
+  | "sandbox"
+  | "agents"
   | "companion"
   | "voice"
-  | "sandbox"
-  | "ollama"
-  | "links"
-  | "monitor"
-  | "windows"
-  | "integration";
-/** Every settings-panel section, top to bottom. */
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  | "monitor";
+/** Every Settings tab, top to bottom. */
+export const SETTINGS_TABS: readonly SettingsTab[] = [
+  "general",
+  "appearance",
   "layout",
   "tiles",
-  "theme",
-  "font",
+  "links",
+  "sandbox",
+  "agents",
   "companion",
   "voice",
-  "sandbox",
-  "ollama",
-  "links",
   "monitor",
-  "windows",
-  "integration",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
 export const PATTERNS: readonly LayoutPattern[] = Object.keys(
@@ -201,8 +200,8 @@ export interface Settings extends FontSettings {
   focusToMain: boolean;
   /** The colour theme (see themes.ts). */
   theme: ThemeId;
-  /** The settings-panel sections the user folded away (Agent integration by default). */
-  collapsedSections: SettingsSection[];
+  /** The Settings tab selected last (the dialog opens on it). */
+  settingsTab: SettingsTab;
   /** What plain `+` (and ⌘T) opens: the default shell, the last pick, or one picker entry. */
   plusOpens: PlusOpens;
   /** The picker entry chosen last (`agent:claude`), for `plusOpens: "last"`. */
@@ -280,6 +279,17 @@ export type WorkspaceAction =
     chat?: AgentChat;
   }
   | { type: "remove"; id: string }
+  /**
+   * A tile moved here from another window (lib/workspace/tile-move.ts): its entry under its new
+   * `entry.id`, focused, in the slot of tile `before` (tiles in place) or at free-form `rect`.
+   */
+  | {
+    type: "arrive";
+    entry: TerminalEntry;
+    now: number;
+    before?: string;
+    rect?: Rect;
+  }
   /** A web tile's page changed: where it went, and its title when the engine knows it. */
   | { type: "webPage"; id: string; page: WebPage }
   /** An agent tile's session changed (its id, model, mode, a finished turn). */
@@ -341,7 +351,7 @@ export type WorkspaceAction =
   | { type: "setMonitor"; patch: Partial<MonitorSettings> }
   | { type: "setWindowClose"; windowClose: WindowClose }
   | { type: "launched"; entryId: string }
-  | { type: "toggleSection"; section: SettingsSection }
+  | { type: "setSettingsTab"; tab: SettingsTab }
   | { type: "setFont"; patch: Partial<FontSettings> }
   | { type: "stepFontSize"; dir: 1 | -1 }
   | { type: "resetFontSize" }
@@ -369,8 +379,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inactiveTiles: "resize",
   focusToMain: true,
   theme: DEFAULT_THEME_ID,
-  // Agent integration is for agents started by hand: folded until someone looks for it.
-  collapsedSections: ["integration"],
+  settingsTab: "general",
   plusOpens: "default",
   lastLaunch: null,
   companion: { ...DEFAULT_COMPANION },
@@ -407,7 +416,6 @@ function cloneSettings(s: Settings): Settings {
   return {
     ...s,
     layout: { ...s.layout },
-    collapsedSections: [...s.collapsedSections],
     companion: { ...s.companion },
     voice: { ...s.voice },
     sandbox: { ...s.sandbox },
@@ -545,10 +553,8 @@ export function sanitizeSettings(
     out.defaultView = sanitizeViewMode(r.defaultView);
   }
   if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
-  if (Array.isArray(r.collapsedSections)) {
-    out.collapsedSections = SETTINGS_SECTIONS.filter((s) =>
-      (r.collapsedSections as unknown[]).includes(s)
-    );
+  if (SETTINGS_TABS.includes(r.settingsTab as SettingsTab)) {
+    out.settingsTab = r.settingsTab as SettingsTab;
   }
   return { ...out, ...pickFont(sanitizeFont(pickFont(out), r)) };
 }
@@ -918,6 +924,32 @@ function reduceCore(
         cycle: null,
       };
     }
+    case "arrive": {
+      const id = action.entry.id;
+      if (state.terminals.some((t) => t.id === id)) return state;
+      const { minimized: _m, ...rest } = action.entry;
+      const entry: TerminalEntry = {
+        ...clearSignals(rest),
+        lastUsedAt: action.now,
+      };
+      const at = action.before === undefined
+        ? -1
+        : state.order.indexOf(action.before);
+      const order = at < 0
+        ? appendId(state.order, id)
+        : [...state.order.slice(0, at), id, ...state.order.slice(at)];
+      return {
+        ...state,
+        terminals: [...state.terminals, entry],
+        mru: touch(state.mru, id),
+        order,
+        focusedId: id,
+        cycle: null,
+        freeform: action.rect
+          ? setRect(state.freeform, id, action.rect)
+          : state.freeform,
+      };
+    }
     case "remove": {
       if (!state.terminals.some((t) => t.id === action.id)) return state;
       const mru = state.mru.filter((x) => x !== action.id);
@@ -1176,7 +1208,8 @@ function reduceCore(
       const before = state.settings.links;
       if (
         links.editor === before.editor && links.command === before.command &&
-        links.web === before.web && links.home === before.home
+        links.web === before.web && links.home === before.home &&
+        links.bookmarksBar === before.bookmarksBar
       ) {
         return state;
       }
@@ -1210,16 +1243,15 @@ function reduceCore(
         },
       };
     }
-    case "toggleSection": {
-      if (!SETTINGS_SECTIONS.includes(action.section)) return state;
-      const collapsed = state.settings.collapsedSections;
-      const collapsedSections = collapsed.includes(action.section)
-        ? collapsed.filter((s) => s !== action.section)
-        : SETTINGS_SECTIONS.filter((s) =>
-          s === action.section || collapsed.includes(s)
-        );
-      return { ...state, settings: { ...state.settings, collapsedSections } };
-    }
+    case "setSettingsTab":
+      if (
+        !SETTINGS_TABS.includes(action.tab) ||
+        action.tab === state.settings.settingsTab
+      ) return state;
+      return {
+        ...state,
+        settings: { ...state.settings, settingsTab: action.tab },
+      };
     case "setFont":
       return withFont(state, action.patch);
     case "stepFontSize":

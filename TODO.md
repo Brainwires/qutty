@@ -296,9 +296,25 @@
     is per workspace and stops when the workspace is ended (not when its window
     closes). Agent questions go to the window of their tile; the companion talks
     in the last-used window.
-  - Maybe: drag a tile from one window to another (the PTY only changes owner:
-    `createOwnedResources().attach` already allows it; the cross-window drag is
-    the work).
+  - Done: drag a tile from one window to another (desktop/tile-move.ts,
+    app/use-tile-move.ts). The PTY only changes owner (`attach`) and workspace;
+    the source snapshot loses the tile and the target holds it as a pending
+    arrival in one step, until the target page saves it. The gesture: a header
+    dragged out of its window sends its screen point (`screenX`/`screenY`,
+    calibrated against the source window's Denext frame) to the app process,
+    which hit-tests the other windows' `getBounds` front to back by focus order
+    and tells the one under it (`dragHover`, which marks the drop slot).
+    Released over no window, the tile tears off into a new window at the pointer
+    (unless it is the window's only tile). The header's right-click menu has
+    "Move to Workspace N" / "Move to New Window"; `requestTileMove`
+    (desktop/session.ts) is there for a native Window-menu item. A web tile
+    moves as its page. The last tile leaving closes its window. A moved
+    sandboxed tile keeps its first workspace's container (`onRetired`).
+    `QUTTY_PTY_SELFTEST=move` checks it in the packaged app.
+  - Maybe (needs Denext): the real z-order of the app's windows (the drop goes
+    to the most recently focused window under the pointer), and a cross-window
+    drag session (the pointer's screen position and the window under it from the
+    OS, instead of the page's pointer capture and the windows' frames).
   - Done (Denext 4.15): the Dock reopens the workspace detached last
     (`onDockReopen`), opened windows inherit the title bar, Reopen Closed Window
     is a list by title, an ended workspace's key is forgotten, the ⌘Q guard asks

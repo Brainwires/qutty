@@ -283,7 +283,10 @@ Deno.test("sanitizeLinks and editorChoice", () => {
     command: "xy",
     web: "tile",
     home: "https://www.google.com/",
+    bookmarksBar: true,
   });
+  assertEquals(sanitizeLinks({ bookmarksBar: false }).bookmarksBar, false);
+  assertEquals(sanitizeLinks({ bookmarksBar: "no" }).bookmarksBar, true);
   assertEquals(sanitizeLinks({ web: "browser" }).web, "browser");
   assertEquals(sanitizeLinks({ web: "tab" }).web, "tile");
   assertEquals(sanitizeLinks({ editor: "rm -rf", command: 3 }), DEFAULT_LINKS);

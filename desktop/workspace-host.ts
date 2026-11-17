@@ -67,6 +67,18 @@ interface Workspace {
   ptys: Set<string>;
   snapshot: unknown;
   detachedAt: number | undefined;
+  /** Tiles moved here that no page has saved yet (`addArrival`), oldest first. */
+  arrivals: { move: string; tile: unknown }[];
+  /** Tiles moved away (their ids here): a page's late save that still has one drops it. */
+  departed: Set<string>;
+}
+
+/** A tile moved into a workspace, waiting for a page to show it ({@linkcode WorkspaceRegistry.arrivals}). */
+export interface PendingArrival {
+  /** The move's id. */
+  move: string;
+  /** What the page sent of the tile (lib/workspace/session.ts `MovedTile`). */
+  tile: unknown;
 }
 
 /** How long a confirmed quit stays confirmed (the quit is issued again right after). */
@@ -90,6 +102,11 @@ export class WorkspaceRegistry {
   #confirmedAt: number | undefined;
   /** Workspaces to end, not detach, once their window closes. */
   readonly #endOnClose = new Set<string>();
+  /** The workspace each terminal started in (a moved one keeps its first workspace's sandbox). */
+  readonly #origin = new Map<string, string>();
+  /** Ended workspaces whose terminals still run in other workspaces (moved there). */
+  readonly #retiring = new Set<string>();
+  #retired = new Set<(id: string) => void>();
   readonly #now: () => number;
 
   constructor(opts: { now?: () => number } = {}) {
@@ -123,6 +140,8 @@ export class WorkspaceRegistry {
         ptys: new Set(),
         snapshot: null,
         detachedAt: undefined,
+        arrivals: [],
+        departed: new Set(),
       };
       this.#workspaces.set(id, ws);
     }
@@ -195,7 +214,7 @@ export class WorkspaceRegistry {
     if (!ws) return;
     if (ws.window !== undefined) this.#byWindow.delete(ws.window);
     ws.window = undefined;
-    if (ws.ptys.size === 0) {
+    if (ws.ptys.size === 0 && ws.arrivals.length === 0) {
       this.#workspaces.delete(id);
       return;
     }
@@ -208,6 +227,7 @@ export class WorkspaceRegistry {
     if (!ws) return;
     ws.ptys.add(ptyId);
     this.#ptyOwner.set(ptyId, id);
+    if (!this.#origin.has(ptyId)) this.#origin.set(ptyId, id);
     this.#notify();
   }
 
@@ -216,6 +236,9 @@ export class WorkspaceRegistry {
     const id = this.#ptyOwner.get(ptyId);
     this.#ptyOwner.delete(ptyId);
     this.#exited.delete(ptyId);
+    const origin = this.#origin.get(ptyId);
+    this.#origin.delete(ptyId);
+    if (origin !== undefined) this.#retireIfDone(origin);
     const ws = id === undefined ? undefined : this.#workspaces.get(id);
     if (!ws) return;
     ws.ptys.delete(ptyId);
@@ -224,6 +247,97 @@ export class WorkspaceRegistry {
       this.#workspaces.delete(ws.id);
     }
     this.#notify();
+  }
+
+  /**
+   * Terminal `ptyId` moved to workspace `to` (its tile was dragged to another window): its events
+   * follow `to`'s window from now on. The workspace it started in stays its origin (its sandbox
+   * container, {@linkcode onRetired}). Returns whether it moved (`false`: unknown terminal or
+   * workspace).
+   */
+  movePty(ptyId: string, to: string): boolean {
+    const from = this.#ptyOwner.get(ptyId);
+    const dest = this.#workspaces.get(to);
+    if (from === undefined || !dest) return false;
+    if (from === to) return true;
+    this.#workspaces.get(from)?.ptys.delete(ptyId);
+    dest.ptys.add(ptyId);
+    this.#ptyOwner.set(ptyId, to);
+    this.#notify();
+    return true;
+  }
+
+  /** A tile moved into workspace `id` (move `move`): kept until a page saves it (`ackArrivals`). */
+  addArrival(id: string, move: string, tile: unknown): boolean {
+    const ws = this.#workspaces.get(id);
+    if (!ws) return false;
+    ws.arrivals.push({ move, tile });
+    return true;
+  }
+
+  /** The tiles moved into workspace `id` that no page has saved yet, oldest first. */
+  arrivals(id: string): PendingArrival[] {
+    return [...(this.#workspaces.get(id)?.arrivals ?? [])];
+  }
+
+  /** Take workspace `id`'s pending arrivals (a page joining it takes them into its snapshot). */
+  takeArrivals(id: string): PendingArrival[] {
+    const ws = this.#workspaces.get(id);
+    if (!ws) return [];
+    const out = ws.arrivals;
+    ws.arrivals = [];
+    return out;
+  }
+
+  /** A page of workspace `id` saved these moves' tiles: they no longer wait. */
+  ackArrivals(id: string, moves: readonly string[]): void {
+    const ws = this.#workspaces.get(id);
+    if (!ws || moves.length === 0) return;
+    ws.arrivals = ws.arrivals.filter((a) => !moves.includes(a.move));
+  }
+
+  /** Tile `tileId` of workspace `id` moved to another window. */
+  departed(id: string, tileId: string): void {
+    this.#workspaces.get(id)?.departed.add(tileId);
+  }
+
+  /** The tiles that moved away from workspace `id` (their ids there). */
+  departures(id: string): string[] {
+    return [...(this.#workspaces.get(id)?.departed ?? [])];
+  }
+
+  /** Open windows that show a workspace, most recently focused first. */
+  focusOrder(): string[] {
+    return this.#focus.filter((w) => this.#byWindow.has(w));
+  }
+
+  /**
+   * Call `fn` once workspace `id` was ended and none of the terminals that started there runs
+   * anywhere else any more (a tile moved to another window keeps its first workspace's sandbox
+   * container until it goes). Returns the unsubscribe.
+   */
+  onRetired(fn: (id: string) => void): () => void {
+    this.#retired.add(fn);
+    return () => this.#retired.delete(fn);
+  }
+
+  /** The terminals that started in workspace `id` and run in another one now. */
+  #emigrants(id: string): string[] {
+    return [...this.#origin].filter(([p, o]) =>
+      o === id && this.#ptyOwner.has(p) && this.#ptyOwner.get(p) !== id
+    ).map(([p]) => p);
+  }
+
+  #retireIfDone(id: string): void {
+    if (!this.#retiring.has(id) || this.#emigrants(id).length > 0) return;
+    this.#retiring.delete(id);
+    for (const fn of [...this.#retired]) {
+      try {
+        fn(id);
+      } catch (err) {
+        console.error(`workspace ${id}: a retire listener failed`, err);
+      }
+    }
   }
 
   /** Terminal `ptyId`'s shell exited (its tile keeps it until closed): it no longer runs. */
@@ -287,6 +401,9 @@ export class WorkspaceRegistry {
         console.error(`workspace ${id}: an end listener failed`, err);
       }
     }
+    // Its sandbox goes once no terminal that started here runs elsewhere (moved to another window).
+    this.#retiring.add(id);
+    this.#retireIfDone(id);
     this.#notify();
     return ptys;
   }
@@ -409,6 +526,8 @@ export class WorkspaceRegistry {
     this.#exited.clear();
     this.#focus = [];
     this.#endOnClose.clear();
+    this.#origin.clear();
+    this.#retiring.clear();
     this.#confirmedAt = undefined;
   }
 }
@@ -447,7 +566,9 @@ type HubEventName =
  *   waits in the hub (the page reads it from the snapshot when the workspace is shown again). The
  *   companion's own questions go to the active window.
  * - The companion's `say`, `companion` and `control` go to the active window (the companion
- *   follows the user), or every window when none joined a workspace yet.
+ *   follows the user), or every window when none joined a workspace yet. A `control` for a web
+ *   tile (its command names the tile's workspace, `owner`) goes to the window showing that
+ *   workspace, and nowhere while none does.
  */
 export function hubEventTarget(
   registry: WorkspaceRegistry,
@@ -456,6 +577,14 @@ export function hubEventTarget(
 ): { window?: string } | null {
   if (event === "tiles" || event === "askClosed" || event === "agent") {
     return {};
+  }
+  if (event === "control") {
+    const owner = (data as { command?: { owner?: unknown } } | null)?.command
+      ?.owner;
+    if (typeof owner === "string") {
+      const window = registry.windowOf(owner);
+      return window === undefined ? null : { window };
+    }
   }
   if (event === "ask") {
     const from = (data as { from?: unknown } | null)?.from;

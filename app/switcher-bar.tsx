@@ -8,7 +8,8 @@
 // The layout menu (the pattern button) starts with the View choice, Tiled or Free-form, and the
 // free-form arrange commands, and ends with the Tiles list (app/view-menu.tsx, from the menu model
 // lib/workspace/mdi-menu.ts); the tiled view's patterns sit between them. In the free-form view the
-// button reads Free-form.
+// button reads Free-form. With the native menus on (desktop app), the Tiles list is the Window
+// menu's and leaves this menu; the View choice and the patterns, with their previews, stay.
 
 import {
   type ReactNode,
@@ -62,6 +63,8 @@ export interface SwitcherBarProps {
     | "ollama"
     | "onWebPage"
     | "onAgentChat"
+    | "onBookmarks"
+    | "onHistory"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -76,6 +79,8 @@ export interface SwitcherBarProps {
   onPattern(pattern: LayoutPattern): void;
   /** An item of the View menu's model (the view, an arrange command, a tile of the list). */
   onMenuItem(id: string): void;
+  /** The native menus are on: the Window menu lists the tiles, so this menu does not. */
+  nativeMenus?: boolean;
   onToggleSettings(): void;
   /** The system meter's figures (Settings → System monitor); absent: no meter. */
   stats?: Smoothed;
@@ -354,6 +359,22 @@ export function SwitcherBar(props: SwitcherBarProps) {
               },
             }
             : {})}
+          {...(props.launch.onBookmarks
+            ? {
+              onBookmarks: () => {
+                setMenu("none");
+                props.launch.onBookmarks?.();
+              },
+            }
+            : {})}
+          {...(props.launch.onHistory
+            ? {
+              onHistory: () => {
+                setMenu("none");
+                props.launch.onHistory?.();
+              },
+            }
+            : {})}
           {...(props.launch.ollama
             ? {
               ollama: {
@@ -625,11 +646,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
                   <span class="menu-label">{PATTERN_INFO[p].label}</span>
                 </button>
               ))}
-              <TilesMenuSection
-                view={view}
-                tiles={menuTiles}
-                onPick={pickItem}
-              />
+              {!props.nativeMenus && (
+                <TilesMenuSection
+                  view={view}
+                  tiles={menuTiles}
+                  onPick={pickItem}
+                />
+              )}
             </div>
           )}
         </div>

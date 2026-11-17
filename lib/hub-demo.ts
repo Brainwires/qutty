@@ -16,7 +16,10 @@
 //   `--wait` is printed).
 //
 // The companion's chat box talks to that same fake brain; its privileged actions go to the
-// audit list in Settings like the desktop app's. The API key brain's key is kept in memory
+// audit list in Settings like the desktop app's. The page's web tiles are hub tiles here too
+// (`web-<n>`, lib/hub/web-tiles.ts), and the companion's web tools (lib/hub/web-tools.ts) run
+// against them through the page, as in the app: `companion.tool(name, args)` calls one as the
+// companion (the e2e suite's `window.__e2eCompanionTool`). The API key brain's key is kept in memory
 // (the desktop app keeps it in the OS keychain), set, cleared and asked about, never read back.
 //
 // Settings → Agent integration runs the real installer (lib/hub/integration.ts) over an in-memory
@@ -49,7 +52,19 @@ import type {
 import { Registry } from "./hub/registry.ts";
 import { Mailboxes } from "./hub/mailbox.ts";
 import { COMPANION } from "./hub/protocol.ts";
-import type { ControlCommand, ControlResult } from "./hub/core.ts";
+import {
+  type ControlCommand,
+  type ControlResult,
+  DEFAULT_WEB_OWNER,
+  HubError,
+} from "./hub/core.ts";
+import { type WebTileReport, WebTiles } from "./hub/web-tiles.ts";
+import {
+  contentText,
+  ToolContent,
+  WEB_TOOLS,
+  webToolHost,
+} from "./hub/web-tools.ts";
 import { CompanionRuntime } from "./companion/runtime.ts";
 import { DemoBrain } from "./companion/demo-brain.ts";
 import { AuditLog } from "./companion/audit.ts";
@@ -152,12 +167,16 @@ export function createDemoHub(
   );
   const controls = new Map<string, (r: ControlResult) => void>();
   let nextControl = 0;
-  const control = (command: ControlCommand): Promise<ControlResult> => {
+  /** A command for the page, answered by its `controlDone`. */
+  const ask = (command: ControlCommand): Promise<ControlResult> => {
     const requestId = `demo-ctl-${++nextControl}`;
     return new Promise<ControlResult>((resolve) => {
       controls.set(requestId, resolve);
       emit.control({ requestId, command });
-    }).then((result) => {
+    });
+  };
+  const control = (command: ControlCommand): Promise<ControlResult> =>
+    ask(command).then((result) => {
       audit.record({
         tool: `${command.kind}_tile`,
         by: COMPANION,
@@ -167,6 +186,54 @@ export function createDemoHub(
       });
       return result;
     });
+  // The page's web tiles, and the companion's web tools over them (each call audited).
+  const webTiles = new WebTiles(registry);
+  const web = webToolHost({
+    tiles: webTiles,
+    tile: (target) => {
+      const t = registry.resolve(target);
+      if (!t) {
+        throw new HubError(
+          `no tile is called "${target}" (list_peers shows the names)`,
+        );
+      }
+      return t;
+    },
+    control: ask,
+  });
+  const tool = async (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ text: string; isError: boolean }> => {
+    const spec = WEB_TOOLS.find((t) => t.name === name);
+    let out: { text: string; isError: boolean };
+    if (!spec) out = { text: `unknown tool: ${name}`, isError: true };
+    else {
+      try {
+        const v = await spec.run(args, web);
+        out = {
+          text: v instanceof ToolContent
+            ? contentText(v.content)
+            : typeof v === "string"
+            ? v
+            : JSON.stringify(v, null, 2),
+          isError: false,
+        };
+      } catch (e) {
+        if (!(e instanceof HubError)) throw e;
+        out = { text: e.message, isError: true };
+      }
+    }
+    if (name !== "read_page") {
+      audit.record({
+        tool: name,
+        by: COMPANION,
+        args,
+        ok: !out.isError,
+        ...(out.isError ? { error: out.text } : {}),
+      });
+    }
+    return out;
   };
   const runtime = new CompanionRuntime({
     mailbox: companionBox,
@@ -242,6 +309,11 @@ export function createDemoHub(
     },
     setLabel(id: string, label: string): Promise<void> {
       registry.setMeta(id, { label });
+      return Promise.resolve();
+    },
+    /** The page's web tiles (all of them). */
+    setWebTiles(tiles: WebTileReport[]): Promise<void> {
+      webTiles.sync(DEFAULT_WEB_OWNER, tiles);
       return Promise.resolve();
     },
     integrationStatus: (): Promise<IntegrationStatus[]> => status(),
@@ -354,6 +426,8 @@ export function createDemoHub(
     },
     /** The companion's page half (the `hub` extension's companion methods). */
     companion: {
+      /** Call web tool `name` as the companion (what its brain would call over MCP). */
+      tool,
       keyStatus: () => keys.presence(),
       keySet: (key: string) => keys.set("anthropic", key),
       keyClear: () => keys.clear("anthropic"),

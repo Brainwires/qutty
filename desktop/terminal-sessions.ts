@@ -197,6 +197,18 @@ export class TerminalSessions {
     return out;
   }
 
+  /**
+   * Hand terminal `id` to window `windowId` (its tile moved there, desktop/tile-move.ts): its events
+   * go there from now on, and it is returned with its replay and size. `undefined`: it is not
+   * registered (released already).
+   */
+  handOver(id: string, windowId: string): PtyReplay | undefined {
+    if (this.#owned.get(id) === undefined) return undefined;
+    const { replay } = this.#owned.attach(id, windowId);
+    const size = this.#sizes.get(id) ?? { cols: 80, rows: 24 };
+    return { id, ...size, ...foldReplay(replay) };
+  }
+
   /** The window that owns terminal `id` now (`undefined` when detached or unknown). */
   ownerOf(id: string): string | undefined {
     return this.#owned.owner(id);

@@ -1,5 +1,5 @@
-// Colour themes (live switching of the chrome and every xterm, persistence) and the settings
-// panel's collapsible sections.
+// Colour themes (live switching of the chrome and every xterm, persistence) and where Settings
+// keeps them (Appearance, with the font; the shortcut list under General).
 
 import { assert, assertEquals } from "@std/assert";
 import { SETTINGS_STORAGE_KEY } from "../../lib/workspace/store.ts";
@@ -42,7 +42,7 @@ function rgb(hex: string): string {
 }
 
 async function setTheme(app: App, id: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("appearance");
   await app.click(`[data-testid=setting-theme][data-value="${id}"]`);
   await waitFor(
     async () => (await docTheme(app)).id === id,
@@ -73,54 +73,12 @@ async function assertTheme(app: App, id: string): Promise<void> {
   );
 }
 
-const section = (app: App, id: string) =>
-  app.eval((s: string) => {
-    const sec = document.querySelector<HTMLElement>(
-      `.settings-section[data-section="${s}"]`,
-    )!;
-    const toggle = sec.querySelector<HTMLElement>(
-      "[data-testid=section-toggle]",
-    )!;
-    const body = sec.querySelector<HTMLElement>("[data-testid=section-body]")!;
-    return {
-      open: sec.dataset.open === "true",
-      expanded: toggle.getAttribute("aria-expanded"),
-      controls: toggle.getAttribute("aria-controls") === body.id,
-      height: body.getBoundingClientRect().height,
-      visibility: getComputedStyle(body).visibility,
-    };
-  }, id);
-
-async function toggleSection(app: App, id: string): Promise<void> {
-  const before = (await section(app, id)).open;
-  await app.click(`[data-testid=section-toggle][data-section="${id}"]`);
-  await waitFor(
-    async () => (await section(app, id)).open !== before,
-    2000,
-    `section ${id} toggled`,
-  );
-}
-
-/** Wait for a section's expand/collapse transition to finish. */
-function waitSection(app: App, id: string, open: boolean) {
-  return waitFor(
-    async () => {
-      const s = await section(app, id);
-      return open
-        ? s.visibility === "visible" && s.height > 20
-        : s.visibility === "hidden" && s.height < 1;
-    },
-    2000,
-    `section ${id} ${open ? "expanded" : "collapsed"}`,
-  );
-}
-
 suite("theme", (test) => {
   // ---- Themes ---------------------------------------------------------------------------------
 
   test("theme: Sea Glass by default, with six tiles in a dark and a light group", async (app) => {
     await assertTheme(app, "sea-glass");
-    await app.openSettings();
+    await app.openSettings("appearance");
     const groups = await app.eval(() =>
       [...document.querySelectorAll<HTMLElement>(".theme-group")].map((g) => ({
         scheme: g.dataset.scheme,
@@ -172,7 +130,7 @@ suite("theme", (test) => {
   });
 
   test("theme: tiles are keyboard operable", async (app) => {
-    await app.openSettings();
+    await app.openSettings("appearance");
     await app.eval(() =>
       document.querySelector<HTMLElement>(
         '[data-testid=setting-theme][data-value="cloud"]',
@@ -220,89 +178,33 @@ suite("theme", (test) => {
     assertEquals(THEME_IDS.includes((await app.settings()).theme), true);
   });
 
-  // ---- Sections -------------------------------------------------------------------------------
+  // ---- Where they are in Settings --------------------------------------------------------
 
-  test("sections: all expanded by default, wired with aria-expanded / aria-controls", async (app) => {
-    await app.openSettings();
-    for (const id of ["layout", "theme", "font"]) {
-      const s = await section(app, id);
-      assertEquals(s.open, true, id);
-      assertEquals(s.expanded, "true", id);
-      assert(s.controls, `${id} toggle controls its body`);
-      assertEquals(s.visibility, "visible", id);
-    }
-    // The shortcut list stays outside the sections.
+  test("settings: the theme and the font are in Appearance, the shortcut list in General", async (app) => {
+    await app.openSettings("appearance");
+    const groups = await app.eval(() =>
+      [
+        ...document.querySelectorAll(
+          '[data-testid=settings-category][data-tab="appearance"] .settings-group-title',
+        ),
+      ].map((h) => h.textContent)
+    );
+    assertEquals(groups, ["Theme", "Font", "Inactive tiles"]);
     assert(
-      await app.eval(() =>
-        !!document.querySelector("[data-testid=settings-panel] > .shortcuts")
+      await app.exists(
+        "[data-testid=theme-section] [data-testid=setting-theme]",
       ),
     );
-  });
-
-  test("sections: collapse and expand, hiding the controls from focus", async (app) => {
-    await app.openSettings();
-    await toggleSection(app, "layout");
-    await waitSection(app, "layout", false);
-    assertEquals((await section(app, "layout")).expanded, "false");
-    // A hidden control cannot take focus.
-    const focused = await app.eval(() => {
-      const el = document.querySelector<HTMLElement>(
-        "[data-testid=setting-gap]",
-      )!;
-      el.focus();
-      return document.activeElement === el;
-    });
-    assertEquals(focused, false, "a folded slider is not focusable");
-    // The others are untouched.
-    assertEquals((await section(app, "theme")).open, true);
-    assertEquals((await section(app, "font")).open, true);
-    await toggleSection(app, "layout");
-    await waitSection(app, "layout", true);
-    await app.setSlider("gap", 14);
-  });
-
-  test("sections: the toggle works from the keyboard and Escape still closes the panel", async (app) => {
-    await app.openSettings();
-    await app.eval(() =>
-      document.querySelector<HTMLElement>(
-        '[data-testid=section-toggle][data-section="theme"]',
-      )!.focus()
+    assert(
+      await app.exists("[data-testid=font-section] [data-testid=font-list]"),
     );
-    await app.press("Enter");
-    await waitSection(app, "theme", false);
-    await app.press("Space");
-    await waitSection(app, "theme", true);
-    await app.press("Escape");
-    await waitFor(
-      async () => !(await app.exists("[data-testid=settings-panel]")),
-      2000,
-      "closed by Escape",
+    await app.settingsTab("general");
+    assert(
+      await app.eval(() =>
+        !!document.querySelector(
+          '[data-testid=settings-category][data-tab="general"] [data-testid=shortcuts-section] .shortcuts',
+        )
+      ),
     );
-  });
-
-  test("sections: the folded state is remembered across closing and reloading", async (app) => {
-    await app.openSettings();
-    await toggleSection(app, "font");
-    await toggleSection(app, "layout");
-    await waitSection(app, "font", false);
-    await app.closeSettings();
-    await app.openSettings();
-    assertEquals((await section(app, "font")).open, false);
-    assertEquals((await section(app, "layout")).open, false);
-    assertEquals((await section(app, "theme")).open, true);
-    await waitFor(
-      async () =>
-        (await app.settings()).collapsedSections.join() ===
-          "layout,font,integration",
-      2000,
-      "persisted",
-    );
-    await app.reload();
-    await app.openSettings();
-    await waitSection(app, "font", false);
-    assertEquals((await section(app, "layout")).open, false);
-    assertEquals((await section(app, "theme")).open, true);
-    await toggleSection(app, "font");
-    await waitSection(app, "font", true);
   });
 });
