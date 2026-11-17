@@ -3,14 +3,17 @@
 // the + menu (its folder question), a prompt and its streamed rows (text, a run of reads, an edit
 // that asks for permission, a command, markdown), Allow / Deny / Allow always, expanding a tool
 // row (the diff), interrupting, queueing while it works, the Agents panel's groups (Needs you,
-// Working, To review), the model picker, renaming, and the tile coming back on its session when
-// the window does.
+// Working, To review), the model picker, renaming, the tile coming back on its session when
+// the window does, the prompt box (its size, ↑/↓ history, the history menu, saved prompts), the
+// side rail (top, latest, maximize, read aloud), and a reply's link following Settings → Links.
 //
 // E2E_SCREENSHOTS=<dir> saves a picture of a finished turn there.
 
 import { assert, assertEquals } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
+import { linkCalls } from "./link_helpers.ts";
+import { withPages } from "./web_helpers.ts";
 
 /** Open "Claude Code (chat)" from the + menu in `cwd`; the new tile's id, once focused. */
 async function openAgent(app: App, cwd = "~/project"): Promise<string> {
@@ -413,5 +416,227 @@ suite("agent tile", (test) => {
       "the agent tile gone",
     );
     assert(!(await app.exists("[data-testid=bar-agents]")));
+  });
+
+  test("the prompt box: two lines, ↑/↓ history, the history menu, saved prompts", async (app) => {
+    const id = await openAgent(app);
+    const input = `${tileSel(id)} [data-testid=agent-input]`;
+    // Two lines tall before anything is typed.
+    const tall = await app.eval((s: string) => {
+      const el = document.querySelector<HTMLTextAreaElement>(s)!;
+      const lh = parseFloat(getComputedStyle(el).lineHeight);
+      return el.clientHeight >= lh * 1.9;
+    }, input);
+    assert(tall, "the box is two lines tall");
+    // The iframe engine cannot picture a page: no screenshot button.
+    assert(
+      !(await app.exists(`${tileSel(id)} [data-testid=agent-screenshot]`)),
+    );
+    await prompt(app, id, "hello first");
+    assertEquals(await waitForFooter(app, id), "done");
+    await prompt(app, id, "hello second");
+    assertEquals(await waitForFooter(app, id, 2), "done");
+    const value = () =>
+      app.eval(
+        (s: string) => document.querySelector<HTMLTextAreaElement>(s)!.value,
+        input,
+      );
+    // ↑ walks back, ↓ forward to the draft.
+    await app.press("ArrowUp");
+    assertEquals(await value(), "hello second");
+    await app.press("ArrowUp");
+    assertEquals(await value(), "hello first");
+    await app.press("ArrowUp");
+    assertEquals(await value(), "hello first", "the oldest stays");
+    await app.press("ArrowDown");
+    assertEquals(await value(), "hello second");
+    await app.press("ArrowDown");
+    assertEquals(await value(), "");
+    // A typed draft comes back after a walk.
+    await app.page.keyboard.type("my draft");
+    await app.press("ArrowUp");
+    assertEquals(await value(), "hello second");
+    await app.press("ArrowDown");
+    assertEquals(await value(), "my draft");
+    // Shift+Enter is a new line; ↑ at the end of two lines moves the caret, not the history.
+    await app.page.keyboard.down("Shift");
+    await app.press("Enter");
+    await app.page.keyboard.up("Shift");
+    await app.page.keyboard.type("line two");
+    await app.press("ArrowUp");
+    assertEquals(await value(), "my draft\nline two");
+    // The history menu: newest first; a click puts it in the box.
+    await app.click(`${tileSel(id)} [data-testid=agent-history]`);
+    const items = await app.eval(
+      (s: string) =>
+        [...document.querySelectorAll(`${s} [data-testid=agent-history-item]`)]
+          .map((e) => e.textContent),
+      tileSel(id),
+    );
+    assertEquals(items.slice(0, 2), ["hello second", "hello first"]);
+    await app.click(`${tileSel(id)} [data-testid=agent-history-item]`);
+    assertEquals(await value(), "hello second");
+    assert(
+      !(await app.exists(`${tileSel(id)} [data-testid=agent-history-menu]`)),
+    );
+    // Saved prompts: save the current one, insert it at the caret, remove it.
+    await app.click(`${tileSel(id)} [data-testid=agent-saved]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-saved-add]`);
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=agent-saved-item]`),
+      2000,
+      "the saved prompt",
+    );
+    assertEquals(
+      await app.eval(() => localStorage.getItem("qutty.agentPrompts.saved.v1")),
+      '["hello second"]',
+    );
+    // Escape closes the menu (and does not reach the tile).
+    await app.press("Escape");
+    assert(
+      !(await app.exists(`${tileSel(id)} [data-testid=agent-saved-menu]`)),
+    );
+    await app.eval((s: string) => {
+      const el = document.querySelector<HTMLTextAreaElement>(s)!;
+      el.focus();
+      el.setSelectionRange(0, el.value.length);
+    }, input);
+    await app.press("Backspace");
+    await app.page.keyboard.type("please: ");
+    await app.click(`${tileSel(id)} [data-testid=agent-saved]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-saved-item]`);
+    assertEquals(await value(), "please: hello second");
+    assert(
+      await app.eval(
+        (s: string) => document.activeElement === document.querySelector(s),
+        input,
+      ),
+      "the box keeps the keyboard",
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-saved]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-saved-remove]`);
+    assert(
+      !(await app.exists(`${tileSel(id)} [data-testid=agent-saved-item]`)),
+    );
+    assertEquals(
+      await app.eval(() => localStorage.getItem("qutty.agentPrompts.saved.v1")),
+      "[]",
+    );
+  });
+
+  test("the side rail: top, latest, maximize / restore, read the last reply aloud", async (app) => {
+    const id = await openAgent(app);
+    await prompt(app, id, "change the greeting");
+    await waitForQuestion(app, id);
+    await app.click(`${tileSel(id)} [data-testid=agent-allow]`);
+    assertEquals(await waitForFooter(app, id), "done");
+    const scroll = () =>
+      app.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s)!;
+        return {
+          top: el.scrollTop,
+          atEnd: el.scrollHeight - el.scrollTop - el.clientHeight < 2,
+        };
+      }, `${tileSel(id)} [data-testid=agent-scroll]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-top]`);
+    assertEquals((await scroll()).top, 0);
+    await app.click(`${tileSel(id)} [data-testid=agent-latest]`);
+    assert((await scroll()).atEnd, "at the latest");
+    // Maximize is the tile's own: its header's button reads Restore.
+    await app.click(`${tileSel(id)} [data-testid=agent-maximize]`);
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=tile-restore]`),
+      3000,
+      "maximized",
+    );
+    assertEquals(
+      await app.attr(
+        `${tileSel(id)} [data-testid=agent-maximize]`,
+        "aria-pressed",
+      ),
+      "true",
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-maximize]`);
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=tile-maximize]`),
+      3000,
+      "restored",
+    );
+    // Read aloud: the last reply, as speech (no markdown marks); again stops it.
+    const voice = () =>
+      app.eval(() =>
+        (globalThis as unknown as {
+          __e2eVoice: { spoken: string[]; stops: number };
+        }).__e2eVoice
+      );
+    const stopsBefore = (await voice()).stops;
+    await app.click(`${tileSel(id)} [data-testid=agent-speak]`);
+    const said = await waitFor(
+      async () => (await voice()).spoken.at(-1) ?? null,
+      3000,
+      "the reply spoken",
+    );
+    assert(said.startsWith("What changed I updated notes.md"), said);
+    await waitFor(
+      async () =>
+        (await app.attr(
+          `${tileSel(id)} [data-testid=agent-speak]`,
+          "aria-pressed",
+        )) === "true",
+      3000,
+      "speaking",
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-speak]`);
+    await waitFor(
+      async () => (await voice()).stops > stopsBefore,
+      3000,
+      "stopped",
+    );
+  });
+
+  test("a link in a reply opens as Settings → Links says (a web tile, or the browser)", async (app) => {
+    await withPages(async (pages) => {
+      const id = await openAgent(app);
+      const url = `${pages.origin}/a`;
+      await prompt(app, id, `link ${url}`);
+      assertEquals(await waitForFooter(app, id), "done");
+      const link = `${tileSel(id)} .agent-text .md-link`;
+      // "A Qutty tile" (the default), and the iframe can show a local page: a web tile.
+      const before = (await app.tiles()).map((t) => t.id);
+      await app.click(link);
+      await waitFor(
+        async () =>
+          (await app.tiles()).some((t) => !before.includes(t.id)) || null,
+        3000,
+        "a web tile",
+      );
+      assertEquals(await linkCalls(app), [], "nothing went to the browser");
+      // "Default browser": the browser.
+      await app.openSettings("links");
+      await app.eval(() => {
+        const el = document.querySelector<HTMLSelectElement>(
+          "[data-testid=setting-links-web]",
+        )!;
+        el.value = "browser";
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await waitFor(
+        async () => (await app.settings()).links?.web === "browser",
+        2000,
+        "the setting saved",
+      );
+      await app.closeSettings();
+      const count = (await app.tiles()).length;
+      await app.focusChip(id);
+      await app.click(link);
+      await waitFor(
+        async () => (await linkCalls(app)).length === 1,
+        3000,
+        "the browser",
+      );
+      assertEquals(await linkCalls(app), [{ kind: "url", url }]);
+      assertEquals((await app.tiles()).length, count, "no new web tile");
+    });
   });
 });

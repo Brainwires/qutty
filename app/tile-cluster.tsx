@@ -534,7 +534,16 @@ function TerminalTile(props: TerminalTileProps) {
             </>
           )
           : agent
-          ? <AgentBody entry={entry} hooks={agent} focused={focused} />
+          ? (
+            <AgentBody
+              entry={entry}
+              hooks={agent}
+              focused={focused}
+              maximized={props.maximized}
+              onMaximize={() => props.onMaximize(id)}
+              onRestore={() => props.onRestore(id)}
+            />
+          )
           : (
             <div
               class="tile-body"

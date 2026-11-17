@@ -231,6 +231,11 @@ export function useLinks(opts: UseLinksOptions) {
   return {
     menu,
     onLink,
+    /**
+     * Open a clicked web link as a ⌘-clicked one does: a web tile when Settings → Links says so
+     * and the engine can show it, else the default browser (an agent tile's transcript links).
+     */
+    openLink,
     /** Open `url` in the default browser (a web tile's "Open in default browser"). */
     openInBrowser: openUrl,
     closeMenu() {
