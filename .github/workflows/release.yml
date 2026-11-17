@@ -29,19 +29,41 @@ env:
   DENO_VERSION: 2.9.8
 
 jobs:
+  # Each job's runner: our self-hosted pool while it has a free slot, else the GitHub image at
+  # once (fork pull requests: GitHub only). Each fallback after `||` is that job's GitHub image,
+  # so a failed pick still runs everything. Signing and notarization work on GitHub's macOS
+  # images too (the job builds its own keychain; v0.1.0 was signed there).
+  runners:
+    name: pick runners
+    runs-on: ubuntu-latest # GitHub's image: the pick must not wait in the queue it shortens
+    timeout-minutes: 5
+    permissions:
+      actions: read # the repository's queued / running jobs
+    outputs:
+      plan: ${{ steps.pick.outputs.plan }}
+    steps:
+      - id: pick
+        uses: Brainwires/.github/actions/pick-runners@b9684b2d976ff61b754793f7f934f7e853205862 # pick-runners
+        with:
+          # Only the jobs this run has: the macOS builds and the release on a tag.
+          jobs: >-
+            ${{ github.event_name == 'push'
+            && 'build_arm64=macos-arm64@macos-15 build_x86_64=macos-x64@macos-15-intel linux_x86_64=linux-x64@ubuntu-24.04 release=linux-x64@ubuntu-latest'
+            || 'linux_x86_64=linux-x64@ubuntu-24.04' }}
+          vars: ${{ toJSON(vars) }}
+
   build:
     name: Build ${{ matrix.arch }}
+    needs: runners
     # Tags only: signing and notarization need the release secrets.
-    if: github.event_name == 'push'
+    if: ${{ !cancelled() && github.event_name == 'push' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_ARM && fromJSON(vars.RUNNER_MACOS_ARM) || 'macos-15' }}
-            arch: arm64
-          - runner: ${{ github.event_name != 'pull_request' && vars.RUNNER_MACOS_X64 && fromJSON(vars.RUNNER_MACOS_X64) || 'macos-15-intel' }}
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+          - { arch: arm64, pick: build_arm64, os: macos-15 }
+          - { arch: x86_64, pick: build_x86_64, os: macos-15-intel }
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}')[matrix.pick] || matrix.os }}
     # Tests, build, signing and notarization; a hang fails here, not at GitHub's 6 h limit.
     timeout-minutes: 60
     steps:
@@ -141,24 +163,26 @@ jobs:
 
   linux:
     name: Build Linux ${{ matrix.arch }}
+    needs: runners
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
-        # x86_64 on the self-hosted RUNNER_LINUX_X64 pool (GitHub's ubuntu-24.04 for a fork's pull
-        # request); arm64 natively on GitHub's Arm image, as there is no self-hosted Linux arm64 pool.
+        # x86_64 picked (our linux-x64 pool, else ubuntu-24.04); arm64 natively on GitHub's Arm
+        # image (no `pick`, so the plan has no entry for it).
         include:
-          - runner: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-24.04"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-24.04'))) }}
+          - pick: linux_x86_64
+            os: ubuntu-24.04
             arch: x86_64
             label: x64
             tool: x86_64
             appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-          # runners-first: there is no self-hosted Linux arm64 pool
-          - runner: ubuntu-24.04-arm
+          - os: ubuntu-24.04-arm
             arch: arm64
             label: arm64
             tool: aarch64
             appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.pick && fromJSON(needs.runners.outputs.plan || '{}')[matrix.pick] || matrix.os }}
     # Tests, the packages and their self-tests; a hang fails here, not at 6 h.
     timeout-minutes: 45
     steps:
@@ -303,11 +327,10 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: [build, linux]
+    needs: [runners, build, linux]
     # Tags only, once both macOS apps are built; Linux is best-effort (see the top).
     if: always() && github.event_name == 'push' && needs.build.result == 'success'
-    # The self-hosted Linux runner RUNNER_LINUX_X64 names, else ubuntu-latest.
-    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').release || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: write
