@@ -110,7 +110,7 @@ async function borderIs(app: App, id: string, name: string): Promise<void> {
 
 /** Pick Settings → Tiles → Tile title. */
 async function setTileTitle(app: App, value: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("tiles");
   await app.choose("[data-testid=setting-tile-title]", value);
   await waitFor(
     async () => (await app.settings()).tileTitle === value,
@@ -122,7 +122,7 @@ async function setTileTitle(app: App, value: string): Promise<void> {
 
 /** Pick an option in Settings → Tiles. */
 async function setIndicators(app: App, mode: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("tiles");
   await app.click(
     `[data-testid=setting-activity-indicators][data-value="${mode}"]`,
   );

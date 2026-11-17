@@ -9,8 +9,8 @@ import {
   reduce,
   sanitizeSettings,
   saveSettings,
-  SETTINGS_SECTIONS,
   SETTINGS_STORAGE_KEY,
+  SETTINGS_TABS,
   type WorkspaceAction,
   type WorkspaceState,
 } from "../lib/workspace/store.ts";
@@ -240,10 +240,10 @@ Deno.test("settings sanitise untrusted input and round-trip through storage", ()
   assertEquals(s.settings.layout.pattern, "cascade");
 });
 
-Deno.test("settings: the theme and folded sections sanitise, reduce and persist", () => {
+Deno.test("settings: the theme and the Settings tab sanitise, reduce and persist", () => {
   assertEquals(DEFAULT_SETTINGS.theme, "sea-glass");
-  // Agent integration starts folded; the rest open.
-  assertEquals(DEFAULT_SETTINGS.collapsedSections, ["integration"]);
+  // Settings opens on General until another tab is picked.
+  assertEquals(DEFAULT_SETTINGS.settingsTab, "general");
   assertEquals(sanitizeSettings({ theme: "plum" }).theme, "plum");
   for (const junk of ["solarized", "", 7, null, { id: "plum" }]) {
     assertEquals(sanitizeSettings({ theme: junk }).theme, "sea-glass");
@@ -253,29 +253,33 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     sanitizeSettings({}, { ...DEFAULT_SETTINGS, theme: "cloud" }).theme,
     "cloud",
   );
+  assertEquals(sanitizeSettings({ settingsTab: "voice" }).settingsTab, "voice");
+  // Junk keeps the base's; the old folded-sections key is dropped.
+  for (const junk of ["bogus", 3, null, ["layout"]]) {
+    assertEquals(
+      sanitizeSettings({ settingsTab: junk }, {
+        ...DEFAULT_SETTINGS,
+        settingsTab: "links",
+      }).settingsTab,
+      "links",
+    );
+  }
   assertEquals(
-    sanitizeSettings({ collapsedSections: ["font", "bogus", 3, "layout"] })
-      .collapsedSections,
-    ["layout", "font"],
+    "collapsedSections" in
+      sanitizeSettings({ collapsedSections: ["layout"] }),
+    false,
   );
-  // Junk keeps the base's.
-  assertEquals(
-    sanitizeSettings({ collapsedSections: "layout" }).collapsedSections,
-    ["integration"],
-  );
-  assertEquals(SETTINGS_SECTIONS, [
+  assertEquals(SETTINGS_TABS, [
+    "general",
+    "appearance",
     "layout",
     "tiles",
-    "theme",
-    "font",
+    "links",
+    "sandbox",
+    "agents",
     "companion",
     "voice",
-    "sandbox",
-    "ollama",
-    "links",
     "monitor",
-    "windows",
-    "integration",
   ]);
 
   let s = initialState();
@@ -286,15 +290,14 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     reduce(s, { type: "setTheme", theme: "nope" as never }).settings.theme,
     "sea-glass",
   );
-  s = reduce(s, { type: "toggleSection", section: "integration" });
-  assertEquals(s.settings.collapsedSections, [], "integration unfolds");
-  s = reduce(s, { type: "toggleSection", section: "font" });
-  s = reduce(s, { type: "toggleSection", section: "layout" });
-  assertEquals(s.settings.collapsedSections, ["layout", "font"]);
-  s = reduce(s, { type: "toggleSection", section: "font" });
-  assertEquals(s.settings.collapsedSections, ["layout"]);
+  s = reduce(s, { type: "setSettingsTab", tab: "companion" });
+  assertEquals(s.settings.settingsTab, "companion");
   assertStrictEquals(
-    reduce(s, { type: "toggleSection", section: "nope" as never }),
+    reduce(s, { type: "setSettingsTab", tab: "companion" }),
+    s,
+  );
+  assertStrictEquals(
+    reduce(s, { type: "setSettingsTab", tab: "nope" as never }),
     s,
   );
 
@@ -305,7 +308,7 @@ Deno.test("settings: the theme and folded sections sanitise, reduce and persist"
     settings: loadSettings(storage)!,
   });
   assertEquals(back.settings.theme, "sakura");
-  assertEquals(back.settings.collapsedSections, ["layout"]);
+  assertEquals(back.settings.settingsTab, "companion");
   // A stored theme that no longer exists.
   mem.set(SETTINGS_STORAGE_KEY, JSON.stringify({ theme: "retired" }));
   assertEquals(

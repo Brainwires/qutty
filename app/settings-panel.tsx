@@ -1,12 +1,25 @@
-// The settings popover, in collapsible sections: Layout (the view, tiled or free-form, for this
-// workspace and for new ones; pattern grid with live previews, the sliders the engine
-// understands, the bar's edge and order), Tiles (activity indicators and the
-// tile title: app/tile-settings.tsx), Theme (preview tiles, dark and
-// light), Fonts (the terminal font), Companion (app/companion/companion-settings.tsx), Agent
-// integration (app/agent-integration.tsx; folded by default); the shortcut list stays visible below them. Every change goes straight to the store,
-// so the cluster animates while the slider moves.
+// The Settings dialog: a modal (app/modal.tsx) centred over the window, a sidebar of categories
+// (a vertical tablist, ↑/↓ between them) under a search field, and the selected category's
+// groups on the right, scrolling on their own. Every category stays mounted (hidden when not
+// selected), so a section's state and its live status survive switching tabs.
+//
+// Searching shows every category at once, each under its name, and hides the groups and rows
+// (`.field`) whose label, hint or choices do not match (the filter runs over the DOM, again
+// whenever the content changes: `useSearchFilter`). Clearing the field returns to the tab.
+//
+// The tab picked last is remembered (`settings.settingsTab`). A deep link (`target`, a control's
+// `data-testid`; or a `SettingsLink` inside the dialog: app/settings-ui.tsx) opens its tab and
+// scrolls to that row, which flashes. Every change goes straight to the store, so the cluster
+// animates while a slider moves.
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "denext";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "denext";
 import { type LayoutOptions, PATTERN_INFO } from "../lib/layout/mod.ts";
 import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
 import {
@@ -18,7 +31,8 @@ import {
   LAYOUT_RANGES,
   PATTERNS,
   type Settings,
-  type SettingsSection,
+  SETTINGS_TABS,
+  type SettingsTab,
 } from "../lib/workspace/store.ts";
 import { type ThemeId, THEMES } from "../lib/workspace/themes.ts";
 import {
@@ -56,10 +70,11 @@ import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
-import { useHtmlOverlay } from "./use-html-overlay.ts";
+import { Modal } from "./modal.tsx";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
 import { WindowSettingsSection } from "./window-settings.tsx";
 import { TileSettingsSection } from "./tile-settings.tsx";
+import { SettingsGroup, SettingsNav } from "./settings-ui.tsx";
 import type { ActivitySettings, TileTitle } from "../lib/workspace/activity.ts";
 import type { WindowClose } from "../lib/workspace/windows.ts";
 import type { MonitorSettings } from "../lib/sysstats.ts";
@@ -83,7 +98,13 @@ export interface SettingsPanelProps {
   onTileTitle(tileTitle: TileTitle): void;
   onFont(patch: Partial<FontSettings>): void;
   onTheme(theme: ThemeId): void;
-  onToggleSection(section: SettingsSection): void;
+  /** A tab was picked (remembered as `settings.settingsTab`). */
+  onTab(tab: SettingsTab): void;
+  /**
+   * A deep link: the `data-testid` of the control to show (its tab is `settings.settingsTab`),
+   * scrolled to and flashed once the dialog is open.
+   */
+  target?: string | null;
   /** The `+` picker's entries, for "+ opens". */
   launchSections: LaunchSection[];
   onPlusOpens(plusOpens: PlusOpens): void;
@@ -93,24 +114,38 @@ export interface SettingsPanelProps {
   onSandbox(patch: Partial<SandboxSettings>): void;
   /** Settings → Voice. */
   onVoice(patch: Partial<VoiceSettings>): void;
-  /** Settings → Ollama: the tracking (the section is left out without it). */
+  /** Settings → Agents → Ollama: the tracking (the group is left out without it). */
   ollama?: OllamaTracking;
   onOllama(patch: Partial<OllamaSettings>): void;
-  /** Settings → Links. */
+  /** Settings → Links & web. */
   onLinks(patch: Partial<LinkSettings>): void;
   /** Settings → System monitor. */
   onMonitor(patch: Partial<MonitorSettings>): void;
   /**
-   * Settings → Windows: what the close button does. Left out where the window's close is not
-   * held (the demo, an older runtime).
+   * Settings → General → Windows: what the close button does. Left out where the window's close
+   * is not held (the demo, an older runtime).
    */
   onWindowClose?: (windowClose: WindowClose) => void;
   /** The voice layer (its engines' status, the model download, cloud keys). */
   voice: VoiceApi | null;
-  /** For Agent integration (the section is left out without one) and the companion's status. */
+  /** For Settings → Agents (the tab is left out without one) and the companion's status. */
   backend: PtyBackend | null;
   onClose(): void;
 }
+
+/** The sidebar's names for the tabs. */
+const TAB_LABELS: Record<SettingsTab, string> = {
+  general: "General",
+  appearance: "Appearance",
+  layout: "Layout",
+  tiles: "Tiles",
+  links: "Links & web",
+  sandbox: "Sandbox",
+  agents: "Agents",
+  companion: "Companion",
+  voice: "Voice",
+  monitor: "System monitor",
+};
 
 const SHORTCUTS: [string, string][] = [
   ["Mod+T", "New terminal"],
@@ -144,26 +179,214 @@ function useInstalledFonts(): Record<string, boolean> {
   return installed;
 }
 
+// ---- Search ---------------------------------------------------------------------------------
+
+const HIDDEN = "data-search-hidden";
+
+/** The words of a query, lower-cased. */
+function queryWords(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** What a row is found by: its labels, hints and the names of its choices. */
+function rowText(el: Element): string {
+  const parts = [
+    ...el.querySelectorAll(
+      ".field-label, .field-hint, option, [role=radio], [role=option], [aria-label]",
+    ),
+  ].map((e) => `${e.textContent ?? ""} ${e.getAttribute("aria-label") ?? ""}`);
+  return parts.join(" ");
+}
+
+const matches = (text: string, words: string[]) => {
+  const t = text.toLowerCase();
+  return words.every((w) => t.includes(w));
+};
+
+/**
+ * Show the rows of `group` that match `words` (with `context`: the category's and the group's
+ * names). A row is a `.field`; anything else (a hint after a checkbox, the pattern grid, a
+ * status line) goes with the row before it, or is matched on its own text. Wrappers are walked
+ * into. Returns whether anything in the group matched.
+ */
+function filterGroup(group: Element, words: string[], context: string) {
+  const body = group.querySelector(".settings-group-body") ?? group;
+  let any = false;
+  let prev = false;
+  let prevRow: Element | null = null;
+  const visit = (el: Element) => {
+    for (const child of el.children) {
+      let show: boolean;
+      if (child.matches(".field")) {
+        show = matches(`${context} ${rowText(child)}`, words);
+        prev = show;
+        prevRow = child;
+      } else if (child.querySelector(".field")) {
+        child.removeAttribute(HIDDEN);
+        visit(child);
+        continue;
+      } else {
+        const own = matches(`${context} ${child.textContent ?? ""}`, words);
+        show = prev || own;
+        // A hint found on its own brings the row it explains.
+        if (own && !prev && prevRow && child.matches(".field-hint")) {
+          prevRow.removeAttribute(HIDDEN);
+          prev = true;
+        }
+      }
+      child.toggleAttribute(HIDDEN, !show);
+      any ||= show;
+    }
+  };
+  visit(body);
+  group.toggleAttribute(HIDDEN, !any);
+  return any;
+}
+
+/** Filter every category under `root`; returns how many groups are shown. */
+function applySearch(root: Element, query: string): number {
+  const words = queryWords(query);
+  if (words.length === 0) {
+    for (const el of root.querySelectorAll(`[${HIDDEN}]`)) {
+      el.removeAttribute(HIDDEN);
+    }
+    return -1;
+  }
+  let shown = 0;
+  for (const cat of root.querySelectorAll(".settings-category")) {
+    const name = cat.getAttribute("data-label") ?? "";
+    let catShown = 0;
+    for (const group of cat.querySelectorAll(".settings-group")) {
+      const title = group.querySelector(".settings-group-title")?.textContent ??
+        "";
+      if (filterGroup(group, words, `${name} ${title}`)) catShown++;
+    }
+    cat.toggleAttribute(HIDDEN, catShown === 0);
+    shown += catShown;
+  }
+  return shown;
+}
+
+/**
+ * Keep the search applied to `root`: now, and whenever its content changes (a section loading
+ * its status, a row appearing). Returns how many groups match (-1 while not searching).
+ */
+function useSearchFilter(
+  root: { current: HTMLElement | null },
+  query: string,
+): number {
+  const [shown, setShown] = useState(-1);
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const run = () => setShown(applySearch(el, query));
+    run();
+    if (queryWords(query).length === 0) return;
+    const observer = new MutationObserver(run);
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    return () => observer.disconnect();
+  }, [query]);
+  return shown;
+}
+
+/** Scroll to the row holding `[data-testid=target]` in `panel` and flash it; focus the control. */
+function showTarget(panel: HTMLElement, target: string): boolean {
+  const el = panel.querySelector<HTMLElement>(
+    `[data-testid="${CSS.escape(target)}"]`,
+  );
+  if (!el) return false;
+  const row = el.closest<HTMLElement>(".field, .settings-group") ?? el;
+  row.scrollIntoView({ block: "center", behavior: "instant" });
+  row.removeAttribute("data-flash");
+  // Restart the flash (a second link to the same row): reading layout ends the old animation.
+  void row.offsetWidth;
+  row.setAttribute("data-flash", "");
+  row.addEventListener(
+    "animationend",
+    () => row.removeAttribute("data-flash"),
+    { once: true },
+  );
+  if (el.matches("input, select, button, textarea, [tabindex]")) {
+    el.focus({ preventScroll: true });
+  }
+  return true;
+}
+
+// ---- The dialog -----------------------------------------------------------------------------
+
 export function SettingsPanel(props: SettingsPanelProps) {
   const { settings } = props;
   const { layout } = settings;
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useHtmlOverlay();
   const installed = useInstalledFonts();
   // The custom family as typed (the store keeps the sanitised, trimmed form, which would eat a
   // space mid-word if it drove the input).
   const [customDraft, setCustomDraft] = useState(settings.fontFamilyCustom);
-
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  // A deep link waiting for its tab to show (from the workspace, or a link in here).
+  const [pending, setPending] = useState<string | null>(props.target ?? null);
   useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const el = panelRef.current;
-      if (!el || !(e.target instanceof Element)) return;
-      if (el.contains(e.target) || e.target.closest(".bar-settings")) return;
-      props.onClose();
-    };
-    globalThis.addEventListener("pointerdown", onDown, true);
-    return () => globalThis.removeEventListener("pointerdown", onDown, true);
-  }, [props.onClose]);
+    if (props.target) setPending(props.target);
+  }, [props.target]);
+
+  const tabs = SETTINGS_TABS.filter((t) => t !== "agents" || props.backend);
+  const tab = tabs.includes(settings.settingsTab)
+    ? settings.settingsTab
+    : "general";
+  const searching = queryWords(query).length > 0;
+  const shown = useSearchFilter(contentRef, query);
+
+  // Open on the search field (a deep link focuses its control instead).
+  useEffect(() => {
+    if (!props.target) searchRef.current?.focus();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!pending || searching) return;
+    const panel = contentRef.current?.querySelector<HTMLElement>(
+      `.settings-category[data-tab="${tab}"]`,
+    );
+    if (panel) showTarget(panel, pending);
+    setPending(null);
+  }, [pending, tab, searching]);
+
+  const go = useMemo(
+    () => (to: SettingsTab, target?: string) => {
+      setQuery("");
+      props.onTab(to);
+      if (target) setPending(target);
+      else {
+        const panel = contentRef.current;
+        if (panel) panel.scrollTop = 0;
+      }
+    },
+    [props.onTab],
+  );
+
+  /** ↑/↓ (and Home/End) between the tabs; the tab gets focus and is shown. */
+  const onTabKey = (e: { key: string; preventDefault(): void }) => {
+    const i = tabs.indexOf(tab);
+    const next = e.key === "ArrowDown"
+      ? tabs[(i + 1) % tabs.length]
+      : e.key === "ArrowUp"
+      ? tabs[(i - 1 + tabs.length) % tabs.length]
+      : e.key === "Home"
+      ? tabs[0]
+      : e.key === "End"
+      ? tabs[tabs.length - 1]
+      : null;
+    if (!next) return;
+    e.preventDefault();
+    go(next);
+    tabsRef.current?.querySelector<HTMLElement>(`[data-tab="${next}"]`)
+      ?.focus();
+  };
 
   const slider = (
     key: "decay" | "masterRatio" | "maxVisible" | "gap",
@@ -193,125 +416,25 @@ export function SettingsPanel(props: SettingsPanelProps) {
     );
   };
 
-  const collapsed = settings.collapsedSections;
-  const section = (
-    id: SettingsSection,
-    title: string,
-    children: ReactNode,
-    testid?: string,
-  ) => (
-    <Section
-      id={id}
-      title={title}
-      open={!collapsed.includes(id)}
-      onToggle={() => props.onToggleSection(id)}
-      testid={testid}
-    >
-      {children}
-    </Section>
-  );
-
-  return (
-    <div
-      class="settings"
-      ref={panelRef}
-      role="dialog"
-      aria-label="Settings"
-      data-testid="settings-panel"
-    >
-      <div class="settings-head">
-        <h2>Settings</h2>
-        <button
-          type="button"
-          class="bar-btn"
-          data-testid="settings-close"
-          onClick={props.onClose}
-          aria-label="Close settings"
-        >
-          ×
-        </button>
-      </div>
-
-      {section(
-        "layout",
-        "Layout",
-        <>
-          <ViewField
-            label="View"
-            hint="This workspace: tiles laid out for you, or windows you move and resize."
-            testid="setting-view"
-            value={props.view}
-            onChange={props.onView}
-          />
-          <ViewField
-            label="New workspaces"
-            hint="The view a new workspace starts in; each workspace keeps its own."
-            testid="setting-default-view"
-            value={settings.defaultView}
-            onChange={props.onDefaultView}
-          />
-          <div class="pattern-grid" role="radiogroup" aria-label="Pattern">
-            {PATTERNS.map((p) => (
-              <button
-                type="button"
-                key={p}
-                role="radio"
-                aria-checked={p === layout.pattern}
-                class={`pattern-option${
-                  p === layout.pattern ? " is-active" : ""
-                }`}
-                data-testid="setting-pattern"
-                data-pattern={p}
-                title={PATTERN_INFO[p].description}
-                onClick={() => props.onLayout({ pattern: p })}
-              >
-                <PatternPreview pattern={p} options={layout} />
-                <span>{PATTERN_INFO[p].label}</span>
-              </button>
-            ))}
-          </div>
-          <p class="pattern-desc">{PATTERN_INFO[layout.pattern].description}</p>
-          <label class="field field-check">
-            <input
-              type="checkbox"
-              data-testid="setting-focus-to-main"
-              checked={settings.focusToMain}
-              onChange={(e) =>
-                props.onFocusToMain((e.target as HTMLInputElement).checked)}
+  const content: Record<SettingsTab, ReactNode> = {
+    general: (
+      <>
+        {props.onWindowClose && (
+          <SettingsGroup title="Windows" testid="windows-section">
+            <WindowSettingsSection
+              windowClose={settings.windowClose}
+              onChange={props.onWindowClose}
             />
-            <span class="field-label">Focused tile moves to the main spot</span>
-          </label>
-          <span class="field-hint">
-            {settings.focusToMain
-              ? "Focusing a tile makes it the biggest; the others shift by how recently they were used."
-              : "Tiles stay where they are when focused. Drag a tile by its header onto another to swap them."}
-          </span>
-
-          {slider(
-            "decay",
-            "Size falloff",
-            layout.decay >= 0.999 ? "equal" : `×${layout.decay.toFixed(2)}`,
-            "How much smaller each older terminal is than the one before it.",
-          )}
-          {slider(
-            "masterRatio",
-            "Main share",
-            `${Math.round(layout.masterRatio * 100)}%`,
-            "The main tile's share in master + stack (a cap for cascade and spiral).",
-          )}
-          {slider(
-            "maxVisible",
-            "Tiles shown",
-            String(layout.maxVisible),
-            "Older terminals beyond this stay in the bar.",
-          )}
-          {slider(
-            "gap",
-            "Gap",
-            `${layout.gap}px`,
-            "Space between tiles and around the edges.",
-          )}
-
+          </SettingsGroup>
+        )}
+        <SettingsGroup title="New tiles">
+          <PlusOpensField
+            value={settings.plusOpens}
+            sections={props.launchSections}
+            onChange={props.onPlusOpens}
+          />
+        </SettingsGroup>
+        <SettingsGroup title="Switcher bar">
           <div class="field">
             <span class="field-label">Bar edge</span>
             <div class="segmented" role="radiogroup" aria-label="Bar edge">
@@ -350,6 +473,39 @@ export function SettingsPanel(props: SettingsPanelProps) {
               ))}
             </div>
           </div>
+        </SettingsGroup>
+        <SettingsGroup title="Keyboard shortcuts" testid="shortcuts-section">
+          <dl class="shortcuts">
+            {SHORTCUTS.map(([keys, what]) => (
+              <div key={keys}>
+                <dt>
+                  <kbd>{shortcutLabel(keys, props.platform)}</kbd>
+                </dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+        </SettingsGroup>
+      </>
+    ),
+    appearance: (
+      <>
+        <SettingsGroup title="Theme" testid="theme-section">
+          <ThemePicker current={settings.theme} onTheme={props.onTheme} />
+        </SettingsGroup>
+        <SettingsGroup title="Font" testid="font-section">
+          <FontSection
+            settings={settings}
+            installed={installed}
+            customDraft={customDraft}
+            onCustomDraft={(v) => {
+              setCustomDraft(v);
+              props.onFont({ fontFamilyCustom: v });
+            }}
+            onFont={props.onFont}
+          />
+        </SettingsGroup>
+        <SettingsGroup title="Inactive tiles">
           <div class="field">
             <span class="field-label">Inactive tiles</span>
             <div
@@ -380,148 +536,265 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 : "Every terminal is fitted to its own tile and resized when the layout changes."}
             </span>
           </div>
-          <PlusOpensField
-            value={settings.plusOpens}
-            sections={props.launchSections}
-            onChange={props.onPlusOpens}
+        </SettingsGroup>
+      </>
+    ),
+    layout: (
+      <>
+        <SettingsGroup title="View" testid="layout-section">
+          <ViewField
+            label="View"
+            hint="This workspace: tiles laid out for you, or windows you move and resize."
+            testid="setting-view"
+            value={props.view}
+            onChange={props.onView}
           />
-        </>,
-      )}
-
-      {section(
-        "tiles",
-        "Tiles",
-        <TileSettingsSection
-          activity={settings.activity}
-          tileTitle={settings.tileTitle}
-          onActivity={props.onActivity}
-          onTileTitle={props.onTileTitle}
-        />,
-        "tiles-section",
-      )}
-
-      {section(
-        "theme",
-        "Theme",
-        <ThemePicker current={settings.theme} onTheme={props.onTheme} />,
-        "theme-section",
-      )}
-
-      {section(
-        "font",
-        "Fonts",
-        <FontSection
-          settings={settings}
-          installed={installed}
-          customDraft={customDraft}
-          onCustomDraft={(v) => {
-            setCustomDraft(v);
-            props.onFont({ fontFamilyCustom: v });
-          }}
-          onFont={props.onFont}
-        />,
-        "font-section",
-      )}
-
-      {section(
-        "companion",
-        "Companion",
-        <CompanionSettingsSection
-          settings={settings.companion}
-          backend={props.backend}
-          {...(props.ollama ? { ollama: props.ollama.status } : {})}
-          onChange={props.onCompanion}
-        />,
-        "companion-section",
-      )}
-
-      {section(
-        "voice",
-        "Voice",
-        <VoiceSettingsSection
-          settings={settings.voice}
-          name={settings.companion.name}
-          platform={props.platform}
-          voice={props.voice}
-          onChange={props.onVoice}
-        />,
-        "voice-section",
-      )}
-
-      {section(
-        "sandbox",
-        "Sandbox",
-        <SandboxSettingsSection
-          settings={settings.sandbox}
-          backend={props.backend}
-          onChange={props.onSandbox}
-        />,
-        "sandbox-section",
-      )}
-
-      {props.backend && props.ollama && section(
-        "ollama",
-        "Ollama",
-        <OllamaSettingsSection
-          settings={settings.ollama}
-          tracking={props.ollama}
-          backend={props.backend}
-          onChange={props.onOllama}
-        />,
-        "ollama-section",
-      )}
-
-      {section(
-        "links",
-        "Links",
+          <ViewField
+            label="New workspaces"
+            hint="The view a new workspace starts in; each workspace keeps its own."
+            testid="setting-default-view"
+            value={settings.defaultView}
+            onChange={props.onDefaultView}
+          />
+        </SettingsGroup>
+        <SettingsGroup title="Pattern">
+          <div class="pattern-grid" role="radiogroup" aria-label="Pattern">
+            {PATTERNS.map((p) => (
+              <button
+                type="button"
+                key={p}
+                role="radio"
+                aria-checked={p === layout.pattern}
+                class={`pattern-option${
+                  p === layout.pattern ? " is-active" : ""
+                }`}
+                data-testid="setting-pattern"
+                data-pattern={p}
+                title={PATTERN_INFO[p].description}
+                onClick={() => props.onLayout({ pattern: p })}
+              >
+                <PatternPreview pattern={p} options={layout} />
+                <span>{PATTERN_INFO[p].label}</span>
+              </button>
+            ))}
+          </div>
+          <p class="pattern-desc">{PATTERN_INFO[layout.pattern].description}</p>
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              data-testid="setting-focus-to-main"
+              checked={settings.focusToMain}
+              onChange={(e) =>
+                props.onFocusToMain((e.target as HTMLInputElement).checked)}
+            />
+            <span class="field-label">Focused tile moves to the main spot</span>
+          </label>
+          <span class="field-hint">
+            {settings.focusToMain
+              ? "Focusing a tile makes it the biggest; the others shift by how recently they were used."
+              : "Tiles stay where they are when focused. Drag a tile by its header onto another to swap them."}
+          </span>
+        </SettingsGroup>
+        <SettingsGroup title="Sizes">
+          {slider(
+            "decay",
+            "Size falloff",
+            layout.decay >= 0.999 ? "equal" : `×${layout.decay.toFixed(2)}`,
+            "How much smaller each older terminal is than the one before it.",
+          )}
+          {slider(
+            "masterRatio",
+            "Main share",
+            `${Math.round(layout.masterRatio * 100)}%`,
+            "The main tile's share in master + stack (a cap for cascade and spiral).",
+          )}
+          {slider(
+            "maxVisible",
+            "Tiles shown",
+            String(layout.maxVisible),
+            "Older terminals beyond this stay in the bar.",
+          )}
+          {slider(
+            "gap",
+            "Gap",
+            `${layout.gap}px`,
+            "Space between tiles and around the edges.",
+          )}
+        </SettingsGroup>
+      </>
+    ),
+    tiles: (
+      <TileSettingsSection
+        activity={settings.activity}
+        tileTitle={settings.tileTitle}
+        onActivity={props.onActivity}
+        onTileTitle={props.onTileTitle}
+      />
+    ),
+    links: (
+      <SettingsGroup title="Links" testid="links-section">
         <LinksSettingsSection
           settings={settings.links}
           backend={props.backend}
           platform={props.platform}
           onChange={props.onLinks}
-        />,
-        "links-section",
-      )}
-
-      {section(
-        "monitor",
-        "System monitor",
+        />
+      </SettingsGroup>
+    ),
+    sandbox: (
+      <SettingsGroup title="Shared container" testid="sandbox-section">
+        <SandboxSettingsSection
+          settings={settings.sandbox}
+          backend={props.backend}
+          onChange={props.onSandbox}
+        />
+      </SettingsGroup>
+    ),
+    agents: props.backend && (
+      <>
+        <SettingsGroup title="Agent integration" testid="integration-section">
+          <AgentIntegration backend={props.backend} />
+        </SettingsGroup>
+        {props.ollama && (
+          <SettingsGroup title="Ollama" testid="ollama-section">
+            <OllamaSettingsSection
+              settings={settings.ollama}
+              tracking={props.ollama}
+              backend={props.backend}
+              onChange={props.onOllama}
+            />
+          </SettingsGroup>
+        )}
+      </>
+    ),
+    companion: (
+      <CompanionSettingsSection
+        settings={settings.companion}
+        backend={props.backend}
+        {...(props.ollama ? { ollama: props.ollama.status } : {})}
+        onChange={props.onCompanion}
+      />
+    ),
+    voice: (
+      <VoiceSettingsSection
+        settings={settings.voice}
+        name={settings.companion.name}
+        platform={props.platform}
+        voice={props.voice}
+        onChange={props.onVoice}
+      />
+    ),
+    monitor: (
+      <SettingsGroup title="System monitor" testid="monitor-section">
         <MonitorSettingsSection
           settings={settings.monitor}
           lively={settings.companion.lively}
           name={settings.companion.name}
           onChange={props.onMonitor}
-        />,
-        "monitor-section",
-      )}
+        />
+      </SettingsGroup>
+    ),
+  };
 
-      {props.onWindowClose && section(
-        "windows",
-        "Windows",
-        <WindowSettingsSection
-          windowClose={settings.windowClose}
-          onChange={props.onWindowClose}
-        />,
-        "windows-section",
-      )}
-
-      {props.backend && section(
-        "integration",
-        "Agent integration",
-        <AgentIntegration backend={props.backend} />,
-      )}
-
-      <dl class="shortcuts">
-        {SHORTCUTS.map(([keys, what]) => (
-          <div key={keys}>
-            <dt>
-              <kbd>{shortcutLabel(keys, props.platform)}</kbd>
-            </dt>
-            <dd>{what}</dd>
+  return (
+    <Modal
+      label="Settings"
+      testid="settings-panel"
+      class="settings-dialog"
+      onClose={props.onClose}
+    >
+      <SettingsNav.Provider value={go}>
+        <div class="settings-side">
+          <input
+            ref={searchRef}
+            type="search"
+            class="settings-search"
+            data-testid="settings-search"
+            placeholder="Search settings"
+            aria-label="Search settings"
+            spellcheck={false}
+            autocomplete="off"
+            value={query}
+            onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+          />
+          <div
+            ref={tabsRef}
+            class="settings-tabs"
+            data-testid="settings-tablist"
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label="Settings categories"
+            onKeyDown={onTabKey}
+          >
+            {tabs.map((t) => (
+              <button
+                type="button"
+                key={t}
+                id={`settings-tab-${t}`}
+                role="tab"
+                aria-selected={t === tab}
+                aria-controls={`settings-tabpanel-${t}`}
+                tabIndex={t === tab ? 0 : -1}
+                class={`settings-tab${
+                  t === tab && !searching ? " is-active" : ""
+                }`}
+                data-testid="settings-tab"
+                data-tab={t}
+                onClick={() => go(t)}
+              >
+                {TAB_LABELS[t]}
+              </button>
+            ))}
           </div>
-        ))}
-      </dl>
-    </div>
+        </div>
+        <div class="settings-main">
+          <div class="settings-head">
+            <h2 data-testid="settings-title">
+              {searching ? "Search" : TAB_LABELS[tab]}
+            </h2>
+          </div>
+          {searching && shown === 0 && (
+            <p class="settings-empty" data-testid="settings-no-results">
+              No settings match “{query.trim()}”.
+            </p>
+          )}
+          <div
+            ref={contentRef}
+            class={`settings-content${searching ? " is-searching" : ""}`}
+            data-testid="settings-content"
+          >
+            {tabs.map((t) => (
+              <section
+                key={t}
+                id={`settings-tabpanel-${t}`}
+                class="settings-category"
+                role="tabpanel"
+                aria-labelledby={`settings-tab-${t}`}
+                data-label={TAB_LABELS[t]}
+                hidden={!searching && t !== tab}
+                data-testid="settings-category"
+                data-tab={t}
+              >
+                {searching && (
+                  <h3 class="settings-category-title">{TAB_LABELS[t]}</h3>
+                )}
+                {content[t]}
+              </section>
+            ))}
+          </div>
+          {/* After the content in the tab order (Tab from the sidebar goes into the content). */}
+          <button
+            type="button"
+            class="bar-btn settings-close"
+            data-testid="settings-close"
+            onClick={props.onClose}
+            aria-label="Close settings"
+          >
+            ×
+          </button>
+        </div>
+      </SettingsNav.Provider>
+    </Modal>
   );
 }
 
@@ -565,59 +838,6 @@ function PlusOpensField(props: {
         The menu beside + picks anything else.
       </span>
     </label>
-  );
-}
-
-interface SectionProps {
-  id: SettingsSection;
-  title: string;
-  open: boolean;
-  onToggle(): void;
-  testid?: string;
-  children: ReactNode;
-}
-
-/**
- * A collapsible panel section: a heading button (`aria-expanded`) controlling a region. The body
- * stays mounted when folded (grid rows animate 1fr ↔ 0fr) and is `visibility: hidden` once
- * folded, so its controls drop out of the tab order and the accessibility tree.
- */
-function Section(props: SectionProps) {
-  const head = `settings-${props.id}-head`;
-  const body = `settings-${props.id}-body`;
-  return (
-    <section
-      class={`settings-section${props.open ? " is-open" : ""}`}
-      data-testid={props.testid ?? `${props.id}-section`}
-      data-section={props.id}
-      data-open={props.open ? "true" : "false"}
-    >
-      <h3 class="section-heading">
-        <button
-          type="button"
-          id={head}
-          class="section-toggle"
-          aria-expanded={props.open}
-          aria-controls={body}
-          data-testid="section-toggle"
-          data-section={props.id}
-          onClick={props.onToggle}
-        >
-          <span class="section-chevron" aria-hidden="true">›</span>
-          {props.title}
-        </button>
-      </h3>
-      <div
-        id={body}
-        class="section-body"
-        role="region"
-        aria-labelledby={head}
-        data-testid="section-body"
-        data-section={props.id}
-      >
-        <div class="section-inner">{props.children}</div>
-      </div>
-    </section>
   );
 }
 

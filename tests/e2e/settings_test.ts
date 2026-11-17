@@ -1,7 +1,8 @@
-// The settings popover (open/close, live sliders) and persistence across reloads; Settings →
-// Agent integration's Codex trust warning and Re-trust (the demo's `?codexTrust=untrusted`).
+// The Settings dialog (open/close, tabs, search, deep links, live sliders) and persistence across
+// reloads; Settings → Agents → Agent integration's Codex trust warning and Re-trust (the demo's
+// `?codexTrust=untrusted`).
 
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { DEFAULT_LAYOUT_OPTIONS } from "../../lib/layout/mod.ts";
 import {
   DEFAULT_SETTINGS,
@@ -21,6 +22,12 @@ const sliderValue = (app: App, key: string) =>
 
 const panelOpen = (app: App) => app.exists("[data-testid=settings-panel]");
 
+const textOf = (app: App, selector: string) =>
+  app.eval(
+    (s: string) => document.querySelector(s)?.textContent?.trim() ?? "",
+    selector,
+  );
+
 suite("settings", (test) => {
   // ---- Panel --------------------------------------------------------------------------------
 
@@ -38,15 +45,18 @@ suite("settings", (test) => {
     );
   });
 
-  test("panel: the settings button toggles it", async (app) => {
+  test("panel: the settings button opens it; a backdrop click closes it", async (app) => {
     await app.click("[data-testid=bar-settings]");
     await waitFor(() => panelOpen(app), 2000, "open");
-    await app.click("[data-testid=bar-settings]");
+    // A modal: the backdrop covers the window, a click on it (not on the dialog) closes.
+    const panel = (await app.rectOf("[data-testid=settings-panel]"))!;
+    assert(panel.x >= 8, `room beside the dialog: ${panel.x}`);
+    await app.clickAt(panel.x / 2, panel.y + panel.height / 2);
     await waitFor(async () => !(await panelOpen(app)), 2000, "closed again");
   });
 
   test("panel: Escape closes it", async (app) => {
-    await app.openSettings();
+    await app.openSettings("layout");
     // Focus inside the panel, then Escape.
     await app.eval(() =>
       document.querySelector<HTMLElement>("[data-testid=setting-gap]")!.focus()
@@ -68,21 +78,238 @@ suite("settings", (test) => {
     );
   });
 
-  test("panel: an outside click closes it; inside clicks do not", async (app) => {
-    await app.openSettings();
+  test("panel: inside clicks do not close it", async (app) => {
+    await app.openSettings("layout");
     await app.click("[data-testid=setting-pattern][data-pattern=rows]");
+    await app.settingsTab("general");
     await app.click("[data-testid=setting-bar-order][data-value=created]");
     assert(await panelOpen(app), "still open after inside clicks");
-    const r = (await app.rectOf("[data-testid=cluster]"))!;
-    const panel = (await app.rectOf("[data-testid=settings-panel]"))!;
-    // A cluster point away from the panel.
-    const x = panel.x > r.x + 200 ? r.x + 100 : r.right - 100;
-    await app.clickAt(x, r.bottom - 100);
-    await waitFor(
-      async () => !(await panelOpen(app)),
-      2000,
-      "closed by outside click",
+  });
+
+  test("dialog: fits the window, wide on big ones and nearly all of it on small ones", async (app) => {
+    for (const [w, h] of [[1400, 900], [640, 480]]) {
+      await app.setViewport(w, h);
+      await app.openSettings();
+      const r = (await app.rectOf("[data-testid=settings-panel]"))!;
+      assert(
+        r.x >= 0 && r.y >= 0 && r.right <= w && r.bottom <= h,
+        `${w}×${h}`,
+      );
+      assert(r.width >= Math.min(900, w * 0.85), `wide at ${w}: ${r.width}`);
+      await app.closeSettings();
+    }
+  });
+
+  test("dialog: tabs switch the content, ↑/↓ walk them, and the last one is remembered", async (app) => {
+    await app.openSettings();
+    const selected = () =>
+      app.attr("[data-testid=settings-tab][aria-selected=true]", "data-tab");
+    const shownPanels = () =>
+      app.eval(() =>
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            "[data-testid=settings-category]",
+          ),
+        ].filter((el) => !el.hidden).map((el) => el.dataset.tab)
+      );
+    assertEquals(await selected(), "general", "General by default");
+    assertEquals(await shownPanels(), ["general"]);
+    assertEquals(
+      await app.attr("[data-testid=settings-tablist]", "aria-orientation"),
+      "vertical",
     );
+    await app.click('[data-testid=settings-tab][data-tab="layout"]');
+    await waitFor(async () => (await selected()) === "layout", 2000, "layout");
+    assertEquals(await shownPanels(), ["layout"]);
+    assertEquals(await textOf(app, "[data-testid=settings-title]"), "Layout");
+    assert(await app.exists("[data-testid=setting-gap]"));
+    // A control on a hidden tab cannot take focus.
+    assertEquals(
+      await app.eval(() => {
+        const el = document.querySelector<HTMLElement>(
+          "[data-testid=setting-plus-opens]",
+        )!;
+        el.focus();
+        return document.activeElement === el;
+      }),
+      false,
+      "a hidden tab's control is not focusable",
+    );
+    // The keyboard: the selected tab has focus; ↓ and ↑ move (and wrap), Tab goes into the content.
+    await app.eval(() =>
+      document.querySelector<HTMLElement>(
+        '[data-testid=settings-tab][aria-selected="true"]',
+      )!.focus()
+    );
+    await app.press("ArrowDown");
+    await waitFor(async () => (await selected()) === "tiles", 2000, "tiles");
+    assertEquals(
+      await app.eval(() =>
+        (document.activeElement as HTMLElement | null)?.dataset.tab
+      ),
+      "tiles",
+      "the new tab has focus",
+    );
+    await app.press("ArrowUp");
+    await app.press("ArrowUp");
+    await waitFor(
+      async () => (await selected()) === "appearance",
+      2000,
+      "appearance",
+    );
+    await app.press("Tab");
+    assert(
+      await app.eval(() =>
+        !!document.activeElement?.closest(
+          '[data-testid=settings-category][data-tab="appearance"]',
+        )
+      ),
+      "Tab moves into the content",
+    );
+    // Remembered across closing and reloading.
+    await app.closeSettings();
+    await app.openSettings();
+    assertEquals(await selected(), "appearance");
+    await waitFor(
+      async () => (await app.settings()).settingsTab === "appearance",
+      2000,
+      "persisted",
+    );
+    await app.reload();
+    await app.openSettings();
+    assertEquals(await selected(), "appearance");
+    assertEquals(await shownPanels(), ["appearance"]);
+  });
+
+  test("dialog: search finds a setting in another tab; clearing returns to the tab", async (app) => {
+    await app.openSettings("general");
+    // The search field has the keyboard on open.
+    await waitFor(
+      () =>
+        app.eval(() =>
+          document.activeElement?.getAttribute("data-testid") ===
+            "settings-search"
+        ),
+      2000,
+      "the search field focused",
+    );
+    const visible = (s: string) =>
+      app.eval((sel: string) => {
+        const el = document.querySelector<HTMLElement>(sel);
+        return !!el && el.getClientRects().length > 0;
+      }, s);
+    /** Replace the search field's text with `text` (typed). */
+    const search = async (text: string) => {
+      await app.eval(() => {
+        const el = document.querySelector<HTMLInputElement>(
+          "[data-testid=settings-search]",
+        )!;
+        el.focus();
+        el.select();
+      });
+      if (text) await app.page.keyboard.type(text);
+      else await app.press("Backspace");
+    };
+    await app.page.keyboard.type("gap");
+    await waitFor(
+      () => visible("[data-testid=setting-gap]"),
+      2000,
+      "Layout's gap slider shown",
+    );
+    assertEquals(await visible("[data-testid=setting-bar-order]"), false);
+    assertEquals(await visible("[data-testid=setting-decay]"), false);
+    assertEquals(await textOf(app, "[data-testid=settings-title]"), "Search");
+    // Grouped under its category's name.
+    assertStringIncludes(
+      await textOf(
+        app,
+        '[data-testid=settings-category][data-tab="layout"] .settings-category-title',
+      ),
+      "Layout",
+    );
+    // Its controls work from the results.
+    await search("pattern");
+    await app.click("[data-testid=setting-pattern][data-pattern=rows]");
+    await waitFor(async () => (await app.pattern()) === "rows", 2000, "rows");
+    // Hints count too: "recently they were used" is only in the focus-to-main hint.
+    await search("recently they were used");
+    await waitFor(
+      () => visible("[data-testid=setting-focus-to-main]"),
+      2000,
+      "found by its hint",
+    );
+    assertEquals(await visible("[data-testid=setting-gap]"), false);
+    // Nothing matches.
+    await search("zzzqqq");
+    await waitFor(
+      () => app.exists("[data-testid=settings-no-results]"),
+      2000,
+      "no results",
+    );
+    // Cleared: back on the selected tab, everything in it shown.
+    await search("");
+    await waitFor(
+      () => visible("[data-testid=setting-bar-order]"),
+      2000,
+      "General again",
+    );
+    assertEquals(await visible("[data-testid=setting-gap]"), false);
+    assertEquals(await textOf(app, "[data-testid=settings-title]"), "General");
+    assertEquals(await app.exists("[data-search-hidden]"), false);
+  });
+
+  test("dialog: Escape closes it and gives the keyboard back to the focused tile", async (app) => {
+    const id = (await app.focusedId())!;
+    await app.openSettings("voice");
+    await app.press("Escape");
+    await waitFor(async () => !(await panelOpen(app)), 2000, "closed");
+    await waitFor(
+      () => app.xtermHasFocus(id),
+      2000,
+      "the tile has the keyboard",
+    );
+    // The × button too.
+    await app.openSettings();
+    await app.click("[data-testid=settings-close]");
+    await waitFor(async () => !(await panelOpen(app)), 2000, "closed by ×");
+    await waitFor(() => app.xtermHasFocus(id), 2000, "the tile again");
+  });
+
+  test("dialog: a link to another tab opens it at the setting", async (app) => {
+    await app.openSettings("companion");
+    // Lively off: System monitor's hot companion links back to it.
+    await app.click("[data-testid=setting-companion-lively]");
+    await waitFor(
+      async () => !(await app.settings()).companion.lively,
+      2000,
+      "lively off",
+    );
+    await app.settingsTab("monitor");
+    await app.click(
+      '[data-testid=settings-link][data-tab="companion"]',
+    );
+    await waitFor(
+      async () =>
+        (await app.attr(
+          "[data-testid=settings-tab][aria-selected=true]",
+          "data-tab",
+        )) === "companion",
+      2000,
+      "the Companion tab",
+    );
+    await waitFor(
+      () =>
+        app.eval(() =>
+          document.activeElement?.getAttribute("data-testid") ===
+            "setting-companion-lively"
+        ),
+      2000,
+      "Lively focused",
+    );
+    // In view inside the scrolling content.
+    const row = (await app.rectOf("[data-testid=setting-companion-lively]"))!;
+    const box = (await app.rectOf("[data-testid=settings-content]"))!;
+    assert(row.y >= box.y && row.bottom <= box.bottom, "scrolled into view");
   });
 
   test("panel: slider changes re-layout live while open", async (app) => {
@@ -113,7 +340,7 @@ suite("settings", (test) => {
   });
 
   test("panel: sliders are clamped to their ranges", async (app) => {
-    await app.openSettings();
+    await app.openSettings("layout");
     for (
       const [k, min, max] of [["decay", 0.3, 1], ["gap", 0, 32], [
         "maxVisible",
@@ -146,7 +373,7 @@ suite("settings", (test) => {
     await app.reload();
     assertEquals(await app.pattern(), "rows");
     assertEquals(await app.attr("[data-testid=bar]", "data-position"), "left");
-    await app.openSettings();
+    await app.openSettings("general");
     assertEquals(await sliderValue(app, "decay"), 0.5);
     assertEquals(await sliderValue(app, "masterRatio"), 0.7);
     assertEquals(await sliderValue(app, "maxVisible"), 4);
@@ -247,10 +474,7 @@ suite("settings", (test) => {
     "integration: an untrusted Codex install shows a warning; Re-trust clears it",
     async (app) => {
       const row = '[data-testid=integration-row][data-target="codex"]';
-      await app.openSettings();
-      await app.click(
-        '[data-testid=section-toggle][data-section="integration"]',
-      );
+      await app.openSettings("agents");
       await waitFor(() => app.exists(row), 3000, "the rows");
       assertEquals(
         await app.exists(`${row} [data-testid=integration-warning]`),

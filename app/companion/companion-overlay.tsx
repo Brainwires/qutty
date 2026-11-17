@@ -138,6 +138,8 @@ export interface CompanionOverlayProps {
   reaction?: Reaction;
   /** A reaction played (it was not dropped for a face above it). */
   onReactionShown?(reaction: Reaction): void;
+  /** Open Settings → Companion at the brain switch (the chat box's link while the brain is off). */
+  onOpenSettings?(): void;
 }
 
 /** What the voice note says in each phase (the error and notes bring their own text). */
@@ -353,6 +355,8 @@ function ChatBox(props: {
   brain: boolean;
   onSend(text: string): void;
   onClose(): void;
+  /** Settings → Companion, offered while the brain is off. */
+  onSettings?(): void;
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -393,16 +397,29 @@ function ChatBox(props: {
           props.onClose();
         }}
       />
-      <button
-        type="submit"
-        class="companion-chat-send"
-        data-testid="companion-chat-send"
-        aria-label="Send"
-        title="Send"
-        disabled={off || !draft.trim()}
-      >
-        ↵
-      </button>
+      {off && props.onSettings
+        ? (
+          <button
+            type="button"
+            class="companion-chat-settings"
+            data-testid="companion-chat-settings"
+            onClick={props.onSettings}
+          >
+            Settings
+          </button>
+        )
+        : (
+          <button
+            type="submit"
+            class="companion-chat-send"
+            data-testid="companion-chat-send"
+            aria-label="Send"
+            title="Send"
+            disabled={off || !draft.trim()}
+          >
+            ↵
+          </button>
+        )}
     </form>
   );
 }
@@ -651,6 +668,9 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           <ChatBox
             name={name}
             brain={props.brain}
+            {...(props.onOpenSettings
+              ? { onSettings: props.onOpenSettings }
+              : {})}
             onSend={(text) => {
               voice?.stopSpeaking();
               void backend.companionSend(text).catch(() => {});

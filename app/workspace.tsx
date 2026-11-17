@@ -77,6 +77,7 @@ import {
   reduce,
   saveSettings,
   SETTINGS_STORAGE_KEY,
+  type SettingsTab,
   shownMru,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
@@ -174,6 +175,8 @@ function WorkspaceView() {
   const [platform, setPlatform] = useState<KeyPlatform>("mac");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** A Settings deep link: the `data-testid` of the control to show once the dialog is open. */
+  const [settingsTarget, setSettingsTarget] = useState<string | null>(null);
   /** The SSH tile whose port forwards are open. */
   const [forwardsFor, setForwardsFor] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -421,6 +424,18 @@ function WorkspaceView() {
   const refocus = useCallback(() => {
     const id = stateRef.current.focusedId;
     if (id) focusKeyboard(id);
+  }, []);
+  /** Close Settings and give the keyboard back to the focused tile. */
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setSettingsTarget(null);
+    refocus();
+  }, [refocus]);
+  /** Open Settings on `tab` (and scroll to the control `target`, a `data-testid`). */
+  const openSettings = useCallback((tab: SettingsTab, target?: string) => {
+    dispatch({ type: "setSettingsTab", tab });
+    setSettingsTarget(target ?? null);
+    setSettingsOpen(true);
   }, []);
   // The close button (Settings → Windows). A remembered choice is saved at once: Keep Running
   // closes the window before the settings effect would run.
@@ -695,10 +710,10 @@ function WorkspaceView() {
     if (!ready) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && settingsOpen) {
-        // Swallow it: the Escape that closes the panel must not also reach the shell.
+        // Swallow it: the Escape that closes the dialog must not also reach the shell.
         e.preventDefault();
         e.stopPropagation();
-        setSettingsOpen(false);
+        closeSettings();
         return;
       }
       // A cycle whose modifier was let go unheard (a native web view had the keyboard, and it
@@ -730,7 +745,7 @@ function WorkspaceView() {
       globalThis.removeEventListener("keyup", onKeyUp, true);
       globalThis.removeEventListener("blur", onBlur);
     };
-  }, [ready, platform, runCommand, settingsOpen, modalOpen]);
+  }, [ready, platform, runCommand, settingsOpen, modalOpen, closeSettings]);
 
   // The Window menu's "Minimize Tile" / "Zoom Tile", chosen with this window key: the focused tile.
   useEffect(() => {
@@ -932,7 +947,8 @@ function WorkspaceView() {
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
-        onToggleSettings={() => setSettingsOpen((o) => !o)}
+        onToggleSettings={() =>
+          settingsOpen ? closeSettings() : setSettingsOpen(true)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
           <WorkspacesMenu
@@ -1031,6 +1047,8 @@ function WorkspaceView() {
             }}
             {...(reactions.reaction ? { reaction: reactions.reaction } : {})}
             onReactionShown={reactions.onShown}
+            onOpenSettings={() =>
+              openSettings("companion", "setting-companion-brain")}
           />
         )}
         {broadcast.on && (
@@ -1081,7 +1099,8 @@ function WorkspaceView() {
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
-          onToggleSection={(section) => run({ type: "toggleSection", section })}
+          onTab={(tab) => run({ type: "setSettingsTab", tab })}
+          target={settingsTarget}
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
@@ -1099,7 +1118,7 @@ function WorkspaceView() {
             }
             : {})}
           backend={manager?.backend ?? null}
-          onClose={() => setSettingsOpen(false)}
+          onClose={closeSettings}
         />
       )}
       {manager && ollamaOpen && (
