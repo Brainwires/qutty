@@ -171,6 +171,20 @@ Deno.test("native menus: the Shell menu, macOS and elsewhere", () => {
     "separator",
     ITEM.broadcast,
   ]);
+  // With a web engine: Bookmarks… and History… after New Window, as in the `+` menu.
+  assertEquals(ids(shellMenu("mac", { ...LAUNCH, webDialogs: true })), [
+    ITEM.newTile,
+    "New Tile With",
+    ITEM.newWindow,
+    "separator",
+    ITEM.bookmarks,
+    ITEM.history,
+    "separator",
+    ITEM.closeTile,
+    CLOSE_AND_END_ITEM,
+    "separator",
+    ITEM.broadcast,
+  ]);
   const other = shellMenu("other", LAUNCH);
   assertEquals(ids(other).slice(-2), ["separator", ITEM.settings]);
   // ⌘, is the macOS standard only.
@@ -405,6 +419,14 @@ Deno.test("native menus: clicks map to what the page does", () => {
     entryId: "ssh:web",
   });
   assertEquals(menuAction(ITEM.webPage), { kind: "webPage" });
+  assertEquals(menuAction(ITEM.bookmarks), {
+    kind: "webDialog",
+    dialog: "bookmarks",
+  });
+  assertEquals(menuAction(ITEM.history), {
+    kind: "webDialog",
+    dialog: "history",
+  });
   assertEquals(menuAction(ITEM.ollama), { kind: "ollama" });
   // The backend's items, a heading, junk: not the page's.
   for (

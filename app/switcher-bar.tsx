@@ -62,6 +62,8 @@ export interface SwitcherBarProps {
     | "sandbox"
     | "ollama"
     | "onWebPage"
+    | "onBookmarks"
+    | "onHistory"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -345,6 +347,22 @@ export function SwitcherBar(props: SwitcherBarProps) {
               onWebPage: () => {
                 setMenu("none");
                 props.launch.onWebPage?.();
+              },
+            }
+            : {})}
+          {...(props.launch.onBookmarks
+            ? {
+              onBookmarks: () => {
+                setMenu("none");
+                props.launch.onBookmarks?.();
+              },
+            }
+            : {})}
+          {...(props.launch.onHistory
+            ? {
+              onHistory: () => {
+                setMenu("none");
+                props.launch.onHistory?.();
               },
             }
             : {})}

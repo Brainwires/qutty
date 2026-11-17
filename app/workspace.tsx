@@ -54,6 +54,7 @@ import {
   type KeyCommand,
   type KeyPlatform,
   pttAvailable,
+  routeKey,
   shortcutLabel,
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
@@ -78,6 +79,7 @@ import {
   reduce,
   saveSettings,
   SETTINGS_STORAGE_KEY,
+  type SettingsTab,
   shownMru,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
@@ -127,7 +129,16 @@ import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
-import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
+import {
+  focusWebTile,
+  navigateWebTile,
+  runWebCommand,
+  type WebTileHooks,
+} from "./web-tile.tsx";
+import { openWebDialog, useWebDialog } from "./web-stores.ts";
+import { BookmarkManager } from "./bookmark-manager.tsx";
+import { HistoryDialog } from "./history-dialog.tsx";
+import type { OpenWhere } from "./bookmarks-bar.tsx";
 import {
   detectWebEngine,
   IframeEngine,
@@ -175,6 +186,8 @@ function WorkspaceView() {
   const [platform, setPlatform] = useState<KeyPlatform>("mac");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** A Settings deep link: the `data-testid` of the control to show once the dialog is open. */
+  const [settingsTarget, setSettingsTarget] = useState<string | null>(null);
   /** The SSH tile whose port forwards are open. */
   const [forwardsFor, setForwardsFor] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -379,7 +392,30 @@ function WorkspaceView() {
     openTile: (url) => void openWebTile(url),
     cycling,
     home: state.settings.links.home,
-  }), [webEngine, cycling, openWebTile, state.settings.links.home]);
+    bookmarksBar: state.settings.links.bookmarksBar,
+    copy: (text) =>
+      void globalThis.navigator?.clipboard?.writeText(text).catch((err) =>
+        console.warn("web tile: the clipboard refused", err)
+      ),
+  }), [
+    webEngine,
+    cycling,
+    openWebTile,
+    state.settings.links.home,
+    state.settings.links.bookmarksBar,
+  ]);
+  // The bookmark manager and History (opened from the bookmarks bar, the star and the `+` menu).
+  const webDialog = useWebDialog();
+  /** Open `url` from a browser dialog: in the focused web tile, a new one, or the browser. */
+  const openFromDialog = useCallback((url: string, where: OpenWhere) => {
+    if (where === "browser") return linksRef.current.openInBrowser(url);
+    const id = stateRef.current.focusedId;
+    if (
+      where === "here" && id && isWebTile(stateRef.current.terminals, id) &&
+      navigateWebTile(id, url)
+    ) return focusWebTile(id);
+    openWebTile(url);
+  }, [openWebTile]);
   // The keys a native web view hands back while its page has the keyboard: the workspace's
   // shortcuts and the talk keys.
   const { pttKey, dictateKey } = state.settings.voice;
@@ -424,6 +460,21 @@ function WorkspaceView() {
     const id = stateRef.current.focusedId;
     if (id) focusKeyboard(id);
   }, []);
+  /** Close Settings and give the keyboard back to the focused tile. */
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setSettingsTarget(null);
+    refocus();
+  }, [refocus]);
+  /**
+   * Open Settings on `tab` (and scroll to the control `target`, a `data-testid`); with no tab, on
+   * the one used last (the native app menu's Settings…, ⌘,).
+   */
+  const openSettings = useCallback((tab?: SettingsTab, target?: string) => {
+    if (tab) dispatch({ type: "setSettingsTab", tab });
+    setSettingsTarget(target ?? null);
+    setSettingsOpen(true);
+  }, []);
   // The close button (Settings → Windows). A remembered choice is saved at once: Keep Running
   // closes the window before the settings effect would run.
   const rememberClose = useCallback((windowClose: WindowClose) => {
@@ -438,7 +489,8 @@ function WorkspaceView() {
     onCancel: refocus,
   });
   const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
-    ollamaOpen || forwardsFor !== null || windowClose.asking;
+    ollamaOpen || forwardsFor !== null || windowClose.asking ||
+    webDialog !== null;
   // The close question takes Escape: the settings popover (which would swallow it) goes.
   useEffect(() => {
     if (windowClose.asking) setSettingsOpen(false);
@@ -697,10 +749,10 @@ function WorkspaceView() {
     if (!ready) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && settingsOpen) {
-        // Swallow it: the Escape that closes the panel must not also reach the shell.
+        // Swallow it: the Escape that closes the dialog must not also reach the shell.
         e.preventDefault();
         e.stopPropagation();
-        setSettingsOpen(false);
+        closeSettings();
         return;
       }
       // A cycle whose modifier was let go unheard (a native web view had the keyboard, and it
@@ -708,10 +760,21 @@ function WorkspaceView() {
       if (
         stateRef.current.cycle && !(platform === "mac" ? e.metaKey : e.ctrlKey)
       ) dispatch({ type: "endCycle" });
-      const cmd = commandForKey(e, platform);
-      if (!cmd) return;
+      // The one router: over a focused web tile its browser keys first (⌘L, ⌘R, ⌘[ …).
+      const focusedId = stateRef.current.focusedId;
+      const routed = routeKey(
+        e,
+        platform,
+        !!focusedId && isWebTile(stateRef.current.terminals, focusedId),
+      );
+      if (!routed) return;
       e.preventDefault();
       e.stopPropagation();
+      if (routed.scope === "web") {
+        if (!modalOpen && focusedId) runWebCommand(focusedId, routed.cmd);
+        return;
+      }
+      const cmd = routed.cmd;
       // A modal dialog has the keyboard: only its own shortcut (which closes it) still works.
       if (modalOpen && cmd.kind !== "openConnections") return;
       runCommand(cmd);
@@ -732,7 +795,7 @@ function WorkspaceView() {
       globalThis.removeEventListener("keyup", onKeyUp, true);
       globalThis.removeEventListener("blur", onBlur);
     };
-  }, [ready, platform, runCommand, settingsOpen, modalOpen]);
+  }, [ready, platform, runCommand, settingsOpen, modalOpen, closeSettings]);
 
   // Title polling: the focused terminal, right away on focus and every couple of seconds.
   const focusedId = state.focusedId;
@@ -830,8 +893,6 @@ function WorkspaceView() {
     run,
     focus: focusTerminal,
   });
-  // Settings, opened from the native app menu (Settings…, ⌘,).
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
   const nativeMenus = useNativeMenus({
     ready: ready && desktop,
     platform,
@@ -840,6 +901,7 @@ function WorkspaceView() {
     sections: launcher.sections,
     ollama: ollama.status.installed,
     webPage: webEngine?.capabilities.drawsAboveHtml === true,
+    webDialogs: webEngine !== null,
     modalOpen,
     handlers: {
       runCommand,
@@ -850,6 +912,7 @@ function WorkspaceView() {
       tileControl,
       launch: launcher.launchFromMenu,
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
+      openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
       onFocus: launcher.refresh,
     },
@@ -928,6 +991,12 @@ function WorkspaceView() {
                 void openWebTile(stateRef.current.settings.links.home),
             }
             : {}),
+          ...(webEngine
+            ? {
+              onBookmarks: () => openWebDialog({ kind: "bookmarks" }),
+              onHistory: () => openWebDialog({ kind: "history" }),
+            }
+            : {}),
           ...(ollama.status.installed
             ? {
               ollama: {
@@ -952,7 +1021,8 @@ function WorkspaceView() {
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
         nativeMenus={nativeMenus}
-        onToggleSettings={() => setSettingsOpen((o) => !o)}
+        onToggleSettings={() =>
+          settingsOpen ? closeSettings() : setSettingsOpen(true)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
           <WorkspacesMenu
@@ -1051,6 +1121,8 @@ function WorkspaceView() {
             }}
             {...(reactions.reaction ? { reaction: reactions.reaction } : {})}
             onReactionShown={reactions.onShown}
+            onOpenSettings={() =>
+              openSettings("companion", "setting-companion-brain")}
           />
         )}
         {broadcast.on && (
@@ -1101,7 +1173,8 @@ function WorkspaceView() {
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
-          onToggleSection={(section) => run({ type: "toggleSection", section })}
+          onTab={(tab) => run({ type: "setSettingsTab", tab })}
+          target={settingsTarget}
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
@@ -1119,7 +1192,7 @@ function WorkspaceView() {
             }
             : {})}
           backend={manager?.backend ?? null}
-          onClose={() => setSettingsOpen(false)}
+          onClose={closeSettings}
         />
       )}
       {manager && ollamaOpen && (
@@ -1134,6 +1207,27 @@ function WorkspaceView() {
             run({ type: "setOllama", patch: { libraryLookedAt: Date.now() } })}
           onClose={() => {
             setOllamaOpen(false);
+            refocus();
+          }}
+        />
+      )}
+      {webDialog?.kind === "bookmarks" && (
+        <BookmarkManager
+          {...(webDialog.folderId ? { folderId: webDialog.folderId } : {})}
+          {...(webDialog.selectId ? { selectId: webDialog.selectId } : {})}
+          desktop={desktop}
+          open={openFromDialog}
+          onClose={() => {
+            openWebDialog(null);
+            refocus();
+          }}
+        />
+      )}
+      {webDialog?.kind === "history" && (
+        <HistoryDialog
+          open={openFromDialog}
+          onClose={() => {
+            openWebDialog(null);
             refocus();
           }}
         />

@@ -143,7 +143,7 @@ suite("free-form view", (test) => {
       await app.attr("[data-testid=bar-pattern]", "data-view"),
       "freeform",
     );
-    await app.openSettings();
+    await app.openSettings("layout");
     assertEquals(
       await app.attr(
         '[data-testid=setting-view][data-value="freeform"]',
@@ -428,7 +428,7 @@ suite("free-form view", (test) => {
 
   test("Settings: the default view for new workspaces is saved; this workspace's stays", async (app) => {
     await app.ensureTerminals(1);
-    await app.openSettings();
+    await app.openSettings("layout");
     await app.click(
       '[data-testid=setting-default-view][data-value="freeform"]',
     );

@@ -93,6 +93,15 @@ function fakeViews(caps: NativeCapabilities = ALL) {
         focus: act("focus"),
         setZOrder: act("setZOrder"),
         setForwardKeys: act("setForwardKeys"),
+        setZoom: act("setZoom"),
+        getZoom: () => Promise.resolve(1.25),
+        find: (text: string, opts?: unknown) => {
+          log.push(`find ${JSON.stringify([text, opts ?? null])}`);
+          return Promise.resolve();
+        },
+        stopFind: act("stopFind"),
+        print: act("print"),
+        openDevTools: act("openDevTools"),
         state: () =>
           Promise.resolve({
             url: "https://example.com/",
@@ -209,6 +218,11 @@ Deno.test("native: the engine is picked when the runtime hosts web views, else t
     capture: true,
     evaluate: true,
     forwardKeys: true,
+    zoom: false,
+    find: false,
+    print: false,
+    devTools: false,
+    contextMenu: false,
   });
   assertEquals(webEngine(), engine);
   assertEquals(await detectWebEngine(off.views), engine, "asked once");
@@ -598,21 +612,34 @@ Deno.test("keys: the forward keys are the workspace's shortcuts and the talk key
       "CmdOrCtrl+Shift+B",
       "CmdOrCtrl+Shift+O",
       "CmdOrCtrl+Shift+I",
+      // The browser keys (only a web tile's page has the keyboard there).
+      "CmdOrCtrl+L",
+      "CmdOrCtrl+R",
+      "CmdOrCtrl+Shift+R",
+      "CmdOrCtrl+.",
+      "CmdOrCtrl+D",
+      "CmdOrCtrl+F",
+      "CmdOrCtrl+G",
+      "CmdOrCtrl+Shift+G",
+      "CmdOrCtrl+P",
+      "CmdOrCtrl+Alt+I",
     ]
   ) assert(mac.includes(key), key);
-  // What a page keeps: copy, paste, find, reload, its own tabs' keys.
+  // What a page keeps: copy, paste, select all, its own tabs' keys.
   for (
     const key of [
       "CmdOrCtrl+C",
       "CmdOrCtrl+V",
-      "CmdOrCtrl+F",
-      "CmdOrCtrl+R",
+      "CmdOrCtrl+X",
+      "CmdOrCtrl+Z",
       "CmdOrCtrl+A",
       "CmdOrCtrl+Space",
       "CmdOrCtrl+Shift+M",
       "CmdOrCtrl+Shift+T",
     ]
   ) assert(!mac.includes(key), key);
+  // ⌘. is macOS's Stop only.
+  assert(!forwardAccelerators(off, "other").includes("CmdOrCtrl+."));
   assertEquals(new Set(mac).size, mac.length);
   assert(mac.length <= MAX_FORWARD_KEYS);
   // The talk keys, once picked (and available on the platform).
@@ -890,4 +917,67 @@ Deno.test("native: a view mounted while the tile is occluded stays hidden until 
   assertEquals(f.log.filter((l) => l.startsWith("setVisible")), [
     "setVisible true",
   ]);
+});
+
+Deno.test("native: the browser features pass through when the runtime has them", async () => {
+  const caps = {
+    ...ALL,
+    zoom: true,
+    find: true,
+    print: true,
+    devTools: true,
+    contextMenu: true,
+  };
+  const f = fakeViews(caps);
+  const engine = createNativeEngine(f.views, caps);
+  assertEquals(
+    [
+      engine.capabilities.zoom,
+      engine.capabilities.find,
+      engine.capabilities.print,
+    ],
+    [true, true, true],
+  );
+  const view = await engine.mount(fakeHost().host, "https://example.com/");
+  // The tile draws the page's context menu.
+  assertEquals(f.created[0].contextMenu, "app");
+  const found: unknown[] = [];
+  const menus: unknown[] = [];
+  view.on("find-result", (e) => found.push(e));
+  view.on("context-menu", (e) => menus.push(e));
+  f.raws[0].fire("find-result", { matches: 3, activeMatch: 1 });
+  f.raws[0].fire("context-menu", {
+    x: 4,
+    y: 5,
+    linkUrl: "https://l/",
+    isEditable: false,
+    mediaType: "image",
+  });
+  assertEquals(found, [{ matches: 3, activeMatch: 1 }]);
+  assertEquals(menus, [{
+    x: 4,
+    y: 5,
+    linkUrl: "https://l/",
+    isEditable: false,
+  }]);
+  f.log.length = 0;
+  await view.setZoom(9);
+  assertEquals(await view.getZoom(), 1.25);
+  await view.find("needle", { forward: false });
+  await view.stopFind();
+  await view.print();
+  await view.openDevTools();
+  assertEquals(f.log, [
+    "setZoom 5",
+    'find ["needle",{"forward":false}]',
+    "stopFind",
+    "print",
+    "openDevTools",
+  ]);
+  // Without them: off, and the engine's own context menu.
+  const plain = fakeViews();
+  const off = createNativeEngine(plain.views, ALL);
+  assertEquals(off.capabilities.contextMenu, false);
+  await off.mount(fakeHost().host, "https://example.com/");
+  assertEquals("contextMenu" in plain.created[0], false);
 });

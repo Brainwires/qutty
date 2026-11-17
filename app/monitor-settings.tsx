@@ -4,6 +4,7 @@
 // one of the two is on.
 
 import { MONITOR_RANGES, type MonitorSettings } from "../lib/sysstats.ts";
+import { SettingsLink } from "./settings-ui.tsx";
 
 export interface MonitorSettingsProps {
   settings: MonitorSettings;
@@ -68,7 +69,16 @@ export function MonitorSettingsSection(props: MonitorSettingsProps) {
         Hot once the CPU or the GPU stays at or above the first figure, cool
         again once both stay below the second. {props.lively
           ? `${props.name} only looks hot while it has nothing else to show.`
-          : "Needs Lively on (Companion)."}{" "}
+          : (
+            <>
+              Needs Lively on (<SettingsLink
+                tab="companion"
+                target="setting-companion-lively"
+              >
+                Companion
+              </SettingsLink>).
+            </>
+          )}{" "}
         Sampled every 4 s (12 s in the background, never while the window is
         hidden), only while one of these is on.
       </span>

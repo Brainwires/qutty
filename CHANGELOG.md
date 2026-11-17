@@ -7,8 +7,9 @@
   Window and Help, with Settings… at the end of Shell and no Edit menu (its
   Ctrl+C would never reach the shell).
   - Shell: New Tile ⌘T, New Tile With (the `+` menu's shells, agents, SSH hosts,
-    Web page and Connections…), New Window ⌘N, Close Tile ⌘W, Close Window and
-    End Its Shells, and Broadcast Input ⇧⌘I.
+    Web page and Connections…), New Window ⌘N, the web tiles' Bookmarks… and
+    History…, Close Tile ⌘W, Close Window and End Its Shells, and Broadcast
+    Input ⇧⌘I.
   - View: Tiled View / Free-form View, Layout (every pattern, and Next Layout
     ⇧⌘L), the free-form arrange commands, Minimize / Maximize / Restore Tile and
     Zoom Tile ⌘↩, Bigger / Smaller / Actual Size, Switcher Bar (Top, Bottom,
@@ -24,6 +25,51 @@
     menu for View, "Close Window and End Its Shells" moved to Shell, and the
     layout button's menu no longer lists the tiles (the Window menu does). The
     web version keeps its in-page menus as they were.
+- Settings is a dialog in the middle of the window instead of one long popover.
+  Categories down the left (General, Appearance, Layout, Tiles, Links & web,
+  Sandbox, Agents, Companion, Voice, System monitor), the chosen one on the
+  right in small groups, and a search field on top that finds a setting by its
+  name or hint in any category. ↑/↓ move between categories; Escape or a click
+  beside the dialog closes it and the focused tile has the keyboard again.
+  Settings opens on the category you used last. Links such as "Settings →
+  Agents" inside it go straight there, and the companion's chat box, while its
+  brain is off, has a Settings button that opens the brain switch.
+
+- A new app icon: the companion's face.
+- Web tiles work like a browser for everyday use.
+  - Bookmarks: click the star in the address field to bookmark the page (or
+    press ⌘D, Ctrl+D elsewhere); a small popover lets you rename it, pick its
+    folder or remove it. Bookmarks show on a bookmarks bar under every web
+    tile's toolbar: click one to open it in that tile, middle-click or ⌘-click
+    to open it in a new tile beside it. Folders open as menus, what doesn't fit
+    goes under », you can drag entries to reorder them or drop them on a folder,
+    and right-click has Open, Open in new tile, Open in default browser, Edit…,
+    Delete and New folder…. Settings → Links → "Show bookmarks bar" hides the
+    bar. Bookmarks are shared by all of Qutty's windows.
+  - The bookmark manager ("Bookmarks…" in the `+` menu, the bar's » menu or its
+    right-click menu): folders on the left, search across all bookmarks, rename
+    and change addresses in place, select several and delete them (with Undo),
+    new folders, and drag to reorder or move. Import reads the bookmarks file
+    Chrome, Safari, Firefox and Edge export into an "Imported" folder; Export
+    copies yours as such a file's contents to the clipboard.
+  - History: the pages you visit are listed in History ("History…" in the `+`
+    menu), with search and Clear history. Right-click Back or Forward (or hold
+    the button) to jump several pages at once. The address field suggests your
+    bookmarks and visited pages as you type: ↓ picks one, Enter goes.
+  - Browser keys while a web tile is focused: ⌘L the address field, ⌘R reload
+    (⌘⇧R past the cache), ⌘. or Escape in the address field to stop, ⌘[ and ⌘]
+    back and forward, ⌘F find in the page (⌘G / ⌘⇧G next and previous), ⌘+, ⌘−
+    and ⌘0 page zoom (a small pill shows the zoom, and each site remembers it),
+    ⌘P print and ⌘⌥I the page inspector where available. Off macOS they are the
+    same keys with Ctrl. On a web tile ⌘[ and ⌘] now go back and forward instead
+    of cycling tiles, and ⌘+ / ⌘− zoom the page instead of the terminals' font;
+    from a terminal they work as before.
+  - Right-click in a page: open a link in a new tile or the default browser,
+    copy a link or the selection, paste, back, forward, reload, bookmark the
+    page.
+  - A new look for the web tile's toolbar: rounded address field with a lock (or
+    "Not secure" for http), the site's name stands out, crisp icons, and a thin
+    loading bar.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that

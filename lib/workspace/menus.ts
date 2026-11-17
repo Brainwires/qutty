@@ -67,6 +67,8 @@ export const ITEM = {
   connections: "qutty:shell:connections",
   broadcast: "qutty:shell:broadcast",
   webPage: "qutty:launch-web",
+  bookmarks: "qutty:web:bookmarks",
+  history: "qutty:web:history",
   ollama: "qutty:launch-ollama",
   nextLayout: "qutty:layout:next",
   minimizeTile: "qutty:tile:minimize",
@@ -225,6 +227,8 @@ export interface LaunchMenuInput {
   ollama: boolean;
   /** "Web Page" (the native web engine). */
   webPage: boolean;
+  /** "Bookmarks…" and "History…" (web tiles can be shown: any engine). */
+  webDialogs?: boolean;
 }
 
 /** Whether `text` is something Denext takes as an id or label (no control characters). */
@@ -261,7 +265,10 @@ function launchItems(
   return [...out, ...(out.length > 0 ? [SEP] : []), ...extras];
 }
 
-/** The Shell menu (File's place): new tiles and windows, closing, broadcast input. */
+/**
+ * The Shell menu (File's place): new tiles and windows, the web tiles' Bookmarks… and History…
+ * (as in the `+` menu), closing, broadcast input.
+ */
 export function shellMenu(
   platform: KeyPlatform,
   launch?: LaunchMenuInput,
@@ -273,6 +280,13 @@ export function shellMenu(
       item(ITEM.newTile, "New Tile"),
       { label: "New Tile With", items: launchItems(launch) },
       item(ITEM.newWindow, "New Window"),
+      ...(launch?.webDialogs
+        ? [
+          SEP,
+          item(ITEM.bookmarks, "Bookmarks…"),
+          item(ITEM.history, "History…"),
+        ]
+        : []),
       SEP,
       item(ITEM.closeTile, "Close Tile"),
       item(ITEM.closeAndEnd, "Close Window and End Its Shells"),
@@ -511,6 +525,8 @@ export type MenuAction =
   /** Start launch entry `entryId` (as the `+` menu does). */
   | { kind: "launch"; entryId: string }
   | { kind: "webPage" }
+  /** The web tiles' bookmark manager or History (app/web-stores.ts `openWebDialog`). */
+  | { kind: "webDialog"; dialog: "bookmarks" | "history" }
   | { kind: "ollama" };
 
 const KEY_ITEMS: Record<string, KeyCommand> = {
@@ -548,6 +564,8 @@ export function menuAction(id: string): MenuAction | null {
   if (control) return { kind: "tile", control };
   if (id === ITEM.settings) return { kind: "settings" };
   if (id === ITEM.webPage) return { kind: "webPage" };
+  if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
+  if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.ollama) return { kind: "ollama" };
   if (
     VIEW_IDS.has(id) ||

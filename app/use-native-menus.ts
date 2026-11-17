@@ -89,6 +89,8 @@ export interface NativeMenuHandlers {
   /** Start a `+` menu entry. */
   launch(entry: LaunchEntry): void;
   openWebPage(): void;
+  /** The web tiles' bookmark manager or History. */
+  openWebDialog(dialog: "bookmarks" | "history"): void;
   openOllama(): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
@@ -105,6 +107,8 @@ export interface NativeMenusOptions {
   ollama: boolean;
   /** "Web Page" in the launch submenu (the native web engine). */
   webPage: boolean;
+  /** "Bookmarks…" and "History…" in the Shell menu (a web engine). */
+  webDialogs: boolean;
   /** A modal dialog has the keyboard. */
   modalOpen: boolean;
   handlers: NativeMenuHandlers;
@@ -179,8 +183,9 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         sections: opts.sections,
         ollama: opts.ollama,
         webPage: opts.webPage,
+        webDialogs: opts.webDialogs,
       }),
-    [platform, opts.sections, opts.ollama, opts.webPage],
+    [platform, opts.sections, opts.ollama, opts.webPage, opts.webDialogs],
   );
   const shellKey = JSON.stringify(shell);
   const shellRef = useRef(shell);
@@ -261,6 +266,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         }
         case "webPage":
           return h.openWebPage();
+        case "webDialog":
+          return h.openWebDialog(action.dialog);
         case "ollama":
           return h.openOllama();
       }

@@ -10,6 +10,7 @@ import {
   TILE_TITLES,
   type TileTitle,
 } from "../lib/workspace/activity.ts";
+import { SettingsGroup } from "./settings-ui.tsx";
 
 export interface TileSettingsProps {
   activity: ActivitySettings;
@@ -48,72 +49,76 @@ export function TileSettingsSection(props: TileSettingsProps) {
   const { activity } = props;
   return (
     <div class="tile-settings" data-testid="tile-settings">
-      <div class="field">
-        <span class="field-label">Activity indicators</span>
-        <div
-          class="segmented"
-          role="radiogroup"
-          aria-label="Activity indicators"
-        >
-          {ACTIVITY_INDICATORS.map((m) => (
-            <button
-              type="button"
-              key={m}
-              role="radio"
-              aria-checked={m === activity.indicators}
-              class={m === activity.indicators ? "is-active" : ""}
-              data-testid="setting-activity-indicators"
-              data-value={m}
-              onClick={() => props.onActivity({ indicators: m })}
-            >
-              {INDICATOR_LABELS[m]}
-            </button>
-          ))}
+      <SettingsGroup title="Activity" testid="tiles-section">
+        <div class="field">
+          <span class="field-label">Activity indicators</span>
+          <div
+            class="segmented"
+            role="radiogroup"
+            aria-label="Activity indicators"
+          >
+            {ACTIVITY_INDICATORS.map((m) => (
+              <button
+                type="button"
+                key={m}
+                role="radio"
+                aria-checked={m === activity.indicators}
+                class={m === activity.indicators ? "is-active" : ""}
+                data-testid="setting-activity-indicators"
+                data-value={m}
+                onClick={() => props.onActivity({ indicators: m })}
+              >
+                {INDICATOR_LABELS[m]}
+              </button>
+            ))}
+          </div>
+          <span class="field-hint">
+            {INDICATOR_HINTS[activity.indicators]}
+          </span>
         </div>
+        {ACTIVITY_TOGGLES.map((key) => (
+          <label class="field field-check" key={key}>
+            <input
+              type="checkbox"
+              data-testid={`setting-activity-${key}`}
+              checked={activity[key]}
+              disabled={activity.indicators === "off"}
+              onChange={(e) =>
+                props.onActivity({
+                  [key]: (e.target as HTMLInputElement).checked,
+                })}
+            />
+            <span class="field-label">{TOGGLE_LABELS[key]}</span>
+          </label>
+        ))}
         <span class="field-hint">
-          {INDICATOR_HINTS[activity.indicators]}
+          A running command shows while the main switch is on. Focusing a tile
+          clears what it showed.
         </span>
-      </div>
-      {ACTIVITY_TOGGLES.map((key) => (
-        <label class="field field-check" key={key}>
-          <input
-            type="checkbox"
-            data-testid={`setting-activity-${key}`}
-            checked={activity[key]}
-            disabled={activity.indicators === "off"}
+      </SettingsGroup>
+      <SettingsGroup title="Titles">
+        <label class="field">
+          <span class="field-label">Tile title</span>
+          <select
+            class="field-select"
+            data-testid="setting-tile-title"
+            value={props.tileTitle}
             onChange={(e) =>
-              props.onActivity({
-                [key]: (e.target as HTMLInputElement).checked,
-              })}
-          />
-          <span class="field-label">{TOGGLE_LABELS[key]}</span>
+              props.onTileTitle(
+                (e.target as HTMLSelectElement).value as TileTitle,
+              )}
+          >
+            {TILE_TITLES.map((t) => (
+              <option value={t} key={t}>{TITLE_LABELS[t]}</option>
+            ))}
+          </select>
+          <span class="field-hint">
+            {props.tileTitle === "program"
+              ? "The title the program sets (a remote shell, vim, an agent), else the process and folder."
+              : "The foreground process and its folder, whatever the program sets."}
+          </span>
         </label>
-      ))}
-      <span class="field-hint">
-        A running command shows while the main switch is on. Focusing a tile
-        clears what it showed.
-      </span>
-      <label class="field">
-        <span class="field-label">Tile title</span>
-        <select
-          class="field-select"
-          data-testid="setting-tile-title"
-          value={props.tileTitle}
-          onChange={(e) =>
-            props.onTileTitle(
-              (e.target as HTMLSelectElement).value as TileTitle,
-            )}
-        >
-          {TILE_TITLES.map((t) => (
-            <option value={t} key={t}>{TITLE_LABELS[t]}</option>
-          ))}
-        </select>
-        <span class="field-hint">
-          {props.tileTitle === "program"
-            ? "The title the program sets (a remote shell, vim, an agent), else the process and folder."
-            : "The foreground process and its folder, whatever the program sets."}
-        </span>
-      </label>
+      </SettingsGroup>
     </div>
   );
 }
