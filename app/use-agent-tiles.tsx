@@ -2,8 +2,9 @@
 // store (app/use-agents.ts) with its events turned into workspace actions (the session saved in
 // the entry, the name as the title, a finished turn and new output as the tile's activity), the
 // hooks the tiles draw with (app/agent-tile.tsx: the terminal font and colours, links, "Open in
-// terminal"), the + menu's "Claude Code (chat)" with its folder question, and the lookups the hub
-// badges, the companion and dictation need.
+// terminal", dictation, reading a reply aloud, pictures of web tiles), the + menu's "Claude Code
+// (chat)" with its folder question, and the lookups the hub badges, the companion and dictation
+// need.
 
 import { useCallback, useMemo, useState } from "denext";
 import type { ReactNode } from "denext";
@@ -48,6 +49,8 @@ export function useAgentTiles(o: {
   /** The keyboard goes back to the focused tile (a dialog closed). */
   refocus(): void;
   dictation?: AgentTileHooks["dictation"];
+  speech?: AgentTileHooks["speech"];
+  capture?: AgentTileHooks["capture"];
 }): AgentTilesView {
   const { dispatch } = o;
   const { store, summaries } = useAgents({
@@ -135,6 +138,8 @@ export function useAgentTiles(o: {
       },
       close: closeTile,
       ...(o.dictation ? { dictation: o.dictation } : {}),
+      ...(o.speech ? { speech: o.speech } : {}),
+      ...(o.capture ? { capture: o.capture } : {}),
     };
   }, [
     store,
@@ -149,6 +154,8 @@ export function useAgentTiles(o: {
     closeTile,
     state.terminals,
     o.dictation,
+    o.speech,
+    o.capture,
   ]);
 
   const hubIdOf = useCallback((id: string) => store?.agentOf(id), [store]);

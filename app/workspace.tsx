@@ -154,6 +154,7 @@ import {
   type WebEngine,
   type WebViewHandle,
 } from "../lib/web/engine.ts";
+import { speakableText } from "../lib/voice/tts.ts";
 import { ollamaProfile, pullProfile } from "../lib/ollama/harnesses.ts";
 import {
   type OllamaPair,
@@ -594,12 +595,45 @@ function WorkspaceView() {
     press: () => voiceRef.current.pressDictate(),
     release: (heldMs: number) => voiceRef.current.release(heldMs),
   }), []);
-  // A link in a transcript: a web tile where they show any site (the native engine), else the
-  // default browser.
-  const openAgentUrl = useCallback((url: string) => {
-    if (webEngine?.capabilities.drawsAboveHtml) void openWebTile(url);
-    else linksRef.current.openInBrowser(url);
-  }, [webEngine, openWebTile]);
+  // An agent tile's "Read aloud": the companion's voice (interrupting whatever it was saying).
+  const speech = useMemo(() => ({
+    speaking: voice.speaking,
+    say: (text: string) => voiceRef.current.test(speakableText(text)),
+    stop: () => voiceRef.current.stopSpeaking(),
+  }), [voice.speaking]);
+  // An agent tile's screenshot button: a picture of a web tile, where the engine can take one
+  // (the native view; the iframe cannot, and nothing can picture a terminal or the window).
+  const capture = useMemo(() => {
+    if (!webEngine?.capabilities.capture) return undefined;
+    return {
+      tiles: () =>
+        stateRef.current.terminals.filter((t) =>
+          t.web && webViewsRef.current.get(t.id)?.capture
+        ).map((t) => ({ id: t.id, title: t.title })),
+      take: async (id: string) => {
+        const view = webViewsRef.current.get(id);
+        if (!view?.capture) return "that tile is not showing a page";
+        const shot = await view.capture({
+          format: "jpeg",
+          quality: 80,
+          scale: 1,
+        });
+        const title = stateRef.current.terminals.find((t) => t.id === id)
+          ?.title ?? "tile";
+        return new File(
+          [shot],
+          `${title.replace(/[^\w.-]+/g, "-").slice(0, 40)}.jpg`,
+          { type: shot.type || "image/jpeg" },
+        );
+      },
+    };
+  }, [webEngine]);
+  // A link in a transcript opens as a ⌘-clicked one in a terminal does (Settings → Links →
+  // "Open web links in", and whether the engine can show the page).
+  const openAgentUrl = useCallback(
+    (url: string) => linksRef.current.openLink(url),
+    [],
+  );
   const agentTiles = useAgentTiles({
     backend: ready ? managerRef.current?.backend ?? null : null,
     manager: ready ? managerRef.current : null,
@@ -612,6 +646,8 @@ function WorkspaceView() {
     closeTile: closeTerminal,
     refocus,
     ...(companionShown ? { dictation } : {}),
+    speech,
+    ...(capture ? { capture } : {}),
   });
   agentsRef.current = agentTiles;
 

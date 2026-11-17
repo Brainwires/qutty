@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Agent tiles get a roomier prompt box and a side rail.
+  - The prompt box starts two lines tall and grows to about twenty; Enter sends,
+    Shift+Enter is a new line. ↑ at the start of the text (↓ at its end, either
+    end of a one-line prompt) walks your prompt history, every agent tile's,
+    with this tile's own first; what you had typed comes back at the end.
+  - Its toolbar: attach files (or drop or paste them), a picture of a web tile
+    (in the desktop app, whose web view can take one), saved prompts (insert one
+    at the caret, save the current prompt, remove one), a history menu (newest
+    first; a click puts the prompt in the box), hold-to-dictate (with the
+    companion), Stop and Send. History and saved prompts stay on this machine.
+  - The side rail beside the transcript: jump to the top, jump to the latest,
+    maximize or restore the tile, and read the last reply aloud in the
+    companion's voice (click again to stop).
+  - A link in an agent's reply now opens where Settings → Links → "Open web
+    links in" says, as a ⌘-clicked link in a terminal does, instead of always in
+    a web tile in the desktop app.
+
 - Broadcast input (cluster SSH) is easier to aim. Turning it on (the bar's
   broadcast button or ⇧⌘I) now checks every visible terminal tile in the
   workspace at once, so typing reaches them all straight away and you untick the
