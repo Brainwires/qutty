@@ -46,7 +46,7 @@ Deno.test("broadcast: the selection", () => {
   assertEquals([...activeMembers(two)!], ["a", "b"]);
   assertEquals(activeMembers({ on: false, members: ["a", "b"] }), null);
   const hint =
-    "Tick at least two tiles (the box in each tile's header) to broadcast";
+    "Tick at least two tiles (the Broadcast pill in each tile's header) to broadcast";
   assertEquals(broadcastLabel(on), hint);
   assertEquals(broadcastLabel(setMember(on, "a", true)), hint);
   assertEquals(

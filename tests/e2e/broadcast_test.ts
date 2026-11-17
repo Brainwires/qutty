@@ -12,7 +12,7 @@ const BANNER = "[data-testid=broadcast-banner]";
 const check = (id: string) => `${tileSel(id)} [data-testid=tile-broadcast]`;
 const LABEL = "[data-testid=broadcast-label]";
 const HINT =
-  "Tick at least two tiles (the box in each tile's header) to broadcast";
+  "Tick at least two tiles (the Broadcast pill in each tile's header) to broadcast";
 const live = (n: number) =>
   `Broadcasting to ${n} tiles: typing in any checked tile goes to all of them.`;
 

@@ -222,7 +222,7 @@ export function pasteSummary(data: string): string {
 export function broadcastLabel(state: BroadcastState): string {
   const n = state.members.length;
   if (n < 2) {
-    return "Tick at least two tiles (the box in each tile's header) to broadcast";
+    return "Tick at least two tiles (the Broadcast pill in each tile's header) to broadcast";
   }
   return `Broadcasting to ${n} tiles: typing in any checked tile goes to all of them.`;
 }
