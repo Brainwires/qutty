@@ -436,7 +436,8 @@ export const WEB_TOOLS: readonly WebToolSpec[] = [
     description:
       "(Companion only; logged.) Run JavaScript in a web tile's page (an isolated world that " +
       "shares the page's DOM, not its scripts) and return its result as JSON (a promise is " +
-      "awaited; the result is cut at 20000 characters). Prefer read_page / web_click / " +
+      "awaited, except on a page whose Content-Security-Policy refuses eval: end with a plain " +
+      "value there; the result is cut at 20000 characters). Prefer read_page / web_click / " +
       "web_type; use this for what they cannot do.",
     schema: obj({
       tile: TILE,

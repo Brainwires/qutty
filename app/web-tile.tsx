@@ -15,11 +15,12 @@
 // Focus, native: the focused tile's page takes the keyboard, as a terminal does. The workspace's
 // shortcuts and the talk keys still work there: the view hands them back (`keydown`,
 // `forwarded`) and they are replayed on the window, where the usual listeners take them
-// (`replayForwardedKey`). Only presses come back, never releases, so a replayed key is let go at
-// once: a talk key pressed in a page latches (as a short click on the mic does) and the next
-// press stops it. While an alt-tab style cycle is under way the keyboard stays with the app, so
-// the modifier's release ends the cycle. A tile that loses the workspace's focus gives the
-// keyboard back (`blur`).
+// (`replayForwardedKey`), and so are their releases (`keyup`, the engine's `keyUp`), so a talk key
+// can be held in a page. An engine without `keyUp` reports presses only: there a replayed key is
+// let go at once, and a talk key pressed in a page latches (as a short click on the mic does)
+// until the next press. A modifier alone is never forwarded, so while an alt-tab style cycle is
+// under way the keyboard stays with the app and the modifier's release ends the cycle. A tile
+// that loses the workspace's focus gives the keyboard back (`blur`).
 //
 // A native view draws above all HTML. While something must show over the tile (a menu, a dialog,
 // Settings, a tile on top of it or moving, the companion's bubble: lib/web/overlays.ts) the view
@@ -249,11 +250,13 @@ export function focusBodyOf(el: Element): void {
 
 /**
  * A key the page handed back (one of the engine's forward keys), replayed on the window where
- * the workspace's and the talk keys' listeners are. The view reports no release, so the key is
- * let go at once.
+ * the workspace's and the talk keys' listeners are: a press, or its release. `releases`: the
+ * engine reports releases (`keyUp`); without, a press is let go at once.
  */
 function replayForwardedKey(
-  e: WebViewEventMap["keydown"],
+  e: WebViewEventMap["keydown"] | WebViewEventMap["keyup"],
+  type: "keydown" | "keyup",
+  releases: boolean,
   target: Pick<EventTarget, "dispatchEvent"> = globalThis,
 ): void {
   const init: KeyboardEventInit = {
@@ -263,12 +266,16 @@ function replayForwardedKey(
     ctrlKey: e.ctrlKey,
     metaKey: e.metaKey,
     shiftKey: e.shiftKey,
-    repeat: e.repeat,
+    repeat: type === "keydown" && "repeat" in e && e.repeat,
     bubbles: true,
     cancelable: true,
   };
-  target.dispatchEvent(new KeyboardEvent("keydown", init));
-  target.dispatchEvent(new KeyboardEvent("keyup", { ...init, repeat: false }));
+  target.dispatchEvent(new KeyboardEvent(type, init));
+  if (type === "keydown" && !releases) {
+    target.dispatchEvent(
+      new KeyboardEvent("keyup", { ...init, repeat: false }),
+    );
+  }
 }
 
 /** The least time between two tiles a page's popups open (ms). */
@@ -467,8 +474,11 @@ export function useWebTile(
           if (e.focused && !f.focused) f.onFocus(id);
         }),
         v.on("keydown", (e) => {
-          if (e.forwarded) replayForwardedKey(e);
+          if (e.forwarded) {
+            replayForwardedKey(e, "keydown", engine.capabilities.keyUp);
+          }
         }),
+        v.on("keyup", (e) => replayForwardedKey(e, "keyup", true)),
         v.on("new-window", (e) => {
           // A popup opens beside the tile, in a tile of its own; a page that asks for many
           // gets one a second.

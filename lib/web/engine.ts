@@ -21,8 +21,9 @@
  * place bounds are handled. The iframe simply sits in the element (CSS fills it). The native
  * engine hands the element to Denext's `attachWebView(handle, el)`, which follows it through
  * resizes, scrolling, window resizes and devicePixelRatio changes and hides the view while the
- * element is out of the DOM or `display: none`. It does not see a move that changes no size (a
- * `transform`): the tile says so with `relayout()`.
+ * element is out of the DOM or `display: none`, and frame by frame while a CSS transition or
+ * animation runs on the element or an ancestor (a `transform` slide). Any other move that changes
+ * no size it does not see: the tile says so with `relayout()`.
  *
  * Dictation: `insertText` types a dictated transcript into the page's focused field (the
  * hold-to-dictate key, app/use-voice.ts). The iframe can do it only for a same-origin page, which
@@ -74,7 +75,7 @@ export interface WebViewEventMap {
   /**
    * A key pressed while the page had the keyboard: `forwarded` for one of the engine's forward
    * keys ({@linkcode WebEngine.setForwardKeys}; the page never saw it), else one the page left
-   * unhandled. No key release is ever reported.
+   * unhandled. With `capabilities.keyUp` its release comes as `keyup`.
    */
   keydown: {
     key: string;
@@ -85,6 +86,20 @@ export interface WebViewEventMap {
     shiftKey: boolean;
     repeat: boolean;
     forwarded: boolean;
+  };
+  /**
+   * The release of a forwarded key (with `capabilities.keyUp`), matched by its physical key
+   * whatever modifiers are down by then; a key still held when the page loses the keyboard is
+   * released then, so a hold always ends.
+   */
+  keyup: {
+    key: string;
+    code: string;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+    forwarded: true;
   };
   /** A {@linkcode WebViewHandle.find} search's matches (`activeMatch` 1-based, `0`: none). */
   "find-result": { matches: number; activeMatch: number };
@@ -127,6 +142,8 @@ export interface WebEngineCapabilities {
   evaluate: boolean;
   /** Its forward keys reach the app while a page has the keyboard (`keydown`, `forwarded`). */
   forwardKeys: boolean;
+  /** A forwarded key's release comes back too (`keyup`), so a key can be held. */
+  keyUp: boolean;
   /** `setZoom` / `getZoom` work. */
   zoom: boolean;
   /** `find` / `stopFind` work (and `find-result` comes). */
@@ -574,6 +591,7 @@ export const IframeEngine: WebEngine = {
     capture: false,
     evaluate: false,
     forwardKeys: false,
+    keyUp: false,
     zoom: true,
     find: false,
     print: false,

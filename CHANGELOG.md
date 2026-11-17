@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Denext 4.20 (runtime 3.0.0-denext.25). In a web tile, holding the talk or
+  dictate key now holds it, as in a terminal: the page reports the key's
+  release, where before a press latched until the next one. A web tile that
+  loses the focus hands the keyboard back without bringing Qutty's window to the
+  front, and a page moving with a sliding tile is followed frame by frame. The
+  companion's web tools run on pages whose Content-Security-Policy refuses
+  `eval`.
+
 - A GUI around agent harnesses. A terminal that runs Claude Code, Codex, Gemini
   CLI, opencode, aider or another coding-agent harness gets a frame around the
   harness's own terminal UI, which stays real and interactive in the middle.

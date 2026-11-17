@@ -1,6 +1,6 @@
 /**
  * The native web tile engine: Denext's embedded web view (`createWebView` + `attachWebView`,
- * `denext/desktop/window`; runtime 3.0.0-denext.22, WKWebView / CEF on macOS) behind the web
+ * `denext/desktop/window`; runtime 3.0.0-denext.25, WKWebView / CEF on macOS) behind the web
  * tile's {@linkcode WebEngine} interface (lib/web/engine.ts). It shows any http(s) site, never
  * the app's own origin (Denext refuses that too).
  *
@@ -13,21 +13,26 @@
  *   element is measured again, the view is shown, and the picture goes once the view is back.
  *   The steps run one after another (a chain), each looking at what is wanted by then, so a menu
  *   that opens and closes at once never leaves the view hidden.
- * - **Placement.** `attachWebView` follows the element's size, scrolling and the window. It owns
- *   the view's visibility, so the engine hands it a stand-in whose `setVisible` only records what
- *   the attachment wants ("placed"); the view really shows when it is placed, visible and not
- *   occluded. The attachment does not hear of a move that changes no size (a CSS `transform`): a
- *   fresh attachment measures at once, which is what `relayout()` and the end of an occlusion do.
+ * - **Placement.** `attachWebView` follows the element's size, scrolling and the window, and
+ *   (`follow: "frame"`) every frame while a CSS transition or animation moves it. It owns the
+ *   view's visibility, so the engine hands it a stand-in whose `setVisible` only records what the
+ *   attachment wants ("placed"); the view really shows when it is placed, visible and not
+ *   occluded. Any other move that changes no size is the tile's `relayout()` (the attachment's).
+ *   The end of an occlusion attaches afresh, so the view shows only once it has been measured
+ *   where the element is now.
  * - **Keys.** The engine's forward keys (the workspace's shortcuts and the talk keys,
  *   lib/workspace/keys.ts `forwardAccelerators`) skip the page and come back as `keydown` events
- *   with `forwarded: true`. Only key presses are reported, never releases.
+ *   with `forwarded: true`, and their releases as `keyup` (where the runtime reports `keyUp`).
  * - **Focus.** A click in the page reports `focus-change` before the page has the click. Hiding a
- *   view hands the keyboard to the app's page, so a view that had it when it was occluded takes
- *   it back when shown again. `blur()` hands the keyboard to the app's page (`focusWindow`) unless
- *   another view asks for it in the same turn; with another app in front it waits until the
- *   window is the active one again (`focusWindow` would bring it to the front).
+ *   view hands the keyboard to the app's page (`reason: "hidden"`; an engine without `blur` gives
+ *   no reason, and the engine marks its own hiding), so a view that had it when it was hidden
+ *   takes it back when shown again. `blur()` hands the keyboard to the app's page
+ *   without activating the app (the view's `blur`). On an engine without `blur` it calls
+ *   `focusWindow` instead, unless another view asks for the keyboard in the same turn, and with
+ *   another app in front it waits until the window is the active one again (`focusWindow` would
+ *   bring it to the front).
  * - **Dictation.** `insertText` runs {@linkcode insertTextScript} in the page (`evaluate`, an
- *   isolated world that shares the DOM).
+ *   isolated world that shares the DOM; a page's Content-Security-Policy does not refuse it).
  * - **The companion's web tools** read and act on the page through the same `evaluate`, and
  *   picture it with `capture` (lib/web/web-control.ts).
  *
@@ -78,6 +83,7 @@ export type RawWebView = Pick<
   | "reload"
   | "stop"
   | "focus"
+  | "blur"
   | "state"
   | "capture"
   | "evaluate"
@@ -96,6 +102,14 @@ export type RawWebView = Pick<
 /** What `attachWebView` drives: the engine's stand-in for the view. */
 export type AttachedView = Pick<RawWebView, "setBounds" | "setVisible" | "on">;
 
+/** A view following its element (Denext's `WebViewAttachment`). */
+export interface ViewAttachment {
+  /** Stop following (the view stays as it is). */
+  detach(): void;
+  /** Measure the element again at the next frame (a move no event reports). */
+  relayout(): void;
+}
+
 /** The capabilities the engine reads (the browser features are off when not said). */
 export type NativeCapabilities =
   & Pick<
@@ -105,7 +119,13 @@ export type NativeCapabilities =
   & Partial<
     Pick<
       WebViewCapabilities,
-      "zoom" | "find" | "print" | "devTools" | "contextMenu"
+      | "zoom"
+      | "find"
+      | "print"
+      | "devTools"
+      | "contextMenu"
+      | "blur"
+      | "keyUp"
     >
   >;
 
@@ -123,9 +143,15 @@ export interface Snapshot {
 export interface NativeWebViews {
   capabilities(): Promise<NativeCapabilities>;
   create(options: CreateWebViewOptions): Promise<RawWebView>;
-  /** Keep `view` on `element`; returns the detach. A new attachment measures at once. */
-  attach(view: AttachedView, element: HTMLElement): () => void;
-  /** Hand the keyboard to the app's own page (it brings the window to the front). */
+  /**
+   * Keep `view` on `element`, frame by frame while a CSS transition or animation moves it. A new
+   * attachment measures at once.
+   */
+  attach(view: AttachedView, element: HTMLElement): ViewAttachment;
+  /**
+   * Hand the keyboard to the app's own page (it brings the window to the front): for an engine
+   * without the view's `blur`.
+   */
   focusPage(): Promise<void>;
   /** Follow whether the window is the active one (called with the state now, then on changes). */
   onWindowActive(fn: (active: boolean) => void): () => void;
@@ -143,7 +169,9 @@ export const denextWebViews: NativeWebViews = {
   create: (options) => createWebView(options),
   // `attachWebView` calls only `setBounds`, `setVisible` and `on("closed")` on its handle.
   attach: (view, element) =>
-    attachWebView(view as unknown as DenextWebView, element),
+    attachWebView(view as unknown as DenextWebView, element, {
+      follow: "frame",
+    }),
   focusPage: () => focusWindow(),
   onWindowActive: (fn) => {
     fn(globalThis.document?.visibilityState !== "hidden");
@@ -261,7 +289,7 @@ class NativeView implements WebViewHandle {
   readonly #shared: Shared;
   readonly #listeners: Listeners = {};
   readonly #offs: (() => void)[] = [];
-  #detach: (() => void) | null = null;
+  #attachment: ViewAttachment | null = null;
   #closed = false;
   /** What the attachment wants: the element is displayed and in view. */
   #placed = false;
@@ -280,7 +308,10 @@ class NativeView implements WebViewHandle {
   #focused = false;
   /** The page should have the keyboard when the view shows. */
   #wantFocus = false;
-  /** The view is being hidden with the keyboard: the focus loss that follows is the engine's. */
+  /**
+   * An engine without `blur` (and so without focus reasons): the view is being hidden with the
+   * keyboard, so the focus loss that follows is the engine's.
+   */
   #hidingFocused = false;
   #z: number | undefined;
 
@@ -302,13 +333,36 @@ class NativeView implements WebViewHandle {
           url: e.url,
           ...(e.error ? { error: e.error } : {}),
         })),
-      raw.on("focus-change", (e) => this.#onFocus(e.focused === true)),
+      raw.on(
+        "focus-change",
+        (e) => this.#onFocus(e.focused === true, e.reason),
+      ),
       raw.on(
         "new-window",
         (e) =>
           this.#emit("new-window", { url: e.url, disposition: e.disposition }),
       ),
-      raw.on("keydown", (e) => this.#emit("keydown", { ...e })),
+      raw.on("keydown", (e) =>
+        this.#emit("keydown", {
+          key: e.key,
+          code: e.code,
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          repeat: e.repeat,
+          forwarded: e.forwarded,
+        })),
+      raw.on("keyup", (e) =>
+        this.#emit("keyup", {
+          key: e.key,
+          code: e.code,
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          forwarded: true,
+        })),
       raw.on("find-result", (e) =>
         this.#emit("find-result", {
           matches: e.matches,
@@ -334,14 +388,14 @@ class NativeView implements WebViewHandle {
     }
   }
 
-  #onFocus(focused: boolean): void {
+  #onFocus(focused: boolean, reason?: "hidden" | "blur"): void {
     if (this.#closed) return;
     this.#focused = focused;
     if (focused) {
       this.#wantFocus = true;
       this.#shared.takeKeyboard();
-    } else if (this.#hidingFocused) {
-      // Hidden under a snapshot: it takes the keyboard back when it shows again.
+    } else if (reason === "hidden" || this.#hidingFocused) {
+      // Hidden (under a snapshot, parked), it takes the keyboard back when it shows again.
       this.#hidingFocused = false;
     } else {
       this.#wantFocus = false;
@@ -351,9 +405,9 @@ class NativeView implements WebViewHandle {
 
   /** A fresh attachment: it measures the element and sets the bounds on the next frame. */
   #attach(): void {
-    this.#detach?.();
+    this.#attachment?.detach();
     this.#measuring = true;
-    this.#detach = this.#shared.views.attach({
+    this.#attachment = this.#shared.views.attach({
       setBounds: (b) => this.#raw.setBounds(b),
       setVisible: (visible) => {
         this.#placed = visible;
@@ -395,7 +449,8 @@ class NativeView implements WebViewHandle {
       if (this.#occluded && this.#shared.caps.capture) await this.#snapshot();
       // It may have cleared while the page was captured: then the view just stays.
       if (!this.#closed && !this.#wanted()) {
-        this.#hidingFocused = this.#focused;
+        // Focus reasons come with the view's `blur` (the same runtime feature).
+        this.#hidingFocused = !this.#shared.caps.blur && this.#focused;
         await this.#raw.setVisible(false);
         this.#shown = false;
       }
@@ -478,7 +533,7 @@ class NativeView implements WebViewHandle {
 
   relayout(): void {
     // Occluded: the end of the occlusion measures.
-    if (!this.#closed && !this.#occluded) this.#attach();
+    if (!this.#closed && !this.#occluded) this.#attachment?.relayout();
   }
 
   focus(): Promise<void> {
@@ -492,7 +547,9 @@ class NativeView implements WebViewHandle {
 
   blur(): Promise<void> {
     this.#wantFocus = false;
-    if (this.#focused && !this.#closed) this.#shared.releaseKeyboard();
+    if (!this.#focused || this.#closed) return Promise.resolve();
+    if (this.#shared.caps.blur) return this.#raw.blur().catch(() => {});
+    this.#shared.releaseKeyboard();
     return Promise.resolve();
   }
 
@@ -501,7 +558,7 @@ class NativeView implements WebViewHandle {
     try {
       return await this.#raw.evaluate<unknown>(insertTextScript(text)) === true;
     } catch {
-      // The page's CSP may refuse the evaluation (WKWebView), or the view closed.
+      // The view closed, or the page's document refused the script.
       return false;
     }
   }
@@ -583,8 +640,8 @@ class NativeView implements WebViewHandle {
   #finish(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#detach?.();
-    this.#detach = null;
+    this.#attachment?.detach();
+    this.#attachment = null;
     for (const off of this.#offs) off();
     this.#dropShot();
     this.#emit("closed", {});
@@ -651,6 +708,7 @@ export function createNativeEngine(
       capture: caps.capture,
       evaluate: caps.evaluate,
       forwardKeys: caps.forwardKeys,
+      keyUp: caps.forwardKeys && caps.keyUp === true,
       zoom: caps.zoom === true,
       find: caps.find === true,
       print: caps.print === true,
