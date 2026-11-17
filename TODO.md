@@ -512,6 +512,8 @@
       history, the companion drives web tiles, Settings dialog, native menus,
       Denext PTY + qutty-ptyd (shells survive quitting), tiles move between
       windows, companion rename and new icon, broadcast picker.
+- [x] v0.6.1: Denext 4.20 (web tile key releases, blur, CSP-safe evaluate),
+      a GUI overlay around agent harnesses, agent tile prompt box and side rail.
 - [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
       doesn't run, so the focused chip (first in the strip) can stay scrolled
       out of view on the left (seen while hardening the e2e chip clicks, #43).
