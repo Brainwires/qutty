@@ -12,6 +12,7 @@
   Agents" inside it go straight there, and the companion's chat box, while its
   brain is off, has a Settings button that opens the brain switch.
 
+- A new app icon: the companion's face.
 - Web tiles work like a browser for everyday use.
   - Bookmarks: click the star in the address field to bookmark the page (or
     press ⌘D, Ctrl+D elsewhere); a small popover lets you rename it, pick its
