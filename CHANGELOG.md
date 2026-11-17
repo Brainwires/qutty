@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The app icon wears the companion's everyday face: the neutral face it has at
+  rest in the app (arched brows, teal eyes, a small closed smile) instead of the
+  excited one with the open mouth. The Dock, taskbar, tray and favicon icons
+  follow.
+
 ## 0.6.1 — Denext 4.20, a GUI around agent harnesses, a roomier agent tile
 
 - Denext 4.20 (runtime 3.0.0-denext.25). In a web tile, holding the talk or
