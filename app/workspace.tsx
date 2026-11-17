@@ -377,7 +377,8 @@ function WorkspaceView() {
     },
     openTile: (url) => void openWebTile(url),
     cycling,
-  }), [webEngine, cycling, openWebTile]);
+    home: state.settings.links.home,
+  }), [webEngine, cycling, openWebTile, state.settings.links.home]);
   // The keys a native web view hands back while its page has the keyboard: the workspace's
   // shortcuts and the talk keys.
   const { pttKey, dictateKey } = state.settings.voice;
@@ -908,6 +909,13 @@ function WorkspaceView() {
           onLaunch: launcher.launchFromMenu,
           ...(launcher.sandboxChoice
             ? { sandbox: launcher.sandboxChoice }
+            : {}),
+          // Only where a web tile shows any site (the native engine), not the iframe's local pages.
+          ...(webEngine?.capabilities.drawsAboveHtml
+            ? {
+              onWebPage: () =>
+                void openWebTile(stateRef.current.settings.links.home),
+            }
             : {}),
           ...(ollama.status.installed
             ? {

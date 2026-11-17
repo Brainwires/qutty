@@ -11,6 +11,7 @@ import {
   hostLabel,
   isDevHost,
   sanitizeWebPage,
+  SEARCH_URL,
 } from "../lib/web/url.ts";
 import {
   canGoBack,
@@ -407,4 +408,15 @@ Deno.test("web: dictation is refused where nothing editable has the focus", () =
   const email = fakeField("INPUT", { type: "email" });
   assertEquals(insertIntoDocument(fakeDoc(email.field).doc, "x"), false);
   assertEquals(email.field.value, "abc");
+});
+
+Deno.test("addressToUrl: with search on, words that are not an address become a search", () => {
+  assertEquals(addressToUrl("deno.com", { search: true }), "https://deno.com/");
+  assertEquals(
+    addressToUrl("rust lifetimes", { search: true }),
+    `${SEARCH_URL}rust%20lifetimes`,
+  );
+  assertEquals(addressToUrl("deno", { search: true }), `${SEARCH_URL}deno`);
+  assertEquals(addressToUrl("deno"), null);
+  assertEquals(addressToUrl("   ", { search: true }), null);
 });

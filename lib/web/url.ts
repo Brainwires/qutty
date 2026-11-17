@@ -90,9 +90,22 @@ export const FRAME_SRC: readonly string[] = [
  * `localhost:3000/x` or `app.test` gets `http://`, anything else `https://`. `null` for text
  * that is not an address (spaces, another scheme such as `file:` or `javascript:`).
  */
-export function addressToUrl(input: string): string | null {
+export function addressToUrl(
+  input: string,
+  options: { search?: boolean } = {},
+): string | null {
   const text = input.trim();
-  if (text === "" || /\s/.test(text)) return null;
+  if (text === "") return null;
+  const address = addressOf(text);
+  if (address || !options.search) return address;
+  return `${SEARCH_URL}${encodeURIComponent(text)}`;
+}
+
+/** Where `addressToUrl` sends words that are not an address, when searching is on. */
+export const SEARCH_URL = "https://www.google.com/search?q=";
+
+function addressOf(text: string): string | null {
+  if (/\s/.test(text)) return null;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
     return parseWebUrl(text)?.href ?? null;
   }

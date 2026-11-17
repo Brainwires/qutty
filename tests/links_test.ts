@@ -3,6 +3,7 @@
 
 import { assertEquals } from "@std/assert";
 import {
+  DEFAULT_HOME_PAGE,
   DEFAULT_LINKS,
   EDITOR_PRESETS,
   editorArgv,
@@ -281,6 +282,7 @@ Deno.test("sanitizeLinks and editorChoice", () => {
     editor: "zed",
     command: "xy",
     web: "tile",
+    home: "https://www.google.com/",
   });
   assertEquals(sanitizeLinks({ web: "browser" }).web, "browser");
   assertEquals(sanitizeLinks({ web: "tab" }).web, "tile");
@@ -303,4 +305,20 @@ Deno.test("sanitizeLinks and editorChoice", () => {
   });
   assertEquals(editorChoice(s("custom"), []), { kind: "default" });
   assertEquals(editorChoice(s("default"), ["code"]), { kind: "default" });
+});
+
+Deno.test("sanitizeLinks: the home page is an http(s) URL; empty is the default; junk keeps the last", () => {
+  assertEquals(sanitizeLinks({}).home, DEFAULT_HOME_PAGE);
+  assertEquals(sanitizeLinks({ home: "deno.com" }).home, "https://deno.com/");
+  assertEquals(sanitizeLinks({ home: "  " }).home, DEFAULT_HOME_PAGE);
+  const base = sanitizeLinks({ home: "https://example.com" });
+  assertEquals(
+    sanitizeLinks({ home: "javascript:alert(1)" }, base).home,
+    "https://example.com/",
+  );
+  assertEquals(
+    sanitizeLinks({ home: "not an address" }, base).home,
+    "https://example.com/",
+  );
+  assertEquals(sanitizeLinks({ home: 42 }, base).home, "https://example.com/");
 });
