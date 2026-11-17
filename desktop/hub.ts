@@ -1205,6 +1205,17 @@ export default defineDesktopExtension({
         service?.core.registry.setMeta(id, { label });
       },
     },
+    /** The user renamed a terminal's agent (the harness overlay's header); the name it got. */
+    rename: {
+      input: renameAgentInput,
+      handler: (args: unknown): Promise<string> => {
+        const { id, name } = args as { id: string; name: string };
+        // deno-lint-ignore require-await
+        return asValidation(async () =>
+          requireService().core.registry.rename(id, name.trim()).name
+        );
+      },
+    },
     /** The companion's status and recent privileged actions. */
     companionStatus: {
       input: emptyInput,

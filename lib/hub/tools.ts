@@ -23,6 +23,7 @@ import {
 } from "./protocol.ts";
 import { type HubCore, HubError } from "./core.ts";
 import { MAX_WAIT_MS } from "./mailbox.ts";
+import { tileInput } from "./tile-input.ts";
 import { MAX_READ_LINES } from "./mirror.ts";
 import type { CompanionTools } from "../companion/inference-brain.ts";
 import type {
@@ -70,25 +71,6 @@ function actionsOf(args: Record<string, unknown>): string[] {
     throw new HubError('"actions" is a list of up to 6 short button labels');
   }
   return v as string[];
-}
-
-/**
- * What `write_tile` types for `text` (and `enter`). Models often spell Enter as the two characters
- * backslash and r (a JSON escape written one level too deep), which a shell reads as `r`: `ls\r`
- * runs `lsr`. So a trailing backslash-r / backslash-n (not itself escaped) is taken as Enter, a
- * trailing real newline becomes a carriage return (what the Enter key sends; a TUI in raw mode
- * ignores a bare LF), and `enter` presses Enter once at the end.
- */
-export function tileInput(text: string, enter = false): string {
-  let body = text;
-  let pressEnter = enter;
-  for (;;) {
-    const m = /(?<!\\)(?:\\r\\n|\\r|\\n|\r\n|\r|\n)$/.exec(body);
-    if (!m) break;
-    body = body.slice(0, m.index);
-    pressEnter = true;
-  }
-  return pressEnter ? `${body}\r` : body;
 }
 
 /** The caller, from the connection it came on. */

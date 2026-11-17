@@ -6558,3 +6558,189 @@ textarea.agent-input::placeholder {
   color: var(--text-3);
   font-size: 10.5px;
 }
+
+/* ---- The harness overlay (app/harness-overlay.tsx) ------------------------------------------ */
+
+/* A GUI around a terminal that runs a coding-agent harness: the header becomes a card, the
+   terminal sits in a card of its own beside the side rail, over the prompt box. The cards are the
+   theme's own surfaces with an accent hairline that brightens on the focused tile. Without the
+   overlay the frame is just the terminal's host (`display: contents`). */
+.term-frame {
+  display: contents;
+}
+.tile.is-harness .tile-title,
+.tile.is-harness .tile-agent {
+  display: none;
+}
+.tile.is-harness .tile-head {
+  height: 34px;
+  margin: 6px 8px 0;
+  padding: 0 6px 0 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.07),
+    rgba(var(--accent-rgb), 0.015)),
+    var(--head);
+  box-shadow: 0 1px 0 rgba(var(--hi-rgb), 0.03) inset;
+}
+.tile.is-harness.is-focused .tile-head {
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+/* The busy shimmer runs inside the card's rounded corners. */
+.tile.is-harness .tile-head::after {
+  left: 10px;
+  right: 10px;
+}
+.harness-head {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.harness-glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+  font: 13px/1 var(--mono);
+}
+.harness-head .agent-name {
+  max-width: 30%;
+  font-size: 12px;
+}
+.harness-plain-name {
+  font: 600 12px/1 var(--mono);
+  color: var(--text);
+}
+.harness-label,
+.harness-model {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  color: var(--text-2);
+  font: 10.5px/1 var(--mono);
+  white-space: nowrap;
+}
+.harness-model {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+.harness-status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-3);
+  font: 10.5px/1 var(--mono);
+}
+.harness-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.harness-status[data-status="busy"] {
+  color: var(--accent);
+}
+.harness-status[data-status="busy"] .harness-dot {
+  background: var(--accent);
+  animation: agent-pulse 1.4s ease-in-out infinite;
+}
+.harness-status[data-status="waiting"] {
+  color: var(--tint-yellow, var(--amber));
+}
+.harness-status[data-status="waiting"] .harness-dot {
+  background: var(--tint-yellow, var(--amber));
+  box-shadow: 0 0 0 3px rgba(243, 195, 122, 0.18);
+}
+.reduced-motion .harness-status .harness-dot {
+  animation: none;
+}
+.harness-inbox {
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 10px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font: 600 10.5px/1 var(--mono);
+  cursor: pointer;
+}
+.harness-inbox:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+}
+.menu.agent-menu.harness-menu {
+  top: 26px;
+  left: auto;
+  right: 0;
+}
+
+/* The body: the terminal card and the rail, over the prompt card. */
+.term-frame.harness-frame {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+.harness-frame > .tile-body {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  padding: 6px 2px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tile.is-focused .harness-frame > .tile-body:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+.agent-rail.harness-rail {
+  position: static;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--head);
+  opacity: 0.7;
+}
+.harness-frame:hover .harness-rail,
+.harness-rail:focus-within {
+  opacity: 1;
+}
+.harness-frame > .agent-prompt.harness-prompt {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  padding: 8px 10px 6px;
+  border-color: rgba(var(--accent-rgb), 0.25);
+  border-radius: 12px;
+  background: var(--head);
+  font: 12.5px/1.35 var(--mono);
+}
+.tile.is-focused .harness-prompt.agent-prompt:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.75);
+}

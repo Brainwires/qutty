@@ -170,6 +170,13 @@ export interface TerminalEntry extends TileSignals {
    * agent's hub name.
    */
   chat?: AgentChat;
+  /** The foreground process, from the last `info` poll (`claude`, `zsh`; harness detection). */
+  process?: string;
+  /**
+   * This tile's choice of the harness overlay (its header menu's "GUI overlay"); unset: Settings →
+   * Tiles → "Show a GUI around agent harnesses".
+   */
+  guiOverlay?: boolean;
   /**
    * Minimized to the switcher bar: left out of the layout and of focus cycling, its shell (or
    * page) still running. Restoring it (its chip, `focus`, `restoreTile`) tiles it again.
@@ -226,6 +233,11 @@ export interface Settings extends FontSettings {
   tileTitle: TileTitle;
   /** Settings → Layout: the view a new workspace starts in (each one keeps its own after). */
   defaultView: ViewMode;
+  /**
+   * Settings → Tiles: a terminal running a coding-agent harness gets the GUI overlay
+   * (app/harness-overlay.tsx), unless its own header menu turned it off.
+   */
+  harnessOverlay: boolean;
 }
 
 /** The whole workspace. */
@@ -307,7 +319,11 @@ export type WorkspaceAction =
     message?: string;
   }
   | { type: "restarted"; id: string; now: number }
-  | { type: "title"; id: string; title: string }
+  /** The `info` poll's title, and its foreground process (harness detection). */
+  | { type: "title"; id: string; title: string; process?: string }
+  /** Tile `id`'s header menu: the harness overlay on or off for it (`undefined`: as Settings say). */
+  | { type: "setGuiOverlay"; id: string; on: boolean | undefined }
+  | { type: "setHarnessOverlay"; on: boolean }
   | { type: "activity"; id: string }
   /** A bell rang in tile `id` (or its agent started waiting for the user). */
   | { type: "bell"; id: string }
@@ -392,6 +408,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activity: { ...DEFAULT_ACTIVITY },
   tileTitle: "program",
   defaultView: "tiled",
+  harnessOverlay: true,
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -525,6 +542,9 @@ export function sanitizeSettings(
     out.inactiveTiles = r.inactiveTiles as InactiveTiles;
   }
   if (typeof r.focusToMain === "boolean") out.focusToMain = r.focusToMain;
+  if (typeof r.harnessOverlay === "boolean") {
+    out.harnessOverlay = r.harnessOverlay;
+  }
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
@@ -1014,7 +1034,20 @@ function reduceCore(
       ) {
         return state;
       }
-      return updateTerminal(state, action.id, { title: action.title });
+      return updateTerminal(state, action.id, {
+        title: action.title,
+        ...(action.process !== undefined ? { process: action.process } : {}),
+      });
+    case "setGuiOverlay":
+      return updateTerminal(state, action.id, {
+        guiOverlay: typeof action.on === "boolean" ? action.on : undefined,
+      });
+    case "setHarnessOverlay":
+      if (state.settings.harnessOverlay === action.on) return state;
+      return withSettings(state, {
+        ...state.settings,
+        harnessOverlay: action.on === true,
+      });
     case "webPage": {
       const entry = state.terminals.find((t) => t.id === action.id);
       const page = sanitizeWebPage(action.page);

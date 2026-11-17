@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- A GUI around agent harnesses. A terminal that runs Claude Code, Codex, Gemini
+  CLI, opencode, aider or another coding-agent harness gets a frame around the
+  harness's own terminal UI, which stays real and interactive in the middle.
+  - Qutty knows the harness from the agent hub (the harness's SessionStart
+    hook), the agent tool the tile was opened as, the program in the foreground
+    or the title it set. When the harness quits back to the shell, or the tile
+    ends, the frame goes.
+  - The header card: the harness's glyph, the tile's agent name (click to
+    rename), the harness, its model when known, a status dot (working, idle,
+    waiting for you), a Messages button while other agents' messages wait for
+    it, and a menu (hide the frame, its setting, close).
+  - The prompt box (the agent tile's): Enter sends, Shift+Enter is a new line, ↑
+    / ↓ walk the history; attach text files (typed after the prompt), saved
+    prompts, history, hold-to-dictate (with the companion), Interrupt (Esc, or
+    Ctrl+C for aider) and Send. Sending types the prompt into the terminal as a
+    paste would arrive (bracketed when the harness asked for that) and presses
+    Enter. The terminal resizes as the box grows.
+  - The side rail: jump to the top, jump to the latest, maximize or restore the
+    tile, and read the screen aloud in the companion's voice.
+  - Clicking the terminal gives it the keyboard; clicking the prompt box gives
+    the box the keyboard. A focused tile still focuses its terminal.
+  - Settings → Tiles → "Show a GUI around agent harnesses" (on by default); a
+    tile's header menu (right click) has "GUI overlay" to turn it off or on for
+    that tile.
+
 - Agent tiles get a roomier prompt box and a side rail.
   - The prompt box starts two lines tall and grows to about twenty; Enter sends,
     Shift+Enter is a new line. ↑ at the start of the text (↓ at its end, either
