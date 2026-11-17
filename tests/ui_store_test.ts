@@ -392,6 +392,7 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     command: "",
     web: "tile",
     home: "https://www.google.com/",
+    bookmarksBar: true,
   });
   assertEquals(
     sanitizeSettings({
@@ -402,6 +403,7 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
       command: "zed {file}",
       web: "tile",
       home: DEFAULT_HOME_PAGE,
+      bookmarksBar: true,
     },
   );
   assertEquals(
@@ -432,6 +434,7 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     command: "hx {file}",
     web: "browser",
     home: DEFAULT_HOME_PAGE,
+    bookmarksBar: true,
   });
 });
 
