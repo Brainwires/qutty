@@ -33,6 +33,7 @@ import type { PtyBackend } from "../../lib/pty-client.ts";
 import { detectPlatform } from "../../lib/workspace/keys.ts";
 import { ReactionSettings } from "./reaction-settings.tsx";
 import { ApiKeyField } from "./api-key-field.tsx";
+import { SettingsGroup, SettingsLink } from "../settings-ui.tsx";
 
 export interface CompanionSettingsProps {
   settings: CompanionSettings;
@@ -121,118 +122,133 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
   const shown = settings.mode !== "off";
   return (
     <div class="companion-settings" data-testid="companion-settings">
-      <div class="field">
-        <span class="field-label">Companion</span>
-        <div class="segmented" role="radiogroup" aria-label="Companion">
-          {COMPANION_MODES.map((m) => (
-            <button
-              type="button"
-              key={m}
-              role="radio"
-              aria-checked={m === settings.mode}
-              class={m === settings.mode ? "is-active" : ""}
-              data-testid="setting-companion-mode"
-              data-value={m}
-              disabled={m === "floating"}
-              title={m === "floating"
-                ? "Later: a window of its own, once Denext has multi-window"
-                : undefined}
-              onClick={() => onChange({ mode: m })}
-            >
-              {MODE_LABEL[m]}
-            </button>
-          ))}
+      <SettingsGroup title="Companion" testid="companion-section">
+        <div class="field">
+          <span class="field-label">Companion</span>
+          <div class="segmented" role="radiogroup" aria-label="Companion">
+            {COMPANION_MODES.map((m) => (
+              <button
+                type="button"
+                key={m}
+                role="radio"
+                aria-checked={m === settings.mode}
+                class={m === settings.mode ? "is-active" : ""}
+                data-testid="setting-companion-mode"
+                data-value={m}
+                disabled={m === "floating"}
+                title={m === "floating"
+                  ? "Later: a window of its own, once Denext has multi-window"
+                  : undefined}
+                onClick={() => onChange({ mode: m })}
+              >
+                {MODE_LABEL[m]}
+              </button>
+            ))}
+          </div>
+          <span class="field-hint">
+            {shown
+              ? `${settings.name} sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click ${settings.name}).`
+              : "Off: agents' questions open a card instead, and the brain does not run."}
+          </span>
         </div>
-        <span class="field-hint">
-          {shown
-            ? `${settings.name} sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click ${settings.name}).`
-            : "Off: agents' questions open a card instead, and the brain does not run."}
-        </span>
-      </div>
-      <NameField name={settings.name} onChange={(name) => onChange({ name })} />
-      <label class="field">
-        <span class="field-label">Corner</span>
-        <select
-          class="field-select"
-          data-testid="setting-companion-corner"
-          value={settings.corner}
-          disabled={!shown}
-          onChange={(e) =>
-            onChange({
-              corner: (e.target as HTMLSelectElement)
-                .value as CompanionSettings["corner"],
-            })}
-        >
-          {COMPANION_CORNERS.map((c) => (
-            <option value={c} key={c}>{c.replace("-", " ")}</option>
-          ))}
-        </select>
-      </label>
-      <label class="field field-check">
-        <input
-          type="checkbox"
-          data-testid="setting-companion-lively"
-          checked={settings.lively}
-          disabled={!shown}
-          onChange={(e) =>
-            onChange({ lively: (e.target as HTMLInputElement).checked })}
+        <NameField
+          name={settings.name}
+          onChange={(name) => onChange({ name })}
         />
-        <span class="field-label">
-          Lively (idle expressions and eyes follow the pointer)
-        </span>
-      </label>
-      <ReactionSettings settings={settings} shown={shown} onChange={onChange} />
-      <label class="field field-check">
-        <input
-          type="checkbox"
-          data-testid="setting-companion-brain"
-          checked={settings.brain}
-          disabled={!shown}
-          onChange={(e) =>
-            onChange({ brain: (e.target as HTMLInputElement).checked })}
+        <label class="field">
+          <span class="field-label">Corner</span>
+          <select
+            class="field-select"
+            data-testid="setting-companion-corner"
+            value={settings.corner}
+            disabled={!shown}
+            onChange={(e) =>
+              onChange({
+                corner: (e.target as HTMLSelectElement)
+                  .value as CompanionSettings["corner"],
+              })}
+          >
+            {COMPANION_CORNERS.map((c) => (
+              <option value={c} key={c}>{c.replace("-", " ")}</option>
+            ))}
+          </select>
+        </label>
+        <label class="field field-check">
+          <input
+            type="checkbox"
+            data-testid="setting-companion-lively"
+            checked={settings.lively}
+            disabled={!shown}
+            onChange={(e) =>
+              onChange({ lively: (e.target as HTMLInputElement).checked })}
+          />
+          <span class="field-label">
+            Lively (idle expressions and eyes follow the pointer)
+          </span>
+        </label>
+      </SettingsGroup>
+      <SettingsGroup title="Reactions">
+        <ReactionSettings
+          settings={settings}
+          shown={shown}
+          onChange={onChange}
         />
-        <span class="field-label">Brain</span>
-      </label>
-      <BrainChoice
-        settings={settings}
-        backend={props.backend}
-        disabled={!shown || !settings.brain}
-        {...(props.ollama ? { ollama: props.ollama } : {})}
-        onChange={onChange}
-      />
-      <span class="field-hint" data-testid="companion-brain-status">
-        {status
-          ? `${status.adapter}: ${status.enabled ? status.state : "off"}${
-            status.detail ? ` (${status.detail})` : ""
-          }`
-          : "Status unknown"}. It starts on first use and acts on tiles through
-        the agent hub.
-      </span>
-      <div class="field">
-        <span class="field-label">Companion activity</span>
-        {activity.length === 0
-          ? <span class="field-hint">Nothing yet.</span>
-          : (
-            <ol class="companion-activity" data-testid="companion-activity">
-              {activity.slice(0, ACTIVITY_ROWS).map((e, i) => (
-                <li
-                  key={`${e.at}-${i}`}
-                  data-testid="companion-activity-row"
-                  data-ok={String(e.ok)}
-                  title={e.error ?? ""}
-                >
-                  <time>{new Date(e.at).toLocaleTimeString()}</time>
-                  <b>{e.tool}</b>
-                  <span>
-                    {e.by === "companion" ? "" : `by ${e.by} `}
-                    {argsLine(e.args)}
-                  </span>
-                  {!e.ok && <em>{e.error ?? "failed"}</em>}
-                </li>
-              ))}
-            </ol>
-          )}
-      </div>
+      </SettingsGroup>
+      <SettingsGroup title="Brain">
+        <label class="field field-check">
+          <input
+            type="checkbox"
+            data-testid="setting-companion-brain"
+            checked={settings.brain}
+            disabled={!shown}
+            onChange={(e) =>
+              onChange({ brain: (e.target as HTMLInputElement).checked })}
+          />
+          <span class="field-label">Brain</span>
+        </label>
+        <BrainChoice
+          settings={settings}
+          backend={props.backend}
+          disabled={!shown || !settings.brain}
+          {...(props.ollama ? { ollama: props.ollama } : {})}
+          onChange={onChange}
+        />
+        <span class="field-hint" data-testid="companion-brain-status">
+          {status
+            ? `${status.adapter}: ${status.enabled ? status.state : "off"}${
+              status.detail ? ` (${status.detail})` : ""
+            }`
+            : "Status unknown"}. It starts on first use and acts on tiles
+          through the agent hub.
+        </span>
+      </SettingsGroup>
+      <SettingsGroup title="Activity">
+        <div class="field">
+          <span class="field-label">Companion activity</span>
+          {activity.length === 0
+            ? <span class="field-hint">Nothing yet.</span>
+            : (
+              <ol class="companion-activity" data-testid="companion-activity">
+                {activity.slice(0, ACTIVITY_ROWS).map((e, i) => (
+                  <li
+                    key={`${e.at}-${i}`}
+                    data-testid="companion-activity-row"
+                    data-ok={String(e.ok)}
+                    title={e.error ?? ""}
+                  >
+                    <time>{new Date(e.at).toLocaleTimeString()}</time>
+                    <b>{e.tool}</b>
+                    <span>
+                      {e.by === "companion" ? "" : `by ${e.by} `}
+                      {argsLine(e.args)}
+                    </span>
+                    {!e.ok && <em>{e.error ?? "failed"}</em>}
+                  </li>
+                ))}
+              </ol>
+            )}
+        </div>
+      </SettingsGroup>
     </div>
   );
 }
@@ -389,7 +405,16 @@ function BrainChoice(props: {
             </select>
             <span class="field-hint" data-testid="companion-ollama-hint">
               {!props.ollama?.installed
-                ? "Ollama is not installed (Settings → Ollama)."
+                ? (
+                  <>
+                    Ollama is not installed (<SettingsLink
+                      tab="agents"
+                      target="ollama-settings"
+                    >
+                      Settings → Agents → Ollama
+                    </SettingsLink>).
+                  </>
+                )
                 : !props.ollama.serverUp
                 ? "The Ollama server is not running."
                 : toolModels.length === 0

@@ -113,7 +113,7 @@ async function setMinDuration(app: App, seconds: number) {
 
 /** Reactions to 1 s commands, so the suite is quick. */
 async function quick(app: App) {
-  await app.openSettings();
+  await app.openSettings("companion");
   await waitFor(
     () => app.exists("[data-testid=companion-reactions]"),
     2000,
@@ -318,7 +318,7 @@ suite("companion reactions", (test) => {
   test("Settings: the reactions' toggles", async (app) => {
     await quick(app);
     const shell = (await app.focusedId())!;
-    await app.openSettings();
+    await app.openSettings("companion");
     for (const key of ["celebrate", "sad"]) {
       await app.click(`[data-testid=setting-companion-${key}]`);
     }
@@ -333,7 +333,7 @@ suite("companion reactions", (test) => {
       seen.join(" "),
     );
     // Celebrate on, the line off: the hop without the line.
-    await app.openSettings();
+    await app.openSettings("companion");
     await app.click("[data-testid=setting-companion-celebrate]");
     await app.click("[data-testid=setting-companion-reactBubble]");
     await app.closeSettings();
@@ -341,7 +341,7 @@ suite("companion reactions", (test) => {
     await waitMood(app, "success");
     assertEquals(await reactionLine(app), null);
     // Sleepy off: no sleep at night.
-    await app.openSettings();
+    await app.openSettings("companion");
     await app.click("[data-testid=setting-companion-nightSleepy]");
     await app.closeSettings();
     await waitMood(app, "neutral", 5000);
