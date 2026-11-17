@@ -113,6 +113,104 @@ export function commandForKey(
   return null;
 }
 
+/**
+ * A browser command, for the focused web tile (app/web-tile.tsx `runWebCommand`): the keys of
+ * Safari and Chrome, with Ctrl in place of ⌘ off macOS.
+ */
+export type WebKeyCommand =
+  | { kind: "focusAddress" }
+  | { kind: "reload"; ignoreCache: boolean }
+  | { kind: "stop" }
+  | { kind: "back" }
+  | { kind: "forward" }
+  | { kind: "bookmark" }
+  | { kind: "find" }
+  | { kind: "findNext"; dir: 1 | -1 }
+  | { kind: "zoom"; dir: 1 | -1 }
+  | { kind: "zoomReset" }
+  | { kind: "print" }
+  | { kind: "devTools" };
+
+/**
+ * The browser command for a keydown, or `null`:
+ *
+ * - Mod+L the address field; Mod+R reload, Mod+Shift+R reload past the cache; ⌘. stop (macOS)
+ * - Mod+[ / Mod+] back / forward (Safari's keys; over a web tile they win over the tile cycle)
+ * - Mod+D bookmark the page; Mod+F find, Mod+G / Mod+Shift+G the next / previous match
+ * - Mod+= / Mod++ zoom in, Mod+- zoom out, Mod+0 actual size (numpad keys too)
+ * - Mod+P print; Mod+Alt+I the developer tools
+ */
+export function webCommandForKey(
+  e: KeyLike,
+  platform: KeyPlatform,
+): WebKeyCommand | null {
+  const mod = platform === "mac"
+    ? e.metaKey && !e.ctrlKey
+    : e.ctrlKey && !e.metaKey;
+  if (!mod) return null;
+  const code = e.code;
+  if (e.altKey) {
+    return code === "KeyI" && !e.shiftKey ? { kind: "devTools" } : null;
+  }
+  if (code === "Equal" || code === "NumpadAdd") return { kind: "zoom", dir: 1 };
+  if (e.shiftKey) {
+    if (code === "KeyR") return { kind: "reload", ignoreCache: true };
+    if (code === "KeyG") return { kind: "findNext", dir: -1 };
+    return null;
+  }
+  switch (code) {
+    case "Minus":
+    case "NumpadSubtract":
+      return { kind: "zoom", dir: -1 };
+    case "Digit0":
+    case "Numpad0":
+      return { kind: "zoomReset" };
+    case "KeyL":
+      return { kind: "focusAddress" };
+    case "KeyR":
+      return { kind: "reload", ignoreCache: false };
+    case "Period":
+      return platform === "mac" ? { kind: "stop" } : null;
+    case "BracketLeft":
+      return { kind: "back" };
+    case "BracketRight":
+      return { kind: "forward" };
+    case "KeyD":
+      return { kind: "bookmark" };
+    case "KeyF":
+      return { kind: "find" };
+    case "KeyG":
+      return { kind: "findNext", dir: 1 };
+    case "KeyP":
+      return { kind: "print" };
+  }
+  return null;
+}
+
+/** A keydown routed: to the focused web tile, or to the workspace. */
+export type RoutedKey =
+  | { scope: "web"; cmd: WebKeyCommand }
+  | { scope: "workspace"; cmd: KeyCommand };
+
+/**
+ * Where a keydown goes, by the focused tile's type: over a web tile its browser keys come first
+ * (so Mod+[ / Mod+] go back and forward there, and Mod+= zooms the page, not the terminals'
+ * font), and every other workspace shortcut works as everywhere (Mod+T, Mod+W, Mod+1..9…).
+ * `null`: not a shortcut (the terminal or the page has it).
+ */
+export function routeKey(
+  e: KeyLike,
+  platform: KeyPlatform,
+  webFocused: boolean,
+): RoutedKey | null {
+  if (webFocused) {
+    const cmd = webCommandForKey(e, platform);
+    if (cmd) return { scope: "web", cmd };
+  }
+  const cmd = commandForKey(e, platform);
+  return cmd ? { scope: "workspace", cmd } : null;
+}
+
 /** Whether a keyup releases the primary modifier (which ends an alt-tab style cycle). */
 export function isModifierRelease(
   e: { key: string },
@@ -215,6 +313,7 @@ const ACCELERATOR_KEYS: readonly (readonly [string, string])[] = [
   ["BracketLeft", "["],
   ["BracketRight", "]"],
   ["Backquote", "`"],
+  ["Period", "."],
   // The accelerator `Enter` is the numpad's Enter too.
   ["Enter", "Enter"],
   ["Space", "Space"],
@@ -223,9 +322,11 @@ const ACCELERATOR_KEYS: readonly (readonly [string, string])[] = [
 ];
 
 /**
- * The workspace's shortcuts and the talk keys as accelerators (`"CmdOrCtrl+Shift+L"`, matched by
+ * The workspace's shortcuts, the talk keys and the browser keys (only a web tile's page has the
+ * keyboard there) as accelerators (`"CmdOrCtrl+Shift+L"`, matched by
  * physical key): what a native web view hands back to the app while its page has the keyboard
- * (lib/web/native-engine.ts). Derived from {@linkcode commandForKey} and {@linkcode isTalkKey},
+ * (lib/web/native-engine.ts). Derived from {@linkcode commandForKey}, {@linkcode isTalkKey} and
+ * {@linkcode webCommandForKey},
  * so it names exactly the keys the window's listeners take and no other.
  */
 export function forwardAccelerators(
@@ -234,17 +335,26 @@ export function forwardAccelerators(
 ): string[] {
   const out: string[] = [];
   for (const [code, key] of ACCELERATOR_KEYS) {
-    for (const shiftKey of [false, true]) {
-      const e: KeyLike = {
-        key: "",
-        code,
-        altKey: false,
-        shiftKey,
-        metaKey: platform === "mac",
-        ctrlKey: platform !== "mac",
-      };
-      if (commandForKey(e, platform) || isTalkKey(e, voice, platform)) {
-        out.push(`CmdOrCtrl+${shiftKey ? "Shift+" : ""}${key}`);
+    for (const altKey of [false, true]) {
+      for (const shiftKey of [false, true]) {
+        const e: KeyLike = {
+          key: "",
+          code,
+          altKey,
+          shiftKey,
+          metaKey: platform === "mac",
+          ctrlKey: platform !== "mac",
+        };
+        if (
+          commandForKey(e, platform) || isTalkKey(e, voice, platform) ||
+          webCommandForKey(e, platform)
+        ) {
+          out.push(
+            `CmdOrCtrl+${altKey ? "Alt+" : ""}${
+              shiftKey ? "Shift+" : ""
+            }${key}`,
+          );
+        }
       }
     }
   }
