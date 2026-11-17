@@ -340,9 +340,13 @@ Deno.test("hub routing: tiles and closes to every window, an agent's question to
   assertEquals(hubEventTarget(r, "companion", {}), { window: "w2" });
   assertEquals(hubEventTarget(r, "say", {}), { window: "w2" });
   assertEquals(hubEventTarget(r, "control", {}), { window: "w2" });
+  // A web tile's command: the window showing the tile's workspace (its owner).
+  const web = { command: { kind: "web", op: { op: "read" }, owner: "main" } };
+  assertEquals(hubEventTarget(r, "control", web), { window: "main" });
   // A detached tile's question waits (the snapshot shows it on reattach).
   r.windowClosed("main");
   assertEquals(hubEventTarget(r, "ask", { from: "pty-1" }), null);
+  assertEquals(hubEventTarget(r, "control", web), null);
   assertEquals(askVisibleIn(r, "pty-1", "w2"), false);
   assertEquals(askVisibleIn(r, "pty-2", "w2"), true);
   assertEquals(askVisibleIn(r, "companion", "w2"), true);

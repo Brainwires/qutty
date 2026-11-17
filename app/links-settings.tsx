@@ -107,6 +107,16 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
           <code>+</code> menu opens. Empty is Google.
         </span>
       </label>
+      <label class="field field-check">
+        <input
+          type="checkbox"
+          data-testid="setting-links-bookmarks-bar"
+          checked={settings.bookmarksBar}
+          onChange={(e) =>
+            onChange({ bookmarksBar: (e.target as HTMLInputElement).checked })}
+        />
+        <span class="field-label">Show bookmarks bar</span>
+      </label>
       <label class="field">
         <span class="field-label">Open files with a line in</span>
         <select

@@ -28,6 +28,8 @@
  *   window is the active one again (`focusWindow` would bring it to the front).
  * - **Dictation.** `insertText` runs {@linkcode insertTextScript} in the page (`evaluate`, an
  *   isolated world that shares the DOM).
+ * - **The companion's web tools** read and act on the page through the same `evaluate`, and
+ *   picture it with `capture` (lib/web/web-control.ts).
  *
  * Policies: logins persist (the named partition {@linkcode WEB_PARTITION}); a popup opens nothing
  * in the view and is reported (`new-window`: the tile opens it in a new tile); a download asks
@@ -81,6 +83,12 @@ export type RawWebView = Pick<
   | "evaluate"
   | "setZOrder"
   | "setForwardKeys"
+  | "setZoom"
+  | "getZoom"
+  | "find"
+  | "stopFind"
+  | "print"
+  | "openDevTools"
   | "on"
   | "close"
 >;
@@ -88,11 +96,18 @@ export type RawWebView = Pick<
 /** What `attachWebView` drives: the engine's stand-in for the view. */
 export type AttachedView = Pick<RawWebView, "setBounds" | "setVisible" | "on">;
 
-/** The capabilities the engine reads. */
-export type NativeCapabilities = Pick<
-  WebViewCapabilities,
-  "supported" | "capture" | "evaluate" | "zOrder" | "forwardKeys"
->;
+/** The capabilities the engine reads (the browser features are off when not said). */
+export type NativeCapabilities =
+  & Pick<
+    WebViewCapabilities,
+    "supported" | "capture" | "evaluate" | "zOrder" | "forwardKeys"
+  >
+  & Partial<
+    Pick<
+      WebViewCapabilities,
+      "zoom" | "find" | "print" | "devTools" | "contextMenu"
+    >
+  >;
 
 /** A page snapshot standing in for its view. */
 export interface Snapshot {
@@ -294,6 +309,20 @@ class NativeView implements WebViewHandle {
           this.#emit("new-window", { url: e.url, disposition: e.disposition }),
       ),
       raw.on("keydown", (e) => this.#emit("keydown", { ...e })),
+      raw.on("find-result", (e) =>
+        this.#emit("find-result", {
+          matches: e.matches,
+          activeMatch: e.activeMatch,
+        })),
+      raw.on("context-menu", (e) =>
+        this.#emit("context-menu", {
+          x: e.x,
+          y: e.y,
+          isEditable: e.isEditable === true,
+          ...(e.linkUrl ? { linkUrl: e.linkUrl } : {}),
+          ...(e.imageUrl ? { imageUrl: e.imageUrl } : {}),
+          ...(e.selectionText ? { selectionText: e.selectionText } : {}),
+        })),
       raw.on("closed", () => this.#finish()),
     );
     this.#attach();
@@ -477,6 +506,24 @@ class NativeView implements WebViewHandle {
     }
   }
 
+  evaluate(script: string): Promise<unknown> {
+    if (this.#closed) return Promise.reject(new Error("the view is closed"));
+    if (!this.#shared.caps.evaluate) {
+      return Promise.reject(new Error("this runtime cannot evaluate"));
+    }
+    return this.#raw.evaluate<unknown>(script);
+  }
+
+  capture(
+    opts: { format: "jpeg" | "png"; quality?: number; scale?: number },
+  ): Promise<Blob> {
+    if (this.#closed) return Promise.reject(new Error("the view is closed"));
+    if (!this.#shared.caps.capture) {
+      return Promise.reject(new Error("this runtime cannot capture"));
+    }
+    return this.#raw.capture(opts);
+  }
+
   async state(): Promise<WebViewState> {
     const s = await this.#raw.state();
     return {
@@ -486,6 +533,32 @@ class NativeView implements WebViewHandle {
       canGoBack: s.canGoBack,
       canGoForward: s.canGoForward,
     };
+  }
+
+  setZoom(factor: number): Promise<void> {
+    if (this.#closed) return Promise.resolve();
+    return this.#raw.setZoom(Math.min(5, Math.max(0.25, factor)));
+  }
+
+  getZoom(): Promise<number> {
+    return this.#closed ? Promise.resolve(1) : this.#raw.getZoom();
+  }
+
+  find(text: string, opts?: { forward?: boolean }): Promise<void> {
+    if (this.#closed) return Promise.resolve();
+    return this.#raw.find(text, opts);
+  }
+
+  stopFind(): Promise<void> {
+    return this.#closed ? Promise.resolve() : this.#raw.stopFind();
+  }
+
+  print(): Promise<void> {
+    return this.#closed ? Promise.resolve() : this.#raw.print();
+  }
+
+  openDevTools(): Promise<void> {
+    return this.#closed ? Promise.resolve() : this.#raw.openDevTools();
   }
 
   setForwardKeys(keys: string[]): void {
@@ -578,6 +651,11 @@ export function createNativeEngine(
       capture: caps.capture,
       evaluate: caps.evaluate,
       forwardKeys: caps.forwardKeys,
+      zoom: caps.zoom === true,
+      find: caps.find === true,
+      print: caps.print === true,
+      devTools: caps.devTools === true,
+      contextMenu: caps.contextMenu === true,
     },
     canEmbed: (url) => canEmbedNatively(url, appOrigin),
     setForwardKeys(keys) {
@@ -596,6 +674,8 @@ export function createNativeEngine(
         allowPopups: "deny",
         downloads: "ask",
         permissions: "deny",
+        // The tile draws the page's context menu (link, selection, navigation, Inspect).
+        ...(caps.contextMenu ? { contextMenu: "app" as const } : {}),
         ...(caps.forwardKeys ? { forwardKeys: keys } : {}),
       });
       const view = new NativeView(raw, host, shared);

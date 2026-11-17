@@ -265,7 +265,7 @@ suite("ollama", (test) => {
   });
 
   test("settings: status, the model table, defaults, and + opens a pair", async (app) => {
-    await app.openSettings();
+    await app.openSettings("agents");
     await waitFor(
       () => app.exists("[data-testid=ollama-table]"),
       4000,

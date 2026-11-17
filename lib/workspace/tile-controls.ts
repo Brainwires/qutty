@@ -1,13 +1,10 @@
 /**
  * The tiles' window controls as the workspace's actions: what a double click on a tile's header
  * does (the OS title-bar double-click preference, `denext/desktop/window`'s
- * `getTitleBarPreferences().doubleClick`) and what the Window menu's tile items do. Pure, so it is
- * tested without a DOM.
+ * `getTitleBarPreferences().doubleClick`). Pure, so it is tested without a DOM.
  *
  * @module
  */
-
-import { MINIMIZE_TILE_ITEM, type TileMenuItem } from "./windows.ts";
 
 /** A tile window-control action (a {@linkcode WorkspaceAction} type in lib/workspace/store.ts). */
 export type TileControl = "minimize" | "maximize" | "restoreTile";
@@ -28,12 +25,4 @@ export function headDoubleClickControl(
   if (action === "maximize") return zoom(maximized);
   if (action === "minimize") return "minimize";
   return null;
-}
-
-/** What a Window-menu tile item does to the focused tile. */
-export function tileMenuControl(
-  item: TileMenuItem,
-  maximized: boolean,
-): TileControl {
-  return item === MINIMIZE_TILE_ITEM ? "minimize" : zoom(maximized);
 }

@@ -143,7 +143,7 @@ suite("links", (test) => {
       col: 7,
     });
 
-    await app.openSettings();
+    await app.openSettings("links");
     await app.eval(() => {
       const el = document.querySelector<HTMLSelectElement>(
         "[data-testid=setting-links-editor]",
@@ -158,7 +158,7 @@ suite("links", (test) => {
       "the editor setting saved",
     );
     await app.reload();
-    await app.openSettings();
+    await app.openSettings("links");
     assertEquals(
       await app.eval(() =>
         document.querySelector<HTMLSelectElement>(

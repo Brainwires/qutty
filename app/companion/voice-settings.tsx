@@ -19,6 +19,7 @@ import type { ModelState } from "../../lib/voice/model.ts";
 import { webRecognition } from "../../lib/voice/engines.ts";
 import type { CloudService } from "../../lib/voice/client.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
+import { SettingsGroup } from "../settings-ui.tsx";
 import {
   isCloudEngine,
   PTT_KEYS,
@@ -220,235 +221,243 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
   const cloudTts = isCloudEngine(settings.ttsEngine);
   return (
     <div class="voice-settings" data-testid="voice-settings">
-      <Check
-        label={`Read aloud (${props.name}'s answers)`}
-        testid="setting-voice-speak"
-        checked={settings.speakAnswers}
-        onChange={(speakAnswers) => onChange({ speakAnswers })}
-      />
-      <label class="field">
-        <span class="field-label">Voice engine</span>
-        <select
-          class="field-select"
-          data-testid="setting-voice-tts"
-          value={settings.ttsEngine}
-          onChange={(e) =>
-            onChange({
-              ttsEngine: (e.target as HTMLSelectElement).value as TtsEngineId,
-              voice: "",
-            })}
-        >
-          {TTS_ENGINES.map((t) => (
-            <option value={t} key={t}>
-              {TTS_LABEL[t]}
-            </option>
-          ))}
-        </select>
-        {cloudTts && (
-          <span class="field-hint">
-            Answers are sent to Deepgram to be spoken, and played here.
-          </span>
+      <SettingsGroup title="Speaking" testid="voice-section">
+        <Check
+          label={`Read aloud (${props.name}'s answers)`}
+          testid="setting-voice-speak"
+          checked={settings.speakAnswers}
+          onChange={(speakAnswers) => onChange({ speakAnswers })}
+        />
+        <label class="field">
+          <span class="field-label">Voice engine</span>
+          <select
+            class="field-select"
+            data-testid="setting-voice-tts"
+            value={settings.ttsEngine}
+            onChange={(e) =>
+              onChange({
+                ttsEngine: (e.target as HTMLSelectElement).value as TtsEngineId,
+                voice: "",
+              })}
+          >
+            {TTS_ENGINES.map((t) => (
+              <option value={t} key={t}>
+                {TTS_LABEL[t]}
+              </option>
+            ))}
+          </select>
+          {cloudTts && (
+            <span class="field-hint">
+              Answers are sent to Deepgram to be spoken, and played here.
+            </span>
+          )}
+        </label>
+        {cloudTts && voice && (
+          <KeyField voice={voice} service="deepgram" platform={platform} />
         )}
-      </label>
-      {cloudTts && voice && (
-        <KeyField voice={voice} service="deepgram" platform={platform} />
-      )}
-      <label class="field">
-        <span class="field-label">Voice</span>
-        {!cloudTts && voices.length > 0
-          ? (
-            <select
-              class="field-select"
-              data-testid="setting-voice-voice"
-              value={settings.voice}
-              onChange={(e) =>
-                onChange({ voice: (e.target as HTMLSelectElement).value })}
-            >
-              <option value="">Default</option>
-              {voices.map((v) => <option value={v} key={v}>{v}</option>)}
-            </select>
-          )
-          : (
-            <input
-              type="text"
-              class="font-custom"
-              data-testid="setting-voice-voice"
-              placeholder={cloudTts ? "aura-asteria-en" : "Default"}
-              value={settings.voice}
-              maxLength={128}
-              onChange={(e) =>
-                onChange({ voice: (e.target as HTMLInputElement).value })}
-            />
-          )}
-      </label>
-      <label class="field">
-        <span class="field-label">
-          Rate <output>{settings.rate.toFixed(1)}×</output>
-        </span>
-        <input
-          type="range"
-          min={0.5}
-          max={2}
-          step={0.1}
-          value={settings.rate}
-          data-testid="setting-voice-rate"
-          onInput={(e) => onChange({ rate: Number(e.currentTarget.value) })}
-        />
-      </label>
-      <label class="field">
-        <span class="field-label">
-          Volume <output>{Math.round(settings.volume * 100)}%</output>
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={settings.volume}
-          data-testid="setting-voice-volume"
-          onInput={(e) => onChange({ volume: Number(e.currentTarget.value) })}
-        />
-      </label>
-      <div class="field">
-        <button
-          type="button"
-          class="btn-quiet"
-          data-testid="setting-voice-test"
-          disabled={!voice}
-          onClick={() =>
-            voice?.test(`Hi, I'm ${props.name}. This is how I sound.`)}
-        >
-          Test voice
-        </button>
-      </div>
-      <div class="field">
-        <span class="field-label">Say it out loud when</span>
-        {ALERTS.map((a) => (
-          <Check
-            key={a.key}
-            label={a.label}
-            testid={`setting-voice-${a.key}`}
-            checked={settings[a.key] as boolean}
-            onChange={(on) => onChange({ [a.key]: on })}
+        <label class="field">
+          <span class="field-label">Voice</span>
+          {!cloudTts && voices.length > 0
+            ? (
+              <select
+                class="field-select"
+                data-testid="setting-voice-voice"
+                value={settings.voice}
+                onChange={(e) =>
+                  onChange({ voice: (e.target as HTMLSelectElement).value })}
+              >
+                <option value="">Default</option>
+                {voices.map((v) => <option value={v} key={v}>{v}</option>)}
+              </select>
+            )
+            : (
+              <input
+                type="text"
+                class="font-custom"
+                data-testid="setting-voice-voice"
+                placeholder={cloudTts ? "aura-asteria-en" : "Default"}
+                value={settings.voice}
+                maxLength={128}
+                onChange={(e) =>
+                  onChange({ voice: (e.target as HTMLInputElement).value })}
+              />
+            )}
+        </label>
+        <label class="field">
+          <span class="field-label">
+            Rate <output>{settings.rate.toFixed(1)}×</output>
+          </span>
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.1}
+            value={settings.rate}
+            data-testid="setting-voice-rate"
+            onInput={(e) => onChange({ rate: Number(e.currentTarget.value) })}
           />
-        ))}
-      </div>
-      <label class="field">
-        <span class="field-label">Speech to text</span>
-        <select
-          class="field-select"
-          data-testid="setting-voice-stt"
-          value={settings.sttEngine}
-          onChange={(e) =>
-            onChange({
-              sttEngine: (e.target as HTMLSelectElement).value as SttEngineId,
-            })}
-        >
-          {STT_ENGINES.map((t) => (
-            <option
-              value={t}
-              key={t}
-              disabled={settings.sttEngine !== t && t === "web" &&
-                !hasWebSpeech}
-            >
-              {STT_LABEL[t]}
-              {t === "web" && !hasWebSpeech ? " (not in this window)" : ""}
-            </option>
+        </label>
+        <label class="field">
+          <span class="field-label">
+            Volume <output>{Math.round(settings.volume * 100)}%</output>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={settings.volume}
+            data-testid="setting-voice-volume"
+            onInput={(e) => onChange({ volume: Number(e.currentTarget.value) })}
+          />
+        </label>
+        <div class="field">
+          <button
+            type="button"
+            class="btn-quiet"
+            data-testid="setting-voice-test"
+            disabled={!voice}
+            onClick={() =>
+              voice?.test(`Hi, I'm ${props.name}. This is how I sound.`)}
+          >
+            Test voice
+          </button>
+        </div>
+      </SettingsGroup>
+      <SettingsGroup title="Spoken alerts">
+        <div class="field">
+          <span class="field-label">Say it out loud when</span>
+          {ALERTS.map((a) => (
+            <Check
+              key={a.key}
+              label={a.label}
+              testid={`setting-voice-${a.key}`}
+              checked={settings[a.key] as boolean}
+              onChange={(on) => onChange({ [a.key]: on })}
+            />
           ))}
-        </select>
-        <span class="field-hint">
-          {isCloudEngine(settings.sttEngine)
-            ? "What you say is recorded here and sent to the service you picked."
-            : settings.sttEngine === "web"
-            ? "The window's own engine (it may use its vendor's servers)."
-            : "Nothing leaves this computer."}
-        </span>
-      </label>
-      {voice && settings.sttEngine === "local" && (
-        <LocalEngineStatus voice={voice} />
-      )}
-      {voice &&
-        (settings.sttEngine === "deepgram" ||
-          settings.sttEngine === "elevenlabs") &&
-        (settings.sttEngine !== "deepgram" || !cloudTts) && (
-        <KeyField
-          voice={voice}
-          service={settings.sttEngine}
-          platform={platform}
+        </div>
+      </SettingsGroup>
+      <SettingsGroup title="Listening">
+        <label class="field">
+          <span class="field-label">Speech to text</span>
+          <select
+            class="field-select"
+            data-testid="setting-voice-stt"
+            value={settings.sttEngine}
+            onChange={(e) =>
+              onChange({
+                sttEngine: (e.target as HTMLSelectElement).value as SttEngineId,
+              })}
+          >
+            {STT_ENGINES.map((t) => (
+              <option
+                value={t}
+                key={t}
+                disabled={settings.sttEngine !== t && t === "web" &&
+                  !hasWebSpeech}
+              >
+                {STT_LABEL[t]}
+                {t === "web" && !hasWebSpeech ? " (not in this window)" : ""}
+              </option>
+            ))}
+          </select>
+          <span class="field-hint">
+            {isCloudEngine(settings.sttEngine)
+              ? "What you say is recorded here and sent to the service you picked."
+              : settings.sttEngine === "web"
+              ? "The window's own engine (it may use its vendor's servers)."
+              : "Nothing leaves this computer."}
+          </span>
+        </label>
+        {voice && settings.sttEngine === "local" && (
+          <LocalEngineStatus voice={voice} />
+        )}
+        {voice &&
+          (settings.sttEngine === "deepgram" ||
+            settings.sttEngine === "elevenlabs") &&
+          (settings.sttEngine !== "deepgram" || !cloudTts) && (
+          <KeyField
+            voice={voice}
+            service={settings.sttEngine}
+            platform={platform}
+          />
+        )}
+        <label class="field">
+          <span class="field-label">Hold to talk</span>
+          <select
+            class="field-select"
+            data-testid="setting-voice-ptt"
+            value={settings.pttKey}
+            onChange={(e) =>
+              onChange({
+                pttKey: (e.target as HTMLSelectElement).value as PttKey,
+              })}
+          >
+            {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform))
+              .map(
+                (k) => (
+                  <option
+                    value={k}
+                    key={k}
+                    disabled={k !== "off" && k === settings.dictateKey}
+                  >
+                    {k === "off"
+                      ? "Off (mic button only)"
+                      : shortcutLabel(k, platform)}
+                    {k !== "off" && k === settings.dictateKey
+                      ? " (the dictate key)"
+                      : ""}
+                  </option>
+                ),
+              )}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Hold to dictate</span>
+          <select
+            class="field-select"
+            data-testid="setting-voice-dictate-key"
+            value={settings.dictateKey}
+            onChange={(e) =>
+              onChange({
+                dictateKey: (e.target as HTMLSelectElement).value as PttKey,
+              })}
+          >
+            {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform))
+              .map(
+                (k) => (
+                  <option
+                    value={k}
+                    key={k}
+                    disabled={k !== "off" && k === settings.pttKey}
+                  >
+                    {k === "off" ? "Off" : shortcutLabel(k, platform)}
+                    {k !== "off" && k === settings.pttKey
+                      ? " (the hold-to-talk key)"
+                      : ""}
+                  </option>
+                ),
+              )}
+          </select>
+          <span class="field-hint" data-testid="setting-voice-dictate-key-hint">
+            Hold it and speak; let go to type what you said into the focused
+            tile, with or without the companion.
+          </span>
+        </label>
+        <Check
+          label="Show what I said before sending it (Send / Edit / Cancel)"
+          testid="setting-voice-review"
+          checked={settings.review}
+          onChange={(review) => onChange({ review })}
         />
-      )}
-      <label class="field">
-        <span class="field-label">Hold to talk</span>
-        <select
-          class="field-select"
-          data-testid="setting-voice-ptt"
-          value={settings.pttKey}
-          onChange={(e) =>
-            onChange({
-              pttKey: (e.target as HTMLSelectElement).value as PttKey,
-            })}
-        >
-          {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform)).map(
-            (k) => (
-              <option
-                value={k}
-                key={k}
-                disabled={k !== "off" && k === settings.dictateKey}
-              >
-                {k === "off"
-                  ? "Off (mic button only)"
-                  : shortcutLabel(k, platform)}
-                {k !== "off" && k === settings.dictateKey
-                  ? " (the dictate key)"
-                  : ""}
-              </option>
-            ),
-          )}
-        </select>
-      </label>
-      <label class="field">
-        <span class="field-label">Hold to dictate</span>
-        <select
-          class="field-select"
-          data-testid="setting-voice-dictate-key"
-          value={settings.dictateKey}
-          onChange={(e) =>
-            onChange({
-              dictateKey: (e.target as HTMLSelectElement).value as PttKey,
-            })}
-        >
-          {PTT_KEYS.filter((k) => k === "off" || pttAvailable(k, platform)).map(
-            (k) => (
-              <option
-                value={k}
-                key={k}
-                disabled={k !== "off" && k === settings.pttKey}
-              >
-                {k === "off" ? "Off" : shortcutLabel(k, platform)}
-                {k !== "off" && k === settings.pttKey
-                  ? " (the hold-to-talk key)"
-                  : ""}
-              </option>
-            ),
-          )}
-        </select>
-        <span class="field-hint" data-testid="setting-voice-dictate-key-hint">
-          Hold it and speak; let go to type what you said into the focused tile,
-          with or without the companion.
-        </span>
-      </label>
-      <Check
-        label="Show what I said before sending it (Send / Edit / Cancel)"
-        testid="setting-voice-review"
-        checked={settings.review}
-        onChange={(review) => onChange({ review })}
-      />
-      <Check
-        label="Dictate into the focused tile (no model)"
-        testid="setting-voice-dictate"
-        checked={settings.dictate}
-        onChange={(dictate) => onChange({ dictate })}
-      />
+        <Check
+          label="Dictate into the focused tile (no model)"
+          testid="setting-voice-dictate"
+          checked={settings.dictate}
+          onChange={(dictate) => onChange({ dictate })}
+        />
+      </SettingsGroup>
     </div>
   );
 }

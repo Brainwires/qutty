@@ -3,7 +3,9 @@
 // view on https://example.com (`win.createWebView`, the call behind the page's `createWebView`
 // that lib/web/native-engine.ts uses, with the same partition and policies), waits for the page
 // to load, reads its title through `state()` and through `evaluate()`, types into a field of the
-// page with dictation's script, and tries a snapshot (`capture()`, what a web tile shows while a
+// page with dictation's script, reads the page and types into a field with the companion's web
+// tools' scripts (lib/web/page-script.ts: `read_page`'s numbered elements, `web_type`), and tries a
+// snapshot (`capture()`, what a web tile shows while a
 // menu is over it). The view is given every key a web tile forwards (`forwardAccelerators`), so a
 // spelling the runtime refuses fails here.
 //
@@ -15,6 +17,11 @@
 import type { DesktopRuntime } from "denext/desktop";
 import { insertTextScript, WEB_PARTITION } from "../lib/web/native-engine.ts";
 import { forwardAccelerators } from "../lib/workspace/keys.ts";
+import {
+  pageScript,
+  parsePageAction,
+  parsePageRead,
+} from "../lib/web/page-script.ts";
 
 const TIMEOUT_MS = 45_000;
 const PAGE = "https://example.com/";
@@ -96,6 +103,22 @@ export async function webviewSelfTest(app: DesktopRuntime): Promise<void> {
       }`,
     );
   }
+  // The companion's read_page: the page's text and its numbered elements.
+  const read = parsePageRead(
+    await within(
+      "read_page",
+      view.evaluate(pageScript({ op: "read", maxChars: 4000 })),
+    ),
+    4000,
+  );
+  log(
+    `read_page: ${read.elements.length} elements, ${read.text.length} chars; ${
+      JSON.stringify(read.elements.slice(0, 3))
+    }`,
+  );
+  if (read.elements.length === 0 || read.text.trim() === "") {
+    throw new Error(`read_page: ${JSON.stringify(read).slice(0, 400)}`);
+  }
   // Dictation: nothing editable has the focus, then a focused field takes the text.
   const idle = await within(
     "insertText",
@@ -117,6 +140,23 @@ export async function webviewSelfTest(app: DesktopRuntime): Promise<void> {
     );
   }
   log(`insertText: ${JSON.stringify(value)}`);
+  // The companion's web_type: the field emptied, then typed into.
+  const typedByTool = parsePageAction(
+    await within(
+      "web_type",
+      view.evaluate(pageScript({
+        op: "type",
+        target: { selector: "#qutty-selftest" },
+        text: "typed by web_type",
+        clear: true,
+        submit: false,
+      })),
+    ),
+  );
+  if (typedByTool.value !== "typed by web_type") {
+    throw new Error(`web_type: ${JSON.stringify(typedByTool)}`);
+  }
+  log(`web_type: ${JSON.stringify(typedByTool.value)}`);
   // What a web tile shows while a menu is over it. The view is hidden here, which an engine may
   // refuse to picture: reported, not required.
   await within("capture", view.capture({ format: "jpeg", scale: 1 })).then(

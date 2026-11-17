@@ -6,6 +6,10 @@
 
 import { assert, assertEquals, assertFalse } from "@std/assert";
 import {
+  isFreshMenuEvent,
+  MENU_EVENT_MAX_AGE_MS,
+} from "../lib/workspace/windows.ts";
+import {
   arrivalPlace,
   isOutside,
   screenOffset,
@@ -670,4 +674,13 @@ Deno.test("tile mover: the page's move input is validated", () => {
     to: { screen: { x: NaN, y: 2 }, origin: { x: 0, y: 0 } },
   });
   assert(nan.issues);
+});
+
+Deno.test("tile move: a Window-menu move request is acted on only while fresh", () => {
+  assertEquals(isFreshMenuEvent(5000, 5000), true);
+  assertEquals(isFreshMenuEvent(5000, 5000 + MENU_EVENT_MAX_AGE_MS), true);
+  // Under a runtime that still replays it, a page reloaded later finds it too old: ignored.
+  assertEquals(isFreshMenuEvent(5000, 5001 + MENU_EVENT_MAX_AGE_MS), false);
+  assertEquals(isFreshMenuEvent(undefined, 5000), false);
+  assertEquals(isFreshMenuEvent(Number.NaN, 5000), false);
 });

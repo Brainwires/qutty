@@ -10,7 +10,8 @@
 // module itself (and any plugin it imports) is never compiled into the app.
 //
 // Windows are views of workspaces (desktop/workspace-host.ts): a window's key is its workspace's
-// id. Here: New Window (Cmd+N) opens a fresh workspace, a Dock click with no window showing
+// id. Here: the native menus (desktop/menus.ts: Shell, View, Help) are set, Shell → New Window
+// (Cmd+N) opens a fresh workspace, a Dock click with no window showing
 // reopens the workspace detached last (or a fresh one), and an ended workspace's key is
 // forgotten, so Reopen Closed Window, the Dock and the next launch's restored session never offer
 // it again (desktop/windows.ts). The quit guard (Cmd+Q asks first when an agent is busy) is the
@@ -32,15 +33,15 @@ import {
   shareRuntimeWindows,
 } from "./desktop/windows.ts";
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
-import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 import { moveSelfTest } from "./desktop/move-selftest.ts";
 import { webviewSelfTest } from "./desktop/webview-selftest.ts";
+import { installNativeMenus } from "./desktop/menus.ts";
+import { menusSelfTest } from "./desktop/menus-selftest.ts";
 
 const app = await runDesktop({
   importMetaUrl: import.meta.url,
   ...(await resolveDesktopCapabilities(config, { base: import.meta.url })),
-  newWindow: () => workspaceWindow(newWorkspaceId(), true),
   onDockReopen: () => dockReopenWindow(workspaces, app.windows),
   onSecondInstance: () => dockReopenWindow(workspaces, app.windows),
   tray: {
@@ -54,6 +55,7 @@ if (!app.sidecarChild) {
   forgetEndedWorkspaces(workspaces, app.windows);
   shareRuntimeWindows(app.windows);
   trayMode.install(app, workspaces);
+  installNativeMenus(app);
 
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
@@ -72,6 +74,13 @@ if (!app.sidecarChild) {
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "webview") {
     webviewSelfTest(app).then(() => Deno.exit(0), (e) => {
       console.error(`webview self-test: FAILED: ${e?.message ?? e}`);
+      Deno.exit(1);
+    });
+  }
+  // `QUTTY_PTY_SELFTEST=menus`: the native menu bar as the runtime gets it (run it headless).
+  if (Deno.env.get("QUTTY_PTY_SELFTEST") === "menus") {
+    menusSelfTest(app).then(() => Deno.exit(0), (e) => {
+      console.error(`menus self-test: FAILED: ${e?.message ?? e}`);
       Deno.exit(1);
     });
   }

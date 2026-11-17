@@ -28,6 +28,7 @@ import {
   DEFAULT_SETTINGS,
   type Settings,
   SETTINGS_STORAGE_KEY,
+  type SettingsTab,
 } from "../../lib/workspace/store.ts";
 
 export const ROOT = fromFileUrl(new URL("../../", import.meta.url));
@@ -1139,7 +1140,8 @@ export class App {
     }
   }
 
-  async openSettings(): Promise<void> {
+  /** Open the Settings dialog (from the bar's button), on `tab` when given. */
+  async openSettings(tab?: SettingsTab): Promise<void> {
     if (!(await this.exists("[data-testid=settings-panel]"))) {
       await this.click("[data-testid=bar-settings]");
     }
@@ -1148,6 +1150,22 @@ export class App {
       2000,
       "the settings panel",
     );
+    if (tab) await this.settingsTab(tab);
+  }
+
+  /** Show Settings tab `tab` (the dialog must be open): click it unless it is shown already. */
+  async settingsTab(tab: SettingsTab): Promise<void> {
+    const panel = `[data-testid=settings-category][data-tab="${tab}"]`;
+    const shown = () =>
+      this.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        return !!el && !el.hidden &&
+          !document.querySelector(".settings-content.is-searching");
+      }, panel);
+    if (!(await shown())) {
+      await this.click(`[data-testid=settings-tab][data-tab="${tab}"]`);
+    }
+    await waitFor(shown, 2000, `the ${tab} settings tab`);
   }
 
   async closeSettings(): Promise<void> {
@@ -1166,7 +1184,7 @@ export class App {
     key: "decay" | "masterRatio" | "maxVisible" | "gap",
     value: number,
   ): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("layout");
     await this.eval(
       (k: string, v: number) => {
         const el = document.querySelector<HTMLInputElement>(
@@ -1191,7 +1209,7 @@ export class App {
 
   /** Pick a pattern through the settings panel. */
   async setPatternViaSettings(pattern: string): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("layout");
     await this.click(
       `[data-testid=setting-pattern][data-pattern="${pattern}"]`,
     );
@@ -1203,7 +1221,7 @@ export class App {
   }
 
   async setBarPosition(position: string): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("general");
     await this.click(
       `[data-testid=setting-bar-position][data-value="${position}"]`,
     );
@@ -1216,7 +1234,7 @@ export class App {
   }
 
   async setBarOrder(order: "mru" | "created"): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("general");
     await this.click(`[data-testid=setting-bar-order][data-value="${order}"]`);
     await waitFor(
       async () => (await this.settings()).barOrder === order,
@@ -1226,7 +1244,7 @@ export class App {
   }
 
   async setInactiveTiles(mode: "resize" | "scale"): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("appearance");
     await this.click(
       `[data-testid=setting-inactive-tiles][data-value="${mode}"]`,
     );

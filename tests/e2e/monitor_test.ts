@@ -48,7 +48,7 @@ async function setMonitorSlider(app: App, key: string, value: number) {
 
 /** Hot after 2 s (the shortest) so the suite is quick. */
 async function quickHot(app: App) {
-  await app.openSettings();
+  await app.openSettings("monitor");
   await setMonitorSlider(app, "sustainS", 2);
   await app.closeSettings();
 }
@@ -79,7 +79,7 @@ suite("system monitor", (test) => {
     async (app) => {
       await pause(800);
       assert(!(await app.exists(METER)), "no meter by default");
-      await app.openSettings();
+      await app.openSettings("monitor");
       await app.click("[data-testid=setting-monitor-meter]");
       await app.closeSettings();
       await waitFor(() => app.exists(METER), 3000, "the meter");
@@ -107,7 +107,7 @@ suite("system monitor", (test) => {
         /^CPU \d+% · GPU \d+% · memory 41%$/.test(title ?? ""),
         title ?? "",
       );
-      await app.openSettings();
+      await app.openSettings("monitor");
       await app.click("[data-testid=setting-monitor-meter]");
       await app.closeSettings();
       await waitFor(async () => !(await app.exists(METER)), 2000, "no meter");
@@ -167,7 +167,7 @@ suite("system monitor", (test) => {
       await quickHot(app);
       await load(app, "97");
       await waitFor(async () => (await mood(app)) === "hot", 8000, "hot");
-      await app.openSettings();
+      await app.openSettings("companion");
       await app.click("[data-testid=setting-companion-lively]");
       await waitFor(
         async () => (await mood(app)) === "neutral",
@@ -176,6 +176,7 @@ suite("system monitor", (test) => {
       );
       await app.click("[data-testid=setting-companion-lively]");
       await waitFor(async () => (await mood(app)) === "hot", 8000, "hot again");
+      await app.settingsTab("monitor");
       await app.click("[data-testid=setting-monitor-hot]");
       await waitFor(async () => (await mood(app)) === "neutral", 3000, "off");
       await app.closeSettings();
@@ -184,7 +185,7 @@ suite("system monitor", (test) => {
   );
 
   test("screenshot: the hot face and the bar meter", async (app) => {
-    await app.openSettings();
+    await app.openSettings("monitor");
     await app.click("[data-testid=setting-monitor-meter]");
     await setMonitorSlider(app, "sustainS", 2);
     await app.closeSettings();

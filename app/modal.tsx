@@ -18,7 +18,7 @@ export interface ModalProps {
 }
 
 const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Keep Tab inside `root`: from the last focusable to the first, and back. */
 function trapTab(

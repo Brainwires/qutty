@@ -71,7 +71,7 @@ export function CloseWindowDialog(props: CloseWindowDialogProps) {
             <span class="field-label">Remember my choice</span>
           </label>
           <p class="field-hint">
-            You can change it in Settings → Windows.
+            You can change it in Settings → General.
           </p>
         </div>
         <div class="close-window-actions">

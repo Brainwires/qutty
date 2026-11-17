@@ -71,7 +71,7 @@ async function launch(app: App, entryId: string): Promise<string> {
 
 /** Choose what plain `+` opens in Settings. */
 async function setPlusOpens(app: App, value: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("general");
   await waitFor(
     () =>
       app.eval(

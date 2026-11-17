@@ -563,7 +563,9 @@ type HubEventName =
  *   waits in the hub (the page reads it from the snapshot when the workspace is shown again). The
  *   companion's own questions go to the active window.
  * - The companion's `say`, `companion` and `control` go to the active window (the companion
- *   follows the user), or every window when none joined a workspace yet.
+ *   follows the user), or every window when none joined a workspace yet. A `control` for a web
+ *   tile (its command names the tile's workspace, `owner`) goes to the window showing that
+ *   workspace, and nowhere while none does.
  */
 export function hubEventTarget(
   registry: WorkspaceRegistry,
@@ -571,6 +573,14 @@ export function hubEventTarget(
   data: unknown,
 ): { window?: string } | null {
   if (event === "tiles" || event === "askClosed") return {};
+  if (event === "control") {
+    const owner = (data as { command?: { owner?: unknown } } | null)?.command
+      ?.owner;
+    if (typeof owner === "string") {
+      const window = registry.windowOf(owner);
+      return window === undefined ? null : { window };
+    }
+  }
   if (event === "ask") {
     const from = (data as { from?: unknown } | null)?.from;
     const owner = typeof from === "string"

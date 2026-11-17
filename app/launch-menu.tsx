@@ -35,6 +35,10 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** "Web page": a new web tile (absent where web tiles can't show any site). */
   onWebPage?(): void;
+  /** "Bookmarks…": the bookmark manager (app/bookmark-manager.tsx). */
+  onBookmarks?(): void;
+  /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
+  onHistory?(): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
   /**
@@ -235,6 +239,32 @@ export function LaunchMenu(props: LaunchMenuProps) {
               <span class="menu-label">Web page</span>
             </button>
           )}
+          {props.onBookmarks && (
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item launch-item"
+              data-testid="launch-bookmarks"
+              title="Manage, import and export the web tiles' bookmarks"
+              onClick={props.onBookmarks}
+            >
+              <LaunchIcon kind="bookmarks" />
+              <span class="menu-label">Bookmarks…</span>
+            </button>
+          )}
+          {props.onHistory && (
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item launch-item"
+              data-testid="launch-history"
+              title="The pages web tiles visited"
+              onClick={props.onHistory}
+            >
+              <LaunchIcon kind="history" />
+              <span class="menu-label">History…</span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -253,7 +283,15 @@ export function LaunchMenu(props: LaunchMenuProps) {
 
 /** A small glyph per entry kind. */
 function LaunchIcon(
-  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" | "web" },
+  props: {
+    kind:
+      | LaunchEntry["kind"]
+      | "connections"
+      | "sandbox"
+      | "web"
+      | "bookmarks"
+      | "history";
+  },
 ) {
   const common = {
     viewBox: "0 0 16 16",
@@ -308,6 +346,19 @@ function LaunchIcon(
             d="M8 1.8 13.5 5v6L8 14.2 2.5 11V5z M2.5 5 8 8.2 13.5 5M8 8.2v6"
             {...stroke}
           />
+        </svg>
+      );
+    case "bookmarks":
+      return (
+        <svg {...common}>
+          <path d="M4.5 2.5h7v11L8 10.5l-3.5 3z" {...stroke} />
+        </svg>
+      );
+    case "history":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.5" {...stroke} />
+          <path d="M8 5v3l2 1.5" {...stroke} />
         </svg>
       );
     case "web":
