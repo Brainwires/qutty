@@ -127,6 +127,9 @@ import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
 import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
+import { focusAgentTile } from "./agent-tile.tsx";
+import { type AgentTilesView, useAgentTiles } from "./use-agent-tiles.tsx";
+import { AgentsMenu } from "./agents-panel.tsx";
 import {
   detectWebEngine,
   IframeEngine,
@@ -200,18 +203,25 @@ function WorkspaceView() {
     const before = stateRef.current;
     const after = reduce(before, action);
     dispatch(action);
-    // A web tile takes the keyboard itself once it renders (app/web-tile.tsx).
+    // A web or agent tile takes the keyboard itself once it renders (app/web-tile.tsx,
+    // app/agent-tile.tsx).
     const id = after.focusedId;
-    if (id && id !== before.focusedId && !isWebTile(after.terminals, id)) {
+    if (
+      id && id !== before.focusedId && !isWebTile(after.terminals, id) &&
+      !isAgentTile(after.terminals, id)
+    ) {
       managerRef.current?.focus(id);
     }
   }, []);
 
-  /** Give tile `id` the keyboard: its terminal, or a web tile's body. */
+  /** Give tile `id` the keyboard: its terminal, a web tile's body, an agent tile's prompt. */
   const focusKeyboard = useCallback((id: string) => {
     if (isWebTile(stateRef.current.terminals, id)) focusWebTile(id);
+    else if (isAgentTile(stateRef.current.terminals, id)) focusAgentTile(id);
     else managerRef.current?.focus(id);
   }, []);
+  /** The agent tiles (app/use-agent-tiles.tsx), for what is declared before them. */
+  const agentsRef = useRef<AgentTilesView | null>(null);
 
   /** A web tile showing `url`, beside the focused tile (it becomes the focused one). */
   const openWebTile = useCallback((url: string) => {
@@ -322,13 +332,22 @@ function WorkspaceView() {
   }, [openTile, ollama.status.path]);
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
+  const hubIdOfAgent = useCallback(
+    (id: string) => agentsRef.current?.hubIdOf(id),
+    [],
+  );
   const hubTileOf = useHub(
     managerRef.current,
     state.terminals,
     state.settings.tileTitle,
+    hubIdOfAgent,
   );
 
   const closeTerminal = useCallback((id: string) => {
+    // An agent tile's session ends with it.
+    if (isAgentTile(stateRef.current.terminals, id)) {
+      agentsRef.current?.store?.close(id);
+    }
     managerRef.current?.dispose(id);
     sshRef.current.forget(id);
     run({ type: "remove", id });
@@ -400,6 +419,10 @@ function WorkspaceView() {
         openTile({ kind: "shell", sandbox: false });
       }
     },
+    chat: {
+      rows: (id) => agentsRef.current?.store?.rows(id) ?? [],
+      restored: (id, rows) => agentsRef.current?.store?.restored(id, rows),
+    },
   });
 
   useCompanion({
@@ -418,6 +441,7 @@ function WorkspaceView() {
     },
     closeTile: closeTerminal,
     focusTile: focusTerminal,
+    tileOfHub: (hubId) => agentsRef.current?.tileOfHub(hubId),
   });
   const refocus = useCallback(() => {
     const id = stateRef.current.focusedId;
@@ -463,6 +487,12 @@ function WorkspaceView() {
       const manager = managerRef.current;
       const id = stateRef.current.focusedId;
       if (!manager || !id) return "no-tile";
+      // An agent tile: into its prompt box.
+      if (isAgentTile(stateRef.current.terminals, id)) {
+        return agentsRef.current?.store?.insert(id, text)
+          ? "typed"
+          : "not-editable";
+      }
       if (isWebTile(stateRef.current.terminals, id)) {
         const view = webViewsRef.current.get(id);
         if (!view) return "not-editable";
@@ -478,6 +508,34 @@ function WorkspaceView() {
       return "typed";
     },
   });
+  // Agent tiles (app/use-agent-tiles.tsx): Claude Code as a chat tile.
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const dictation = useMemo(() => ({
+    press: () => voiceRef.current.pressDictate(),
+    release: (heldMs: number) => voiceRef.current.release(heldMs),
+  }), []);
+  // A link in a transcript: a web tile where they show any site (the native engine), else the
+  // default browser.
+  const openAgentUrl = useCallback((url: string) => {
+    if (webEngine?.capabilities.drawsAboveHtml) void openWebTile(url);
+    else linksRef.current.openInBrowser(url);
+  }, [webEngine, openWebTile]);
+  const agentTiles = useAgentTiles({
+    backend: ready ? managerRef.current?.backend ?? null : null,
+    manager: ready ? managerRef.current : null,
+    state,
+    dispatch,
+    run,
+    nextId: () => `t${++seqRef.current}`,
+    openTile,
+    openUrl: openAgentUrl,
+    closeTile: closeTerminal,
+    refocus,
+    ...(companionShown ? { dictation } : {}),
+  });
+  agentsRef.current = agentTiles;
+
   // The lite system monitor: the bar meter, and the companion's hot face (with Lively on).
   const monitor = state.settings.monitor;
   const hotWanted = monitor.hotCompanion && state.settings.companion.lively &&
@@ -925,6 +983,7 @@ function WorkspaceView() {
               },
             }
             : {}),
+          onAgentChat: agentTiles.openLaunch,
         }}
         onLaunchOpen={() => {
           launcher.refresh();
@@ -943,11 +1002,19 @@ function WorkspaceView() {
         onToggleSettings={() => setSettingsOpen((o) => !o)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
-          <WorkspacesMenu
-            session={session}
-            now={now}
-            newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
-          />
+          <>
+            <AgentsMenu
+              agents={agentTiles.summaries}
+              nameOf={(id) =>
+                state.terminals.find((t) => t.id === id)?.title ?? id}
+              onFocus={focusTerminal}
+            />
+            <WorkspacesMenu
+              session={session}
+              now={now}
+              newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
+            />
+          </>
         }
       />
       <div class="cluster" ref={clusterRef} data-testid="cluster">
@@ -978,6 +1045,7 @@ function WorkspaceView() {
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
             web={webHooks}
+            agent={agentTiles.hooks}
             renderHeadActions={(entry) =>
               entry.ssh && (
                 <SshHeadActions
@@ -1126,6 +1194,7 @@ function WorkspaceView() {
           }}
         />
       )}
+      {agentTiles.dialog}
       {windowClose.asking && (
         <CloseWindowDialog
           terminals={state.terminals.filter((t) => !t.web).length}
@@ -1229,4 +1298,12 @@ function isWebTile(
   id: string,
 ): boolean {
   return terminals.some((t) => t.id === id && t.web !== undefined);
+}
+
+/** Whether tile `id` is an agent tile (a chat, no terminal). */
+function isAgentTile(
+  terminals: readonly { id: string; chat?: unknown }[],
+  id: string,
+): boolean {
+  return terminals.some((t) => t.id === id && t.chat !== undefined);
 }

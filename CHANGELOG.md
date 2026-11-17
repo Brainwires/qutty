@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Agent tiles: Claude Code as a chat tile that looks like a terminal. The `+`
+  menu's "Claude Code (chat)" (beside Claude Code) asks for a folder (the
+  focused tile's by default) and opens one.
+  - The transcript streams in the terminal's font and colours: your prompts, the
+    answer's markdown (code highlighted, links open in a web tile), thinking
+    (dimmed), and each tool call as a compact `● Edit(src/x.ts)` row with a
+    `⎿ Applied 3-line change` line that opens to the diff, the command and its
+    output, or the input and result. Reads in a row are one line ("Read 2
+    files"). Each turn ends with how it went, its speed, time and cost.
+  - Claude Code asks before it edits or runs something: Allow, Allow always (for
+    that tool, this session) or Deny, right in the transcript.
+  - The prompt box grows with what you type; Enter sends, Shift+Enter is a new
+    line, ↑ brings back the previous prompt, files attach by button, drop or
+    paste (images go to the model as images), Esc or Stop interrupts, and what
+    you type while it works waits its turn. Hold-to-dictate types into it.
+  - The header: the agent's name (click to rename; other agents address it by
+    it), the model (default, fable, opus, opus 1M, sonnet, sonnet 1M, haiku),
+    what it is doing, and a menu with Open in terminal (the same session in
+    Claude Code's own UI), New session and Close.
+  - The bar's Agents button lists your agent tiles as Needs you, To review and
+    Working; its badge counts those waiting for you. Tiles and chips show the
+    same activity as agent terminals.
+  - An agent tile comes back with the window (and after a restart, resuming its
+    session under the transcript it had). It is a hub peer like any agent tile:
+    the companion and other agents can read its screen, and the companion can
+    give it a prompt.
+
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that

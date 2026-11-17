@@ -417,6 +417,34 @@
       keyboard way to move the focused tile to the next / previous slot, once
       there is a free binding that suits it (none is bound today).
 
+- [ ] **Agent tiles** (a "TUI-looking GUI" for coding agents, a native tile kind
+      beside terminals and web tiles).
+  - Done (phase 1): Claude Code as a chat tile (`app/agent-tile.tsx`,
+    `lib/agent/`, `desktop/agent-*.ts`): headless `claude -p` in stream-json
+    mode in a hidden PTY, each session a hub tile of its own; a terminal-styled
+    transcript (tool calls as `● Tool(arg)` rows with `⎿` summaries, diffs,
+    command output, markdown), permissions through the hub's `approve_tool`
+    (Allow / Allow always / Deny in the transcript), the prompt box (queue,
+    attachments, ↑ history, Esc), the model picker, Open in terminal, New
+    session, restore with `--resume` under a saved copy of the rows, the Agents
+    panel (Needs you / To review / Working), dictation, `read_screen` /
+    `write_tile` on an agent tile.
+  - [ ] A Codex adapter (`codex app-server`, or `codex exec --json`).
+  - [ ] An Ollama / API-key adapter through `lib/companion/inference-brain.ts`
+        (the adapter's `hooks.approve` is there for in-process tools).
+  - [ ] A Changes tab: the session's edits as one diff to review (accept,
+        revert, open in the editor).
+  - [ ] Avatars for agents.
+  - [ ] Per-agent roles / presets (system prompt, model, permission mode,
+        allowed tools), picked in the `+` menu.
+  - [ ] The permission mode in the header (default / accept edits / plan); the
+        session layer already restarts with another mode.
+  - [ ] Interleave a permission question with its tool row (it shows after the
+        row today), and a resumed session's history from Claude Code's own
+        transcript file instead of only the saved copy.
+  - Not doing: embedding t3code (sidecar, worker mode, PTY adapter). The agent
+    tile replaces it (decided 2026-11-17).
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

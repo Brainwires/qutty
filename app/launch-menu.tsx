@@ -12,7 +12,7 @@
 // click toggles it without closing the menu) says whether the shell or agent picked next runs
 // in the sandbox or on the host; it starts from Settings' "new tiles open in the sandbox".
 
-import { useEffect, useRef } from "denext";
+import { Fragment, useEffect, useRef } from "denext";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
 import {
   type LaunchEntry,
@@ -35,6 +35,8 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** "Web page": a new web tile (absent where web tiles can't show any site). */
   onWebPage?(): void;
+  /** "Claude Code (chat)" beside an installed Claude Code: a new agent tile (app/agent-tile.tsx). */
+  onAgentChat?(): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
   /**
@@ -173,7 +175,25 @@ export function LaunchMenu(props: LaunchMenuProps) {
               <div class="launch-heading" aria-hidden="true">
                 {section.title}
               </div>
-              {section.entries.map(item)}
+              {section.entries.map((entry) => (
+                <Fragment key={entry.id}>
+                  {item(entry)}
+                  {entry.kind === "agent" && entry.agent.name === "claude" &&
+                    props.onAgentChat && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="menu-item launch-item"
+                      data-testid="launch-agent-chat"
+                      title="Claude Code in a chat tile: streamed transcript, tool calls, permissions"
+                      onClick={props.onAgentChat}
+                    >
+                      <LaunchIcon kind="chat" />
+                      <span class="menu-label">{entry.label} (chat)</span>
+                    </button>
+                  )}
+                </Fragment>
+              ))}
               {section.id === "ollama" && props.ollama && (
                 <button
                   type="button"
@@ -253,7 +273,9 @@ export function LaunchMenu(props: LaunchMenuProps) {
 
 /** A small glyph per entry kind. */
 function LaunchIcon(
-  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" | "web" },
+  props: {
+    kind: LaunchEntry["kind"] | "connections" | "sandbox" | "web" | "chat";
+  },
 ) {
   const common = {
     viewBox: "0 0 16 16",
@@ -325,6 +347,15 @@ function LaunchIcon(
         <svg {...common}>
           <circle cx="8" cy="8" r="5.5" {...stroke} />
           <path d="M8 5.5v5M5.5 8h5" {...stroke} />
+        </svg>
+      );
+    case "chat":
+      return (
+        <svg {...common}>
+          <path
+            d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6.2h6M5 8.2h4"
+            {...stroke}
+          />
         </svg>
       );
   }

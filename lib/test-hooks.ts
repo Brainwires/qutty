@@ -179,6 +179,15 @@ export function withBackendSpy(
     onCompanion: (cb) => backend.onCompanion(cb),
     onHubSay: (cb) => backend.onHubSay(cb),
     onHubControl: (cb) => backend.onHubControl(cb),
+    agentStart: (req) => backend.agentStart(req),
+    agentSend: (id, message) => backend.agentSend(id, message),
+    agentInterrupt: (id) => backend.agentInterrupt(id),
+    agentAnswer: (id, requestId, decision) =>
+      backend.agentAnswer(id, requestId, decision),
+    agentRestart: (id, patch) => backend.agentRestart(id, patch),
+    agentRename: (id, name) => backend.agentRename(id, name),
+    agentStop: (id) => backend.agentStop(id),
+    onAgent: (cb) => backend.onAgent(cb),
   };
 }
 

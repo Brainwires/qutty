@@ -156,6 +156,26 @@ import type {
   IntegrationStatus,
   IntegrationTarget,
 } from "../lib/hub/protocol.ts";
+import { HubError } from "../lib/hub/core.ts";
+import { hubArgsFor } from "../lib/hub/launch.ts";
+import type { ScrollbackPage } from "../lib/hub/mirror.ts";
+import type {
+  AgentSessions,
+  AgentStartRequest,
+  AgentUpdate,
+} from "../lib/agent/sessions.ts";
+import type { AgentAdapter, AgentSessionSpec } from "../lib/agent/adapter.ts";
+import {
+  agentSessions,
+  type AgentStartInput,
+  agentStartInput,
+  agentStartRequest,
+  answerAgentInput,
+  idInput,
+  renameAgentInput,
+  restartAgentInput,
+  sendAgentInput,
+} from "./agent-host.ts";
 
 export type { AskRequest, HubSnapshot, IntegrationStatus, IntegrationTarget };
 
@@ -300,7 +320,8 @@ export type HubEvent =
   | "askClosed"
   | "control"
   | "companion"
-  | "say";
+  | "say"
+  | "agent";
 
 export interface HubServiceOptions {
   home: string;
@@ -324,11 +345,18 @@ export interface HubServiceOptions {
    * (`undefined`: none, or no answer).
    */
   codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
+  /** Another agent tile backend (tests). Default: Claude Code (desktop/agent-claude.ts). */
+  createAgent?: (
+    spec: AgentSessionSpec,
+    tile: { id: string; env: Record<string, string> },
+  ) => AgentAdapter;
 }
 
 /** The hub: sockets, MCP sessions, mirrors and the {@linkcode HubCore}. */
 export class HubService {
   readonly core: HubCore;
+  /** The agent tiles' sessions (desktop/agent-host.ts): each one a hub tile of its own. */
+  readonly agents: AgentSessions;
   readonly paths: HubPaths;
   readonly files: IntegrationFiles;
   readonly socketDir: string;
@@ -372,16 +400,42 @@ export class HubService {
       (() => this.#installedCodexHooks(opts.appSupportDir));
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
-      mirror: (id) => this.#mirrors.get(id),
-      write,
+      // An agent tile's "screen" is its transcript; typing into it sends a prompt.
+      mirror: (id) => this.#agentMirror(id) ?? this.#mirrors.get(id),
+      write: (id, text) => {
+        if (!this.agents.has(id)) return write(id, text);
+        try {
+          this.agents.typed(id, text);
+        } catch (e) {
+          throw new HubError(e instanceof Error ? e.message : String(e));
+        }
+        return Promise.resolve();
+      },
       ask: (request) => this.#emit("ask", request),
       askClosed: (id) => this.#emit("askClosed", { id }),
       control: (command) => this.companion.control(command),
       changed: () => this.#queueTiles(),
       companionMail: () => this.companion.runtime.mailArrived(),
     });
+    this.agents = agentSessions({
+      emit: (update: AgentUpdate) => this.#emit("agent", update),
+      hubArgs: () => hubArgsFor("claude", this.paths, this.#installed),
+      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
+      ...(opts.createAgent ? { createAdapter: opts.createAgent } : {}),
+      hub: {
+        open: (id, info) => this.#agentTileOpen(id, info),
+        close: (id) => this.ended(id),
+        setStatus: (id, status, note) =>
+          this.core.registry.setStatus(id, status, note),
+        rename: (id, name) => this.core.registry.rename(id, name).name,
+      },
+    });
     const handler = createHubHandler(this.core, buildToolRegistry(this.core), {
       audit: (call) => this.companion.record(call),
+      agents: {
+        has: (id) => this.agents.has(id),
+        approve: (id, req) => this.agents.approve(id, req),
+      },
     });
     this.keys = companionKeys(opts.secureStore ?? (() => undefined));
     this.companion = new CompanionHost({
@@ -532,8 +586,68 @@ export class HubService {
     this.core.removeTile(id);
   }
 
+  /**
+   * An agent tile's session opened (lib/agent/sessions.ts): its socket and registry entry, as a
+   * terminal gets at `spawning`, but no screen mirror (its transcript is its screen). Its
+   * environment goes to its Claude Code process.
+   */
+  #agentTileOpen(
+    id: string,
+    info: { cwd: string; name?: string },
+  ): { env: Record<string, string>; name: string } {
+    const path = this.socketPath(id);
+    const identity: HubIdentity = { role: "tile", tileId: id };
+    this.#listeners.set(
+      id,
+      FdUnixListener.listen(path, this.#reactor, (conn) => {
+        void this.#serve(conn, identity);
+      }),
+    );
+    const tile = this.core.addTile({ id, cwd: info.cwd, harness: "claude" });
+    let name = tile.name;
+    if (info.name && info.name !== name) {
+      try {
+        name = this.core.registry.rename(id, info.name).name;
+      } catch { /* taken: keep the default */ }
+    }
+    return { env: { QUTTY_SOCK: path, QUTTY_TILE_ID: id }, name };
+  }
+
+  /** An agent tile's transcript as a screen mirror (`read_screen`, `read_scrollback`). */
+  #agentMirror(id: string) {
+    if (!this.agents.has(id)) return undefined;
+    const lines = (n: number) => this.agents.screen(id, n) ?? [];
+    return {
+      screen: () => Promise.resolve(lines(200)),
+      scrollback: (
+        o: { offset?: number; lines?: number; grep?: string },
+      ): Promise<ScrollbackPage> => {
+        const all = lines(10_000);
+        let numbered = all.map((text, n) => ({ n, text }));
+        if (o.grep) {
+          let re: RegExp;
+          try {
+            re = new RegExp(o.grep, "i");
+          } catch {
+            throw new HubError("grep is not a valid regular expression");
+          }
+          numbered = numbered.filter((l) => re.test(l.text));
+        }
+        const count = o.lines ?? 200;
+        const start = o.offset ?? Math.max(0, numbered.length - count);
+        const page = numbered.slice(start, start + count);
+        return Promise.resolve({
+          total: all.length,
+          start: page[0]?.n ?? start,
+          lines: page,
+        });
+      },
+    };
+  }
+
   /** Close every socket, stop the companion and remove this process's socket folder. */
   async stop(): Promise<void> {
+    this.agents.stopAll();
     for (const id of [...this.#listeners.keys()]) this.ended(id);
     this.#companionListener?.close();
     for (const c of this.#conns.get("companion") ?? []) void c.close();
@@ -865,6 +979,8 @@ async function start(host: DesktopExtensionHost): Promise<void> {
   await hub.companion.start().catch((e) =>
     console.error("hub: the companion did not start", e)
   );
+  // A workspace ended for real (End Shells, End workspace) takes its agent tiles' sessions.
+  workspaces.onEnded((id) => hub.agents.stopOwnedBy(id));
   // The quit guard asks before it kills an agent that is working (desktop.ts).
   workspaces.setBusyProvider(() =>
     hub.core.snapshot().tiles.filter((t) => t.status === "busy").map((t) => ({
@@ -990,7 +1106,15 @@ const controlDoneInput = objectSchema<
 
 export default defineDesktopExtension({
   name: "hub",
-  events: ["tiles", "ask", "askClosed", "control", "companion", "say"],
+  events: [
+    "tiles",
+    "ask",
+    "askClosed",
+    "control",
+    "companion",
+    "say",
+    "agent",
+  ],
   setup: (host) => {
     // Never throw into the app's startup: a hub that cannot start leaves the terminals as they were.
     start(host).catch((e) => {
@@ -1131,6 +1255,76 @@ export default defineDesktopExtension({
         requireService().uninstall(
           (args as { target: IntegrationTarget }).target,
         ),
+    },
+    // --- Agent tiles (lib/agent/sessions.ts; their updates are `agent` events) -----------------
+    /** Open an agent tile's session (or attach to the one it had); its snapshot. */
+    agentStart: {
+      input: agentStartInput,
+      handler: (args: unknown, ctx) =>
+        asValidation(async () => {
+          const req: AgentStartRequest = await agentStartRequest(
+            args as AgentStartInput,
+            Deno.env.get("HOME") ?? "/",
+            workspaces.workspaceOfWindow(ctx.windowId ?? "main"),
+          );
+          return requireService().agents.start(req);
+        }),
+    },
+    /** A message for the agent (queued while a turn runs). */
+    agentSend: {
+      input: sendAgentInput,
+      handler: (args: unknown): boolean => {
+        const { id, message } = args as { id: string; message: unknown };
+        return requireService().agents.send(id, message);
+      },
+    },
+    /** Stop the turn under way. */
+    agentInterrupt: {
+      input: idInput,
+      handler: (args: unknown): Promise<boolean> =>
+        requireService().agents.interrupt((args as { id: string }).id),
+    },
+    /** The user's answer to a permission question. */
+    agentAnswer: {
+      input: answerAgentInput,
+      handler: (args: unknown): boolean => {
+        const a = args as {
+          id: string;
+          requestId: string;
+          decision: "allow" | "always" | "deny";
+        };
+        return requireService().agents.answer(a.id, a.requestId, a.decision);
+      },
+    },
+    /** Another model or mode (the session resumes), or a new session. */
+    agentRestart: {
+      input: restartAgentInput,
+      handler: (args: unknown) => {
+        const { id, ...patch } = args as {
+          id: string;
+          model?: string;
+          permissionMode?: AgentStartRequest["permissionMode"];
+          fresh?: boolean;
+        };
+        return requireService().agents.restart(id, patch) ?? null;
+      },
+    },
+    /** Rename the agent tile (its hub name); the name it got. */
+    agentRename: {
+      input: renameAgentInput,
+      handler: (args: unknown): Promise<string> => {
+        const { id, name } = args as { id: string; name: string };
+        // deno-lint-ignore require-await
+        return asValidation(async () =>
+          requireService().agents.rename(id, name)
+        );
+      },
+    },
+    /** End an agent tile's session (its tile closed). */
+    agentStop: {
+      input: idInput,
+      handler: (args: unknown): void =>
+        requireService().agents.stop((args as { id: string }).id),
     },
   },
 });

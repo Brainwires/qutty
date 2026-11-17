@@ -61,6 +61,7 @@ export interface SwitcherBarProps {
     | "sandbox"
     | "ollama"
     | "onWebPage"
+    | "onAgentChat"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -342,6 +343,14 @@ export function SwitcherBar(props: SwitcherBarProps) {
               onWebPage: () => {
                 setMenu("none");
                 props.launch.onWebPage?.();
+              },
+            }
+            : {})}
+          {...(props.launch.onAgentChat
+            ? {
+              onAgentChat: () => {
+                setMenu("none");
+                props.launch.onAgentChat?.();
               },
             }
             : {})}

@@ -21,6 +21,7 @@ import {
   type WorkspaceState,
 } from "../lib/workspace/store.ts";
 import { SHELL_PROFILE } from "../lib/ssh-ui.ts";
+import type { Row } from "../lib/agent/transcript.ts";
 
 /** How long the snapshot waits for a burst of changes to settle before it is saved. */
 const SAVE_DEBOUNCE_MS = 250;
@@ -57,6 +58,11 @@ export function useSession(opts: {
   focus(id: string): void;
   /** A new workspace: open its first shell. */
   fresh(): void;
+  /** Agent tiles: their transcripts to save, and the saved ones handed back on a restore. */
+  chat?: {
+    rows(id: string): readonly Row[];
+    restored(id: string, rows: Row[]): void;
+  };
 }): SessionView {
   const { manager } = opts;
   const [workspace, setWorkspace] = useState<SessionView["workspace"]>(null);
@@ -76,9 +82,11 @@ export function useSession(opts: {
     const o = optsRef.current;
     const plan = planRestore(joined.snapshot, joined.ptys);
     if (plan) {
-      // A web tile has no terminal: its page is in its entry (app/web-tile.tsx opens it).
+      // A web tile has no terminal: its page is in its entry (app/web-tile.tsx opens it). An
+      // agent tile gets its saved transcript back (app/use-agents.ts opens its session).
       for (const t of plan.tiles) {
-        if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
+        if ("chat" in t) o.chat?.restored(t.id, t.rows);
+        else if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
       }
       o.seqRef.current = Math.max(o.seqRef.current, plan.seq);
       o.dispatch({
@@ -149,11 +157,16 @@ export function useSession(opts: {
     if (!manager || !workspace) return;
     const save = () => {
       const o = optsRef.current;
-      const snap = snapshotOf(o.state, o.seqRef.current, (id) => ({
-        ptyId: manager.ptyId(id),
-        profile: manager.profile(id) ?? SHELL_PROFILE,
-        ...(manager.home(id) !== undefined ? { home: manager.home(id) } : {}),
-      }));
+      const snap = snapshotOf(
+        o.state,
+        o.seqRef.current,
+        (id) => ({
+          ptyId: manager.ptyId(id),
+          profile: manager.profile(id) ?? SHELL_PROFILE,
+          ...(manager.home(id) !== undefined ? { home: manager.home(id) } : {}),
+        }),
+        (id) => o.chat?.rows(id) ?? [],
+      );
       void manager.backend.session.save(snap).catch(() => {});
       if (!manager.backend.session.multiWindow) return;
       saveWorkspaceLayout(workspace.id, {

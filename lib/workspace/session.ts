@@ -23,6 +23,8 @@ import {
   type WorkspaceState,
 } from "./store.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
+import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
+import { type Row, sanitizeRows, savedRows } from "../agent/transcript.ts";
 import { sanitizeOrder } from "./tile-order.ts";
 import {
   type FreeformState,
@@ -43,8 +45,20 @@ export interface WebTileSnapshot {
   web: WebPage;
 }
 
-/** One tile as saved: a terminal or a web tile. */
-export type TileSnapshot = TerminalTileSnapshot | WebTileSnapshot;
+/**
+ * An agent tile: its session (in its entry's `chat`) and a capped copy of its transcript
+ * (lib/agent/transcript.ts `savedRows`): a resumed Claude Code session does not replay it.
+ */
+export interface ChatTileSnapshot {
+  chat: AgentChat;
+  rows: Row[];
+}
+
+/** One tile as saved: a terminal, a web tile or an agent tile. */
+export type TileSnapshot =
+  | TerminalTileSnapshot
+  | WebTileSnapshot
+  | ChatTileSnapshot;
 
 /** What the page saves of its workspace. */
 export interface WorkspaceSnapshot {
@@ -86,8 +100,18 @@ export interface RestoredWebTile {
   web: WebPage;
 }
 
+/** One agent tile to rebuild: its saved transcript (its session is in its entry). */
+export interface RestoredChatTile {
+  id: string;
+  chat: AgentChat;
+  rows: Row[];
+}
+
 /** One tile to rebuild. */
-export type RestoredTile = RestoredTerminalTile | RestoredWebTile;
+export type RestoredTile =
+  | RestoredTerminalTile
+  | RestoredWebTile
+  | RestoredChatTile;
 
 /** How to rebuild a workspace. */
 export interface RestorePlan {
@@ -106,16 +130,21 @@ export interface RestorePlan {
 
 /**
  * The snapshot of `state`, with the terminal manager's view of each terminal tile (a web tile
- * saves its page, from its entry).
+ * saves its page, from its entry; an agent tile its session and `chatRows`, capped).
  */
 export function snapshotOf(
   state: WorkspaceState,
   seq: number,
   tile: (id: string) => TerminalTileSnapshot | undefined,
+  chatRows: (id: string) => readonly Row[] = () => [],
 ): WorkspaceSnapshot {
   const tiles: Record<string, TileSnapshot> = {};
   for (const t of state.terminals) {
-    const s = t.web ? { web: { ...t.web } } : tile(t.id);
+    const s = t.web
+      ? { web: { ...t.web } }
+      : t.chat
+      ? { chat: { ...t.chat }, rows: savedRows(chatRows(t.id)) }
+      : tile(t.id);
     if (s) tiles[t.id] = s;
   }
   return {
@@ -192,6 +221,11 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
       tiles[id] = { web };
       continue;
     }
+    const chat = isObject(t) ? sanitizeChat(t.chat) : undefined;
+    if (chat) {
+      tiles[id] = { chat, rows: sanitizeRows(isObject(t) ? t.rows : []) };
+      continue;
+    }
     const profile = isObject(t) ? profileOf(t.profile) : undefined;
     if (!profile || !isObject(t)) continue;
     tiles[id] = {
@@ -247,10 +281,35 @@ export function planRestore(
   for (const entry of snap?.terminals ?? []) {
     const tile = snap!.tiles[entry.id];
     if (!tile || terminals.some((t) => t.id === entry.id)) continue;
+    if ("chat" in tile) {
+      // An agent tile reopens on its session (attached, or resumed) under its saved transcript.
+      const {
+        ssh: _s,
+        agent: _a,
+        sandbox: _b,
+        exitMessage: _m,
+        web: _w,
+        ...rest
+      } = entry;
+      terminals.push({
+        ...rest,
+        chat: tile.chat,
+        exited: false,
+        exitCode: null,
+      });
+      tiles.push({ id: entry.id, chat: tile.chat, rows: tile.rows });
+      continue;
+    }
     if ("web" in tile) {
       // A web tile reopens at its last page; it has no PTY, so it never ended.
-      const { ssh: _s, agent: _a, sandbox: _b, exitMessage: _m, ...rest } =
-        entry;
+      const {
+        ssh: _s,
+        agent: _a,
+        sandbox: _b,
+        exitMessage: _m,
+        chat: _c,
+        ...rest
+      } = entry;
       terminals.push({
         ...rest,
         web: tile.web,
@@ -265,7 +324,7 @@ export function planRestore(
     if (pty) claimed.add(pty.id);
     const exit = pty ? pty.exit : undefined;
     // A terminal's entry never carries a page (a web tile is known by its tile snapshot).
-    const { web: _web, ...term } = entry;
+    const { web: _web, chat: _chat, ...term } = entry;
     terminals.push(
       pty && !exit ? { ...term, exited: false, exitCode: null } : {
         ...term,
