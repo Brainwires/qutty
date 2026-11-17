@@ -332,10 +332,14 @@ Deno.test({
         assert(!err.message.includes(shell), "the message leaks no path");
       }
       assertEquals(host.size, 0);
-      // A file that is not executable spawns, and exits non-zero right away.
-      const t = await host.spawn({ cols: 80, rows: 24, shell: "/etc/hosts" });
-      const exit = await rec.waitExit(t.id);
-      assert(exit.exitCode !== 0 || exit.signal !== null, JSON.stringify(exit));
+      // A file that is not executable: the runtime refuses to start it.
+      const bad = await assertRejects(() =>
+        host.spawn({ cols: 80, rows: 24, shell: "/etc/hosts" })
+      );
+      assertInstanceOf(bad, DesktopCapError);
+      assertEquals(bad.code, "spawn_failed");
+      assert(!bad.message.includes("/etc/hosts"), "the message leaks no path");
+      assertEquals(host.size, 0);
       // Default shell: $SHELL.
       await withEnv({ SHELL: SH }, async () => {
         const d = await host.spawn({ cols: 80, rows: 24 });

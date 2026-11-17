@@ -1,6 +1,6 @@
 // The companion's default brain: headless Claude Code in a hidden PTY, the pattern desktop/ssh.ts
-// uses for scp/sftp. The packaged app has no `--allow-run`, so the process is started through the
-// PTY host's node-pty fork, in a PtyHost of its own that is never shown in a tile (and not tapped
+// uses for scp/sftp. Every program the app starts goes through the PTY path (desktop/pty.ts,
+// `Deno.openPty`): this one in a PtyHost of its own that is never shown in a tile (and not tapped
 // by the hub: it has no tile socket). It uses the user's own Claude Code login: Qutty holds no API
 // key for it.
 //
@@ -65,8 +65,6 @@ export interface ClaudeCodeBrainOptions {
   model?: string;
   /** The companion's name, for its system prompt (default "Companion"). */
   name?: string;
-  /** Where node-pty's spawn-helper may be copied (the app-support folder). */
-  appSupportDir?: string;
   /** Every raw output chunk (fixture recording, diagnostics). */
   onRaw?(chunk: string): void;
 }
@@ -133,7 +131,7 @@ export class ClaudeCodeBrain implements BrainAdapter {
     });
     const spawned = await host.spawn(
       { cols: 400, rows: 50, program, args, cwd: this.#opts.cwd },
-      { appSupportDir: this.#opts.appSupportDir, owner: "companion" },
+      { owner: "companion" },
     );
     this.#id = spawned.id;
     const timer = setTimeout(

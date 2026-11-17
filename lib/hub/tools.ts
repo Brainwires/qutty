@@ -25,6 +25,21 @@ import { type HubCore, HubError } from "./core.ts";
 import { MAX_WAIT_MS } from "./mailbox.ts";
 import { MAX_READ_LINES } from "./mirror.ts";
 import type { CompanionTools } from "../companion/inference-brain.ts";
+import type {
+  PermissionDecision,
+  PermissionRequest,
+} from "../agent/adapter.ts";
+import { approveToolArgs, approveToolReply } from "../agent/permissions.ts";
+import { APPROVE_TOOL } from "../agent/claude-stream.ts";
+import { optBool, optInt, optStr, str } from "./tool-args.ts";
+import {
+  contentText,
+  readWebTile,
+  type ToolBlock,
+  ToolContent,
+  WEB_TOOLS,
+  webToolHost,
+} from "./web-tools.ts";
 
 /** The server name agents see (`mcp__qutty__…` in Claude Code). */
 const SERVER_NAME = "qutty";
@@ -43,55 +58,7 @@ const fail = (message: string): CallToolResult => ({
   isError: true,
 });
 
-// --- argument readers (a bad argument is the caller's mistake: a HubError) ------------------------
-
-function str(
-  args: Record<string, unknown>,
-  key: string,
-  max = 32 * 1024,
-): string {
-  const v = args[key];
-  if (typeof v !== "string" || v.length === 0) {
-    throw new HubError(`"${key}" must be a non-empty string`);
-  }
-  if (v.length > max) throw new HubError(`"${key}" is too long`);
-  return v;
-}
-
-function optStr(
-  args: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  return args[key] === undefined || args[key] === null
-    ? undefined
-    : str(args, key);
-}
-
-function optInt(
-  args: Record<string, unknown>,
-  key: string,
-  min: number,
-  max: number,
-): number | undefined {
-  const v = args[key];
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
-    throw new HubError(`"${key}" must be an integer in ${min}..${max}`);
-  }
-  return v;
-}
-
-function optBool(
-  args: Record<string, unknown>,
-  key: string,
-): boolean | undefined {
-  const v = args[key];
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "boolean") {
-    throw new HubError(`"${key}" must be true or false`);
-  }
-  return v;
-}
+// --- argument readers (a bad argument is the caller's mistake: a HubError; lib/hub/tool-args.ts) --
 
 function actionsOf(args: Record<string, unknown>): string[] {
   const v = args.actions;
@@ -157,12 +124,15 @@ interface ToolHints {
 const READS: ToolHints = { readOnlyHint: true, openWorldHint: false };
 const LOCAL: ToolHints = { destructiveHint: false, openWorldHint: false };
 const TYPES: ToolHints = { destructiveHint: true, openWorldHint: false };
+/** Acting on a web page: what it does reaches the web. */
+const BROWSES: ToolHints = { destructiveHint: true, openWorldHint: true };
 
 /**
  * Each tool's hints. Codex runs an MCP tool without asking when its hints say it only reads, or
  * changes nothing destructive and stays within a closed world (here: the window's tiles and
  * mailboxes); otherwise it asks first, and in `codex exec` it refuses. Typing into a terminal,
- * starting a command in a new tile and closing one are marked destructive.
+ * starting a command in a new tile and closing one are marked destructive; so is acting on a web
+ * page, which reaches the web. Reading a page is a read, like reading a screen.
  */
 export const TOOL_HINTS: Readonly<Record<string, ToolHints>> = {
   whoami: READS,
@@ -180,11 +150,25 @@ export const TOOL_HINTS: Readonly<Record<string, ToolHints>> = {
   write_tile: TYPES,
   spawn_tile: TYPES,
   close_tile: TYPES,
+  read_page: READS,
+  open_web: BROWSES,
+  web_navigate: BROWSES,
+  web_go: BROWSES,
+  web_click: BROWSES,
+  web_type: BROWSES,
+  web_scroll: LOCAL,
+  web_eval: BROWSES,
+  web_screenshot: READS,
 };
 
 /** Build the tool registry for `core`; each tool is listed with its {@linkcode TOOL_HINTS}. */
 export function buildToolRegistry(core: HubCore): McpToolRegistry {
   const reg = new McpToolRegistry();
+  const web = webToolHost({
+    tiles: core.webTiles,
+    tile: (target) => core.tile(target),
+    control: (command) => core.webControl(command),
+  });
   const add = (
     name: string,
     description: string,
@@ -201,7 +185,10 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
       schema,
       async (args, ctx) => {
         try {
-          return ok(await run(args, identityOf(ctx), ctx));
+          const value = await run(args, identityOf(ctx), ctx);
+          return value instanceof ToolContent
+            ? { content: value.content }
+            : ok(value);
         } catch (e) {
           if (e instanceof HubError) return fail(e.message);
           throw e;
@@ -220,7 +207,8 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   add(
     "list_peers",
     "Every tile in this Qutty window (id, name, harness, title, cwd, busy/idle/waiting, unread " +
-      'messages), plus the companion. Address them by name or id; "companion" is the window\'s assistant.',
+      'messages), plus the companion. Address them by name or id; "companion" is the window\'s assistant. ' +
+      'A web tile (kind: "web", id web-1) shows a page: its url, and its title as the label.',
     obj({}),
     (_a, who) => ({
       you: who.role === "tile" ? who.tileId : "companion",
@@ -318,10 +306,22 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   );
   add(
     "read_screen",
-    "The visible screen of a tile, as text (one line per row).",
+    "The visible screen of a tile, as text (one line per row). For a web tile, its page as " +
+      "read_page reads it.",
     obj({ tile: TILE_ARG }, ["tile"]),
     async (a) => {
       const tile = core.tile(str(a, "tile", 256));
+      if (tile.kind === "web") {
+        const read = await readWebTile(web, tile.id);
+        return {
+          tile: tile.id,
+          name: tile.name,
+          kind: "web",
+          url: read.tile.url ?? tile.url ?? "",
+          title: read.tile.label ?? "",
+          screen: read.text,
+        };
+      }
       const mirror = core.envMirror(tile.id);
       return {
         tile: tile.id,
@@ -470,18 +470,67 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
     obj({ tile: TILE_ARG }, ["tile"]),
     async (a) => ({ pending: await core.deliver(str(a, "tile", 256)) }),
   );
+
+  // --- web tiles (lib/hub/web-tools.ts; read_page is a tile tool too) ---------------------------
+  for (const tool of WEB_TOOLS) {
+    add(tool.name, tool.description, tool.schema, (a) => tool.run(a, web));
+  }
   return reg;
+}
+
+/** The agent tiles' side of the hub (lib/agent/sessions.ts): their permission questions. */
+export interface HubAgentTiles {
+  /** Whether tile `tileId` is an agent tile. */
+  has(tileId: string): boolean;
+  /** Ask the user, in the tile, whether its agent may run a tool. */
+  approve(tileId: string, req: PermissionRequest): Promise<PermissionDecision>;
 }
 
 /** Options of {@linkcode createHubHandler}. */
 export interface HubHandlerOptions {
   /** Every companion-only tool call, allowed or refused (the audit log). */
   audit?(call: PrivilegedCall): void;
+  /** The agent tiles: `approve_tool` is theirs alone (their `--permission-prompt-tool`). */
+  agents?: HubAgentTiles;
 }
 
-/** A result's text, for the audit log. */
+/**
+ * `approve_tool`, listed only on an agent tile's own connections: Claude Code's permission prompt
+ * tool (lib/agent/claude-stream.ts). The question is shown in the tile; the answer is the JSON
+ * Claude Code expects (`{"behavior":"allow","updatedInput":…}` or `{"behavior":"deny",…}`).
+ */
+const APPROVE_TOOL_DEF = {
+  name: APPROVE_TOOL,
+  description:
+    "(Agent tiles only; Claude Code's permission prompt tool.) Ask the user in the tile whether " +
+    "a tool may run.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      tool_name: { type: "string" },
+      input: { type: "object" },
+      tool_use_id: { type: "string" },
+    },
+    required: ["tool_name"],
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+};
+
+/** A result's text, for the audit log and the in-process brains (an image is only named). */
 const textOf = (r: CallToolResult) =>
-  r.content.map((c) => ("text" in c ? String(c.text) : "")).join(" ");
+  contentText(
+    r.content.flatMap((c): ToolBlock[] =>
+      c.type === "text"
+        ? [{ type: "text" as const, text: String(c.text) }]
+        : c.type === "image"
+        ? [{ type: "image" as const, data: c.data, mimeType: c.mimeType }]
+        : []
+    ),
+  );
 
 /**
  * The `McpHandler` for every hub connection: the registry's tools, the permission check, the
@@ -516,13 +565,28 @@ export function createHubHandler(
   return {
     serverInfo: () => ({ name: SERVER_NAME, version: SERVER_VERSION }),
     capabilities: () => ({ tools: { listChanged: false } }),
-    listTools: () => tools.listTools(),
+    listTools: (ctx) => {
+      const listed = tools.listTools();
+      const who = ctx?.connection?.identity as HubIdentity | undefined;
+      return who?.role === "tile" && opts.agents?.has(who.tileId)
+        ? [...listed, APPROVE_TOOL_DEF]
+        : listed;
+    },
     async callTool(name, args, ctx) {
       let who: HubIdentity;
       try {
         who = identityOf(ctx);
       } catch (e) {
         return fail((e as Error).message);
+      }
+      if (name === APPROVE_TOOL && opts.agents) {
+        if (who.role !== "tile" || !opts.agents.has(who.tileId)) {
+          return fail(`${APPROVE_TOOL} is for agent tiles only`);
+        }
+        const req = approveToolArgs(args);
+        if (!req) return fail('"tool_name" must be the name of a tool');
+        const decision = await opts.agents.approve(who.tileId, req);
+        return ok(JSON.stringify(approveToolReply(decision, req.input)));
       }
       if (!tools.hasTool(name)) return fail(`unknown tool: ${name}`);
       if (!canCall(who, name)) {

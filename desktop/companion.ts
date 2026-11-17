@@ -17,7 +17,7 @@
 // - Page round trips: a `say` waiting for its button, and a `control` command (spawn / close /
 //   focus) waiting for the page to carry it out.
 
-import { ensureDir, writeFileAtomic } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { chmodPath, removeDir, unlinkPath } from "./hub-socket.ts";
 import {
   anthropicCompanionBrain,
@@ -66,6 +66,11 @@ export const AUDIT_FILE = "companion-audit.jsonl";
 const AUDIT_ROTATE_BYTES = 1 << 20;
 /** How long the page has to carry out a control command. */
 const CONTROL_TIMEOUT_MS = 10_000;
+/**
+ * How long it has for a web tile command: a new tile's view mounting and its page loading, or a
+ * click's navigation, are waited for (lib/web/web-control.ts).
+ */
+const WEB_CONTROL_TIMEOUT_MS = 25_000;
 /** How long a waited-for `say` past its own timeout is held. */
 const SAY_SLACK_MS = 2_000;
 
@@ -223,7 +228,6 @@ export class CompanionHost {
           cwd: `${opts.quttyDir}/companion`,
           ...(cfg.model ? { model: cfg.model } : {}),
           ...(cfg.name ? { name: cfg.name } : {}),
-          ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
         });
       });
     this.runtime = new CompanionRuntime({
@@ -351,7 +355,10 @@ export class CompanionHost {
   /** Send a command to the page and wait for its answer ({@linkcode HubEnv.control}). */
   control(command: ControlCommand): Promise<ControlResult> {
     const requestId = `ctl-${++this.#nextControl}`;
-    const answer = this.#controls.wait(requestId, CONTROL_TIMEOUT_MS, {
+    const ms = command.kind === "web"
+      ? WEB_CONTROL_TIMEOUT_MS
+      : CONTROL_TIMEOUT_MS;
+    const answer = this.#controls.wait(requestId, ms, {
       ok: false,
       error: "the window did not answer (is it open?)",
     });

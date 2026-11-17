@@ -23,6 +23,8 @@ import {
   type WorkspaceState,
 } from "./store.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
+import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
+import { type Row, sanitizeRows, savedRows } from "../agent/transcript.ts";
 import { sanitizeOrder } from "./tile-order.ts";
 import {
   type FreeformState,
@@ -43,8 +45,20 @@ export interface WebTileSnapshot {
   web: WebPage;
 }
 
-/** One tile as saved: a terminal or a web tile. */
-export type TileSnapshot = TerminalTileSnapshot | WebTileSnapshot;
+/**
+ * An agent tile: its session (in its entry's `chat`) and a capped copy of its transcript
+ * (lib/agent/transcript.ts `savedRows`): a resumed Claude Code session does not replay it.
+ */
+export interface ChatTileSnapshot {
+  chat: AgentChat;
+  rows: Row[];
+}
+
+/** One tile as saved: a terminal, a web tile or an agent tile. */
+export type TileSnapshot =
+  | TerminalTileSnapshot
+  | WebTileSnapshot
+  | ChatTileSnapshot;
 
 /** What the page saves of its workspace. */
 export interface WorkspaceSnapshot {
@@ -86,8 +100,18 @@ export interface RestoredWebTile {
   web: WebPage;
 }
 
+/** One agent tile to rebuild: its saved transcript (its session is in its entry). */
+export interface RestoredChatTile {
+  id: string;
+  chat: AgentChat;
+  rows: Row[];
+}
+
 /** One tile to rebuild. */
-export type RestoredTile = RestoredTerminalTile | RestoredWebTile;
+export type RestoredTile =
+  | RestoredTerminalTile
+  | RestoredWebTile
+  | RestoredChatTile;
 
 /** How to rebuild a workspace. */
 export interface RestorePlan {
@@ -106,16 +130,21 @@ export interface RestorePlan {
 
 /**
  * The snapshot of `state`, with the terminal manager's view of each terminal tile (a web tile
- * saves its page, from its entry).
+ * saves its page, from its entry; an agent tile its session and `chatRows`, capped).
  */
 export function snapshotOf(
   state: WorkspaceState,
   seq: number,
   tile: (id: string) => TerminalTileSnapshot | undefined,
+  chatRows: (id: string) => readonly Row[] = () => [],
 ): WorkspaceSnapshot {
   const tiles: Record<string, TileSnapshot> = {};
   for (const t of state.terminals) {
-    const s = t.web ? { web: { ...t.web } } : tile(t.id);
+    const s = t.web
+      ? { web: { ...t.web } }
+      : t.chat
+      ? { chat: { ...t.chat }, rows: savedRows(chatRows(t.id)) }
+      : tile(t.id);
     if (s) tiles[t.id] = s;
   }
   return {
@@ -180,6 +209,22 @@ function entryOf(v: unknown): TerminalEntry | undefined {
   };
 }
 
+/** One tile's snapshot from storage: a web page, or a terminal with a known profile. */
+function tileSnapshotOf(t: unknown): TileSnapshot | undefined {
+  if (!isObject(t)) return undefined;
+  const web = sanitizeWebPage(t.web);
+  if (web) return { web };
+  const chat = sanitizeChat(t.chat);
+  if (chat) return { chat, rows: sanitizeRows(t.rows) };
+  const profile = profileOf(t.profile);
+  if (!profile) return undefined;
+  return {
+    ptyId: typeof t.ptyId === "string" ? t.ptyId : null,
+    profile,
+    ...(typeof t.home === "string" ? { home: t.home } : {}),
+  };
+}
+
 /** The snapshot's parts, validated (`undefined` for anything that is not a v1 snapshot). */
 function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
   if (!isObject(raw) || raw.v !== 1 || !Array.isArray(raw.terminals)) {
@@ -187,18 +232,8 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
   }
   const tiles: Record<string, TileSnapshot> = {};
   for (const [id, t] of Object.entries(isObject(raw.tiles) ? raw.tiles : {})) {
-    const web = isObject(t) ? sanitizeWebPage(t.web) : undefined;
-    if (web) {
-      tiles[id] = { web };
-      continue;
-    }
-    const profile = isObject(t) ? profileOf(t.profile) : undefined;
-    if (!profile || !isObject(t)) continue;
-    tiles[id] = {
-      ptyId: typeof t.ptyId === "string" ? t.ptyId : null,
-      profile,
-      ...(typeof t.home === "string" ? { home: t.home } : {}),
-    };
+    const tile = tileSnapshotOf(t);
+    if (tile) tiles[id] = tile;
   }
   const previous = raw.previousPattern;
   return {
@@ -247,10 +282,35 @@ export function planRestore(
   for (const entry of snap?.terminals ?? []) {
     const tile = snap!.tiles[entry.id];
     if (!tile || terminals.some((t) => t.id === entry.id)) continue;
+    if ("chat" in tile) {
+      // An agent tile reopens on its session (attached, or resumed) under its saved transcript.
+      const {
+        ssh: _s,
+        agent: _a,
+        sandbox: _b,
+        exitMessage: _m,
+        web: _w,
+        ...rest
+      } = entry;
+      terminals.push({
+        ...rest,
+        chat: tile.chat,
+        exited: false,
+        exitCode: null,
+      });
+      tiles.push({ id: entry.id, chat: tile.chat, rows: tile.rows });
+      continue;
+    }
     if ("web" in tile) {
       // A web tile reopens at its last page; it has no PTY, so it never ended.
-      const { ssh: _s, agent: _a, sandbox: _b, exitMessage: _m, ...rest } =
-        entry;
+      const {
+        ssh: _s,
+        agent: _a,
+        sandbox: _b,
+        exitMessage: _m,
+        chat: _c,
+        ...rest
+      } = entry;
       terminals.push({
         ...rest,
         web: tile.web,
@@ -265,7 +325,7 @@ export function planRestore(
     if (pty) claimed.add(pty.id);
     const exit = pty ? pty.exit : undefined;
     // A terminal's entry never carries a page (a web tile is known by its tile snapshot).
-    const { web: _web, ...term } = entry;
+    const { web: _web, chat: _chat, ...term } = entry;
     terminals.push(
       pty && !exit ? { ...term, exited: false, exitCode: null } : {
         ...term,
@@ -315,6 +375,126 @@ export function planRestore(
     view: snap?.view ?? "tiled",
     freeform: sanitizeFreeform(snap?.freeform, ids),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// A tile moving to another window (desktop/tile-move.ts)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A tile on its way to another window: its entry (title, SSH / agent / sandbox marks, how it
+ * ended) and its snapshot (its PTY and profile, or its page). The window it lands in gives it an id
+ * of its own.
+ */
+export interface MovedTile {
+  entry: TerminalEntry;
+  tile: TileSnapshot;
+  /** Its size in the window it left (a free-form drop keeps it). */
+  size?: { w: number; h: number };
+}
+
+/** The most a moved tile may weigh as JSON (its entry and profile: well under a KiB in practice). */
+const MAX_MOVED_TILE_CHARS = 32 * 1024;
+
+/**
+ * A moved tile from a page (untrusted): validated, or `undefined`. A web tile keeps its page in
+ * its entry; a terminal's entry never carries one; neither arrives minimized.
+ */
+export function movedTileOf(raw: unknown): MovedTile | undefined {
+  if (!isObject(raw)) return undefined;
+  try {
+    if (JSON.stringify(raw).length > MAX_MOVED_TILE_CHARS) return undefined;
+  } catch {
+    return undefined;
+  }
+  const entry = entryOf(raw.entry);
+  const tile = tileSnapshotOf(raw.tile);
+  // An agent tile's session belongs to its window's hub: it does not move.
+  if (!entry || !tile || "chat" in tile || entry.chat) return undefined;
+  const { minimized: _m, web: _w, ...rest } = entry;
+  const size = isObject(raw.size) && isSize(raw.size.w) && isSize(raw.size.h)
+    ? { size: { w: Math.round(raw.size.w), h: Math.round(raw.size.h) } }
+    : {};
+  return {
+    entry: "web" in tile ? { ...rest, web: tile.web } : rest,
+    tile,
+    ...size,
+  };
+}
+
+const isSize = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v > 0;
+
+/** Whether snapshot `raw` has tile `id`. */
+export function snapshotHasTile(raw: unknown, id: string): boolean {
+  return isObject(raw) && isObject(raw.tiles) && id in raw.tiles;
+}
+
+/**
+ * Snapshot `raw` without tile `id` (it moved to another window): its entry, its place in the MRU
+ * and tile orders, its tile and its free-form geometry. Anything that is not a v1 snapshot is
+ * returned as it is.
+ */
+export function withoutTile(raw: unknown, id: string): unknown {
+  if (!isObject(raw) || raw.v !== 1) return raw;
+  const drop = (v: unknown) => Array.isArray(v) ? v.filter((x) => x !== id) : v;
+  const out: Record<string, unknown> = {
+    ...raw,
+    terminals: Array.isArray(raw.terminals)
+      ? raw.terminals.filter((t) => !(isObject(t) && t.id === id))
+      : raw.terminals,
+    mru: drop(raw.mru),
+  };
+  if (raw.order !== undefined) out.order = drop(raw.order);
+  if (isObject(raw.tiles)) {
+    const { [id]: _gone, ...tiles } = raw.tiles;
+    out.tiles = tiles;
+  }
+  if (isObject(raw.freeform)) {
+    const ff = raw.freeform;
+    const rects = isObject(ff.rects) ? { ...ff.rects } : ff.rects;
+    if (isObject(rects)) delete rects[id];
+    out.freeform = {
+      ...ff,
+      rects,
+      z: drop(ff.z),
+      maximized: ff.maximized === id ? null : ff.maximized,
+    };
+  }
+  return out;
+}
+
+/**
+ * Snapshot `raw` with the tiles that moved into its workspace while no page took them (the page
+ * was loading, or reloaded before it saved them): each gets the next `t<n>` id and is the most
+ * recent tile, so the window shows it focused. A workspace with no snapshot yet (a window torn off
+ * for the tile) gets one with only them (its layout and view are the page's own).
+ */
+export function withArrivals(
+  raw: unknown,
+  arrivals: readonly MovedTile[],
+): unknown {
+  if (arrivals.length === 0) return raw;
+  const snap = parseSnapshot(raw);
+  const base: Record<string, unknown> = isObject(raw) && snap
+    ? { ...raw }
+    : { v: 1, previousPattern: null };
+  const terminals = [...(snap?.terminals ?? [])];
+  const tiles: Record<string, TileSnapshot> = { ...(snap?.tiles ?? {}) };
+  const order = [...(snap?.order ?? snap?.mru ?? [])];
+  let mru = [...(snap?.mru ?? [])];
+  let seq = Math.max(
+    snap?.seq ?? 0,
+    ...terminals.map((t) => Number(seqOf(t.id))),
+  );
+  for (const a of arrivals) {
+    const id = `t${++seq}`;
+    terminals.push({ ...clearSignals(a.entry), id });
+    tiles[id] = a.tile;
+    mru = [id, ...mru];
+    order.push(id);
+  }
+  return { ...base, seq, terminals, mru, order, tiles };
 }
 
 // ---------------------------------------------------------------------------------------------

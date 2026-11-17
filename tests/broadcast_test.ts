@@ -62,10 +62,11 @@ Deno.test("broadcast: turning it on checks the visible terminal tiles", () => {
     { id: "web", web: { url: "https://x" } },
     { id: "s1", ssh },
     { id: "agent", agent: { name: "claude" } },
+    { id: "chat", chat: { cwd: "/tmp" } },
     { id: "hidden", ssh },
     { id: "s2", ssh },
   ];
-  const visible = new Set(["local", "web", "s1", "agent", "s2"]);
+  const visible = new Set(["local", "web", "s1", "agent", "chat", "s2"]);
   assertEquals(defaultMembers(entries, visible), ["local", "s1", "s2"]);
   assertEquals(sshMembers(entries, visible), ["s1", "s2"]);
   assertEquals(defaultMembers(entries, new Set()), []);

@@ -104,10 +104,28 @@
       },
       "secureStore": true
     },
+    "sidecars": [
+      {
+        "name": "ptyd",
+        "run": {
+          "module": "./desktop/ptyd-sidecar.ts"
+        },
+        "ready": {
+          "signal": true,
+          "timeoutMs": 10000
+        },
+        "restart": {
+          "on": "never"
+        }
+      }
+    ],
     "secureStore": {
       "legacy": false
     },
     "extraPermissions": {
+      "run": [
+        "*"
+      ],
       "ffi": [
         "*"
       ],

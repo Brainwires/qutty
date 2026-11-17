@@ -1,6 +1,6 @@
 // The page side of the workspaces (desktop/session.ts): join the window's workspace (its snapshot
 // and its terminals with their replay), save the snapshot, list / reopen / end workspaces, and
-// close this window and end its shells (the Window menu's "Close Window and End Its Shells" and
+// close this window and end its shells (the Shell menu's "Close Window and End Its Shells" and
 // the quit question are the app process's own: desktop/session.ts). `createDesktopSession` talks
 // to the `session` extension; `createDemoSession` is the in-browser stand-in (one workspace, kept while the page lives), so a
 // remount of the workspace (the e2e suite's stand-in for a closed and reopened window) goes
@@ -11,22 +11,60 @@
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
 import type sessionExtension from "../desktop/session.ts";
 import type {
+  DragHover,
+  MoveRequestEvent,
+  MoveResult,
+  MoveTarget,
   SessionJoin,
-  TileMenuEvent,
+  TileArrival,
   WorkspaceInfo,
 } from "../desktop/session.ts";
+import type { DragOver, MoveRequest } from "../desktop/tile-move.ts";
 import type { JoinedPty } from "./workspace/session.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
-  isFreshTileMenu,
-  isPageMenuItem,
+  isFreshMenuEvent,
   newWorkspaceId,
-  type PageMenuItem,
   workspaceTitle,
   workspaceWindow,
 } from "./workspace/windows.ts";
 
-export type { WorkspaceInfo };
+export type {
+  DragHover,
+  DragOver,
+  MoveRequest,
+  MoveResult,
+  MoveTarget,
+  TileArrival,
+  WorkspaceInfo,
+};
+
+/**
+ * Moving this window's tiles to other windows (desktop/tile-move.ts): the header menu's "Move to
+ * Window", the header dragged out of the window, and the tiles that arrive here.
+ */
+export interface TileMoves {
+  /** A tile can tear off into a new window (the desktop app). */
+  readonly newWindow: boolean;
+  /** A header dragged out of the window can drop on another one (the desktop app). */
+  readonly drag: boolean;
+  /** The other windows (most recently focused first). */
+  targets(): Promise<MoveTarget[]>;
+  move(request: MoveRequest): Promise<MoveResult>;
+  /** The tiles moved here that wait for this page, each terminal ready to adopt. */
+  arrivals(): Promise<TileArrival[]>;
+  /** A dragged tile is outside this window: which window is under the pointer. */
+  dragOver(over: DragOver): Promise<{ target: string | null }>;
+  dragEnd(): Promise<void>;
+  /** A tile moved here (pull `arrivals`). */
+  onArrived(cb: () => void): () => void;
+  /** One of this window's tiles moved away. */
+  onLeft(cb: (e: { tile: string; move: string }) => void): () => void;
+  /** Another window's tile is dragged over this one (or left it). */
+  onHover(cb: (e: DragHover) => void): () => void;
+  /** The Window menu asks to move the focused tile (`to`: a window id or `"new"`). */
+  onRequest(cb: (to: string) => void): () => void;
+}
 
 /** What `join` gives the page. */
 export interface SessionJoined {
@@ -47,7 +85,13 @@ export interface SessionBackend {
   /** Show this window's workspace: what it saved before and its terminals, attached here. */
   join(): Promise<SessionJoined>;
   /** Save this window's snapshot (lib/workspace/session.ts). */
-  save(snapshot: unknown): Promise<void>;
+  /**
+   * Save this window's snapshot (lib/workspace/session.ts); `arrived`: the moves whose tiles it
+   * shows now (they no longer wait in the app's process).
+   */
+  save(snapshot: unknown, arrived?: string[]): Promise<void>;
+  /** Moving tiles between windows (absent: one window only). */
+  readonly moves?: TileMoves;
   list(): Promise<WorkspaceInfo[]>;
   /** Show detached workspace `id` in a window of its own. */
   reopen(id: string): Promise<void>;
@@ -74,12 +118,15 @@ export interface SessionBackend {
   guardClose(handler: CloseGuard): Promise<(() => void) | null>;
   /** This window took the focus. */
   focus(): Promise<void>;
-  onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
   /**
-   * The Window menu's tile items ("Minimize Tile", "Zoom Tile") and view / arrange items ("Tiled
-   * View", "Cascade Tiles", ...), chosen with this window key.
+   * Settings → "Keep shells running after quitting": whether the tiles' shells run in the PTY
+   * daemon, which the quit can leave them with (desktop/kept-shells.ts). An app-wide setting the
+   * app process keeps.
    */
-  onTileMenu(cb: (item: PageMenuItem) => void): () => void;
+  keepShells(): Promise<boolean>;
+  /** Change it; resolves to the setting now. */
+  setKeepShells(on: boolean): Promise<boolean>;
+  onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
 }
 
 /** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
@@ -127,7 +174,44 @@ export function createDesktopSession(deps: {
       void win.setWindowTitle(title).catch(() => {});
       return joined;
     },
-    save: (snapshot) => ext.save({ snapshot }),
+    save: (snapshot, arrived) =>
+      ext.save(arrived?.length ? { snapshot, arrived } : { snapshot }),
+    moves: {
+      newWindow: true,
+      drag: true,
+      targets: () => ext.moveTargets({}),
+      move: (request) => ext.moveTile(request),
+      async arrivals() {
+        deps.listen();
+        const list: TileArrival[] = await ext.arrivals({});
+        for (const a of list) if (a.pty) deps.adopt(a.pty.id, a.pty.seq);
+        return list;
+      },
+      dragOver: (over) => ext.dragOver(over),
+      dragEnd: () => ext.dragEnd({}),
+      onArrived: (cb) =>
+        deps.onDesktopEvent<{ move: string }>(
+          "session",
+          "tileArrived",
+          () => cb(),
+        ),
+      onLeft: (cb) =>
+        deps.onDesktopEvent<{ tile: string; move: string }>(
+          "session",
+          "tileLeft",
+          cb,
+        ),
+      onHover: (cb) =>
+        deps.onDesktopEvent<DragHover>("session", "dragHover", cb),
+      onRequest: (cb) =>
+        deps.onDesktopEvent<MoveRequestEvent>(
+          "session",
+          "moveRequest",
+          (e) => {
+            if (isFreshMenuEvent(e.at, Date.now())) cb(e.to);
+          },
+        ),
+    },
     list: () => ext.list({}),
     async reopen(id) {
       await deps.window.openWindow(workspaceWindow(id));
@@ -150,18 +234,14 @@ export function createDesktopSession(deps: {
       return win.onCloseRequested(({ reason }) => handler(reason));
     },
     focus: () => ext.focus({}),
+    keepShells: () => ext.keepShells({}),
+    setKeepShells: (on) => ext.setKeepShells({ on }),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
         "changed",
         (e) => cb(e.workspaces),
       ),
-    onTileMenu: (cb) =>
-      deps.onDesktopEvent<TileMenuEvent>("session", "tileMenu", (e) => {
-        if (isPageMenuItem(e.item) && isFreshTileMenu(e.at, Date.now())) {
-          cb(e.item);
-        }
-      }),
   };
 }
 
@@ -169,7 +249,7 @@ export function createDesktopSession(deps: {
 const DEMO_REPLAY_CHARS = 256 * 1024;
 
 /** One demo terminal's output, kept for a remount (the backend's replay ring, in miniature). */
-interface DemoRecord {
+export interface DemoRecord {
   chunks: { seq: number; data: string }[];
   size: number;
   seq: number;
@@ -178,38 +258,60 @@ interface DemoRecord {
   rows: number;
 }
 
+/** A demo terminal's replay, as a joining page gets it. */
+function joinedOf(id: string, r: DemoRecord): JoinedPty {
+  return {
+    id,
+    cols: r.cols,
+    rows: r.rows,
+    ...foldReplay([
+      ...r.chunks.map((data) => ({ event: "data", data })),
+      ...(r.exit ? [{ event: "exit", data: r.exit }] : []),
+    ]),
+  };
+}
+
+/** The demo's tile moves between pages (lib/demo-windows.ts): {@linkcode TileMoves} plus acks. */
+export interface DemoTileMoves extends TileMoves {
+  /** This page's workspace (`Workspace <name>`). */
+  readonly workspace: { id: string; name: string };
+  /** The page saved these moves' tiles. */
+  ack(moves: readonly string[]): void;
+}
+
 /**
  * The demo session: one workspace, kept as long as the page. The demo backend reports its
  * terminals' output, sizes and exits here (`record*`), and a remounted workspace joins them.
  */
-export function createDemoSession(): SessionBackend & {
+export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
   recordSpawn(id: string, cols: number, rows: number): void;
   recordData(id: string, data: string): void;
   recordResize(id: string, cols: number, rows: number): void;
   recordExit(id: string, exit: ReplayExit): void;
   release(id: string): void;
+  /** Take terminal `id`'s record away (it moves to another page), or `undefined`. */
+  takeRecord(id: string): DemoRecord | undefined;
+  /** Keep a record that came from another page under terminal `id`. */
+  putRecord(id: string, record: DemoRecord): void;
+  /** Terminal `id`'s replay, as a joining page gets it. */
+  joined(id: string): JoinedPty | undefined;
 } {
   const records = new Map<string, DemoRecord>();
   let snapshot: unknown = null;
+  let keepShells = true;
   const none = () => () => {};
   return {
     multiWindow: false,
     join: () =>
       Promise.resolve({
-        workspace: { id: "demo", name: "Workspace 1" },
+        workspace: moves?.workspace ?? { id: "demo", name: "Workspace 1" },
         snapshot,
-        ptys: [...records].map(([id, r]) => ({
-          id,
-          cols: r.cols,
-          rows: r.rows,
-          ...foldReplay([
-            ...r.chunks.map((data) => ({ event: "data", data })),
-            ...(r.exit ? [{ event: "exit", data: r.exit }] : []),
-          ]),
-        })),
+        ptys: [...records].map(([id, r]) => joinedOf(id, r)),
       }),
-    save(s) {
+    ...(moves ? { moves } : {}),
+    save(s, arrived) {
       snapshot = s;
+      if (arrived) moves?.ack(arrived);
       return Promise.resolve();
     },
     list: () => Promise.resolve([]),
@@ -220,8 +322,13 @@ export function createDemoSession(): SessionBackend & {
     closeWindow: () => Promise.resolve(),
     guardClose: () => Promise.resolve(null),
     focus: () => Promise.resolve(),
+    // The demo's shells never outlive the page; the setting is only remembered.
+    keepShells: () => Promise.resolve(keepShells),
+    setKeepShells(on) {
+      keepShells = on;
+      return Promise.resolve(keepShells);
+    },
     onChanged: none,
-    onTileMenu: none,
     recordSpawn(id, cols, rows) {
       records.set(id, { chunks: [], size: 0, seq: 0, cols, rows });
     },
@@ -243,5 +350,15 @@ export function createDemoSession(): SessionBackend & {
       if (r) r.exit = exit;
     },
     release: (id) => void records.delete(id),
+    takeRecord(id) {
+      const r = records.get(id);
+      records.delete(id);
+      return r && structuredClone(r);
+    },
+    putRecord: (id, record) => void records.set(id, record),
+    joined(id) {
+      const r = records.get(id);
+      return r && joinedOf(id, r);
+    },
   };
 }

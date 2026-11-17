@@ -24,7 +24,7 @@ const TIMEOUT_MS = 30_000;
 const WORKSPACE = "main";
 
 /** Poll `fn` until it returns something truthy. */
-async function until<T>(
+export async function until<T>(
   what: string,
   fn: () => T | undefined | null | false,
   ms = TIMEOUT_MS,

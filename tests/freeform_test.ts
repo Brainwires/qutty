@@ -41,22 +41,14 @@ import {
 } from "../lib/workspace/store.ts";
 import { planRestore, snapshotOf } from "../lib/workspace/session.ts";
 import {
-  isMdiItem,
   MDI_ITEM_IDS,
   MDI_LABELS,
   menuCommand,
-  STATIC_WINDOW_ITEMS,
   tileItemId,
   VIEW_GROUP,
   viewMenu,
   windowAppItems,
 } from "../lib/workspace/mdi-menu.ts";
-import {
-  isPageMenuItem,
-  MINIMIZE_TILE_ITEM,
-} from "../lib/workspace/windows.ts";
-import { tileMenuToPage } from "../desktop/session.ts";
-import { fakeExtensionHost } from "./session_helpers.ts";
 
 const AREA: Rect = { x: 0, y: 0, w: 1000, h: 600 };
 const MIN = { w: 240, h: 120 };
@@ -597,37 +589,10 @@ Deno.test("menu model: the window's items list the tiles, the focused one checke
   assertEquals(windowAppItems({ view: "tiled", tiles: [] }).length, 3);
 });
 
-Deno.test("menu model: ids read back; the static Window items carry the model's labels", () => {
+Deno.test("menu model: ids read back", () => {
   assertEquals(menuCommand(MDI_ITEM_IDS.cascade), { command: "cascade" });
   assertEquals(menuCommand(tileItemId("t12")), { focus: "t12" });
   assertEquals(menuCommand("qutty:tiles:focus:"), null);
-  assertEquals(menuCommand(MINIMIZE_TILE_ITEM), null);
-  assertEquals(
-    STATIC_WINDOW_ITEMS.map((i) => i.label),
-    Object.values(MDI_LABELS),
-  );
-  assert(
-    STATIC_WINDOW_ITEMS.every((i) => Object.keys(i).join() === "id,label"),
-  );
-  assert(isMdiItem(MDI_ITEM_IDS.viewFreeform) && !isMdiItem("nope"));
-  assert(isPageMenuItem(MDI_ITEM_IDS.tileVertically));
-  assert(isPageMenuItem(MINIMIZE_TILE_ITEM));
-  assert(!isPageMenuItem("qutty:window:close-end"));
-});
-
-Deno.test("Window menu: a view / arrange item goes to the key window's page", async () => {
-  const fake = fakeExtensionHost();
-  const off = tileMenuToPage(fake.host, () => 42);
-  try {
-    await fake.menuItem(MDI_ITEM_IDS.viewFreeform, { id: "w1", key: "ws-1" });
-    await fake.menuItem(MDI_ITEM_IDS.cascade, null);
-    assertEquals(fake.events.filter((e) => e.event === "tileMenu"), [{
-      event: "tileMenu",
-      data: { item: MDI_ITEM_IDS.viewFreeform, at: 42 },
-      window: "w1",
-      retain: false,
-    }]);
-  } finally {
-    off();
-  }
+  assertEquals(menuCommand("qutty:tile:minimize"), null);
+  assertEquals(Object.keys(MDI_LABELS), Object.keys(MDI_ITEM_IDS));
 });

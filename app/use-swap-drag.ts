@@ -6,6 +6,10 @@
 // lost pointer capture or the window losing focus puts it back. A press that does not move is a
 // plain click (the tile's own pointerdown focused it; a double click still reaches the header).
 //
+// Dragged out of the window (`cross`, app/use-tile-move.ts), the tile may go to another window:
+// the drag works then even where tiles do not swap (the focused tile in the main spot, monocle, a
+// maximized free-form tile), and a release outside the window is the other window's drop.
+//
 // Pointer events only (no HTML5 drag and drop: terminals and web views take those), captured by
 // the header once the drag starts. The tile under the pointer comes from the layout's rects, not
 // from hit-testing the page, so a native view drawn above a tile's body does not matter.
@@ -13,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type { LayoutTile } from "../lib/layout/mod.ts";
 import { tileAt } from "../lib/workspace/tile-order.ts";
+import type { WindowDrag } from "./use-tile-move.ts";
 
 /** How far a header press moves before it picks the tile up (px). */
 const SWAP_THRESHOLD = 4;
@@ -27,8 +32,10 @@ export interface SwapDrag {
 
 export function useSwapDrag(opts: {
   tiles: readonly LayoutTile[];
-  /** Swapping is on (tiles keep their places, tiled, not monocle); absent: no drag. */
+  /** Swapping is on (tiles keep their places, tiled, not monocle); absent: no swap. */
   onSwap: ((a: string, b: string) => void) | undefined;
+  /** A header may be dragged out to another window; absent (and no swap): no drag. */
+  cross?: WindowDrag;
 }): {
   drag: SwapDrag | null;
   /** A header press on tile `id` (`head`: the header, which captures the pointer). */
@@ -38,17 +45,27 @@ export function useSwapDrag(opts: {
   const optsRef = useRef(opts);
   optsRef.current = opts;
   const stopRef = useRef<(() => void) | null>(null);
-  // Unmounted mid-drag: the listeners go.
-  useEffect(() => () => stopRef.current?.(), []);
+  // Unmounted mid-drag: the listeners go (and a window hovered from outside is told).
+  useEffect(() => () => {
+    if (stopRef.current) optsRef.current.cross?.cancel();
+    stopRef.current?.();
+  }, []);
   // Swapping turned off mid-drag (the setting, the view, monocle): the drag is dropped.
-  const enabled = opts.onSwap !== undefined;
+  const swapping = opts.onSwap !== undefined;
+  const enabled = swapping || opts.cross !== undefined;
   useEffect(() => {
-    if (!enabled) stopRef.current?.();
+    if (!enabled && stopRef.current) {
+      optsRef.current.cross?.cancel();
+      stopRef.current();
+    }
   }, [enabled]);
 
   const start = useCallback(
     (e: PointerEvent, id: string, head: HTMLElement) => {
-      if (!optsRef.current.onSwap || e.button !== 0 || stopRef.current) return;
+      const o = optsRef.current;
+      if ((!o.onSwap && !o.cross) || e.button !== 0 || stopRef.current) {
+        return;
+      }
       const pointer = e.pointerId;
       const x0 = e.clientX;
       const y0 = e.clientY;
@@ -70,7 +87,9 @@ export function useSwapDrag(opts: {
             head.setPointerCapture(pointer);
           } catch { /* the pointer is gone already */ }
         }
-        const over = tileAt(
+        // Outside the window it swaps with nothing (another window may take it).
+        const outside = optsRef.current.cross?.move(ev, id) ?? false;
+        const over = outside || !optsRef.current.onSwap ? null : tileAt(
           optsRef.current.tiles,
           ev.clientX - box.left,
           ev.clientY - box.top,
@@ -96,11 +115,16 @@ export function useSwapDrag(opts: {
         live = null;
       };
       function cancel() {
-        if (stopRef.current === stop) stop();
+        if (stopRef.current !== stop) return;
+        optsRef.current.cross?.cancel();
+        stop();
       }
       const onUp = (ev: PointerEvent) => {
         if (ev.pointerId !== pointer || stopRef.current !== stop) return;
-        const target = live?.over ?? null;
+        // Released outside the window: the tile goes to the window there (or nowhere).
+        const away = live !== null &&
+          (optsRef.current.cross?.drop(ev, id) ?? false);
+        const target = away ? null : live?.over ?? null;
         stop();
         if (target) optsRef.current.onSwap?.(id, target);
       };

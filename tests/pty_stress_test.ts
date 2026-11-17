@@ -3,9 +3,9 @@
 // and descriptor leaks. Every wait polls for a condition with a timeout; nothing sleeps a fixed
 // time. Run: deno test -A tests/
 //
-// The resource and op sanitizers stay on: libc, node-pty and spawn-helper are loaded once at
+// The resource and op sanitizers stay on: libc is opened once at
 // module load (`warmUp`), and each test disposes its host, which waits for every terminal's
-// `exit` (emitted only after its read loop has finished and its master fd is closed).
+// `exit` (emitted only after its read loop has finished).
 
 import { assert, assertEquals } from "@std/assert";
 import {
@@ -401,7 +401,7 @@ Deno.test({
           await host.spawn({ cols: 80, rows: 24, shell: SH, cwd: "/tmp" }),
         );
       }
-      // While alive: one master each (the spare ptmx and the slave node-pty leaks are closed).
+      // While alive: about one master each.
       const live = openFds().length - before.length;
       assert(live <= 50 * 2 + 4, `${live} fds for 50 live terminals`);
       for (const [i, t] of terms.entries()) {
@@ -412,9 +412,9 @@ Deno.test({
       assertEquals(host.size, 0);
       const after = openFds();
       const leaked = after.filter((fd) => !before.includes(fd));
-      // node-pty 1.1.0 still leaks the kqueue of its macOS exit thread (1 per terminal; it cannot
-      // be told apart from Deno's own kqueues). Anything beyond that is ours.
-      const allowed = Deno.build.os === "darwin" ? 50 : 0;
+      // The runtime's PTYs close their masters with their streams: nothing per terminal is left
+      // (a little slack for the runtime's own lazily opened descriptors).
+      const allowed = 4;
       assert(
         leaked.length <= allowed,
         `${leaked.length} fds leaked by 50 terminals (allowed ${allowed})`,

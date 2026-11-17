@@ -53,11 +53,13 @@ export interface BroadcastCandidate {
   agent?: unknown;
   /** Set for a web tile: never a member (it has no terminal). */
   web?: unknown;
+  /** Set for an agent chat tile (app/agent-tile.tsx): never a member (it has no terminal). */
+  chat?: unknown;
 }
 
 /**
  * The tiles checked when the mode is turned on (and by the banner's All): every visible terminal
- * tile, in the workspace's order. Web tiles have no terminal, and agent tiles (`claude`) are
+ * tile, in the workspace's order. Web and agent chat tiles have no terminal, and agent tiles (`claude`) are
  * left out so typing meant for shells never lands in an agent's prompt; either can be ticked by
  * hand (agents) or not at all (web). Hidden tiles (minimized, overflow) are left out: the user
  * cannot see what they would type into.
@@ -67,7 +69,7 @@ export function defaultMembers(
   visibleIds: ReadonlySet<string>,
 ): string[] {
   return entries
-    .filter((e) => visibleIds.has(e.id) && !e.web && !e.agent)
+    .filter((e) => visibleIds.has(e.id) && !e.web && !e.chat && !e.agent)
     .map((e) => e.id);
 }
 

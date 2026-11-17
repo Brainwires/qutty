@@ -2,25 +2,24 @@
 // app's Deno process. The page reaches it through `lib/pty-client.ts` (`desktopExtension("pty")`
 // + `onDesktopEvent("pty", "data" | "exit")`).
 //
-// How it uses node-pty, and why not its JS `IPty` object
-// -------------------------------------------------------
-// node-pty's native addon (`pty.node`, prebuilt for darwin-arm64/x64) works under Deno: its `fork`
-// opens the PTY, starts the shell through `spawn-helper`, and reports the exit from a waitpid
-// thread. Its JS wrapper does NOT: on Deno 2.9.8 (stock and denext's 3.0.0-denext.7 toolchain)
-// `new tty.ReadStream(fd)` never delivers the master's output and `fs.write(fd, …)` on the raw
-// master fd fails with EBADF, so a spawned shell can neither be read nor typed into. So this module
-// calls the addon directly (`native.fork` / `native.resize` / `native.process`, which node-pty
-// exports on Unix) and does the master-fd I/O itself through libc FFI: `poll` (on Deno's blocking
-// thread pool, so the event loop never blocks) + non-blocking `read` / `write`.
+// The terminals: the runtime's `Deno.openPty`
+// -------------------------------------------
+// Every PTY (a tile's shell, and the hidden ones desktop/ssh.ts, sandbox.ts, voice.ts, ollama.ts,
+// links.ts, shell-agent.ts and companion-brain.ts run their helpers in) is opened by denext's Deno
+// runtime (`Deno.openPty`, runtime 3.0.0-denext.12 and later; Denext 4.18 pins 3.0.0-denext.22):
+// the program, its arguments, its environment (`clearEnv`, so a parent terminal's variables are
+// really gone), its folder and its size; `readable` / `writable` streams for the master, `resize`,
+// `kill(signal)` and the exit `status`. It is the same runtime API Denext's own `pty` capability
+// (`denext desktop add pty`) is built on; that capability is not used as is because it serves the
+// page (a shell allow-list, window-owned terminals) while Qutty's terminals are started by the
+// backend for workspaces, with any program (ssh, docker, agent tools) and the agent hub's
+// environment. Starting programs needs `--allow-run` (unscoped: the user picks the programs).
+// Under stock Deno (no `Deno.openPty`) a spawn answers `unsupported`; the tests run on denext's
+// toolchain (`deno task test`).
 //
-// FFI is already required (a Node-API addon needs `--allow-ffi`), so signals (`kill`) and the
-// spawn-helper copy (below) also go through libc instead of asking for `--allow-run` /
-// `--allow-write`.
-//
-// spawn-helper: node-pty execs it from its own package folder. In `deno run` that is the npm cache
-// (made executable here, as t3code's NodePtyAdapter does); in a packaged app it lives in the
-// compiled binary's embedded file system, which the OS cannot exec — then it is copied once into
-// the app-support folder and run from there.
+// The foreground process and its folder (`info`, the tile's title) come from the OS: `/proc` on
+// Linux; `proc_pidinfo` over libc FFI on macOS (the runtime's PTY exposes no master fd, so there
+// is no `tcgetpgrp`: the shell's `e_tpgid` names the foreground group instead).
 //
 // Output coalescing: each terminal's output is buffered and emitted every ~8 ms, or at once when
 // 64 KiB are pending, so the page sees a sane number of events. Each `data` event carries a
@@ -34,7 +33,7 @@
 // (`REPLAY_BYTES`); the window that shows the workspace next attaches it (desktop/session.ts) and
 // redraws it from the replay. A page reload attaches it again the same way. The app's quit
 // (Cmd+Q) disposes every terminal, and process unload kills what is left. A hard exit also closes
-// every master fd, which makes the kernel hang up the shells.
+// every master, which makes the kernel hang up the shells.
 
 import {
   defineDesktopExtension,
@@ -43,6 +42,8 @@ import {
 } from "denext/desktop";
 import { workspaces } from "./workspace-host.ts";
 import { TerminalSessions } from "./terminal-sessions.ts";
+import { desktopKeeperDeps, shellKeeper } from "./kept-shells.ts";
+import { persistSelfTest, runSelfTest } from "./persist-selftest.ts";
 import {
   dim,
   emptyInput,
@@ -114,7 +115,7 @@ export interface PtySpawnResult {
 export interface PtyInfo {
   id: string;
   pid: number;
-  /** The foreground process name (node-pty's `process`), e.g. `zsh`, `vim`. */
+  /** The foreground process's name, e.g. `zsh`, `vim` (the shell's while there is none). */
   process: string;
   /** The foreground process's working directory (falls back to the shell's), if it can be read. */
   cwd?: string;
@@ -203,70 +204,30 @@ const resizeInput = objectSchema<{ id: string; cols: number; rows: number }>((
 }));
 
 // ---------------------------------------------------------------------------------------------
-// libc over FFI
+// libc over FFI: the executable check and macOS's process queries (the file writes and errno are
+// desktop/libc.ts's)
 // ---------------------------------------------------------------------------------------------
 
 const IS_DARWIN = Deno.build.os === "darwin";
-const EAGAIN = IS_DARWIN ? 35 : 11;
-const EINTR = 4;
-const POLLIN = 0x1;
-const POLLOUT = 0x4;
-const POLLERR = 0x8;
-const POLLHUP = 0x10;
-const POLLNVAL = 0x20;
-const SIGHUP = 1;
-const SIGKILL = 9;
 const X_OK = 1;
-/** `proc_pidinfo` flavor PROC_PIDVNODEPATHINFO and the layout of `struct proc_vnodepathinfo`. */
+/** `proc_pidinfo` flavors and the layouts read here (`<sys/proc_info.h>`). */
+const PROC_PIDTBSDINFO = 3;
 const PROC_PIDVNODEPATHINFO = 9;
+/** `struct proc_bsdinfo`: `pbi_comm` @48 (16), `pbi_name` @64 (32), `e_tpgid` u32 @112. */
+const BSDINFO_SIZE = 136;
 const VNODE_INFO_SIZE = 152;
 const MAXPATHLEN = 1024;
 const VNODEPATHINFO_SIZE = 2 * (VNODE_INFO_SIZE + MAXPATHLEN);
 
-// mode_t is 16-bit on macOS, 32-bit on Linux (a non-variadic argument, so the width matters).
-const MODE_T = IS_DARWIN ? "u16" : "u32";
-
 const LIBC_SYMBOLS = {
-  read: { parameters: ["i32", "buffer", "usize"], result: "isize" },
-  write: { parameters: ["i32", "buffer", "usize"], result: "isize" },
-  poll: {
-    parameters: ["buffer", "u32", "i32"],
-    result: "i32",
-    nonblocking: true,
-  },
-  close: { parameters: ["i32"], result: "i32" },
-  kill: { parameters: ["i32", "i32"], result: "i32" },
-  tcgetpgrp: { parameters: ["i32"], result: "i32" },
   access: { parameters: ["buffer", "i32"], result: "i32" },
-  creat: { parameters: ["buffer", MODE_T], result: "i32" },
-  chmod: { parameters: ["buffer", MODE_T], result: "i32" },
-  mkdir: { parameters: ["buffer", MODE_T], result: "i32" },
-  rename: { parameters: ["buffer", "buffer"], result: "i32" },
 } as const;
 
-// The 64-bit-inode `struct stat` entry points (plain `fstat`/`stat` are the legacy ones on x64).
-const STAT_SUFFIX = Deno.build.arch === "x86_64" ? "$INODE64" : "";
-
 const DARWIN_SYMBOLS = {
-  __error: { parameters: [], result: "pointer" },
   proc_pidinfo: {
     parameters: ["i32", "i32", "u64", "buffer", "i32"],
     result: "i32",
   },
-  fstat: {
-    name: `fstat${STAT_SUFFIX}`,
-    parameters: ["i32", "buffer"],
-    result: "i32",
-  },
-  stat: {
-    name: `stat${STAT_SUFFIX}`,
-    parameters: ["buffer", "buffer"],
-    result: "i32",
-  },
-} as const;
-
-const LINUX_SYMBOLS = {
-  __errno_location: { parameters: [], result: "pointer" },
 } as const;
 
 const LIBC_PATH = IS_DARWIN ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
@@ -275,9 +236,6 @@ type Libc = Deno.DynamicLibrary<typeof LIBC_SYMBOLS>["symbols"];
 let libcCache: Libc | undefined;
 let darwinCache:
   | Deno.DynamicLibrary<typeof DARWIN_SYMBOLS>["symbols"]
-  | undefined;
-let linuxCache:
-  | Deno.DynamicLibrary<typeof LINUX_SYMBOLS>["symbols"]
   | undefined;
 
 /** libc, opened on first use (nothing runs at import). */
@@ -289,265 +247,8 @@ function darwinLibc() {
   return (darwinCache ??= Deno.dlopen(LIBC_PATH, DARWIN_SYMBOLS).symbols);
 }
 
-/** The calling thread's errno (read right after the failing call, on the same JS thread). */
-export function errno(): number {
-  const ptr = IS_DARWIN
-    ? darwinLibc().__error()
-    : (linuxCache ??= Deno.dlopen(LIBC_PATH, LINUX_SYMBOLS).symbols)
-      .__errno_location();
-  return ptr ? new Deno.UnsafePointerView(ptr).getInt32() : 0;
-}
-
 const encoder = new TextEncoder();
 const cstr = (s: string) => encoder.encode(`${s}\0`);
-
-/** One `struct pollfd` for `fd`. */
-function pollFd(
-  fd: number,
-  events: number,
-): { buf: Uint8Array; revents: () => number } {
-  const buf = new Uint8Array(8);
-  const view = new DataView(buf.buffer);
-  view.setInt32(0, fd, true);
-  view.setInt16(4, events, true);
-  return { buf, revents: () => view.getInt16(6, true) };
-}
-
-/** Darwin `struct stat` (64-bit inode): st_mode u16 @4, st_ino u64 @8, st_rdev i32 @24. */
-const STAT_SIZE = 144;
-const S_IFMT = 0o170000;
-const S_IFCHR = 0o020000;
-
-interface FdStat {
-  chr: boolean;
-  ino: bigint;
-  rdev: number;
-}
-
-function parseStat(buf: Uint8Array): FdStat {
-  const v = new DataView(buf.buffer);
-  return {
-    chr: (v.getUint16(4, true) & S_IFMT) === S_IFCHR,
-    ino: v.getBigUint64(8, true),
-    rdev: v.getInt32(24, true),
-  };
-}
-
-/** `fstat(fd)` (macOS), or `undefined` when `fd` is not open. */
-function fdStat(fd: number): FdStat | undefined {
-  const buf = new Uint8Array(STAT_SIZE);
-  return darwinLibc().fstat(fd, buf) === 0 ? parseStat(buf) : undefined;
-}
-
-/**
- * The open fds of this process, macOS: a scan of the table that ends after a long run of unused
- * fds (the table can have large holes in a long-lived process).
- */
-function openFdSet(): Set<number> {
-  const GAP = 256;
-  const open = new Set<number>();
-  for (let fd = 0, unused = 0; unused < GAP; fd++) {
-    if (fdStat(fd)) {
-      open.add(fd);
-      unused = 0;
-    } else {
-      unused++;
-    }
-  }
-  return open;
-}
-
-/**
- * node-pty 1.1.0's macOS `fork` leaks two descriptors into this process per terminal:
- *
- * - `pty_posix_spawn` opens a spare `/dev/ptmx` (`low_fds[0]`, meant to keep the master off fds
- *   0..2) and its clean-up loop never closes index 0;
- * - it opens the slave tty to configure it and never closes it in the parent (which also keeps
- *   the master from seeing EOF when the shell exits).
- *
- * Where they land is not predictable (other threads of this process open and close fds at the
- * same time), so they are found by identity among the fds that are new since `before` (taken
- * just before `fork`): the spare is a `/dev/ptmx` clone (the master's inode) that is no live
- * terminal's master; the slave is the new terminal's own device. Nothing else is touched. (A
- * third leak, the kqueue its exit thread never closes, cannot be told apart from Deno's own and
- * stays until node-pty fixes it.)
- */
-function closeForkLeaks(
-  forked: { fd: number; pty: string },
-  before: Set<number>,
-  liveMasters: Set<number>,
-): void {
-  const c = libc();
-  const master = fdStat(forked.fd);
-  if (!master) return;
-  const ttyBuf = new Uint8Array(STAT_SIZE);
-  const tty = darwinLibc().stat(cstr(forked.pty), ttyBuf) === 0
-    ? parseStat(ttyBuf)
-    : undefined;
-  for (const fd of openFdSet()) {
-    if (fd === forked.fd || before.has(fd) || liveMasters.has(fd)) continue;
-    const st = fdStat(fd);
-    if (!st?.chr) continue;
-    const spare = st.ino === master.ino;
-    const slave = tty?.chr === true && st.rdev === tty.rdev;
-    if (spare || slave) c.close(fd);
-  }
-}
-
-// ---------------------------------------------------------------------------------------------
-// node-pty
-// ---------------------------------------------------------------------------------------------
-
-/** The Unix half of node-pty's native addon (`require("node-pty").native`, not in its typings). */
-interface NodePtyNative {
-  fork(
-    file: string,
-    args: string[],
-    env: string[],
-    cwd: string,
-    cols: number,
-    rows: number,
-    uid: number,
-    gid: number,
-    utf8: boolean,
-    helperPath: string,
-    onexit: (code: number, signal: number) => void,
-  ): { fd: number; pid: number; pty: string };
-  resize(fd: number, cols: number, rows: number): void;
-  /** macOS: `process(fd)`; Linux: `process(fd, ptyName)`. */
-  process(fd: number, tty?: string): string;
-}
-
-let nativeCache: Promise<{ native: NodePtyNative; dir: URL }> | undefined;
-
-function loadNodePty(): Promise<{ native: NodePtyNative; dir: URL }> {
-  nativeCache ??= (async () => {
-    const mod = await import("node-pty") as unknown as {
-      native?: NodePtyNative;
-      default?: { native?: NodePtyNative };
-    };
-    const native = mod.native ?? mod.default?.native;
-    if (!native) {
-      throw new Error("node-pty has no native module on this platform");
-    }
-    // node-pty's `main` is lib/index.js; the package root is one level up.
-    const dir = new URL("../", import.meta.resolve("node-pty"));
-    return { native, dir };
-  })();
-  nativeCache.catch(() => (nativeCache = undefined));
-  return nativeCache;
-}
-
-let helperCache: string | undefined;
-
-/**
- * An executable spawn-helper path: the package's own (made executable), or a copy in
- * `appSupportDir` when the package's cannot be executed (a compiled app's embedded file system).
- */
-async function spawnHelper(
-  dir: URL,
-  appSupportDir: string | undefined,
-): Promise<string> {
-  if (helperCache !== undefined) return helperCache;
-  // Only macOS starts the shell through spawn-helper (posix_spawn); Linux uses forkpty and
-  // ignores the path (node-pty doesn't even build the helper there).
-  if (!IS_DARWIN) return (helperCache = "");
-  const arch = Deno.build.arch === "aarch64" ? "arm64" : "x64";
-  const candidates = [
-    "build/Release/spawn-helper",
-    "build/Debug/spawn-helper",
-    `prebuilds/${Deno.build.os}-${arch}/spawn-helper`,
-  ].map((rel) => new URL(rel, dir));
-  let source: URL | undefined;
-  for (const c of candidates) {
-    try {
-      await Deno.stat(c);
-      source = c;
-      break;
-    } catch { /* next */ }
-  }
-  if (!source) throw new Error("node-pty spawn-helper not found");
-  const path = decodeURIComponent(source.pathname);
-  // Deno.chmod is VFS-aware; access(2) asks the real file system, which is what exec uses.
-  await Deno.chmod(path, 0o755).catch(() => {});
-  const c = libc();
-  if (c.access(cstr(path), X_OK) === 0) return (helperCache = path);
-
-  if (!appSupportDir) {
-    throw new Error(
-      "spawn-helper is not executable and there is nowhere to copy it",
-    );
-  }
-  const bytes = await Deno.readFile(path);
-  const destDir = `${appSupportDir}/node-pty`;
-  const dest = `${destDir}/spawn-helper`;
-  try {
-    const existing = await Deno.readFile(dest);
-    if (
-      existing.length === bytes.length && existing.every((b, i) =>
-        b === bytes[i]
-      ) &&
-      c.access(cstr(dest), X_OK) === 0
-    ) return (helperCache = dest);
-  } catch { /* not there yet */ }
-  ensureDir(appSupportDir, 0o755);
-  ensureDir(destDir, 0o755);
-  writeFileAtomic(dest, bytes, 0o755);
-  return (helperCache = dest);
-}
-
-// ---------------------------------------------------------------------------------------------
-// File writes through libc (the app needs no --allow-write; FFI is already full trust). Also
-// used by desktop/ssh.ts for ~/.ssh/qutty.conf and the recents file.
-// ---------------------------------------------------------------------------------------------
-
-/** `mkdir(path, mode)`; an existing directory is fine (its mode is left alone). */
-export function ensureDir(path: string, mode: number): void {
-  libc().mkdir(cstr(path), mode);
-}
-
-/**
- * Write `bytes` to `path` with `mode`, atomically: a temp file beside it, written, chmod'ed,
- * then renamed over the target (a reader never sees a partial file, and a crash leaves the old
- * one). The target's directory must exist.
- */
-export function writeFileAtomic(
-  path: string,
-  bytes: Uint8Array,
-  mode: number,
-): void {
-  const c = libc();
-  const tmp = `${path}.${Deno.pid}.tmp`;
-  const fd = c.creat(cstr(tmp), mode);
-  if (fd < 0) throw new Error(`cannot create ${tmp} (errno ${errno()})`);
-  try {
-    let off = 0;
-    while (off < bytes.length) {
-      const n = Number(
-        c.write(fd, bytes.subarray(off), BigInt(bytes.length - off)),
-      );
-      if (n < 0) {
-        if (errno() === EINTR) continue;
-        throw new Error(`cannot write ${tmp} (errno ${errno()})`);
-      }
-      off += n;
-    }
-  } finally {
-    c.close(fd);
-  }
-  // creat applies the umask; the caller's mode is meant exactly (0600 for ssh files).
-  c.chmod(cstr(tmp), mode);
-  if (c.rename(cstr(tmp), cstr(path)) !== 0) {
-    throw new Error(`cannot install ${path} (errno ${errno()})`);
-  }
-}
-
-/** `rename(from, to)`, replacing `to` (both in one file system). */
-export function renamePath(from: string, to: string): void {
-  if (libc().rename(cstr(from), cstr(to)) !== 0) {
-    throw new Error(`cannot move ${from} to ${to} (errno ${errno()})`);
-  }
-}
 
 /** The bin folders a Finder-launched app's `PATH` lacks, searched after `PATH` itself. */
 const FALLBACK_BIN = [
@@ -648,14 +349,77 @@ async function isExecutable(path: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The runtime's PTY (`Deno.openPty`)
+// ---------------------------------------------------------------------------------------------
+
+/** `Deno.openPty`'s options (denext's Deno runtime 3.0.0-denext.12 and later). */
+export interface DenoPtyOptions {
+  readonly cmd: string;
+  readonly args?: string[];
+  readonly cwd?: string;
+  readonly env?: Record<string, string>;
+  readonly clearEnv?: boolean;
+  readonly cols: number;
+  readonly rows: number;
+}
+
+/** How a PTY's program ended (`Deno.CommandStatus`). */
+export interface DenoPtyStatus {
+  readonly success: boolean;
+  readonly code: number;
+  readonly signal: string | null;
+}
+
+/** `Deno.Pty`: the program's pid, the master's streams, its size, signals and its end. */
+export interface DenoPty {
+  readonly pid: number;
+  readonly readable: ReadableStream<Uint8Array>;
+  readonly writable: WritableStream<Uint8Array>;
+  readonly status: Promise<DenoPtyStatus>;
+  resize(cols: number, rows: number): void;
+  kill(signal?: string): void;
+}
+
+/** `Deno.openPty`. */
+export type OpenPty = (options: DenoPtyOptions) => DenoPty;
+
+/** The runtime's `Deno.openPty`, or `undefined` under a Deno without it (stock Deno). */
+export function runtimeOpenPty(): OpenPty | undefined {
+  const open = (Deno as unknown as { openPty?: OpenPty }).openPty;
+  return typeof open === "function" ? open.bind(Deno) : undefined;
+}
+
+/** The signal numbers `PtyExitEvent.signal` reports (the runtime reports names). */
+const SIGNAL_NUMBERS: Record<string, number> = {
+  SIGHUP: 1,
+  SIGINT: 2,
+  SIGQUIT: 3,
+  SIGILL: 4,
+  SIGTRAP: 5,
+  SIGABRT: 6,
+  SIGFPE: 8,
+  SIGKILL: 9,
+  SIGSEGV: 11,
+  SIGPIPE: 13,
+  SIGALRM: 14,
+  SIGTERM: 15,
+  ...(IS_DARWIN
+    ? { SIGBUS: 10, SIGUSR1: 30, SIGUSR2: 31 }
+    : { SIGBUS: 7, SIGUSR1: 10, SIGUSR2: 12 }),
+};
+
+/** A signal name as its number (an unknown name as 0, still "killed by a signal"). */
+function signalNumber(name: string | null): number | null {
+  return name === null ? null : SIGNAL_NUMBERS[name] ?? 0;
+}
+
+// ---------------------------------------------------------------------------------------------
 // The host: every live terminal (exported for tests; the extension below wraps one)
 // ---------------------------------------------------------------------------------------------
 
 const FLUSH_MS = 8;
 const FLUSH_BYTES = 64 * 1024;
-const READ_CHUNK = 64 * 1024;
-const POLL_MS = 100;
-/** After the shell exits, how long to wait for the master to report EOF before closing. */
+/** After the program exits, how long to wait for the master's last output before closing. */
 const EXIT_GRACE_MS = 250;
 /** After `kill`, how long before SIGHUP escalates to SIGKILL. */
 const KILL_ESCALATE_MS = 3000;
@@ -675,8 +439,8 @@ const STRIP_ENV = [
 interface Term {
   id: string;
   pid: number;
-  fd: number;
-  tty: string;
+  pty: DenoPty;
+  writer: WritableStreamDefaultWriter<Uint8Array>;
   shell: string;
   cwd: string;
   owner: string;
@@ -686,9 +450,6 @@ interface Term {
   flushTimer?: ReturnType<typeof setTimeout>;
   seq: number;
   writeChain: Promise<void>;
-  stopping: boolean;
-  readerDone: boolean;
-  exit?: { exitCode: number; signal: number | null };
   finalized: boolean;
   killTimer?: ReturnType<typeof setTimeout>;
 }
@@ -707,8 +468,8 @@ export type PtyEmit = (
  */
 export interface PtyTaps {
   /**
-   * Before the fork: extra environment, and arguments put before a program's own (after a final
-   * `--` instead for an agent started through `ollama launch`).
+   * Before the program starts: extra environment, and arguments put before a program's own (after
+   * a final `--` instead for an agent started through `ollama launch`).
    */
   spawning?(
     id: string,
@@ -793,8 +554,6 @@ function tap<T>(name: string, fn: () => T): T | undefined {
 
 /** Options for {@linkcode PtyHost.spawn}. */
 export interface PtySpawnOptions {
-  /** Where to copy spawn-helper when the package's copy cannot be executed. */
-  appSupportDir?: string;
   /** Who owns the terminal: the workspace (the extension's host), or a window / a helper's name. */
   owner?: string;
   /**
@@ -802,6 +561,34 @@ export interface PtySpawnOptions {
    * (the extension registers it for routing and replay there).
    */
   onCreated?: (id: string) => void;
+  /**
+   * Where the terminal runs: given its id and the options `Deno.openPty` would get, its PTY (the
+   * PTY daemon's, desktop/ptyd-client.ts), or `undefined` for this process's `Deno.openPty` (the
+   * default).
+   */
+  open?: (id: string, options: DenoPtyOptions) => Promise<DenoPty | undefined>;
+  /** Text shown before the program's own output (a restored shell's dimmed history). */
+  prelude?: string;
+}
+
+/** What {@linkcode PtyHost.adopt} is told about a terminal that runs already. */
+export interface PtyAdoption {
+  /** The program (its path), as `spawn` reported it. */
+  shell: string;
+  cwd: string;
+  owner?: string;
+  /** What it printed before (it is emitted first). */
+  replay?: string;
+  /** Called with its id once it is registered, before any of its output is emitted. */
+  onCreated?: (id: string) => void;
+}
+
+/** Options for a {@linkcode PtyHost}. */
+export interface PtyHostOptions {
+  /** Report to the module's {@linkcode PtyTaps} (the extension's host only). */
+  tapped?: boolean;
+  /** `Deno.openPty` (default: the runtime's, looked up at each spawn): a fake one in tests. */
+  openPty?: OpenPty;
 }
 
 /** Every live PTY, the coalescing, and the I/O loops. */
@@ -810,11 +597,12 @@ export class PtyHost {
   #emit: PtyEmit;
   #nextId = 0;
   readonly #tapped: boolean;
+  readonly #openPty: OpenPty | undefined;
 
-  /** @param opts `tapped`: report to the module's {@linkcode PtyTaps} (the extension's host only). */
-  constructor(emit: PtyEmit, opts: { tapped?: boolean } = {}) {
+  constructor(emit: PtyEmit, opts: PtyHostOptions = {}) {
     this.#emit = emit;
     this.#tapped = opts.tapped === true;
+    this.#openPty = opts.openPty;
   }
 
   #taps(): PtyTaps | undefined {
@@ -841,9 +629,13 @@ export class PtyHost {
         "PTYs are not supported on Windows yet",
       );
     }
-    const { native, dir } = await loadNodePty();
-    this.#nativeCache = { native };
-    const helper = await spawnHelper(dir, opts.appSupportDir);
+    const open = this.#openPty ?? runtimeOpenPty();
+    if (!open && !opts.open) {
+      throw new DesktopCapError(
+        "unsupported",
+        "terminals need denext's Deno runtime (Deno.openPty, 3.0.0-denext.12 or later)",
+      );
+    }
 
     const home = Deno.env.get("HOME") ?? "/";
     const shell = args.shell ?? defaultShellPath();
@@ -920,70 +712,125 @@ export class PtyHost {
         ? [...argv, "--", ...extra.args]
         : [...extra.args, ...argv];
     }
-    const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
 
-    // Assigned once after fork; the exit callback reads it first (it can fire before then).
-    // deno-lint-ignore prefer-const
-    let term: Term | undefined;
-    let earlyExit: { exitCode: number; signal: number | null } | undefined;
-    let forked: { fd: number; pid: number; pty: string };
-    const fdsBefore = IS_DARWIN ? openFdSet() : new Set<number>();
+    let pty: DenoPty;
     try {
-      forked = native.fork(
-        file,
-        argv,
-        envList,
+      const options: DenoPtyOptions = {
+        cmd: file,
+        args: argv,
         cwd,
-        args.cols,
-        args.rows,
-        -1,
-        -1,
-        true,
-        helper,
-        (code, signal) => {
-          const exit = { exitCode: code, signal: signal ? signal : null };
-          if (term) this.#onExit(term, exit);
-          else earlyExit = exit;
-        },
-      );
+        env,
+        clearEnv: true,
+        cols: args.cols,
+        rows: args.rows,
+      };
+      const remote = opts.open ? await opts.open(id, options) : undefined;
+      if (!remote && !open) throw new Error("this runtime has no Deno.openPty");
+      pty = remote ?? open!(options);
     } catch (err) {
       if (taps?.ended) tap("ended", () => taps.ended!(id));
+      // The runtime's message names the path; it stays in the app's log, not the page.
+      console.error(`pty: could not start ${file}`, err);
+      const why = err instanceof Error && err.name === "PermissionDenied"
+        ? " (not executable)"
+        : "";
       throw new DesktopCapError(
         "spawn_failed",
-        `could not start ${args.program ? "the program" : "the shell"}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `could not start ${args.program ? "the program" : "the shell"}${why}`,
       );
     }
-    if (IS_DARWIN) {
-      closeForkLeaks(
-        forked,
-        fdsBefore,
-        new Set([...this.#terms.values()].map((t) => t.fd)),
-      );
-    }
-    term = {
-      id,
-      pid: forked.pid,
-      fd: forked.fd,
-      tty: forked.pty,
+    this.#run(id, pty, {
       shell: file,
       cwd,
-      owner: opts.owner ?? "main",
+      ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+      ...(opts.prelude ? { replay: opts.prelude } : {}),
+      ...(opts.onCreated ? { onCreated: opts.onCreated } : {}),
+    });
+    return { id, pid: pty.pid, shell: file, cwd };
+  }
+
+  /**
+   * Take on a terminal that runs already (one the PTY daemon kept from the app's last launch) as
+   * terminal `id`: its `replay` is emitted first, then its output and its exit as usual. Later
+   * spawns get ids after it.
+   */
+  adopt(id: string, pty: DenoPty, info: PtyAdoption): void {
+    if (this.#terms.has(id)) {
+      throw new DesktopCapError("internal", `terminal ${id} exists already`);
+    }
+    const n = /^pty-(\d+)$/.exec(id)?.[1];
+    if (n !== undefined) this.#nextId = Math.max(this.#nextId, Number(n));
+    this.#run(id, pty, info);
+  }
+
+  /**
+   * Forget terminal `id` without ending it (it runs on in the PTY daemon: the quit that keeps the
+   * shells). No `exit` is emitted.
+   */
+  release(id: string): void {
+    const t = this.#terms.get(id);
+    if (!t || t.finalized) return;
+    t.finalized = true;
+    if (t.killTimer !== undefined) clearTimeout(t.killTimer);
+    if (t.flushTimer !== undefined) clearTimeout(t.flushTimer);
+    this.#terms.delete(id);
+    (t.pty as { detach?: () => void }).detach?.();
+    const taps = this.#taps();
+    if (taps?.ended) tap("ended", () => taps.ended!(id));
+  }
+
+  /** Register `pty` as terminal `id` and start reading it. */
+  #run(id: string, pty: DenoPty, info: PtyAdoption): void {
+    const term: Term = {
+      id,
+      pid: pty.pid,
+      pty,
+      writer: pty.writable.getWriter(),
+      shell: info.shell,
+      cwd: info.cwd,
+      owner: info.owner ?? "main",
       decoder: new TextDecoder("utf-8"),
       pending: [],
       pendingBytes: 0,
       seq: 0,
       writeChain: Promise.resolve(),
-      stopping: false,
-      readerDone: false,
       finalized: false,
     };
     this.#terms.set(id, term);
-    if (opts.onCreated) opts.onCreated(id);
-    void this.#readLoop(term);
-    if (earlyExit) this.#onExit(term, earlyExit);
-    return { id, pid: forked.pid, shell: file, cwd };
+    if (info.onCreated) info.onCreated(id);
+    if (info.replay) this.#push(term, encoder.encode(info.replay));
+    const pumped = this.#readLoop(term);
+    pty.status.then(
+      async (status) => {
+        await pumped;
+        // A program a signal ended reports exit code 0 and the signal (the runtime's code is
+        // 128 + the signal, as a shell's `$?`).
+        const sig = signalNumber(status.signal);
+        this.#finalize(term, {
+          exitCode: sig === null ? status.code : 0,
+          signal: sig,
+        });
+      },
+      async () => {
+        await pumped;
+        this.#finalize(term, { exitCode: -1, signal: null });
+      },
+    );
+  }
+
+  /** Whether terminal `id` runs in the PTY daemon (its PTY can be let go and kept). */
+  isRemote(id: string): boolean {
+    const t = this.#terms.get(id);
+    return t !== undefined && !t.finalized &&
+      typeof (t.pty as { detach?: unknown }).detach === "function";
+  }
+
+  /** Terminal `id`'s pid (and the program, and where it started), while it is known. */
+  describe(
+    id: string,
+  ): { pid: number; shell: string; cwd: string } | undefined {
+    const t = this.#terms.get(id);
+    return t ? { pid: t.pid, shell: t.shell, cwd: t.cwd } : undefined;
   }
 
   /**
@@ -995,9 +842,10 @@ export class PtyHost {
     const bytes = binary
       ? Uint8Array.from(data, (ch) => ch.charCodeAt(0) & 0xff)
       : encoder.encode(data);
-    if (bytes.length === 0) return;
-    // Ordered: each write waits for the previous one (a paste can hit EAGAIN).
-    t.writeChain = t.writeChain.then(() => this.#writeAll(t, bytes)).catch(
+    if (bytes.length === 0 || t.finalized) return;
+    // Ordered: each write waits for the previous one (the stream also waits out a full kernel
+    // buffer, a large paste).
+    t.writeChain = t.writeChain.then(() => t.writer.write(bytes)).catch(
       () => {},
     );
     await t.writeChain;
@@ -1006,9 +854,8 @@ export class PtyHost {
   resize(id: string, cols: number, rows: number): void {
     const t = this.#get(id);
     if (t.finalized) return;
-    const { native } = this.#nativeSync();
     try {
-      native.resize(t.fd, cols, rows);
+      t.pty.resize(cols, rows);
     } catch { /* the pty went away */ }
     const taps = this.#taps();
     if (taps?.resized) tap("resized", () => taps.resized!(id, cols, rows));
@@ -1017,10 +864,10 @@ export class PtyHost {
   kill(id: string): void {
     const t = this.#terms.get(id);
     if (!t || t.finalized) return;
-    libc().kill(t.pid, SIGHUP);
+    signal(t, "SIGHUP");
     if (t.killTimer === undefined) {
       t.killTimer = setTimeout(() => {
-        if (!t.finalized) libc().kill(t.pid, SIGKILL);
+        if (!t.finalized) signal(t, "SIGKILL");
       }, KILL_ESCALATE_MS);
       Deno.unrefTimer(t.killTimer as unknown as number);
     }
@@ -1028,22 +875,12 @@ export class PtyHost {
 
   async info(id: string): Promise<PtyInfo> {
     const t = this.#get(id);
-    const { native } = await loadNodePty();
-    let process = "";
-    const fg = libc().tcgetpgrp(t.fd);
-    if (fg > 0) {
-      try {
-        process = IS_DARWIN
-          ? native.process(t.fd)
-          : native.process(t.fd, t.tty);
-      } catch { /* gone */ }
-    }
-    // No foreground process group yet (the shell is still starting): node-pty would look up pid
-    // 0 and answer `kernel_task` on macOS. The shell is what runs.
-    if (!process) process = t.shell;
+    const fg = await foregroundOf(t.pid);
+    // No foreground process group yet (the shell is still starting): the shell is what runs.
+    let process = fg?.process || t.shell;
     // Linux reports argv[0] ("/bin/sh", or "-zsh" for a login shell); macOS the bare name.
     process = process.slice(process.lastIndexOf("/") + 1).replace(/^-/, "");
-    const cwd = (fg > 0 ? await processCwd(fg) : undefined) ??
+    const cwd = (fg ? await processCwd(fg.pid) : undefined) ??
       await processCwd(t.pid);
     return { id, pid: t.pid, process, ...(cwd ? { cwd } : {}) };
   }
@@ -1061,15 +898,13 @@ export class PtyHost {
     }
   }
 
-  /** Synchronous teardown for process exit: hang up every shell and close every master. */
+  /** Synchronous teardown for process exit: hang up every shell (the exit closes the masters). */
   killAllNow(): void {
     for (const t of this.#terms.values()) {
-      t.stopping = true;
-      try {
-        libc().kill(t.pid, SIGHUP);
-        libc().close(t.fd);
-      } catch { /* best effort */ }
+      signal(t, "SIGHUP");
       t.finalized = true;
+      if (t.killTimer !== undefined) clearTimeout(t.killTimer);
+      if (t.flushTimer !== undefined) clearTimeout(t.flushTimer);
       const taps = this.#taps();
       if (taps?.ended) tap("ended", () => taps.ended!(t.id));
     }
@@ -1087,15 +922,6 @@ export class PtyHost {
     if (this.#terms.size > 0) this.killAllNow();
   }
 
-  #nativeCache?: { native: NodePtyNative };
-  #nativeSync(): { native: NodePtyNative } {
-    // Only reached for a live terminal, so node-pty is loaded already.
-    if (!this.#nativeCache) {
-      throw new DesktopCapError("internal", "node-pty is not loaded");
-    }
-    return this.#nativeCache;
-  }
-
   #get(id: string): Term {
     const t = this.#terms.get(id);
     if (!t) {
@@ -1106,45 +932,42 @@ export class PtyHost {
     return t;
   }
 
+  /**
+   * Read the master until it ends. A background job can hold the PTY open after the program
+   * exits: reading stops a little after the exit.
+   */
   async #readLoop(t: Term): Promise<void> {
-    const c = libc();
-    const pfd = pollFd(t.fd, POLLIN);
-    const buf = new Uint8Array(READ_CHUNK);
+    const reader = t.pty.readable.getReader();
+    let finished = false;
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const exited = new Promise<"exited">((resolve) => {
+      const later = () => {
+        if (!finished) {
+          grace = setTimeout(() => resolve("exited"), EXIT_GRACE_MS);
+        }
+      };
+      t.pty.status.then(later, later);
+    });
     try {
-      outer: while (!t.stopping) {
-        const r = await c.poll(pfd.buf, 1, POLL_MS);
-        if (t.stopping) break;
-        // poll ran on another thread, so errno is not readable here; a failed poll is EINTR /
-        // EAGAIN / ENOMEM (a bad fd answers POLLNVAL in revents instead): try again.
-        if (r < 0) continue;
-        if (r === 0) continue;
-        const revents = pfd.revents();
-        if (revents & POLLIN) {
-          // Drain what is there (bounded, so one chatty terminal cannot starve the others).
-          for (let i = 0; i < 16; i++) {
-            const n = Number(c.read(t.fd, buf, BigInt(buf.length)));
-            if (n > 0) {
-              this.#push(t, buf.subarray(0, n));
-              if (n < buf.length) break;
-              continue;
-            }
-            if (n < 0) {
-              const e = errno();
-              if (e === EAGAIN || e === EINTR) break;
-            }
-            break outer; // 0 = EOF, EIO = every slave closed
-          }
-        } else if (revents & (POLLHUP | POLLERR | POLLNVAL)) {
+      for (;;) {
+        const next = await Promise.race([reader.read(), exited]);
+        if (next === "exited") {
+          reader.cancel().catch(() => {});
           break;
         }
+        if (next.done) break;
+        this.#push(t, next.value);
       }
+    } catch {
+      /* the PTY closed */
     } finally {
-      t.readerDone = true;
-      if (t.exit) this.#finalize(t);
+      finished = true;
+      clearTimeout(grace);
     }
   }
 
   #push(t: Term, bytes: Uint8Array): void {
+    if (t.finalized) return;
     const text = t.decoder.decode(bytes, { stream: true });
     if (text) t.pending.push(text);
     t.pendingBytes += bytes.length;
@@ -1168,58 +991,26 @@ export class PtyHost {
     this.#safeEmit("data", { id: t.id, seq: ++t.seq, data });
   }
 
-  #onExit(t: Term, exit: { exitCode: number; signal: number | null }): void {
-    if (t.exit) return;
-    t.exit = exit;
-    if (t.readerDone) {
-      this.#finalize(t);
-      return;
-    }
-    // Usually the reader sees EOF right away; a background job holding the slave open (or the
-    // macOS case where the master never reports it) must not keep the terminal alive.
-    const timer = setTimeout(() => {
-      t.stopping = true;
-    }, EXIT_GRACE_MS);
-    Deno.unrefTimer(timer as unknown as number);
-  }
-
-  #finalize(t: Term): void {
+  /** The program ended and its output is read: the last output, then the `exit`. */
+  #finalize(
+    t: Term,
+    exit: { exitCode: number; signal: number | null },
+  ): void {
     if (t.finalized) return;
-    t.finalized = true;
-    if (t.killTimer !== undefined) clearTimeout(t.killTimer);
     const tail = t.decoder.decode();
     if (tail) t.pending.push(tail);
     this.#flush(t);
-    libc().close(t.fd);
+    t.finalized = true;
+    if (t.killTimer !== undefined) clearTimeout(t.killTimer);
+    t.writer.close().catch(() => {});
     this.#terms.delete(t.id);
     const taps = this.#taps();
     if (taps?.ended) tap("ended", () => taps.ended!(t.id));
-    const exit = t.exit ?? { exitCode: -1, signal: null };
     this.#safeEmit("exit", {
       id: t.id,
       exitCode: exit.exitCode,
       signal: exit.signal,
     });
-  }
-
-  async #writeAll(t: Term, bytes: Uint8Array): Promise<void> {
-    const c = libc();
-    let off = 0;
-    while (off < bytes.length && !t.finalized) {
-      const n = Number(
-        c.write(t.fd, bytes.subarray(off), BigInt(bytes.length - off)),
-      );
-      if (n >= 0) {
-        off += n;
-        continue;
-      }
-      const e = errno();
-      if (e === EINTR) continue;
-      if (e !== EAGAIN) return; // the pty is gone
-      // The kernel buffer is full (a large paste): wait until the master is writable.
-      const pfd = pollFd(t.fd, POLLOUT);
-      await c.poll(pfd.buf, 1, POLL_MS);
-    }
   }
 
   #safeEmit(event: "data" | "exit", data: PtyDataEvent | PtyExitEvent): void {
@@ -1229,6 +1020,61 @@ export class PtyHost {
       console.error("pty: emit failed", err);
     }
   }
+}
+
+/** Send `name` to a terminal's program (it may have ended meanwhile). */
+function signal(t: Term, name: string): void {
+  try {
+    t.pty.kill(name);
+  } catch { /* gone */ }
+}
+
+/**
+ * The foreground process of the terminal whose program is `pid`: its process group's leader and
+ * name, or `undefined` while there is none (the shell is still starting) or the OS will not say.
+ */
+async function foregroundOf(
+  pid: number,
+): Promise<{ pid: number; process: string } | undefined> {
+  try {
+    if (IS_DARWIN) {
+      const shell = bsdInfo(pid);
+      if (!shell || shell.tpgid <= 0) return undefined;
+      const fg = bsdInfo(shell.tpgid);
+      return fg ? { pid: shell.tpgid, process: fg.name } : undefined;
+    }
+    // `pid (comm) state ppid pgrp session tty_nr tpgid …`; comm may hold spaces and parens.
+    const stat = await Deno.readTextFile(`/proc/${pid}/stat`);
+    const tpgid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[5]);
+    if (!Number.isInteger(tpgid) || tpgid <= 0) return undefined;
+    const comm = (await Deno.readTextFile(`/proc/${tpgid}/comm`)).trim();
+    return { pid: tpgid, process: comm };
+  } catch {
+    return undefined;
+  }
+}
+
+/** macOS `proc_pidinfo(PROC_PIDTBSDINFO)`: a process's name and its terminal's foreground group. */
+function bsdInfo(pid: number): { name: string; tpgid: number } | undefined {
+  const buf = new Uint8Array(BSDINFO_SIZE);
+  const n = darwinLibc().proc_pidinfo(
+    pid,
+    PROC_PIDTBSDINFO,
+    0n,
+    buf,
+    buf.length,
+  );
+  if (n < BSDINFO_SIZE) return undefined;
+  const text = (from: number, len: number) => {
+    const bytes = buf.subarray(from, from + len);
+    const end = bytes.indexOf(0);
+    return new TextDecoder().decode(
+      bytes.subarray(0, end < 0 ? len : end),
+    );
+  };
+  // `pbi_name` is the longer name (32 bytes); `pbi_comm` (16) when it is empty.
+  const name = text(64, 32) || text(48, 16);
+  return { name, tpgid: new DataView(buf.buffer).getUint32(112, true) };
 }
 
 /** A process's working directory, best-effort (macOS: proc_pidinfo; Linux: /proc). */
@@ -1327,16 +1173,16 @@ export async function writeTerminal(id: string, data: string): Promise<void> {
 const SELFTEST_TIMEOUT_MS = 20_000;
 
 /**
- * `QUTTY_PTY_SELFTEST=1`: a check of the packaged app's terminal path without the UI. It loads
- * node-pty's native addon, starts the default login shell through a {@linkcode PtyHost} (as a
- * tile does), waits for its prompt, has it compute `$((6*7))`, logs `pty self-test: OK` and exits
+ * `QUTTY_PTY_SELFTEST=1`: a check of the packaged app's terminal path without the UI. It checks
+ * the runtime has `Deno.openPty`, starts the default login shell through a {@linkcode PtyHost} (as
+ * a tile does), waits for its prompt, has it compute `$((6*7))`, logs `pty self-test: OK` and exits
  * the app (1 on failure). Run it under a temporary `HOME` so the user's own app folder and shell
  * history are untouched.
  */
-async function ptySelfTest(appSupportDir: string | undefined): Promise<void> {
+async function ptySelfTest(): Promise<void> {
   const log = (m: string) => console.error(`pty self-test: ${m}`);
-  const { native } = await loadNodePty();
-  log(`node-pty native addon: ${Object.keys(native).sort().join(", ")}`);
+  if (!runtimeOpenPty()) throw new Error("the runtime has no Deno.openPty");
+  log(`Deno.openPty on Deno ${Deno.version.deno}`);
   let output = "";
   let exited: PtyExitEvent | undefined;
   const pty = new PtyHost((event, data) => {
@@ -1344,7 +1190,6 @@ async function ptySelfTest(appSupportDir: string | undefined): Promise<void> {
     else exited = data as PtyExitEvent;
   });
   const started = await pty.spawn({ cols: 80, rows: 24 }, {
-    appSupportDir,
     owner: "selftest",
   });
   log(`spawned ${started.shell} (pid ${started.pid}) in ${started.cwd}`);
@@ -1373,14 +1218,26 @@ export default defineDesktopExtension({
   name: "pty",
   events: ["data", "exit"],
   setup: (h: DesktopExtensionHost) => {
-    terminalSessions().connect(h);
+    const sessions = terminalSessions();
+    sessions.connect(h);
+    // The shells kept by the last quit come back, and new tiles' shells run in the PTY daemon
+    // (desktop/kept-shells.ts). Only in the app (a test's host has no app-support folder).
+    if (h.appSupportDir) {
+      const keeper = shellKeeper();
+      void keeper.start(desktopKeeperDeps(sessions, workspaces, {
+        appSupportDir: h.appSupportDir,
+        confirm: (o) => h.confirm(o),
+      }));
+      if (Deno.env.get("QUTTY_PTY_SELFTEST") === "persist") {
+        runSelfTest("persist", () => persistSelfTest(sessions, keeper));
+      }
+    }
     // (`QUTTY_PTY_SELFTEST=detach`, the detach / reattach check, runs from desktop.ts: it needs
     // the app's windows.)
     if (Deno.env.get("QUTTY_PTY_SELFTEST") !== "1") return;
-    // Once the app is up (the window, and the app-support folder the runtime creates), as a
-    // tile's shell would start.
+    // Once the app is up (the window), as a tile's shell would start.
     setTimeout(() =>
-      ptySelfTest(h.appSupportDir || undefined).then(
+      ptySelfTest().then(
         () => Deno.exit(0),
         (e) => {
           console.error(`pty self-test: FAILED: ${e?.message ?? e}`);
@@ -1397,7 +1254,6 @@ export default defineDesktopExtension({
         return await terminalSessions().spawn(
           args as PtySpawnArgs,
           callerOf(ctx),
-          ctx.appSupportDir || undefined,
         );
       },
     },
