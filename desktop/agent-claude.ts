@@ -1,6 +1,6 @@
 // An agent tile's Claude Code session: headless `claude -p` in stream-json mode, run the way the
-// companion's brain runs it (desktop/companion-brain.ts): in a hidden PTY of the PTY host's
-// node-pty fork (the packaged app has no `--allow-run`), never shown in a tile and not tapped by
+// companion's brain runs it (desktop/companion-brain.ts): in a hidden PTY of the PTY host (the
+// app starts programs through the PTY path), never shown in a tile and not tapped by
 // the hub's mirrors. It uses the user's own Claude Code login.
 //
 // The wrapper (lib/agent/claude-stream.ts `claudeAgentArgv`): `env` sets the agent tile's hub
@@ -39,8 +39,6 @@ export interface ClaudeAgentOptions {
   hubArgs: readonly string[];
   /** The `claude` executable (default: looked up like the `+` picker does). */
   claude?: string;
-  /** Where node-pty's spawn-helper may be copied (the app-support folder). */
-  appSupportDir?: string;
   /** Every raw output chunk (fixture recording, diagnostics). */
   onRaw?(chunk: string): void;
 }
@@ -115,7 +113,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     });
     const spawned = await host.spawn(
       { cols: 400, rows: 50, program, args, cwd: spec.cwd },
-      { appSupportDir: this.#opts.appSupportDir, owner: "agent" },
+      { owner: "agent" },
     );
     this.#id = spawned.id;
     const timer = setTimeout(

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Shells survive quitting Qutty. ⌘Q asks whether to keep the shells running (the
+  default) or end them; kept shells come back at the next launch in their tiles,
+  as they were, with what they printed meanwhile. After a restart of the
+  computer the shell tiles come back in their last folder, their old text shown
+  dimmed above the new prompt. Settings → Windows → "Keep shells running after
+  quitting" turns it off.
+- Terminals run on the desktop runtime's own PTYs: no native terminal library to
+  build any more, and no file descriptor is left behind per terminal.
 - Agent tiles: Claude Code as a chat tile that looks like a terminal. The `+`
   menu's "Claude Code (chat)" (beside Claude Code) asks for a folder (the
   focused tile's by default) and opens one.

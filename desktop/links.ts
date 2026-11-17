@@ -268,7 +268,7 @@ export default defineDesktopExtension({
   setup: (host) => {
     if (Deno.build.os === "windows") return;
     service = new LinkService({
-      runner: new PtyRunner(host.appSupportDir || undefined),
+      runner: new PtyRunner(),
     });
     host.onAppMenuItem((id) => {
       if (id !== ITEM.repo) return;

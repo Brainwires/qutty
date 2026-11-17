@@ -38,7 +38,7 @@ function app() {
 }
 
 const join = (window: string) =>
-  session.join.handler({}, ctxOf(window)) as SessionJoin;
+  session.join.handler({}, ctxOf(window)) as Promise<SessionJoin>;
 const save = (window: string, snapshot: unknown, arrived?: string[]) =>
   session.save.handler(
     arrived ? { snapshot, arrived } : { snapshot },
@@ -70,8 +70,8 @@ Deno.test({
   sanitizeResources: false,
   fn: async () => {
     const fake = app();
-    join("main");
-    join("w2");
+    await join("main");
+    await join("w2");
     const a = await pty.spawn.handler(SH, ctxOf("main"));
     const b = await pty.spawn.handler(SH, ctxOf("w2"));
     try {
@@ -144,7 +144,7 @@ Deno.test({
       assert(snapshotHasTile(workspaces.snapshotOf("ws-a"), "t2"));
 
       // The target page reloads before it saved the tile: the join brings it, once.
-      const reloaded = join("w2");
+      const reloaded = await join("w2");
       const tiles =
         (reloaded.snapshot as { tiles: Record<string, { ptyId?: string }> })
           .tiles;

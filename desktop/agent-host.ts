@@ -27,7 +27,6 @@ export interface AgentSessionsOptions {
   hub: AgentHubSide;
   /** The flags that load the hub's MCP server and hooks into Claude Code. */
   hubArgs(): string[];
-  appSupportDir?: string;
   /** Another backend (tests). */
   createAdapter?: (
     spec: AgentSessionSpec,
@@ -45,7 +44,6 @@ export function agentSessions(opts: AgentSessionsOptions): AgentSessions {
         new ClaudeAgentAdapter({
           env: tile.env,
           hubArgs: opts.hubArgs(),
-          ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
         })),
   });
 }

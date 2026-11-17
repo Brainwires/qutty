@@ -39,6 +39,7 @@ import {
   workspaces,
 } from "./workspace-host.ts";
 import { terminalSessions } from "./pty.ts";
+import { type QuitKeeper, shellKeeper } from "./kept-shells.ts";
 import { type TrayMode, trayMode } from "./tray.ts";
 import { appWindowBounds, closeAppWindow } from "./windows.ts";
 import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
@@ -118,6 +119,13 @@ const endWindowInput = objectSchema<{ confirm: boolean }>((v, issues) => {
     issues.push({ message: "confirm must be a boolean", path: ["confirm"] });
   }
   return { confirm: v.confirm === true };
+});
+
+const keepInput = objectSchema<{ on: boolean }>((v, issues) => {
+  if (typeof v.on !== "boolean") {
+    issues.push({ message: "on must be a boolean", path: ["on"] });
+  }
+  return { on: v.on === true };
 });
 
 const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
@@ -208,20 +216,76 @@ export function closeQuestion(
   );
 }
 
+/** The keep question's buttons, in order. */
+export const KEEP_SHELLS = 0;
+export const END_SHELLS = 1;
+export const CANCEL_QUIT = 2;
+
 /**
- * The quit guard: with a busy agent the OS's message box asks (it is app-modal, so it works with no
- * window open) and the guard answers with the user's choice: "Quit Anyway" lets the quit go on,
- * Cancel (or Escape) cancels it. Denext stops the guards' 5 seconds while the box is up (4.16), so
- * the guard waits for the answer. A second quit while the box is up is cancelled without a second
- * box. Under a runtime without message boxes (`host.confirm` rejects `unsupported`) the quit is
- * cancelled once and the next one, within a few seconds, goes through.
+ * The quit question while shells can be kept (Settings → "Keep shells running after quitting"):
+ * Keep Shells Running (0, the default), End Shells (1) or Cancel (2). Keeping is the default
+ * because it loses nothing: the next launch shows every shell as it was, while ending one cannot
+ * be undone. A busy agent is named (keeping lets it work on).
+ */
+export function keepQuestion(
+  shells: number,
+  busy: readonly BusyTile[],
+): DesktopConfirmOptions {
+  const what = shells === 1 ? "A shell is" : `${shells} shells are`;
+  return {
+    title: "Quit Qutty?",
+    message: busy.length > 0 ? headline(busy) : `${what} running`,
+    detail:
+      (busy.length > 0
+        ? `Keep the shells running and ${
+          namesOf(busy)
+        } works on while Qutty is closed; end them and it stops. `
+        : "") +
+      "Kept shells come back, as they are, the next time Qutty opens.",
+    buttons: ["Keep Shells Running", "End Shells", "Cancel"],
+    defaultId: KEEP_SHELLS,
+    cancelId: CANCEL_QUIT,
+    kind: busy.length > 0 ? "warning" : "info",
+  };
+}
+
+/**
+ * The quit guard. With shells the PTY daemon can keep (desktop/kept-shells.ts), the OS's message
+ * box asks whether to keep them running ({@linkcode keepQuestion}, which also names a busy
+ * agent); Keep lets the shells go to the daemon before the quit goes on. Otherwise, with a busy
+ * agent it asks as before: "Quit Anyway" lets the quit go on, Cancel (or Escape) cancels it.
+ * The box is app-modal, so it works with no window open; Denext stops the guards' 5 seconds while
+ * it is up (4.16), so the guard waits for the answer. A second quit while the box is up is
+ * cancelled without a second box. Under a runtime without message boxes (`host.confirm` rejects
+ * `unsupported`) shells that can be kept are kept, and a busy agent's quit is cancelled once and
+ * the next one, within a few seconds, goes through.
  */
 export function guardQuit(
   host: Pick<DesktopExtensionHost, "onBeforeQuit" | "confirm">,
+  keeper: QuitKeeper = shellKeeper(),
 ): () => void {
   let asking = false;
   return host.onBeforeQuit(async () => {
     const decision = workspaces.beforeQuit();
+    const shells = keeper.keepable();
+    if (shells > 0) {
+      if (asking) return false;
+      asking = true;
+      try {
+        const busy = decision.allow ? [] : decision.busy;
+        const choice = await host.confirm(keepQuestion(shells, busy)).catch(
+          (err) => {
+            console.warn("session: could not ask before quitting", err);
+            return KEEP_SHELLS;
+          },
+        );
+        if (choice === CANCEL_QUIT || choice === null) return false;
+        if (choice === KEEP_SHELLS) await keeper.keepForNextLaunch();
+        return true;
+      } finally {
+        asking = false;
+      }
+    }
     if (decision.allow) return true;
     if (asking) return false;
     asking = true;
@@ -407,7 +471,9 @@ export default defineDesktopExtension({
     /** Show the calling window's workspace: its snapshot and its terminals, attached here. */
     join: {
       input: emptyInput,
-      handler: (_args: unknown, ctx): SessionJoin => {
+      handler: async (_args: unknown, ctx): Promise<SessionJoin> => {
+        // The shells the last quit kept are adopted first (desktop/kept-shells.ts).
+        await shellKeeper().ready;
         const window = windowOf(ctx);
         const sessions = terminalSessions();
         const joined = workspaces.join(window, sessions.keyOf(window));
@@ -493,6 +559,18 @@ export default defineDesktopExtension({
       handler: (args: unknown): { ended: number } => ({
         ended: workspaces.end((args as { id: string }).id).length,
       }),
+    },
+    /** Settings → "Keep shells running after quitting" (desktop/kept-shells.ts). */
+    keepShells: {
+      input: emptyInput,
+      handler: (): boolean => shellKeeper().keepShells,
+    },
+    setKeepShells: {
+      input: keepInput,
+      handler: (args: unknown): boolean => {
+        shellKeeper().setKeepShells((args as { on: boolean }).on);
+        return shellKeeper().keepShells;
+      },
     },
     /** The calling window took the focus (the companion talks to the active window). */
     focus: {

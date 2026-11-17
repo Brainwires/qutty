@@ -118,6 +118,14 @@ export interface SessionBackend {
   guardClose(handler: CloseGuard): Promise<(() => void) | null>;
   /** This window took the focus. */
   focus(): Promise<void>;
+  /**
+   * Settings → "Keep shells running after quitting": whether the tiles' shells run in the PTY
+   * daemon, which the quit can leave them with (desktop/kept-shells.ts). An app-wide setting the
+   * app process keeps.
+   */
+  keepShells(): Promise<boolean>;
+  /** Change it; resolves to the setting now. */
+  setKeepShells(on: boolean): Promise<boolean>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
 }
 
@@ -226,6 +234,8 @@ export function createDesktopSession(deps: {
       return win.onCloseRequested(({ reason }) => handler(reason));
     },
     focus: () => ext.focus({}),
+    keepShells: () => ext.keepShells({}),
+    setKeepShells: (on) => ext.setKeepShells({ on }),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
@@ -288,6 +298,7 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
 } {
   const records = new Map<string, DemoRecord>();
   let snapshot: unknown = null;
+  let keepShells = true;
   const none = () => () => {};
   return {
     multiWindow: false,
@@ -311,6 +322,12 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
     closeWindow: () => Promise.resolve(),
     guardClose: () => Promise.resolve(null),
     focus: () => Promise.resolve(),
+    // The demo's shells never outlive the page; the setting is only remembered.
+    keepShells: () => Promise.resolve(keepShells),
+    setKeepShells(on) {
+      keepShells = on;
+      return Promise.resolve(keepShells);
+    },
     onChanged: none,
     recordSpawn(id, cols, rows) {
       records.set(id, { chunks: [], size: 0, seq: 0, cols, rows });

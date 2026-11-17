@@ -17,7 +17,7 @@
 // - Page round trips: a `say` waiting for its button, and a `control` command (spawn / close /
 //   focus) waiting for the page to carry it out.
 
-import { ensureDir, writeFileAtomic } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { chmodPath, removeDir, unlinkPath } from "./hub-socket.ts";
 import {
   anthropicCompanionBrain,
@@ -228,7 +228,6 @@ export class CompanionHost {
           cwd: `${opts.quttyDir}/companion`,
           ...(cfg.model ? { model: cfg.model } : {}),
           ...(cfg.name ? { name: cfg.name } : {}),
-          ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
         });
       });
     this.runtime = new CompanionRuntime({

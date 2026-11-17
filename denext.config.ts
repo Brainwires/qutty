@@ -16,7 +16,8 @@ export default {
       },
       // Detachable sessions: closing a window detaches its workspace (its terminals keep running
       // in the app's process) and the app stays up with no window, in the menu bar / tray (the
-      // backend tray, desktop.ts); Cmd+Q quits and kills them (desktop/workspace-host.ts). The
+      // backend tray, desktop.ts); Cmd+Q quits and ends them, or leaves them running in the PTY
+      // daemon for the next launch (desktop/kept-shells.ts, the `ptyd` sidecar below). The
       // last window's close quits when no terminal is left, and off macOS when there is no tray
       // (desktop/tray.ts).
       keepAlive: true,
@@ -25,7 +26,8 @@ export default {
       // On macOS a relaunch from Finder or Spotlight is the Dock's reopen (`onDockReopen`).
       singleInstance: true,
       // The workspace windows open at the last quit come back at launch, at their frames (each
-      // window's key is its workspace's id; their terminals start afresh, a quit ended them).
+      // window's key is its workspace's id; their terminals are the kept ones, adopted from the
+      // PTY daemon, or start afresh when the quit ended them).
       restoreWindows: true,
       maxWindows: 16,
     },
@@ -60,7 +62,7 @@ export default {
       },
       // No `appImage.requires`: the AppImage's metainfo already lists the webview backend's
       // WebKitGTK 4.1 and GTK 3, and nothing else Qutty loads on Linux comes from the host but
-      // libc (node-pty's pty.node and the libc FFI; the voice library is not built for Linux).
+      // libc (the libc FFI; the voice library is not built for Linux).
     },
     // The first window. There is no window background-colour option in the config schema; the
     // page's own CSS paints the dark background.
@@ -91,7 +93,8 @@ export default {
     // as it is.
     webViews: { limit: 16 },
     capabilities: {
-      // The PTY backend (node-pty) runs in the app's Deno process: `desktop/pty.ts`. The SSH
+      // The PTY backend (the runtime's `Deno.openPty`) runs in the app's Deno process:
+      // `desktop/pty.ts`. The SSH
       // backend (`desktop/ssh.ts`: host list, qutty.conf, scp/sftp transfers) runs beside it and
       // starts ssh/scp/sftp through the same PTY path. The agent hub (`desktop/hub.ts`: a unix
       // socket + MCP server per terminal, the screen mirror, ask_user, Settings → Agent
@@ -110,11 +113,11 @@ export default {
         "./desktop/sandbox.ts",
         "./desktop/voice.ts",
         // The Ollama helper (`desktop/ollama.ts`): `ollama` and the library fetch (`curl`) run in
-        // hidden PTYs, so it needs no `run` or `net` either.
+        // hidden PTYs (the PTY path's `run`), so it needs no `net` either.
         "./desktop/ollama.ts",
         // Clickable links (`desktop/links.ts`): which printed paths exist, and opening URLs,
         // files, folders and the editor, through hidden PTYs as well (Denext's `shell`
-        // capability only opens paths inside the app's own folders and needs `run`).
+        // capability only opens paths inside the app's own folders).
         "./desktop/links.ts",
       ],
       // The lite system monitor: CPU, GPU and memory figures for the bar meter and the companion's
@@ -142,23 +145,37 @@ export default {
       // PasswordVault through PowerShell, gets `--allow-run=powershell.exe`).
       secureStore: true,
     },
+    // The PTY daemon's starter (desktop/ptyd-sidecar.ts): at each launch, unless a daemon of this
+    // protocol version answers, it starts `qutty-ptyd` (desktop/ptyd.ts) as a headless child of
+    // the app's own executable, detached, so the shells it holds outlive the app's quit when the
+    // user keeps them (desktop/kept-shells.ts). The worker itself has nothing else to do.
+    sidecars: [{
+      name: "ptyd",
+      run: { module: "./desktop/ptyd-sidecar.ts" },
+      ready: { signal: true, timeoutMs: 10_000 },
+      restart: { on: "never" },
+    }],
     // Never `/usr/bin/security` (no item of Qutty's was ever stored through it): the runtime's own
     // Keychain store only, so no `--allow-run=security` is baked.
     secureStore: { legacy: false },
     // What the extensions need beyond the baseline (which already has broad read + env):
-    // - ffi "*": node-pty's prebuilt Node-API addon (pty.node) is loaded from the compiled app's
-    //   embedded file system, whose path cannot be named at package time; the extensions also do
-    //   their PTY I/O, signals and file writes (spawn-helper copy, ~/.ssh/qutty.conf, recents,
-    //   ~/.qutty, the agent configs) through libc FFI (see desktop/pty.ts and desktop/ssh.ts for
-    //   why). The hub's unix sockets too: `Deno.listen({ transport: "unix" })` needs
-    //   `--allow-write` for the socket path, which cannot be scoped to a per-user folder here
-    //   (desktop/hub-socket.ts). Its uid comes from libc `getuid` (`Deno.uid()` needs `sys`).
-    //   The hub's TCP loopback endpoint for the shared Docker sandbox is bound the same way
-    //   (`FdTcpListener`), so it needs no `net` permission either; docker itself runs through
-    //   the PTY path.
+    // - run "*": every terminal, a tile's and the hidden ones (ssh/scp/sftp, docker, curl,
+    //   ollama, open, claude), is started by the runtime's `Deno.openPty` (desktop/pty.ts), which
+    //   checks `--allow-run`. It is unscoped: the user picks the shells and programs, and a
+    //   scoped grant would also drop `LD_*` / `DYLD_*` from every shell's environment. (Denext's
+    //   own `pty` capability is not enabled: it serves the page, with a shell allow-list, under
+    //   the same name as Qutty's `pty` extension.)
+    // - ffi "*": the extensions' file writes (~/.ssh/qutty.conf, recents, ~/.qutty, the agent
+    //   configs) go through libc FFI (see desktop/pty.ts and desktop/ssh.ts for why), and macOS's
+    //   `proc_pidinfo` names a terminal's foreground process. The hub's unix sockets too:
+    //   `Deno.listen({ transport: "unix" })` needs `--allow-write` for the socket path, which
+    //   cannot be scoped to a per-user folder here (desktop/hub-socket.ts). Its uid comes from
+    //   libc `getuid` (`Deno.uid()` needs `sys`). The hub's TCP loopback endpoint for the shared
+    //   Docker sandbox is bound the same way (`FdTcpListener`), so it needs no `net` permission
+    //   either; docker itself runs through the PTY path.
     //   The voice extension loads rullama-hardware's audio library (`librullama_audio_ffi`) from
     //   the app-support folder the same way.
-    //   No `run`, `write` or `sys` is needed.
+    //   No `write` or `sys` is needed.
     // - netConnect: the shell agent's optional local model (desktop/shell-agent.ts) and the
     //   companion's Ollama brain, Ollama's API on 127.0.0.1:11434 through `@rullama/provider`; the
     //   cloud voices the user picks with their own key (desktop/voice.ts through
@@ -168,6 +185,7 @@ export default {
     //   a key.
     // The Whisper model download runs `curl` in a hidden PTY, so no `net` for it either.
     extraPermissions: {
+      run: ["*"],
       ffi: ["*"],
       netConnect: [
         "127.0.0.1:11434",

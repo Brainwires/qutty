@@ -49,13 +49,8 @@ import {
   StreamServerTransport,
 } from "@rullama/mcp-server";
 import { asValidation, emptyInput, objectSchema, str } from "./schema.ts";
-import {
-  ensureDir,
-  resolveProgram,
-  setPtyTaps,
-  writeFileAtomic,
-  writeTerminal,
-} from "./pty.ts";
+import { resolveProgram, setPtyTaps, writeTerminal } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { listCodexHooks } from "./codex-trust.ts";
 import {
   type CodexTrustCheck,
@@ -69,8 +64,8 @@ import {
   FdReactor,
   FdTcpListener,
   FdUnixListener,
-  getuid,
   makeDir,
+  privateUserDir,
   processAlive,
   removeDir,
   unlinkPath,
@@ -259,18 +254,7 @@ function fileExists(path: string): boolean {
  * Returns the process folder.
  */
 export async function prepareSocketDir(base = "/tmp"): Promise<string> {
-  const uid = getuid();
-  const userDir = `${base}/qutty-${uid}`;
-  makeDir(userDir, 0o700);
-  const st = await Deno.lstat(userDir);
-  if (
-    !st.isDirectory || st.isSymlink || st.uid !== uid ||
-    ((st.mode ?? 0) & 0o077) !== 0
-  ) {
-    throw new Error(
-      `${userDir} is not a private folder of this user; not using it`,
-    );
-  }
+  const userDir = await privateUserDir(base);
   for await (const entry of Deno.readDir(userDir)) {
     const pid = Number(entry.name);
     if (!entry.isDirectory || !/^\d+$/.test(entry.name) || pid === Deno.pid) {
@@ -396,10 +380,8 @@ export class HubService {
     this.#fs = opts.fs ?? desktopFs;
     this.#shellBrains = opts.shellBrains ?? defaultShellBrainDeps({
       cwd: `${this.paths.dir}/shell-agent`,
-      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
     });
-    this.#codexHooks = opts.codexHooks ??
-      (() => this.#installedCodexHooks(opts.appSupportDir));
+    this.#codexHooks = opts.codexHooks ?? (() => this.#installedCodexHooks());
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
       // An agent tile's "screen" is its transcript; typing into it sends a prompt.
@@ -437,7 +419,6 @@ export class HubService {
     this.agents = agentSessions({
       emit: (update: AgentUpdate) => this.#emit("agent", update),
       hubArgs: () => hubArgsFor("claude", this.paths, this.#installed),
-      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
       ...(opts.createAgent ? { createAdapter: opts.createAgent } : {}),
       hub: {
         open: (id, info) => this.#agentTileOpen(id, info),
@@ -885,9 +866,7 @@ export class HubService {
   }
 
   /** `hooks/list` from the installed `codex`, over the config Install edits. */
-  async #installedCodexHooks(
-    appSupportDir: string | undefined,
-  ): Promise<ListedCodexHook[] | undefined> {
+  async #installedCodexHooks(): Promise<ListedCodexHook[] | undefined> {
     const codex = await resolveProgram("codex");
     if (!codex) return undefined;
     const config = this.files.codexConfig;
@@ -895,7 +874,6 @@ export class HubService {
       codex,
       codexHome: config.slice(0, config.lastIndexOf("/")),
       home: this.files.home,
-      ...(appSupportDir ? { appSupportDir } : {}),
     });
   }
 

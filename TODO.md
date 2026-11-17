@@ -17,9 +17,22 @@
     and rebuilds from it (`lib/workspace/session.ts`, `app/use-session.ts`). A
     reload reattaches too. ⌘Q quits and kills everything, asking first when an
     agent is busy; the Workspaces menu ends a workspace for real.
-  - Open: detach that survives quitting the app (a separate PTY daemon), and
-    restoring the shells themselves (cwd, scrollback) at the next launch: today
-    the windows and layouts come back with fresh shells.
+  - Done: detach that survives quitting the app. With Settings → Windows → "Keep
+    shells running after quitting" (on by default) the tiles' shells run in a
+    per-user PTY daemon (`desktop/ptyd.ts`, `qutty-ptyd`: the app's own
+    executable started headless by the `ptyd` sidecar, detached; a versioned
+    protocol on `/tmp/qutty-<uid>/ptyd-<v>.sock`, peer uid checked). ⌘Q asks
+    "Keep Shells Running" (the default) / "End Shells" / Cancel (naming a busy
+    agent); the next launch adopts every kept shell with its replay and the
+    page's snapshot, so the restored windows come back on their running shells
+    (`desktop/kept-shells.ts`). Without the daemon (a reboot) the shell tiles
+    start again in their last folder with their old text dimmed above the
+    prompt. `QUTTY_PTY_SELFTEST=persist` checks it in the packaged app.
+  - Open: kept agent tiles keep their old `QUTTY_SOCK` / hub env (the hub's
+    per-launch socket folder is gone): their hub integration needs a restart.
+    Sandboxed tiles are not kept. Denext has no supported way to run a process
+    that outlives the app (sidecars end with it), so the daemon is a detached
+    `spawnSelf` child; a Denext "detached sidecar" would make it first-class.
   - Off macOS there is no Dock to come back through: closing the last window
     quits (through the same busy-agent question). Not tried on Linux yet.
 
@@ -89,10 +102,9 @@
     Packaged-build checks without the UI, each under a temporary `HOME` so the
     installed app's folder is untouched: `QUTTY_VOICE_SELFTEST=<wav>`
     (desktop/voice.ts) logs the library, fetches the model, transcribes and
-    plays the file; `QUTTY_PTY_SELFTEST=1` (desktop/pty.ts) loads node-pty's
-    addon, starts the login shell as a tile does, has it answer, and exits (the
-    check for denext#134, where a runtime's node-pty substitute had no native
-    addon). Streaming transcripts (partials) and a wake word are possible with
+    plays the file; `QUTTY_PTY_SELFTEST=1` (desktop/pty.ts) checks the runtime's
+    `Deno.openPty`, starts the login shell as a tile does, has it answer, and
+    exits. Streaming transcripts (partials) and a wake word are possible with
     the same library.
   - Voice, done: hold-to-dictate into a web tile with the native engine
     (`WebViewHandle.insertText`, lib/web/native-engine.ts `insertTextScript`
@@ -342,10 +354,21 @@
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
 
-- [ ] **Switch to Denext's PTY capability** once it lands (being added to Denext
+- [x] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).
       Then drop most of `desktop/pty.ts`: the libc I/O, fd-leak cleanup,
       spawn-helper handling and Linux build script.
+  - Done (Denext 4.18, runtime 3.0.0-denext.22): `PtyHost` runs on the runtime's
+    `Deno.openPty` (what Denext's `pty` capability is built on), behind the same
+    interface; node-pty, its libc master I/O, the fd-leak clean-up,
+    spawn-helper, the Linux build script and the `jailScripts` entry are gone.
+    The app bakes `--allow-run` (unscoped). The unit tests run on denext's
+    toolchain (`deno task test`). Denext's page-facing capability itself is not
+    used: a shell allow-list and window-owned terminals do not fit the workspace
+    terminals, the hub's environment or ssh/docker/agent programs.
+  - Denext gaps: the runtime's PTY has no foreground process / tty queries
+    (macOS `info` reads `proc_pidinfo` over FFI; Denext's own `info` answers
+    nothing there).
 
 - [x] **Lite system monitor and the hot companion** (`lib/sysstats.ts`,
       `app/use-sysstats.ts`, `app/sys-meter.tsx`).

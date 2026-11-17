@@ -19,7 +19,6 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/package-linux.ts
-      - scripts/build-node-pty-linux.sh
       - denext.config.ts
   workflow_dispatch:
 
@@ -160,7 +159,7 @@ jobs:
             tool: aarch64
             appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
     runs-on: ${{ matrix.runner }}
-    # Tests, node-pty, the packages and their self-tests; a hang fails here, not at 6 h.
+    # Tests, the packages and their self-tests; a hang fails here, not at 6 h.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -168,11 +167,6 @@ jobs:
         with:
           deno-version: ${{ env.DENO_VERSION }}
           cache: true
-      # nodejs.org's Node for the node-pty build: a distro nodejs links pty.node to its shared
-      # libnode, which the users' machines do not have (scripts/build-node-pty-linux.sh).
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
 
       - name: Version
         id: version
@@ -206,10 +200,6 @@ jobs:
             "$BIN" > "$BIN/appimagetool"
           chmod +x "$BIN/appimagetool"
           echo "$BIN" >> "$GITHUB_PATH"
-
-      # node-pty has no Linux prebuilds: compile pty.node into Deno's npm cache, where the
-      # package step embeds it.
-      - run: sh scripts/build-node-pty-linux.sh
 
       - if: github.event_name == 'push'
         run: deno task test
@@ -274,7 +264,7 @@ jobs:
           grep -q "LAUFEY_APP_ID:-${ID}" "$APPDIR/squashfs-root/AppRun"
           echo "::endgroup::"
           sudo apt-get install -y -qq "./dist/Qutty-${LABEL}.deb"
-          # Load node-pty's addon, start a login shell, have it answer, exit 0 (desktop/pty.ts),
+          # Start a login shell through Deno.openPty, have it answer, exit 0 (desktop/pty.ts),
           # under a throwaway HOME and a virtual display.
           selftest() {
             HOME="$(mktemp -d)" QUTTY_PTY_SELFTEST=1 timeout 180 xvfb-run -a "$@" 2>&1 \
