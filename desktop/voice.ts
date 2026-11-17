@@ -97,10 +97,8 @@ const files: ModelFiles = {
   remove: (path) => void unlinkPath(path),
 };
 
-/** `curl -fL` into `dest`, in a hidden PTY (no `--allow-run` / `--allow-net` needed). */
-function curlFetcher(
-  appSupportDir: string,
-): (url: string, dest: string) => DownloadJob {
+/** `curl -fL` into `dest`, in a hidden PTY (no `--allow-net` needed). */
+function curlFetcher(): (url: string, dest: string) => DownloadJob {
   return (url, dest) => {
     let host: PtyHost | undefined;
     let id: string | undefined;
@@ -140,7 +138,7 @@ function curlFetcher(
             dest,
             url,
           ],
-        }, { appSupportDir, owner: "voice" });
+        }, { owner: "voice" });
         id = spawned.id;
         if (cancelled) host!.kill(id);
       }).catch((e) => resolve({ ok: false, error: String(e) }));
@@ -180,7 +178,7 @@ class VoiceService {
     this.model = new ModelStore({
       appSupportDir,
       files,
-      fetch: curlFetcher(appSupportDir),
+      fetch: curlFetcher(),
       onState: emit,
     });
   }

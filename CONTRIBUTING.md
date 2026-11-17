@@ -6,18 +6,12 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
 
 - [Deno](https://deno.com) **2.9.8** exactly: `deno upgrade --version 2.9.8`.
   The desktop runtime is built for that version.
+- Terminals come from denext's Deno runtime (`Deno.openPty`), so there is no
+  native addon to build. `deno task test` runs the unit tests on denext's Deno
+  toolchain (downloaded on first use), which has `Deno.openPty`; stock Deno has
+  none.
 - macOS: nothing else.
-- Linux: node-pty has no prebuilt Linux binary, so compile it once (needs
-  `node`, `npm`, `python3`, `make` and a C++ compiler):
-
-  ```sh
-  sh scripts/build-node-pty-linux.sh
-  ```
-
-  Use nodejs.org's Node (or nvm, fnm, volta), not the distro's `nodejs` package.
-  Debian and Ubuntu build that one as a shared `libnode`, and an addon linked to
-  it does not load in a packaged app on other machines. The script refuses such
-  an addon. To build the Linux packages (AppImage, `.deb`, tarball; the AppImage
+- Linux: to build the Linux packages (AppImage, `.deb`, tarball; the AppImage
   needs [appimagetool](https://github.com/AppImage/appimagetool/releases) on
   `PATH`):
 
@@ -25,9 +19,9 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
   deno task desktop:package:linux --format tar.gz,deb,appimage
   ```
 
-  Check a package without the UI: `QUTTY_PTY_SELFTEST=1` loads node-pty, has a
-  shell answer and exits 0. Run it under a throwaway `HOME`, with `xvfb-run` on
-  a machine with no display.
+  Check a package without the UI: `QUTTY_PTY_SELFTEST=1` starts a shell, has it
+  answer and exits 0. Run it under a throwaway `HOME`, with `xvfb-run` on a
+  machine with no display.
 
 Then:
 

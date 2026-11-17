@@ -123,11 +123,9 @@ export class TerminalSessions {
   async spawn(
     args: PtySpawnArgs,
     caller: CallerWindow,
-    appSupportDir?: string,
   ): Promise<PtySpawnResult> {
     const workspace = this.workspaceOf(caller.id);
     return await this.host.spawn(args, {
-      ...(appSupportDir ? { appSupportDir } : {}),
       owner: workspace,
       onCreated: (id) => {
         this.#owned.add(id, id, { owner: caller.id });

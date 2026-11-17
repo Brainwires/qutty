@@ -106,7 +106,8 @@ Qutty is built with [Denext](https://jsr.io/@denext/denext) on Deno **2.9.8**
   component).
 - `lib/layout/`: the layout engine (pure functions, property-tested).
 - `lib/workspace/`: state, shortcuts, fonts and the switcher bar logic.
-- `desktop/pty.ts`: the desktop extension that runs shells through node-pty.
+- `desktop/pty.ts`: the desktop extension that runs shells through the runtime's
+  `Deno.openPty`.
 - `tests/`: unit tests; `tests/e2e/`: browser tests.
 
 ### Contributing and releasing

@@ -3,8 +3,8 @@
 // one filesystem, process space and set of tools without touching the Mac. The rules (command
 // lines, lifecycle) live in lib/sandbox/; this file runs docker and wires the PTY host:
 //
-// - Every `docker` command runs through node-pty in a hidden PTY of this module (the pattern
-//   desktop/ssh.ts uses for scp): the packaged app has no `--allow-run`. A sandboxed tile is a
+// - Every `docker` command runs in a hidden PTY of this module (the pattern desktop/ssh.ts uses
+//   for scp): every program the app starts goes through the PTY path. A sandboxed tile is a
 //   program spawn of `docker exec -it …` through the PTY extension (desktop/pty.ts asks this
 //   module's `SandboxProvider` for the argv), so no permission is added.
 // - The container starts on the first sandboxed tile (or `ensure`, which the page calls first so
@@ -88,22 +88,19 @@ interface Run {
   done: (exit: PtyExitEvent) => void;
 }
 
-/** {@linkcode DockerCli} over node-pty: one hidden PTY per command. */
+/** {@linkcode DockerCli} over hidden PTYs: one per command. */
 export class PtyDockerCli implements DockerCli {
   #host: PtyHost;
   #runs = new Map<string, Run>();
   #early = new Map<string, { out: string; exit?: PtyExitEvent }>();
   #docker: Promise<string | undefined> | undefined;
-  #appSupportDir: string | undefined;
   #find: () => Promise<string | undefined>;
 
   constructor(
     opts: {
-      appSupportDir?: string;
       find?: () => Promise<string | undefined>;
     } = {},
   ) {
-    this.#appSupportDir = opts.appSupportDir;
     this.#find = opts.find ?? (() => findDocker());
     this.#host = new PtyHost((event, data) => {
       const id = (data as { id: string }).id;
@@ -132,7 +129,7 @@ export class PtyDockerCli implements DockerCli {
     const program = await this.#path();
     const { id } = await this.#host.spawn(
       { cols: 400, rows: 50, program, args, cwd: "/" },
-      { owner: "sandbox", appSupportDir: this.#appSupportDir },
+      { owner: "sandbox" },
     );
     return id;
   }
@@ -295,13 +292,13 @@ const windowOf = (ctx: { windowId?: string }) => {
 
 export default defineDesktopExtension({
   name: "sandbox",
-  setup: (host) => {
+  setup: () => {
     const home = Deno.env.get("HOME");
     if (!home || Deno.build.os === "windows") return;
     void hostConfigDirs(home).then((hostConfigs) => {
       const linux = Deno.build.os === "linux";
       service = new SandboxService({
-        docker: new PtyDockerCli({ appSupportDir: host.appSupportDir }),
+        docker: new PtyDockerCli(),
         facts: {
           quttyDir: hubPaths(home).dir,
           hostConfigs,

@@ -1,8 +1,8 @@
 // Asks the installed Codex whether it trusts Qutty's hooks (lib/hub/codex-trust.ts has the
 // request, the parsing and the verdict): `codex app-server`, the request lines on its stdin (held
 // open, the server exits at EOF before it answers), `hooks/list` read back from its output. No
-// model, no network, no login: a read of the config. It runs in a hidden PTY (the packaged app
-// has no `--allow-run`: the pattern of desktop/shell-agent.ts), with CODEX_HOME and HOME set to
+// model, no network, no login: a read of the config. It runs in a hidden PTY (the app
+// starts programs through the PTY path: the pattern of desktop/shell-agent.ts), with CODEX_HOME and HOME set to
 // the folders the integration edits, and is killed as soon as the answer is in (or after a few
 // seconds).
 
@@ -43,7 +43,6 @@ export async function listCodexHooks(
     /** `~/.codex` (the folder holding config.toml). */
     codexHome: string;
     home: string;
-    appSupportDir?: string;
     timeoutMs?: number;
   },
 ): Promise<ListedCodexHook[] | undefined> {
@@ -68,7 +67,7 @@ export async function listCodexHooks(
   );
   const { id } = await host.spawn(
     { cols: 400, rows: 50, program, args, cwd: opts.home },
-    { appSupportDir: opts.appSupportDir, owner: "codex-trust" },
+    { owner: "codex-trust" },
   );
   const timer = setTimeout(
     () => settle(undefined),

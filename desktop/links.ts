@@ -262,10 +262,10 @@ const editInput = objectSchema<LinkEditRequest>((v, issues) => {
 
 export default defineDesktopExtension({
   name: "links",
-  setup: (host) => {
+  setup: () => {
     if (Deno.build.os === "windows") return;
     service = new LinkService({
-      runner: new PtyRunner(host.appSupportDir || undefined),
+      runner: new PtyRunner(),
     });
   },
   methods: {

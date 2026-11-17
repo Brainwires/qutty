@@ -223,7 +223,6 @@ export class CompanionHost {
           cwd: `${opts.quttyDir}/companion`,
           ...(cfg.model ? { model: cfg.model } : {}),
           ...(cfg.name ? { name: cfg.name } : {}),
-          ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
         });
       });
     this.runtime = new CompanionRuntime({

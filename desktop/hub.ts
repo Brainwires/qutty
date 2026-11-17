@@ -366,10 +366,8 @@ export class HubService {
     this.#fs = opts.fs ?? desktopFs;
     this.#shellBrains = opts.shellBrains ?? defaultShellBrainDeps({
       cwd: `${this.paths.dir}/shell-agent`,
-      ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
     });
-    this.#codexHooks = opts.codexHooks ??
-      (() => this.#installedCodexHooks(opts.appSupportDir));
+    this.#codexHooks = opts.codexHooks ?? (() => this.#installedCodexHooks());
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
       mirror: (id) => this.#mirrors.get(id),
@@ -754,9 +752,7 @@ export class HubService {
   }
 
   /** `hooks/list` from the installed `codex`, over the config Install edits. */
-  async #installedCodexHooks(
-    appSupportDir: string | undefined,
-  ): Promise<ListedCodexHook[] | undefined> {
+  async #installedCodexHooks(): Promise<ListedCodexHook[] | undefined> {
     const codex = await resolveProgram("codex");
     if (!codex) return undefined;
     const config = this.files.codexConfig;
@@ -764,7 +760,6 @@ export class HubService {
       codex,
       codexHome: config.slice(0, config.lastIndexOf("/")),
       home: this.files.home,
-      ...(appSupportDir ? { appSupportDir } : {}),
     });
   }
 

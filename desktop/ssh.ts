@@ -10,9 +10,8 @@
 //
 // How scp/sftp run, and why not `Deno.Command`
 // --------------------------------------------
-// The packaged app bakes its permissions at build time and has no `--allow-run` (see
-// denext.config.ts): desktop/pty.ts starts shells through node-pty's native fork and does its I/O
-// through libc FFI for that reason. Transfers take the same path: scp/sftp run in a hidden PTY of
+// Every program the app starts goes through the PTY path (desktop/pty.ts, the runtime's
+// `Deno.openPty`). Transfers take the same path: scp/sftp run in a hidden PTY of
 // their own (a `PtyHost` this module owns, never shown in a tile) and their output is parsed here.
 // That costs nothing we would not want anyway: scp draws its progress meter only when stdout is a
 // tty, so the hidden PTY is what makes progress reporting possible, and the exit code arrives
@@ -864,7 +863,7 @@ export class SshService {
     try {
       return await this.#pty.spawn(
         { cols: 160, rows: 24, program, args, cwd: this.#home },
-        { appSupportDir: this.#appSupportDir, owner },
+        { owner },
       );
     } catch (err) {
       if (err instanceof DesktopCapError) throw err;

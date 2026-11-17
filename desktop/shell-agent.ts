@@ -3,7 +3,7 @@
 //
 // - Claude Code, headless: `claude -p <prompt> --output-format json --tools "" --strict-mcp-config
 //   --no-session-persistence --system-prompt <strict prompt> --model haiku`, in a hidden PTY
-//   (the packaged app has no `--allow-run`: the pattern of desktop/companion-brain.ts), its
+//   (the app starts programs through the PTY path: the pattern of desktop/companion-brain.ts), its
 //   stdin /dev/null, in `~/.qutty/shell-agent` (no project folder, so no CLAUDE.md is read).
 //   It uses the user's own Claude Code login: Qutty holds no API keys.
 // - Ollama, local: `@rullama/provider`'s `OllamaChatProvider` against 127.0.0.1:11434 (the
@@ -95,20 +95,17 @@ export class ClaudeShellBrain implements ShellBrain {
   #claude: string;
   #model: string;
   #cwd: string;
-  #appSupportDir: string | undefined;
 
   constructor(
     opts: {
       claude: string;
       model: string;
       cwd: string;
-      appSupportDir?: string;
     },
   ) {
     this.#claude = opts.claude;
     this.#model = opts.model;
     this.#cwd = opts.cwd;
-    this.#appSupportDir = opts.appSupportDir;
     this.label = `Claude Code (${opts.model})`;
   }
 
@@ -134,7 +131,7 @@ export class ClaudeShellBrain implements ShellBrain {
     );
     const { id } = await host.spawn(
       { cols: 400, rows: 50, program, args, cwd: this.#cwd },
-      { appSupportDir: this.#appSupportDir, owner: "shell-agent" },
+      { owner: "shell-agent" },
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((r) => {
@@ -224,18 +221,13 @@ export interface ShellBrainDeps {
 
 /** The real backends: `claude` looked up like the `+` picker does, Ollama on loopback. */
 export function defaultShellBrainDeps(
-  opts: { cwd: string; appSupportDir?: string },
+  opts: { cwd: string },
 ): ShellBrainDeps {
   return {
     findClaude: () => resolveProgram("claude"),
     ollamaModels: () => detectOllama(),
     claude: (claude, model) =>
-      new ClaudeShellBrain({
-        claude,
-        model,
-        cwd: opts.cwd,
-        ...(opts.appSupportDir ? { appSupportDir: opts.appSupportDir } : {}),
-      }),
+      new ClaudeShellBrain({ claude, model, cwd: opts.cwd }),
     ollama: (model) => new OllamaShellBrain(model),
   };
 }

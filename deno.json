@@ -6,7 +6,7 @@
     "dev": "deno run -A jsr:@denext/denext@^4.18.0/cli dev .",
     "build": "deno run -A jsr:@denext/denext@^4.18.0/cli build .",
     "start": "deno run --allow-net --allow-read --allow-env --allow-write=.denext jsr:@denext/denext@^4.18.0/cli start .",
-    "test": "deno test -A --ignore=tests/e2e tests/ lib/",
+    "test": "deno run -A jsr:@denext/denext@^4.18.0/cli deno test -A --ignore=tests/e2e tests/ lib/",
     "test:e2e": "deno test -A tests/e2e/",
     "check": "deno check desktop.ts desktop/ lib/ app/ tests/",
     "export": "deno run -A jsr:@denext/denext@^4.18.0/cli export .",
@@ -65,7 +65,6 @@
     "@std/jsonc": "jsr:@std/jsonc@^1.0.0",
     "@std/yaml": "jsr:@std/yaml@^1.0.0",
     "@std/path/posix": "jsr:@std/path@^1.0.0/posix",
-    "node-pty": "npm:node-pty@1.1.0",
     "@xterm/headless": "npm:@xterm/headless@6.0.0",
     "@rullama/mcp-server": "jsr:@rullama/mcp-server@^0.12.4",
     "@rullama/mcp-client": "jsr:@rullama/mcp-client@^0.12.3",
@@ -134,8 +133,5 @@
       "jsr:@rullama/provider-speech",
       "jsr:@rullama/tool-builtins"
     ]
-  },
-  "supplyChain": {
-    "jailScripts": { "packages": { "node-pty": { "net": ["nodejs.org"] } } }
   }
 }

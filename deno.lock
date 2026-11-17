@@ -68,7 +68,6 @@
     "npm:@xterm/addon-webgl@0.19.0": "0.19.0",
     "npm:@xterm/headless@6.0.0": "6.0.0",
     "npm:@xterm/xterm@6.0.0": "6.0.0",
-    "npm:node-pty@1.1.0": "1.1.0",
     "npm:sass@^1.80.0": "1.107.1",
     "npm:ws@8": "8.22.1"
   },
@@ -1387,13 +1386,6 @@
     "node-addon-api@7.1.1": {
       "integrity": "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="
     },
-    "node-pty@1.1.0": {
-      "integrity": "sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==",
-      "dependencies": [
-        "node-addon-api"
-      ],
-      "scripts": true
-    },
     "node-releases@2.0.63": {
       "integrity": "sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q=="
     },
@@ -1695,8 +1687,7 @@
       "npm:@xterm/addon-fit@0.11.0",
       "npm:@xterm/addon-webgl@0.19.0",
       "npm:@xterm/headless@6.0.0",
-      "npm:@xterm/xterm@6.0.0",
-      "npm:node-pty@1.1.0"
+      "npm:@xterm/xterm@6.0.0"
     ]
   }
 }
