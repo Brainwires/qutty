@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new app icon: the companion's face.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that
