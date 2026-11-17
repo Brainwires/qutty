@@ -13,6 +13,7 @@ import {
   type LayoutOptions,
   type LayoutPattern,
   PATTERN_INFO,
+  type Rect,
   touch,
 } from "../layout/mod.ts";
 import {
@@ -61,6 +62,7 @@ import {
 } from "./windows.ts";
 import {
   type ActivitySettings,
+  clearSignals,
   DEFAULT_ACTIVITY,
   sanitizeActivity,
   sanitizeProgramTitle,
@@ -77,6 +79,7 @@ import {
   sanitizeFreeform,
   sanitizeViewMode,
   setMaximized,
+  setRect,
   type ViewMode,
 } from "./freeform.ts";
 import { reduceView, type ViewAction } from "./view.ts";
@@ -272,6 +275,17 @@ export type WorkspaceAction =
     web?: WebPage;
   }
   | { type: "remove"; id: string }
+  /**
+   * A tile moved here from another window (lib/workspace/tile-move.ts): its entry under its new
+   * `entry.id`, focused, in the slot of tile `before` (tiles in place) or at free-form `rect`.
+   */
+  | {
+    type: "arrive";
+    entry: TerminalEntry;
+    now: number;
+    before?: string;
+    rect?: Rect;
+  }
   /** A web tile's page changed: where it went, and its title when the engine knows it. */
   | { type: "webPage"; id: string; page: WebPage }
   | { type: "focus"; id: string; now: number }
@@ -904,6 +918,32 @@ function reduceCore(
         order: appendId(state.order, action.id),
         focusedId: action.id,
         cycle: null,
+      };
+    }
+    case "arrive": {
+      const id = action.entry.id;
+      if (state.terminals.some((t) => t.id === id)) return state;
+      const { minimized: _m, ...rest } = action.entry;
+      const entry: TerminalEntry = {
+        ...clearSignals(rest),
+        lastUsedAt: action.now,
+      };
+      const at = action.before === undefined
+        ? -1
+        : state.order.indexOf(action.before);
+      const order = at < 0
+        ? appendId(state.order, id)
+        : [...state.order.slice(0, at), id, ...state.order.slice(at)];
+      return {
+        ...state,
+        terminals: [...state.terminals, entry],
+        mru: touch(state.mru, id),
+        order,
+        focusedId: id,
+        cycle: null,
+        freeform: action.rect
+          ? setRect(state.freeform, id, action.rect)
+          : state.freeform,
       };
     }
     case "remove": {

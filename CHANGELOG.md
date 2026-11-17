@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Move a tile to another window: drag its header out of the window and let go
+  over another Qutty window, or right-click the header and pick "Move to
+  Workspace N" (or "Move to New Window"). A terminal keeps running: the same
+  shell, with its scrollback, its folder and whatever it was doing, and agents
+  still know it by the same name. It lands where you let go (the slot under the
+  pointer when tiles keep their places, the pointer in free-form). Let go over
+  no Qutty window and the tile opens in a new window there. A web tile moves as
+  its page and loads again. The last tile leaving a window closes that window. A
+  sandboxed tile keeps running in its first window's sandbox.
 - Web tiles have a Home button, and Settings → Links → Home page picks where it
   goes (Google until you choose). The `+` menu's "Web page" opens a web tile at
   the home page (in the app), and words typed in a web tile's address field that

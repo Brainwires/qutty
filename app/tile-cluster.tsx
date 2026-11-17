@@ -26,6 +26,10 @@
 // Tiles in place (Settings → Layout; `onSwap` set): a header drag onto another tile swaps the two
 // (app/use-swap-drag.ts). The dragged tile follows the pointer and the one under it is marked.
 //
+// Other windows (`windowDrag`, app/use-tile-move.ts): a header dragged out of the window and
+// released over another one moves the tile there, in any view (a maximized tile too); a right click
+// on a header opens its "Move to Window" menu (`onHeadMenu`).
+//
 // Window controls: every tile's header has Minimize, Maximize (Restore on the tile shown alone in
 // monocle) and Close. A minimized tile is out of the layout, so it parks like an overflow one (a
 // web tile's page stays loaded). A double click on the header (not on its controls or a web
@@ -56,6 +60,7 @@ import {
 } from "./use-freeform-drag.ts";
 import { letterbox, type Size, tileBodySize } from "../lib/layout/scale.ts";
 import { type SwapDrag, useSwapDrag } from "./use-swap-drag.ts";
+import type { WindowDrag } from "./use-tile-move.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TileInfo } from "../lib/hub/protocol.ts";
 import { formatAge } from "../lib/workspace/format.ts";
@@ -90,6 +95,10 @@ interface TileExtras {
   web?: WebTileHooks;
   /** The free-form view (absent: the tiled view). */
   freeform?: FreeformTiles;
+  /** A header dragged out of the window may move its tile to another window. */
+  windowDrag?: WindowDrag;
+  /** A right click on tile `id`'s header, at (`x`, `y`): its menu. */
+  onHeadMenu?(id: string, x: number, y: number): void;
 }
 
 export interface TileClusterProps extends TileExtras {
@@ -125,7 +134,11 @@ export function TileCluster(props: TileClusterProps) {
   // their places).
   const mainRect = props.tiles[0]?.rect;
   const full = props.scaleInactive && mainRect ? tileBodySize(mainRect) : null;
-  const swap = useSwapDrag({ tiles: props.tiles, onSwap: props.onSwap });
+  const swap = useSwapDrag({
+    tiles: props.tiles,
+    onSwap: props.onSwap,
+    cross: props.windowDrag,
+  });
   return (
     <div class="tiles" data-testid="tiles">
       {props.terminals.map((entry) => (
@@ -156,8 +169,12 @@ export function TileCluster(props: TileClusterProps) {
           broadcastIds={props.broadcastIds}
           web={props.web}
           freeform={props.freeform}
+          windowDrag={props.windowDrag}
+          onHeadMenu={props.onHeadMenu}
           swapDrag={swap.drag}
-          onSwapStart={props.onSwap ? swap.start : undefined}
+          onSwapStart={props.onSwap || props.windowDrag
+            ? swap.start
+            : undefined}
         />
       ))}
     </div>
@@ -235,6 +252,7 @@ function TerminalTile(props: TerminalTileProps) {
     ff,
     enabled: visible && !props.maximized,
     fit: (tid) => manager.fitNow(tid),
+    cross: props.windowDrag,
   });
   const rect = drag.live ?? lastRectRef.current;
   const swapDrag = props.swapDrag;
@@ -404,9 +422,21 @@ function TerminalTile(props: TerminalTileProps) {
             if (t?.closest?.(DRAG_SKIP)) return;
             const pe = e as unknown as PointerEvent;
             if (draggable) drag.start(pe, null, rootRef.current);
-            else if (!ff && !props.maximized && headRef.current) {
+            else if (
+              headRef.current &&
+              ((!ff && !props.maximized) || props.windowDrag)
+            ) {
+              // Also a tile that does not swap or move here, to drag it to another window.
               props.onSwapStart?.(pe, id, headRef.current);
             }
+          }}
+          onContextMenu={(e) => {
+            if (!props.onHeadMenu) return;
+            const t = e.target as Element | null;
+            if (t?.closest?.("input, textarea")) return;
+            e.preventDefault();
+            const me = e as unknown as MouseEvent;
+            props.onHeadMenu(id, me.clientX, me.clientY);
           }}
           onDoubleClick={(e) => {
             // Not on a control (the window buttons, a web tile's toolbar and address field).

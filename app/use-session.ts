@@ -4,10 +4,18 @@
 // workspace changes its snapshot is saved in the app's process (debounced, and flushed when the
 // page goes away), and its layout in localStorage for the next launch. Also: the workspace list
 // for the Workspaces menu.
+//
+// Tiles moved here from another window (app/use-tile-move.ts) are pulled once the workspace is
+// joined and whenever one arrives, shown (`arrive`), and named in the next save (`arrived`), which
+// is when the app process stops keeping them for this window.
 
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
-import type { SessionJoined, WorkspaceInfo } from "../lib/session-client.ts";
+import type {
+  SessionJoined,
+  TileArrival,
+  WorkspaceInfo,
+} from "../lib/session-client.ts";
 import {
   loadWorkspaceLayout,
   planRestore,
@@ -57,6 +65,8 @@ export function useSession(opts: {
   focus(id: string): void;
   /** A new workspace: open its first shell. */
   fresh(): void;
+  /** A tile moved here from another window: show it (its new id; `null`: not shown). */
+  arrive?(arrival: TileArrival): string | null;
 }): SessionView {
   const { manager } = opts;
   const [workspace, setWorkspace] = useState<SessionView["workspace"]>(null);
@@ -64,6 +74,9 @@ export function useSession(opts: {
   const [booted, setBooted] = useState(false);
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  /** Moves already shown here (never shown twice), and those not saved yet (move → tile id). */
+  const shownMovesRef = useRef(new Set<string>());
+  const unsavedMovesRef = useRef(new Map<string, string>());
 
   /** A new workspace starts in the view Settings → Layout picks for new workspaces. */
   const startView = useCallback(() => {
@@ -118,12 +131,30 @@ export function useSession(opts: {
     if (!manager) return;
     const session = manager.backend.session;
     let live = true;
+    let joined = false;
     const offChanged = session.onChanged(setWorkspaces);
-    session.join().then((joined) => {
+    // Tiles moved here: pulled once joined, and whenever one arrives.
+    const pull = () => {
+      if (!joined || !session.moves) return;
+      void session.moves.arrivals().then((list) => {
+        if (!live) return;
+        for (const a of list) {
+          if (shownMovesRef.current.has(a.move)) continue;
+          const id = optsRef.current.arrive?.(a);
+          if (!id) continue;
+          shownMovesRef.current.add(a.move);
+          unsavedMovesRef.current.set(a.move, id);
+        }
+      }, (err) => console.warn("session: could not take the moved tiles", err));
+    };
+    const offArrived = session.moves?.onArrived(pull) ?? (() => {});
+    session.join().then((result) => {
       if (!live) return;
-      apply(manager, joined);
+      apply(manager, result);
+      joined = true;
+      pull();
       setBooted(true);
-      setWorkspace(joined.workspace);
+      setWorkspace(result.workspace);
       void session.list().then((l) => live && setWorkspaces(l), () => {});
     }, (err) => {
       // No workspace (an old backend): the page works as a plain window.
@@ -138,6 +169,7 @@ export function useSession(opts: {
     return () => {
       live = false;
       offChanged();
+      offArrived();
       globalThis.removeEventListener("focus", onFocus);
     };
   }, [manager, apply, startView]);
@@ -154,7 +186,13 @@ export function useSession(opts: {
         profile: manager.profile(id) ?? SHELL_PROFILE,
         ...(manager.home(id) !== undefined ? { home: manager.home(id) } : {}),
       }));
-      void manager.backend.session.save(snap).catch(() => {});
+      // The moved-in tiles this snapshot shows: the app process stops keeping them.
+      const arrived = [...unsavedMovesRef.current].filter(([, id]) =>
+        id in snap.tiles
+      ).map(([move]) => move);
+      void manager.backend.session.save(snap, arrived).then(() => {
+        for (const move of arrived) unsavedMovesRef.current.delete(move);
+      }, () => {});
       if (!manager.backend.session.multiWindow) return;
       saveWorkspaceLayout(workspace.id, {
         layout: snap.layout,

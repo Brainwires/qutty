@@ -34,6 +34,7 @@ import {
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
 import { newWorkspaceId, workspaceWindow } from "./lib/workspace/windows.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
+import { moveSelfTest } from "./desktop/move-selftest.ts";
 import { webviewSelfTest } from "./desktop/webview-selftest.ts";
 
 const app = await runDesktop({
@@ -57,6 +58,13 @@ if (!app.sidecarChild) {
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {
       console.error(`detach self-test: FAILED: ${e?.message ?? e}`);
+      Deno.exit(1);
+    });
+  }
+  // `QUTTY_PTY_SELFTEST=move`: a shell's tile moved to another window (desktop/move-selftest.ts).
+  if (Deno.env.get("QUTTY_PTY_SELFTEST") === "move") {
+    moveSelfTest(app).then(() => Deno.exit(0), (e) => {
+      console.error(`move self-test: FAILED: ${e?.message ?? e}`);
       Deno.exit(1);
     });
   }

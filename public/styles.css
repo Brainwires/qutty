@@ -191,6 +191,33 @@ kbd {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.55);
 }
+/* Another window's tile dragged over this one: where it would land (app/window-drop.tsx). */
+.window-drop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 300;
+  pointer-events: none;
+  border: 2px dashed rgba(var(--accent-rgb), 0.85);
+  border-radius: 8px;
+  background: rgba(var(--accent-rgb), 0.1);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.window-drop-label {
+  margin-top: 10px;
+  max-width: 80%;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tile-grip {
   position: absolute;
   z-index: 5;
