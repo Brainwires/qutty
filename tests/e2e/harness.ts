@@ -314,6 +314,8 @@ export interface OpenOptions {
   reducedMotion?: boolean;
   /** Extra query string (appended after `pty=demo&test=1`). */
   query?: string;
+  /** Keep the origin's storage (a second page of the same app: `App.openPeer`). */
+  keepStorage?: boolean;
 }
 
 const DEFAULT_W = 1400;
@@ -438,10 +440,12 @@ export class App {
       width: this.opts.width ?? DEFAULT_W,
       height: this.opts.height ?? DEFAULT_H,
     });
-    await this.cdp.Storage.clearDataForOrigin({
-      origin: this.origin,
-      storageTypes: "all",
-    });
+    if (!this.opts.keepStorage) {
+      await this.cdp.Storage.clearDataForOrigin({
+        origin: this.origin,
+        storageTypes: "all",
+      });
+    }
     if (this.opts.reducedMotion) {
       await this.page.emulateMediaFeatures([{
         name: "prefers-reduced-motion",
@@ -457,6 +461,22 @@ export class App {
     }
     await this.page.goto(this.url, { waitUntil: "load" });
     await this.waitReady();
+  }
+
+  /**
+   * A second page of the app in the same browser (another "window"; with `?peers=<name>` the demo
+   * pages move tiles to each other, lib/demo-windows.ts), booted with its first terminal. The
+   * caller closes it (`page.close()`).
+   */
+  async openPeer(query: string): Promise<App> {
+    const page = await this.page.browser().newPage();
+    const peer = new App(page, this.origin, {
+      ...this.opts,
+      query,
+      keepStorage: true,
+    });
+    await peer.boot();
+    return peer;
   }
 
   /** Wait for the app to be interactive with its first terminal at a prompt. */

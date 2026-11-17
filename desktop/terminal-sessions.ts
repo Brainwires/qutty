@@ -21,14 +21,16 @@ import {
   type OwnedResources,
   type OwnedResourcesHost,
 } from "denext/desktop";
-import type {
-  PtyDataEvent,
-  PtyEmit,
-  PtyExitEvent,
-  PtyHost,
-  PtyInfo,
-  PtySpawnArgs,
-  PtySpawnResult,
+import {
+  type DenoPty,
+  type DenoPtyOptions,
+  type PtyDataEvent,
+  type PtyEmit,
+  type PtyExitEvent,
+  type PtyHost,
+  type PtyInfo,
+  type PtySpawnArgs,
+  type PtySpawnResult,
 } from "./pty.ts";
 import type { WorkspaceRegistry } from "./workspace-host.ts";
 import { type FoldedReplay, foldReplay } from "../lib/workspace/replay.ts";
@@ -48,6 +50,12 @@ export interface PtyReplay extends FoldedReplay {
   cols: number;
   rows: number;
 }
+
+/** Start a terminal in the PTY daemon as `id` (desktop/kept-shells.ts), or `undefined`: not now. */
+export type RemoteOpen = (
+  id: string,
+  options: DenoPtyOptions,
+) => Promise<DenoPty | undefined>;
 
 /** A window's id and key, for the calls that come from it. */
 export interface CallerWindow {
@@ -120,21 +128,116 @@ export class TerminalSessions {
     return this.#ws.workspaceForWindow(windowId, this.keyOf(windowId));
   }
 
+  /**
+   * Where new terminals run: given the id and the PTY options, the PTY daemon's terminal, or
+   * `undefined` to run it in this process (desktop/kept-shells.ts installs it).
+   */
+  #remote: RemoteOpen | undefined;
+
+  /** Install (or with `undefined` remove) the PTY daemon's opener. */
+  setRemote(open: RemoteOpen | undefined): void {
+    this.#remote = open;
+  }
+
   async spawn(
     args: PtySpawnArgs,
     caller: CallerWindow,
-    appSupportDir?: string,
   ): Promise<PtySpawnResult> {
-    const workspace = this.workspaceOf(caller.id);
+    return await this.#start(
+      this.workspaceOf(caller.id),
+      args,
+      caller.id,
+    );
+  }
+
+  /**
+   * Start a terminal in workspace `workspace`, owned by window `window` (none: it waits detached
+   * for the window that shows the workspace, as a restored shell does).
+   */
+  async #start(
+    workspace: string,
+    args: PtySpawnArgs,
+    window: string | undefined,
+    prelude?: string,
+  ): Promise<PtySpawnResult> {
+    const remote = args.sandbox ? undefined : this.#remote;
     return await this.host.spawn(args, {
-      ...(appSupportDir ? { appSupportDir } : {}),
       owner: workspace,
+      ...(prelude ? { prelude } : {}),
+      ...(remote
+        ? {
+          // The daemon, else (it is gone, or refused) this process.
+          open: (id, options) =>
+            remote(id, options).catch((err) => {
+              console.warn(
+                `pty: the PTY daemon did not start ${id}; it runs in the app`,
+                err,
+              );
+              return undefined;
+            }),
+        }
+        : {}),
       onCreated: (id) => {
-        this.#owned.add(id, id, { owner: caller.id });
+        this.#owned.add(id, id, window === undefined ? {} : { owner: window });
         this.#ws.addPty(workspace, id);
         this.#sizes.set(id, { cols: args.cols, rows: args.rows });
       },
     });
+  }
+
+  /**
+   * A shell restored from the last session (its daemon was gone): started in workspace
+   * `workspace`, detached until its window shows it, with `prelude` (its dimmed history) first.
+   */
+  async restoreShell(
+    workspace: string,
+    args: PtySpawnArgs,
+    prelude: string,
+  ): Promise<PtySpawnResult> {
+    return await this.#start(workspace, args, undefined, prelude);
+  }
+
+  /**
+   * Take on a terminal the PTY daemon kept from the last launch, as `id` in workspace
+   * `workspace`: detached until a window shows the workspace, its `replay` first.
+   */
+  adopt(
+    workspace: string,
+    id: string,
+    pty: DenoPty,
+    info: { shell: string; cwd: string; cols: number; rows: number },
+    replay: string,
+  ): void {
+    this.host.adopt(id, pty, {
+      shell: info.shell,
+      cwd: info.cwd,
+      owner: workspace,
+      replay,
+      onCreated: () => {
+        this.#owned.add(id, id, {});
+        this.#ws.addPty(workspace, id);
+        this.#sizes.set(id, { cols: info.cols, rows: info.rows });
+      },
+    });
+  }
+
+  /** The running terminals that live in the PTY daemon (what a quit can keep). */
+  remoteIds(): string[] {
+    return [...this.#sizes.keys()].filter((id) => this.host.isRemote(id));
+  }
+
+  /** Terminal `id`'s grid size. */
+  sizeOf(id: string): { cols: number; rows: number } | undefined {
+    return this.#sizes.get(id);
+  }
+
+  /**
+   * Let terminal `id` go without ending it (the quit that keeps the shells): the app forgets it,
+   * its PTY runs on in the daemon.
+   */
+  letGo(id: string): void {
+    this.host.release(id);
+    this.#sizes.delete(id);
   }
 
   /** `id` must be a terminal the calling window owns. */
@@ -195,6 +298,18 @@ export class TerminalSessions {
       out.push({ id, ...size, ...foldReplay(replay) });
     }
     return out;
+  }
+
+  /**
+   * Hand terminal `id` to window `windowId` (its tile moved there, desktop/tile-move.ts): its events
+   * go there from now on, and it is returned with its replay and size. `undefined`: it is not
+   * registered (released already).
+   */
+  handOver(id: string, windowId: string): PtyReplay | undefined {
+    if (this.#owned.get(id) === undefined) return undefined;
+    const { replay } = this.#owned.attach(id, windowId);
+    const size = this.#sizes.get(id) ?? { cols: 80, rows: 24 };
+    return { id, ...size, ...foldReplay(replay) };
   }
 
   /** The window that owns terminal `id` now (`undefined` when detached or unknown). */

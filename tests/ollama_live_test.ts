@@ -30,7 +30,7 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    const service = new OllamaService({ runner: new PtyRunner(undefined) });
+    const service = new OllamaService({ runner: new PtyRunner() });
     const t = Date.now();
     const s = await service.status();
     console.log(`--- ollamaStatus() in ${Date.now() - t} ms:`);
@@ -59,7 +59,7 @@ Deno.test({
   sanitizeOps: false,
   async fn() {
     const status = await new OllamaService({
-      runner: new PtyRunner(undefined),
+      runner: new PtyRunner(),
     }).status();
     assert(status.serverUp, "the Ollama server must be running");
     const model = Deno.env.get("QUTTY_OLLAMA_MODEL") ??

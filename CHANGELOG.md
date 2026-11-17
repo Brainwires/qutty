@@ -2,6 +2,101 @@
 
 ## Unreleased
 
+- Broadcast input (cluster SSH) is easier to aim. Turning it on (the bar's
+  broadcast button or ⇧⌘I) now checks every visible terminal tile in the
+  workspace at once, so typing reaches them all straight away and you untick the
+  ones you don't want. Starting with nothing checked made the mode look broken
+  until you found the boxes, and starting with only SSH tiles would have done
+  nothing in a workspace of local shells; web tiles (no terminal), agent tiles
+  and hidden (minimized or overflow) tiles are never checked for you. The banner
+  says "Broadcasting to N tiles: typing in any checked tile goes to all of
+  them.", or, with fewer than two checked, how to tick more, and has All, None,
+  Only SSH (when there are SSH tiles) and Stop. Each tile's header shows a "●
+  Broadcast" / "○ Broadcast" pill instead of a tiny checkbox, tiles left out are
+  dimmed, and checked tiles' chips in the bar get an amber badge. The bar
+  button's tooltip explains the mode. The warning about checked tiles that are
+  not SSH tiles, the paste confirmation and which input is repeated are
+  unchanged.
+
+- Shells survive quitting Qutty. ⌘Q asks whether to keep the shells running (the
+  default) or end them; kept shells come back at the next launch in their tiles,
+  as they were, with what they printed meanwhile. After a restart of the
+  computer the shell tiles come back in their last folder, their old text shown
+  dimmed above the new prompt. Settings → Windows → "Keep shells running after
+  quitting" turns it off.
+- Terminals run on the desktop runtime's own PTYs: no native terminal library to
+  build any more, and no file descriptor is left behind per terminal.
+- Agent tiles: Claude Code as a chat tile that looks like a terminal. The `+`
+  menu's "Claude Code (chat)" (beside Claude Code) asks for a folder (the
+  focused tile's by default) and opens one.
+  - The transcript streams in the terminal's font and colours: your prompts, the
+    answer's markdown (code highlighted, links open in a web tile), thinking
+    (dimmed), and each tool call as a compact `● Edit(src/x.ts)` row with a
+    `⎿ Applied 3-line change` line that opens to the diff, the command and its
+    output, or the input and result. Reads in a row are one line ("Read 2
+    files"). Each turn ends with how it went, its speed, time and cost.
+  - Claude Code asks before it edits or runs something: Allow, Allow always (for
+    that tool, this session) or Deny, right in the transcript.
+  - The prompt box grows with what you type; Enter sends, Shift+Enter is a new
+    line, ↑ brings back the previous prompt, files attach by button, drop or
+    paste (images go to the model as images), Esc or Stop interrupts, and what
+    you type while it works waits its turn. Hold-to-dictate types into it.
+  - The header: the agent's name (click to rename; other agents address it by
+    it), the model (default, fable, opus, opus 1M, sonnet, sonnet 1M, haiku),
+    what it is doing, and a menu with Open in terminal (the same session in
+    Claude Code's own UI), New session and Close.
+  - The bar's Agents button lists your agent tiles as Needs you, To review and
+    Working; its badge counts those waiting for you. Tiles and chips show the
+    same activity as agent terminals.
+  - An agent tile comes back with the window (and after a restart, resuming its
+    session under the transcript it had). It is a hub peer like any agent tile:
+    the companion and other agents can read its screen, and the companion can
+    give it a prompt.
+
+- Move a tile to another window: drag its header out of the window and let go
+  over another Qutty window, or right-click the header and pick "Move to
+  Workspace N" (or "Move to New Window"); in the app the Window menu has the
+  same "Move Tile to" items for the focused tile. Agent (chat) tiles stay in
+  their window. A terminal keeps running: the same shell, with its scrollback,
+  its folder and whatever it was doing, and agents still know it by the same
+  name. It lands where you let go (the slot under the pointer when tiles keep
+  their places, the pointer in free-form). Let go over no Qutty window and the
+  tile opens in a new window there. A web tile moves as its page and loads
+  again. The last tile leaving a window closes that window. A sandboxed tile
+  keeps running in its first window's sandbox.
+- A native menu bar (Denext 4.18's app menus). macOS: Qutty (About, Settings…
+  ⌘,, Hide, Quit), Shell, Edit, View, Window and Help; Linux: Shell, View,
+  Window and Help, with Settings… at the end of Shell and no Edit menu (its
+  Ctrl+C would never reach the shell).
+  - Shell: New Tile ⌘T, New Tile With (the `+` menu's shells, agents (Claude
+    Code also as a chat tile), SSH hosts, Web page and Connections…), New Window
+    ⌘N, the web tiles' Bookmarks… and History…, Close Tile ⌘W, Close Window and
+    End Its Shells, and Broadcast Input ⇧⌘I.
+  - View: Tiled View / Free-form View, Layout (every pattern, and Next Layout
+    ⇧⌘L), the free-form arrange commands, Minimize / Maximize / Restore Tile and
+    Zoom Tile ⌘↩, Bigger / Smaller / Actual Size, Switcher Bar (Top, Bottom,
+    Left, Right, Next Position ⇧⌘B) and full screen (⌃⌘F, macOS).
+  - Window: the window's tiles in bar order, the focused one checked, ⌘1–⌘9 on
+    the first nine, Next / Previous / Last Used Tile (⌘] ⌘[ ⌘`), then Denext's
+    window list and Reopen Closed Window. Help: Qutty on GitHub.
+  - The checks and greyed items follow each window (Restore Tile only with a
+    tile maximized, the layouts only in the tiled view), and the menus act on
+    the window in front. The menus use only Qutty's existing shortcuts, and a
+    shortcut runs once.
+  - "Minimize Tile", "Zoom Tile", the view and arrange items left the Window
+    menu for View, "Close Window and End Its Shells" moved to Shell, and the
+    layout button's menu no longer lists the tiles (the Window menu does). The
+    web version keeps its in-page menus as they were.
+- The companion can now browse. Ask it to look something up or use a site, and
+  it opens a web tile, reads the page, clicks links and buttons, types into
+  fields and submits forms, goes back and forward, scrolls, and can take a
+  picture of the page to look at it. It asks you before submitting anything like
+  a purchase, a payment or a sign-in. Agents in your tiles see web tiles too
+  (with their address and title) and may read a page, but only the companion
+  acts on one. Everything the companion does in a page is listed in Settings →
+  Companion activity. Reading and acting on pages needs the app's own web view
+  (macOS); in the browser demo the companion can only open and navigate local
+  pages.
 - Settings is a dialog in the middle of the window instead of one long popover.
   Categories down the left (General, Appearance, Layout, Tiles, Links & web,
   Sandbox, Agents, Companion, Voice, System monitor), the chosen one on the

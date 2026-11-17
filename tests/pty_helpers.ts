@@ -123,8 +123,8 @@ export async function withHost(
 }
 
 /**
- * Load node-pty, open libc and spawn-helper once, outside any test, so the resource sanitizer
- * does not see the process-lifetime handles (the FFI libraries, the napi addon) as leaks.
+ * Open libc and start a first PTY once, outside any test, so the resource sanitizer
+ * does not see the process-lifetime handles (the FFI library) as leaks.
  */
 export async function warmUp(): Promise<void> {
   if (!POSIX || !HAS_SH) return;

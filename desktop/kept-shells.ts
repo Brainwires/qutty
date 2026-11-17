@@ -1,0 +1,442 @@
+// Shells that survive quitting the app (Settings → "Keep shells running after quitting").
+//
+// With the setting on, the tiles' terminals run in the PTY daemon (desktop/ptyd.ts) instead of
+// the app's process (sandboxed tiles and the hidden helper PTYs stay in the app). The quit then
+// asks (desktop/session.ts): "Keep Shells Running" lets every daemon terminal go without ending it
+// and leaves the workspaces with the daemon (`keepForNextLaunch`); "End Shells" quits as before
+// (the daemon ends a terminal whose app went away without letting it go).
+//
+// At the next launch (`start`), before any window joins its workspace:
+//
+// - the daemon is there: each kept workspace comes back detached with the page's snapshot, and
+//   each of its terminals is adopted with the output it printed (its replay), so the windows Denext
+//   restores (their keys are the workspace ids) rebuild every tile on its running shell;
+// - the daemon is gone (a reboot): the record the quit also wrote to the app's folder brings back
+//   the shell tiles in their last folder, their old text dimmed above the new prompt; other tiles
+//   come back ended;
+// - a daemon of another protocol version answers (an older Qutty's shells): the user is told, and
+//   may end them.
+//
+// The singleton {@linkcode shellKeeper} is shared by the `pty` extension (which starts it) and the
+// `session` extension (the quit question, the setting).
+
+import type { DesktopConfirmOptions } from "denext/desktop";
+import type { TerminalSessions } from "./terminal-sessions.ts";
+import type { WorkspaceRegistry } from "./workspace-host.ts";
+import type { DenoPty, DenoPtyOptions } from "./pty.ts";
+import { ensureDir, writeFileAtomic } from "./libc.ts";
+import {
+  connectPtyd,
+  otherDaemons,
+  type PtydClient,
+  ptydDir,
+  ptydSocketPath,
+  shutdownDaemon,
+} from "./ptyd-client.ts";
+import { unlinkPath } from "./hub-socket.ts";
+import {
+  cutToLine,
+  historyPrelude,
+  plainHistory,
+  PTYD_PROTOCOL,
+} from "../lib/ptyd/protocol.ts";
+import {
+  KEPT_VERSION,
+  type KeptRecord,
+  type KeptTerminal,
+  parseKept,
+  respawnPlan,
+  retarget,
+} from "../lib/ptyd/kept.ts";
+
+/** The file the quit's record also goes to, in the app-support folder. */
+export const KEPT_FILE = "kept-shells.json";
+/** The setting's file, in the app-support folder. */
+export const PREFS_FILE = "ptyd.json";
+/** How much of a terminal's output the file keeps as its history. */
+const HISTORY_BYTES = 64 * 1024;
+/**
+ * How long the app waits for the daemon the `ptyd` sidecar is starting at launch (the sidecar
+ * starts once the window's server is up; a second runtime takes a few seconds on a slow Mac). The
+ * wait starts with the app, and a spawn meanwhile waits for it.
+ */
+const CONNECT_WAIT_MS = 10_000;
+/** How long after a failed connection the daemon is not looked for again. */
+const RETRY_AFTER_MS = 30_000;
+
+/** What the keeper needs from the app (the real ones, or fakes in tests). */
+export interface KeeperDeps {
+  sessions: TerminalSessions;
+  workspaces: WorkspaceRegistry;
+  /** The daemon's socket folder. */
+  socketDir(): Promise<string>;
+  /** Connect to the daemon of protocol `v` (default: this one) in `dir`; rejects when none answers. */
+  connect(dir: string, v?: number): Promise<PtydClient>;
+  /** The other protocol versions whose daemons answer in `dir`. */
+  otherDaemons(dir: string): Promise<number[]>;
+  /** End the daemon of protocol `v` in `dir`, and its shells. */
+  shutdownDaemon(dir: string, v: number): Promise<void>;
+  /** The app-support folder (the record and the setting; none: no files). */
+  appSupportDir?: string;
+  readText(path: string): Promise<string | undefined>;
+  writeText(path: string, text: string): void;
+  remove(path: string): void;
+  /** The OS's message box (rejects where there is none). */
+  confirm?(options: DesktopConfirmOptions): Promise<number | null>;
+  /** `Date.now`. */
+  now?(): number;
+  /** Wait `ms` (the connection retries). */
+  sleep?(ms: number): Promise<void>;
+  /** How long a spawn waits for a daemon that is starting (default 10 s). */
+  connectWaitMs?: number;
+}
+
+/** What the quit question and Settings use. */
+export interface QuitKeeper {
+  /** How many running shells a quit can keep (0 with the setting off). */
+  keepable(): number;
+  /** Let every daemon terminal go and leave the workspaces with the daemon; how many. */
+  keepForNextLaunch(): Promise<number>;
+}
+
+/** The setting, and the shells kept across launches. */
+export class ShellKeeper implements QuitKeeper {
+  #deps: KeeperDeps | undefined;
+  #keep = true;
+  #client: PtydClient | undefined;
+  #connecting: Promise<PtydClient | undefined> | undefined;
+  #failedAt: number | undefined;
+  #ready: Promise<void> = Promise.resolve();
+
+  /** Settled once the last launch's shells are back (or there were none). */
+  get ready(): Promise<void> {
+    return this.#ready;
+  }
+
+  /** Whether new tiles' shells run in the daemon (Settings → "Keep shells running after quitting"). */
+  get keepShells(): boolean {
+    return this.#keep;
+  }
+
+  /** Change the setting (saved for the next launch). */
+  setKeepShells(on: boolean): void {
+    this.#keep = on;
+    const d = this.#deps;
+    if (d?.appSupportDir) {
+      try {
+        d.writeText(
+          `${d.appSupportDir}/${PREFS_FILE}`,
+          JSON.stringify({ keepShells: on }),
+        );
+      } catch (err) {
+        console.warn("pty: could not save the keep-shells setting", err);
+      }
+    }
+  }
+
+  /** Read the setting, bring back the last launch's shells, and route new tiles to the daemon. */
+  start(deps: KeeperDeps): Promise<void> {
+    this.#deps = deps;
+    this.#ready = this.#startup(deps).catch((err) => {
+      console.error("pty: could not restore the last session's shells", err);
+    });
+    deps.sessions.setRemote((id, options) => this.#open(id, options));
+    return this.#ready;
+  }
+
+  keepable(): number {
+    return this.#keep ? (this.#deps?.sessions.remoteIds().length ?? 0) : 0;
+  }
+
+  async keepForNextLaunch(): Promise<number> {
+    const d = this.#deps;
+    const client = this.#client;
+    if (!d || !client || client.closed) return 0;
+    const ids = d.sessions.remoteIds();
+    if (ids.length === 0) return 0;
+    const record = await this.#record(d, client, ids);
+    // Let go first (each `detach` is answered before `setState`, which is answered last).
+    for (const id of ids) d.sessions.letGo(id);
+    await client.request("setState", {
+      state: {
+        ...record,
+        workspaces: record.workspaces.map((w) => ({
+          ...w,
+          terms: w.terms.map(({ history: _h, ...t }) => t),
+        })),
+      },
+    });
+    if (d.appSupportDir) {
+      try {
+        d.writeText(`${d.appSupportDir}/${KEPT_FILE}`, JSON.stringify(record));
+      } catch (err) {
+        console.warn("pty: could not write the kept shells' record", err);
+      }
+    }
+    return ids.length;
+  }
+
+  /** The record of the terminals `ids` and their workspaces. */
+  async #record(
+    d: KeeperDeps,
+    client: PtydClient,
+    ids: string[],
+  ): Promise<KeptRecord> {
+    const terms = new Map<string, KeptTerminal>();
+    await Promise.all(ids.map(async (id) => {
+      const known = d.sessions.host.describe(id);
+      const size = d.sessions.sizeOf(id) ?? { cols: 80, rows: 24 };
+      if (!known) return;
+      const info = await d.sessions.host.info(id).catch(() => undefined);
+      const peek = await client.request("peek", {
+        sid: id,
+        maxBytes: HISTORY_BYTES,
+      }).catch(() => ({ text: "", truncated: false }));
+      terms.set(id, {
+        ptyId: id,
+        shell: known.shell,
+        cwd: info?.cwd ?? known.cwd,
+        ...size,
+        history: plainHistory(cutToLine(peek.text, peek.truncated)),
+      });
+    }));
+    return {
+      v: KEPT_VERSION,
+      savedAt: (d.now ?? Date.now)(),
+      workspaces: d.workspaces.keptWorkspaces(new Set(ids)).map((w) => ({
+        id: w.id,
+        name: w.name,
+        snapshot: w.snapshot,
+        terms: w.ptys.flatMap((p) => terms.get(p) ?? []),
+      })),
+    };
+  }
+
+  async #startup(d: KeeperDeps): Promise<void> {
+    if (d.appSupportDir) {
+      const prefs = await d.readText(`${d.appSupportDir}/${PREFS_FILE}`);
+      try {
+        const v = prefs ? JSON.parse(prefs) : undefined;
+        if (typeof v?.keepShells === "boolean") this.#keep = v.keepShells;
+      } catch { /* a damaged file: the default */ }
+    }
+    const dir = await d.socketDir();
+    const client = await d.connect(dir).catch(() => undefined);
+    const file = d.appSupportDir
+      ? `${d.appSupportDir}/${KEPT_FILE}`
+      : undefined;
+    let adopted = false;
+    if (client) {
+      this.#attachClient(client);
+      adopted = await this.#adoptAll(d, client);
+    }
+    // No daemon, or a fresh one the sidecar just started (a reboot ended the old one): the record
+    // the quit wrote brings the shell tiles back instead.
+    if (!adopted && file) {
+      const text = await d.readText(file);
+      if (text) await this.#respawn(d, text);
+    }
+    if (file) d.remove(file);
+    // No daemon yet (the sidecar is starting one): look for it now, so the first tiles' shells
+    // find it (a spawn meanwhile waits for this, not for a fresh wait of its own).
+    if (!client && this.#keep) void this.#daemon();
+    await this.#offerToEndOthers(d, dir);
+  }
+
+  /**
+   * Take back every terminal the daemon kept, in the workspaces its state names. Whether the
+   * daemon had kept anything (a state).
+   */
+  async #adoptAll(d: KeeperDeps, client: PtydClient): Promise<boolean> {
+    const sessions = await client.list();
+    const { state } = await client.request("getState", {});
+    const record = parseKept(state);
+    const where = new Map<
+      string,
+      { ws: KeptRecord["workspaces"][number]; t: KeptTerminal }
+    >();
+    for (const ws of record?.workspaces ?? []) {
+      for (const t of ws.terms) where.set(t.ptyId, { ws, t });
+    }
+    for (const s of sessions) {
+      const found = where.get(s.sid);
+      if (!found || s.attached) {
+        // Not a kept tile's (or another app has it): nothing here can show it.
+        if (!s.attached) {
+          await client.request("release", { sid: s.sid }).catch(() => {});
+        }
+        continue;
+      }
+      d.workspaces.restore(found.ws);
+      const adopted = await client.adopt(s.sid, s.pid);
+      d.sessions.adopt(
+        found.ws.id,
+        s.sid,
+        adopted.pty,
+        {
+          shell: found.t.shell,
+          cwd: found.t.cwd ?? "",
+          cols: s.cols,
+          rows: s.rows,
+        },
+        cutToLine(adopted.replay, adopted.truncated),
+      );
+      if (adopted.exit) {
+        await client.request("release", { sid: s.sid }).catch(() => {});
+      }
+    }
+    await client.request("setState", { state: null });
+    return record !== undefined;
+  }
+
+  /** The daemon is gone: start the kept shell tiles again in their folders, with their history. */
+  async #respawn(d: KeeperDeps, text: string): Promise<void> {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return;
+    }
+    const record = parseKept(raw);
+    for (const ws of record?.workspaces ?? []) {
+      const plan = respawnPlan(ws);
+      if (plan.length === 0) continue;
+      const moved = new Map<string, string>();
+      d.workspaces.restore({ id: ws.id, name: ws.name, snapshot: ws.snapshot });
+      for (const r of plan) {
+        try {
+          const started = await d.sessions.restoreShell(
+            ws.id,
+            {
+              cols: r.cols,
+              rows: r.rows,
+              ...(r.cwd ? { cwd: r.cwd } : {}),
+              shell: r.shell,
+            },
+            historyPrelude(r.history, "restored after the shells ended"),
+          );
+          moved.set(r.ptyId, started.id);
+        } catch (err) {
+          console.warn(`pty: could not restore a shell of ${ws.name}`, err);
+        }
+      }
+      d.workspaces.save(ws.id, retarget(ws.snapshot, moved));
+    }
+  }
+
+  /** Another version's daemon still runs shells: say so, and end them if the user wants. */
+  async #offerToEndOthers(d: KeeperDeps, dir: string): Promise<void> {
+    const others = await d.otherDaemons(dir);
+    if (others.length === 0 || !d.confirm) return;
+    const choice = await d.confirm({
+      title: "Shells from another Qutty version",
+      message: "Shells kept by a different version of Qutty are still running",
+      detail:
+        "This version cannot show them. End them now, or keep them running for the version that started them.",
+      buttons: ["End Them", "Keep Running"],
+      defaultId: 1,
+      cancelId: 1,
+      kind: "warning",
+    }).catch(() => 1);
+    if (choice !== 0) return;
+    for (const v of others) {
+      await d.shutdownDaemon(dir, v).catch((err) =>
+        console.warn(`pty: could not end the protocol ${v} daemon`, err)
+      );
+    }
+  }
+
+  #attachClient(client: PtydClient): void {
+    this.#client = client;
+    client.onClose(() => {
+      if (this.#client === client) this.#client = undefined;
+    });
+  }
+
+  /** A tile's terminal in the daemon (with the setting on and a daemon to be had). */
+  async #open(
+    id: string,
+    options: DenoPtyOptions,
+  ): Promise<DenoPty | undefined> {
+    if (!this.#keep) return undefined;
+    const client = await this.#daemon();
+    return client ? await client.open(id, options) : undefined;
+  }
+
+  /** The connection, made when there is none (the sidecar may still be starting the daemon). */
+  #daemon(): Promise<PtydClient | undefined> {
+    const d = this.#deps;
+    if (!d) return Promise.resolve(undefined);
+    if (this.#client && !this.#client.closed) {
+      return Promise.resolve(this.#client);
+    }
+    const now = (d.now ?? Date.now)();
+    if (this.#failedAt !== undefined && now - this.#failedAt < RETRY_AFTER_MS) {
+      return Promise.resolve(undefined);
+    }
+    this.#connecting ??= (async () => {
+      const sleep = d.sleep ??
+        ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+      const dir = await d.socketDir();
+      const deadline = (d.now ?? Date.now)() +
+        (d.connectWaitMs ?? CONNECT_WAIT_MS);
+      for (;;) {
+        const client = await d.connect(dir).catch(() => undefined);
+        if (client) {
+          const hello = await client.hello().catch(() => undefined);
+          if (hello?.v === PTYD_PROTOCOL) {
+            this.#failedAt = undefined;
+            this.#attachClient(client);
+            return client;
+          }
+          await client.close();
+          break;
+        }
+        if ((d.now ?? Date.now)() >= deadline) break;
+        await sleep(200);
+      }
+      this.#failedAt = (d.now ?? Date.now)();
+      console.warn(
+        "pty: no PTY daemon: new shells run in the app (they end at quit)",
+      );
+      return undefined;
+    })().finally(() => (this.#connecting = undefined));
+    return this.#connecting;
+  }
+}
+
+/** The keeper's dependencies in the app: the daemon's socket, files through libc, the message box. */
+export function desktopKeeperDeps(
+  sessions: TerminalSessions,
+  workspaces: WorkspaceRegistry,
+  host: {
+    appSupportDir?: string;
+    confirm?(options: DesktopConfirmOptions): Promise<number | null>;
+  },
+): KeeperDeps {
+  const encoder = new TextEncoder();
+  return {
+    sessions,
+    workspaces,
+    socketDir: ptydDir,
+    connect: (dir, v) => connectPtyd(ptydSocketPath(dir, v)),
+    otherDaemons,
+    shutdownDaemon,
+    ...(host.appSupportDir ? { appSupportDir: host.appSupportDir } : {}),
+    readText: (path) => Deno.readTextFile(path).catch(() => undefined),
+    writeText: (path, text) => {
+      ensureDir(path.slice(0, path.lastIndexOf("/")), 0o755);
+      writeFileAtomic(path, encoder.encode(text), 0o600);
+    },
+    remove: (path) => void unlinkPath(path),
+    ...(host.confirm ? { confirm: (o) => host.confirm!(o) } : {}),
+  };
+}
+
+const KEY = Symbol.for("qutty.shellKeeper");
+
+/** The app's keeper (on `globalThis`, like the workspace registry). */
+export function shellKeeper(): ShellKeeper {
+  const g = globalThis as Record<symbol, ShellKeeper | undefined>;
+  return (g[KEY] ??= new ShellKeeper());
+}

@@ -13,6 +13,7 @@ import {
   type LayoutOptions,
   type LayoutPattern,
   PATTERN_INFO,
+  type Rect,
   touch,
 } from "../layout/mod.ts";
 import {
@@ -49,6 +50,7 @@ import {
 } from "../voice/settings.ts";
 import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
+import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
 import {
   DEFAULT_MONITOR,
   type MonitorSettings,
@@ -61,6 +63,7 @@ import {
 } from "./windows.ts";
 import {
   type ActivitySettings,
+  clearSignals,
   DEFAULT_ACTIVITY,
   sanitizeActivity,
   sanitizeProgramTitle,
@@ -77,6 +80,7 @@ import {
   sanitizeFreeform,
   sanitizeViewMode,
   setMaximized,
+  setRect,
   type ViewMode,
 } from "./freeform.ts";
 import { reduceView, type ViewAction } from "./view.ts";
@@ -161,6 +165,11 @@ export interface TerminalEntry extends TileSignals {
   sandbox?: boolean;
   /** Set for a web tile: the page it shows (lib/web/). Its title is the page's, else the host. */
   web?: WebPage;
+  /**
+   * Set for an agent tile (app/agent-tile.tsx): a coding agent's chat, no PTY. Its title is the
+   * agent's hub name.
+   */
+  chat?: AgentChat;
   /**
    * Minimized to the switcher bar: left out of the layout and of focus cycling, its shell (or
    * page) still running. Restoring it (its chip, `focus`, `restoreTile`) tiles it again.
@@ -266,10 +275,25 @@ export type WorkspaceAction =
     sandbox?: boolean;
     /** A web tile showing this page (no PTY). */
     web?: WebPage;
+    /** An agent tile (no PTY). */
+    chat?: AgentChat;
   }
   | { type: "remove"; id: string }
+  /**
+   * A tile moved here from another window (lib/workspace/tile-move.ts): its entry under its new
+   * `entry.id`, focused, in the slot of tile `before` (tiles in place) or at free-form `rect`.
+   */
+  | {
+    type: "arrive";
+    entry: TerminalEntry;
+    now: number;
+    before?: string;
+    rect?: Rect;
+  }
   /** A web tile's page changed: where it went, and its title when the engine knows it. */
   | { type: "webPage"; id: string; page: WebPage }
+  /** An agent tile's session changed (its id, model, mode, a finished turn). */
+  | { type: "chatMeta"; id: string; patch: Partial<AgentChat> }
   | { type: "focus"; id: string; now: number }
   | { type: "focusPrevious"; now: number }
   | { type: "focusOrdinal"; ordinal: number; now: number }
@@ -875,10 +899,11 @@ function reduceCore(
     case "add": {
       if (state.terminals.some((t) => t.id === action.id)) return state;
       const web = sanitizeWebPage(action.web);
+      const chat = web ? undefined : sanitizeChat(action.chat);
       const entry: TerminalEntry = {
         id: action.id,
         title: action.title ?? action.ssh?.label ?? action.agent?.name ??
-          (web ? webTitle(web) : "shell"),
+          (web ? webTitle(web) : chat ? "claude" : "shell"),
         createdAt: action.now,
         lastUsedAt: action.now,
         exited: false,
@@ -888,6 +913,7 @@ function reduceCore(
         ...(action.agent ? { agent: action.agent } : {}),
         ...(action.sandbox ? { sandbox: true } : {}),
         ...(web ? { web } : {}),
+        ...(chat ? { chat } : {}),
       };
       return {
         ...state,
@@ -896,6 +922,32 @@ function reduceCore(
         order: appendId(state.order, action.id),
         focusedId: action.id,
         cycle: null,
+      };
+    }
+    case "arrive": {
+      const id = action.entry.id;
+      if (state.terminals.some((t) => t.id === id)) return state;
+      const { minimized: _m, ...rest } = action.entry;
+      const entry: TerminalEntry = {
+        ...clearSignals(rest),
+        lastUsedAt: action.now,
+      };
+      const at = action.before === undefined
+        ? -1
+        : state.order.indexOf(action.before);
+      const order = at < 0
+        ? appendId(state.order, id)
+        : [...state.order.slice(0, at), id, ...state.order.slice(at)];
+      return {
+        ...state,
+        terminals: [...state.terminals, entry],
+        mru: touch(state.mru, id),
+        order,
+        focusedId: id,
+        cycle: null,
+        freeform: action.rect
+          ? setRect(state.freeform, id, action.rect)
+          : state.freeform,
       };
     }
     case "remove": {
@@ -976,6 +1028,23 @@ function reduceCore(
           t.id === action.id ? { ...t, web: page, title: webTitle(page) } : t
         ),
       };
+    }
+    case "chatMeta": {
+      const entry = state.terminals.find((t) => t.id === action.id);
+      if (!entry?.chat) return state;
+      const merged: Record<string, unknown> = {
+        ...entry.chat,
+        ...action.patch,
+      };
+      // `undefined` in the patch clears a field.
+      for (const [k, v] of Object.entries(action.patch)) {
+        if (v === undefined) delete merged[k];
+      }
+      const chat = sanitizeChat(merged);
+      if (!chat || JSON.stringify(chat) === JSON.stringify(entry.chat)) {
+        return state;
+      }
+      return updateTerminal(state, action.id, { chat });
     }
     case "activity":
       if (action.id === state.focusedId) return state;

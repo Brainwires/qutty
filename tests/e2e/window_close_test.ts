@@ -209,4 +209,32 @@ suite("window close", (test) => {
       "remembered keep",
     );
   });
+
+  test("settings: General shows Keep shells running after quitting, and search finds it", async (app) => {
+    await app.openSettings("general");
+    await waitFor(
+      () => app.exists("[data-testid=setting-keep-shells]"),
+      2000,
+      "the keep-shells switch in General",
+    );
+    await app.eval(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        "[data-testid=settings-search]",
+      )!;
+      el.focus();
+      el.select();
+    });
+    await app.page.keyboard.type("keep shells");
+    const visible = (sel: string) =>
+      app.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        return !!el && el.getClientRects().length > 0;
+      }, sel);
+    await waitFor(
+      () => visible("[data-testid=setting-keep-shells]"),
+      2000,
+      "found by search",
+    );
+    await app.closeSettings();
+  });
 });

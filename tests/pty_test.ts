@@ -1,10 +1,10 @@
-// Exercises the PTY backend under this Deno exactly as the desktop extension runs it: node-pty's
-// native fork + libc FFI I/O, output coalescing, resize, info, kill and exit — first through the
+// Exercises the PTY backend under denext's Deno exactly as the desktop extension runs it: the
+// runtime's `Deno.openPty`, output coalescing, resize, info, kill and exit — first through the
 // PtyHost the extension wraps, then through the extension's own method handlers with a stand-in
-// handler context. Run: deno test -A tests/
+// handler context. Run: deno task test
 //
 // The sanitizers are off: libc is opened once per process (a resource that lives on), and a
-// terminal's read loop polls on Deno's blocking thread pool until the shell's exit is seen.
+// terminal's read loop lasts until the shell's exit is seen.
 
 import { assert, assertEquals, assertMatch, assertRejects } from "@std/assert";
 import ext, {

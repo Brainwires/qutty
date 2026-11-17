@@ -4,10 +4,18 @@
 // workspace changes its snapshot is saved in the app's process (debounced, and flushed when the
 // page goes away), and its layout in localStorage for the next launch. Also: the workspace list
 // for the Workspaces menu.
+//
+// Tiles moved here from another window (app/use-tile-move.ts) are pulled once the workspace is
+// joined and whenever one arrives, shown (`arrive`), and named in the next save (`arrived`), which
+// is when the app process stops keeping them for this window.
 
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
-import type { SessionJoined, WorkspaceInfo } from "../lib/session-client.ts";
+import type {
+  SessionJoined,
+  TileArrival,
+  WorkspaceInfo,
+} from "../lib/session-client.ts";
 import {
   loadWorkspaceLayout,
   planRestore,
@@ -21,6 +29,7 @@ import {
   type WorkspaceState,
 } from "../lib/workspace/store.ts";
 import { SHELL_PROFILE } from "../lib/ssh-ui.ts";
+import type { Row } from "../lib/agent/transcript.ts";
 
 /** How long the snapshot waits for a burst of changes to settle before it is saved. */
 const SAVE_DEBOUNCE_MS = 250;
@@ -57,6 +66,13 @@ export function useSession(opts: {
   focus(id: string): void;
   /** A new workspace: open its first shell. */
   fresh(): void;
+  /** Agent tiles: their transcripts to save, and the saved ones handed back on a restore. */
+  chat?: {
+    rows(id: string): readonly Row[];
+    restored(id: string, rows: Row[]): void;
+  };
+  /** A tile moved here from another window: show it (its new id; `null`: not shown). */
+  arrive?(arrival: TileArrival): string | null;
 }): SessionView {
   const { manager } = opts;
   const [workspace, setWorkspace] = useState<SessionView["workspace"]>(null);
@@ -64,6 +80,9 @@ export function useSession(opts: {
   const [booted, setBooted] = useState(false);
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  /** Moves already shown here (never shown twice), and those not saved yet (move → tile id). */
+  const shownMovesRef = useRef(new Set<string>());
+  const unsavedMovesRef = useRef(new Map<string, string>());
 
   /** A new workspace starts in the view Settings → Layout picks for new workspaces. */
   const startView = useCallback(() => {
@@ -76,9 +95,11 @@ export function useSession(opts: {
     const o = optsRef.current;
     const plan = planRestore(joined.snapshot, joined.ptys);
     if (plan) {
-      // A web tile has no terminal: its page is in its entry (app/web-tile.tsx opens it).
+      // A web tile has no terminal: its page is in its entry (app/web-tile.tsx opens it). An
+      // agent tile gets its saved transcript back (app/use-agents.ts opens its session).
       for (const t of plan.tiles) {
-        if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
+        if ("chat" in t) o.chat?.restored(t.id, t.rows);
+        else if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
       }
       o.seqRef.current = Math.max(o.seqRef.current, plan.seq);
       o.dispatch({
@@ -118,12 +139,30 @@ export function useSession(opts: {
     if (!manager) return;
     const session = manager.backend.session;
     let live = true;
+    let joined = false;
     const offChanged = session.onChanged(setWorkspaces);
-    session.join().then((joined) => {
+    // Tiles moved here: pulled once joined, and whenever one arrives.
+    const pull = () => {
+      if (!joined || !session.moves) return;
+      void session.moves.arrivals().then((list) => {
+        if (!live) return;
+        for (const a of list) {
+          if (shownMovesRef.current.has(a.move)) continue;
+          const id = optsRef.current.arrive?.(a);
+          if (!id) continue;
+          shownMovesRef.current.add(a.move);
+          unsavedMovesRef.current.set(a.move, id);
+        }
+      }, (err) => console.warn("session: could not take the moved tiles", err));
+    };
+    const offArrived = session.moves?.onArrived(pull) ?? (() => {});
+    session.join().then((result) => {
       if (!live) return;
-      apply(manager, joined);
+      apply(manager, result);
+      joined = true;
+      pull();
       setBooted(true);
-      setWorkspace(joined.workspace);
+      setWorkspace(result.workspace);
       void session.list().then((l) => live && setWorkspaces(l), () => {});
     }, (err) => {
       // No workspace (an old backend): the page works as a plain window.
@@ -138,6 +177,7 @@ export function useSession(opts: {
     return () => {
       live = false;
       offChanged();
+      offArrived();
       globalThis.removeEventListener("focus", onFocus);
     };
   }, [manager, apply, startView]);
@@ -149,12 +189,23 @@ export function useSession(opts: {
     if (!manager || !workspace) return;
     const save = () => {
       const o = optsRef.current;
-      const snap = snapshotOf(o.state, o.seqRef.current, (id) => ({
-        ptyId: manager.ptyId(id),
-        profile: manager.profile(id) ?? SHELL_PROFILE,
-        ...(manager.home(id) !== undefined ? { home: manager.home(id) } : {}),
-      }));
-      void manager.backend.session.save(snap).catch(() => {});
+      const snap = snapshotOf(
+        o.state,
+        o.seqRef.current,
+        (id) => ({
+          ptyId: manager.ptyId(id),
+          profile: manager.profile(id) ?? SHELL_PROFILE,
+          ...(manager.home(id) !== undefined ? { home: manager.home(id) } : {}),
+        }),
+        (id) => o.chat?.rows(id) ?? [],
+      );
+      // The moved-in tiles this snapshot shows: the app process stops keeping them.
+      const arrived = [...unsavedMovesRef.current].filter(([, id]) =>
+        id in snap.tiles
+      ).map(([move]) => move);
+      void manager.backend.session.save(snap, arrived).then(() => {
+        for (const move of arrived) unsavedMovesRef.current.delete(move);
+      }, () => {});
       if (!manager.backend.session.multiWindow) return;
       saveWorkspaceLayout(workspace.id, {
         layout: snap.layout,

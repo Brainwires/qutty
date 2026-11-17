@@ -3,7 +3,12 @@
 // a hub in a private /tmp folder, and an MCP client through the qutty-mcp shim.
 
 import type { McpClient } from "@rullama/mcp-client";
-import { type HubEvent, HubService, prepareSocketDir } from "../desktop/hub.ts";
+import {
+  type HubEvent,
+  HubService,
+  type HubServiceOptions,
+  prepareSocketDir,
+} from "../desktop/hub.ts";
 import { setPtyTaps } from "../desktop/pty.ts";
 import type { ShellBrainDeps } from "../desktop/shell-agent.ts";
 import type { ListedCodexHook } from "../lib/hub/codex-trust.ts";
@@ -48,6 +53,8 @@ export async function fixture(
     write?: (id: string, text: string) => Promise<void>;
     shellBrains?: ShellBrainDeps;
     codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
+    /** The agent tiles' backend (default: Claude Code). */
+    createAgent?: HubServiceOptions["createAgent"];
   } = {},
 ): Promise<Fixture> {
   // /tmp, not $TMPDIR: macOS's is long, and sun_path holds 104 bytes.
@@ -62,6 +69,7 @@ export async function fixture(
     write: opts.write ?? (() => Promise.resolve()),
     ...(opts.shellBrains ? { shellBrains: opts.shellBrains } : {}),
     ...(opts.codexHooks ? { codexHooks: opts.codexHooks } : {}),
+    ...(opts.createAgent ? { createAgent: opts.createAgent } : {}),
   });
   return {
     hub,

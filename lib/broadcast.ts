@@ -24,7 +24,7 @@
 /** Where a chunk of terminal input came from: a key (or IME composition), a paste, or neither. */
 export type InputOrigin = "key" | "paste" | null;
 
-/** The broadcast selection. `on` with no members broadcasts nothing (each tile gets its own keys). */
+/** The broadcast selection. `on` with fewer than two members broadcasts nothing (each tile gets its own keys). */
 export interface BroadcastState {
   on: boolean;
   /** The selected tiles, in the order they were checked. */
@@ -33,9 +33,64 @@ export interface BroadcastState {
 
 export const BROADCAST_OFF: BroadcastState = { on: false, members: [] };
 
-/** Turn the mode on (nothing selected yet) or off (the selection is dropped). */
-export function toggleBroadcast(state: BroadcastState): BroadcastState {
-  return state.on ? BROADCAST_OFF : { on: true, members: [] };
+/**
+ * Turn the mode on or off (the selection is dropped). Turning it on checks `members` (by default
+ * none: the workspace passes {@linkcode defaultMembers}, so it works at once).
+ */
+export function toggleBroadcast(
+  state: BroadcastState,
+  members: readonly string[] = [],
+): BroadcastState {
+  return state.on ? BROADCAST_OFF : { on: true, members: [...members] };
+}
+
+/** What a tile is to the selection: the fields of a workspace entry it looks at. */
+export interface BroadcastCandidate {
+  id: string;
+  /** Set for an SSH tile. */
+  ssh?: unknown;
+  /** Set for an agent tool's tile (`claude`): never checked by default. */
+  agent?: unknown;
+  /** Set for a web tile: never a member (it has no terminal). */
+  web?: unknown;
+  /** Set for an agent chat tile (app/agent-tile.tsx): never a member (it has no terminal). */
+  chat?: unknown;
+}
+
+/**
+ * The tiles checked when the mode is turned on (and by the banner's All): every visible terminal
+ * tile, in the workspace's order. Web and agent chat tiles have no terminal, and agent tiles (`claude`) are
+ * left out so typing meant for shells never lands in an agent's prompt; either can be ticked by
+ * hand (agents) or not at all (web). Hidden tiles (minimized, overflow) are left out: the user
+ * cannot see what they would type into.
+ */
+export function defaultMembers(
+  entries: readonly BroadcastCandidate[],
+  visibleIds: ReadonlySet<string>,
+): string[] {
+  return entries
+    .filter((e) => visibleIds.has(e.id) && !e.web && !e.chat && !e.agent)
+    .map((e) => e.id);
+}
+
+/** The banner's Only SSH: the visible SSH tiles among {@linkcode defaultMembers}. */
+export function sshMembers(
+  entries: readonly BroadcastCandidate[],
+  visibleIds: ReadonlySet<string>,
+): string[] {
+  const ids = new Set(defaultMembers(entries, visibleIds));
+  return entries.filter((e) => ids.has(e.id) && e.ssh).map((e) => e.id);
+}
+
+/** Replace the whole selection (All, None, Only SSH; only while the mode is on). */
+export function setMembers(
+  state: BroadcastState,
+  members: readonly string[],
+): BroadcastState {
+  if (!state.on) return state;
+  const same = members.length === state.members.length &&
+    members.every((m, i) => state.members[i] === m);
+  return same ? state : { on: true, members: [...members] };
 }
 
 /** Check or uncheck tile `id` (only while the mode is on). */
@@ -165,10 +220,11 @@ export function pasteSummary(data: string): string {
   }`;
 }
 
-/** The banner's text: `Broadcasting to 4 tiles`, or what to do while too few are checked. */
+/** The banner's text: who typing reaches, or what to do while too few are checked. */
 export function broadcastLabel(state: BroadcastState): string {
   const n = state.members.length;
-  if (n === 0) return "Broadcast: check the tiles to type into";
-  if (n === 1) return "Broadcast: check at least one more tile";
-  return `Broadcasting to ${n} tiles`;
+  if (n < 2) {
+    return "Tick at least two tiles (the Broadcast pill in each tile's header) to broadcast";
+  }
+  return `Broadcasting to ${n} tiles: typing in any checked tile goes to all of them.`;
 }

@@ -76,6 +76,7 @@ import type { SshListing } from "./ssh-command.ts";
 import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
 import { createDemoHub, type DemoHub } from "./hub-demo.ts";
 import type { ControlCommand, ControlResult } from "./hub/core.ts";
+import type { WebTileReport } from "./hub/web-tiles.ts";
 import type {
   AuditEntry,
   CompanionStatus,
@@ -88,11 +89,25 @@ import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
 import {
+  AgentSessions,
+  type AgentSnapshot,
+  type AgentStartRequest,
+  type AgentUpdate,
+} from "./agent/sessions.ts";
+import type {
+  AgentMessage,
+  PermissionDecision,
+  PermissionMode,
+} from "./agent/adapter.ts";
+import { DemoAgentAdapter } from "./agent/demo.ts";
+import {
   createDemoSession,
   createDesktopSession,
+  type DemoRecord,
   type SessionBackend,
   type SessionWindowDeps,
 } from "./session-client.ts";
+import { createDemoMoves, type DemoPtyState } from "./demo-windows.ts";
 import {
   closeWindow,
   onCloseRequested,
@@ -280,6 +295,8 @@ export interface PtyBackend {
   hubAnswer(id: string, action: AskAnswer["action"]): Promise<boolean>;
   /** Tell the hub terminal `ptyId`'s title (agents see it in `list_peers`). */
   hubSetLabel(ptyId: string, label: string): Promise<void>;
+  /** Tell the hub this window's web tiles (all of them; agents see them as tiles `web-<n>`). */
+  hubWebTiles(tiles: WebTileReport[]): Promise<void>;
   /** A full snapshot of the tiles after every change. */
   onHubTiles(cb: (snapshot: HubSnapshot) => void): () => void;
   /** A new `ask_user` question (each id once, also when the event stream replays). */
@@ -339,7 +356,36 @@ export interface PtyBackend {
   onHubControl(
     cb: (request: { requestId: string; command: ControlCommand }) => void,
   ): () => void;
+
+  // --- Agent tiles (lib/agent/sessions.ts, in the hub) ----------------------------------------
+
+  /** Open an agent tile's session, or attach to the one it had (`attach`); its snapshot. */
+  agentStart(req: AgentStartArgs): Promise<AgentSnapshot>;
+  /** A message for the agent (queued while a turn runs). */
+  agentSend(id: string, message: AgentMessage): Promise<boolean>;
+  /** Stop the turn under way. */
+  agentInterrupt(id: string): Promise<boolean>;
+  /** Answer a permission question. */
+  agentAnswer(
+    id: string,
+    requestId: string,
+    decision: PermissionDecision,
+  ): Promise<boolean>;
+  /** Another model (`""`: the default) or mode, or a new session (`fresh`). */
+  agentRestart(
+    id: string,
+    patch: { model?: string; permissionMode?: PermissionMode; fresh?: boolean },
+  ): Promise<AgentSnapshot | null>;
+  /** Rename the agent tile (its hub name); the name it got (rejects with the reason). */
+  agentRename(id: string, name: string): Promise<string>;
+  /** End the session (its tile closed). */
+  agentStop(id: string): Promise<void>;
+  /** Every agent session's updates (each page follows its own tiles' ids). */
+  onAgent(cb: (update: AgentUpdate) => void): () => void;
 }
+
+/** What the page asks `agentStart` for (the backend adds the owner). */
+export type AgentStartArgs = Omit<AgentStartRequest, "owner">;
 
 /** A companion command as the page receives it. */
 export interface ControlRequest {
@@ -565,6 +611,15 @@ export function createDesktopBackend(
     });
   };
 
+  // Agent tiles' updates: numbered per session, so a replayed one is dropped by its `seq`.
+  const agentUpdates = fanout<AgentUpdate>();
+  let listeningAgents = false;
+  const listenAgents = () => {
+    if (listeningAgents) return;
+    listeningAgents = true;
+    onDesktopEvent<AgentUpdate>("hub", "agent", agentUpdates.emit);
+  };
+
   const listenTransfers = () => {
     if (listeningTransfers) return;
     listeningTransfers = true;
@@ -721,6 +776,9 @@ export function createDesktopBackend(
     async hubSetLabel(ptyId, label) {
       await hub.setLabel({ id: ptyId, label });
     },
+    async hubWebTiles(tiles) {
+      await hub.webTiles({ tiles });
+    },
     onHubTiles: (cb) => {
       listenHub();
       return hubTiles.on(cb);
@@ -782,6 +840,31 @@ export function createDesktopBackend(
     onHubControl: (cb) => {
       listenCompanion();
       return controls.on(cb);
+    },
+    async agentStart(req) {
+      return await hub.agentStart(req) as AgentSnapshot;
+    },
+    async agentSend(id, message) {
+      return await hub.agentSend({ id, message });
+    },
+    async agentInterrupt(id) {
+      return await hub.agentInterrupt({ id });
+    },
+    async agentAnswer(id, requestId, decision) {
+      return await hub.agentAnswer({ id, requestId, decision });
+    },
+    async agentRestart(id, patch) {
+      return await hub.agentRestart({ id, ...patch }) as AgentSnapshot | null;
+    },
+    async agentRename(id, name) {
+      return await hub.agentRename({ id, name });
+    },
+    async agentStop(id) {
+      await hub.agentStop({ id });
+    },
+    onAgent: (cb) => {
+      listenAgents();
+      return agentUpdates.on(cb);
     },
   };
 }
@@ -1458,10 +1541,91 @@ export function createDemoBackend(): PtyBackend {
     say: hubSays.emit,
     control: hubControls.emit,
   }, { codexUntrusted: pageParam("codexTrust") === "untrusted" });
+  // The e2e suite calls the companion's web tools as its brain would.
+  if (pageParam("test") === "1") {
+    (globalThis as { __e2eCompanionTool?: unknown }).__e2eCompanionTool =
+      hub.companion.tool;
+  }
+  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts), each
+  // session a tile of the demo hub.
+  const agentUpdates = fanout<AgentUpdate>();
+  const agents = new AgentSessions({
+    emit: agentUpdates.emit,
+    createAdapter: () => new DemoAgentAdapter(),
+    hub: {
+      open: (id) => ({ env: {}, name: hub.add(id, "claude") }),
+      close: (id) => hub.remove(id),
+      setStatus: (id, status, note) => hub.setStatus(id, status, note),
+      rename: (id, name) => hub.rename(id, name),
+    },
+  });
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
-  const session = createDemoSession();
+  // `?peers=<name>`: pages of the demo move tiles to each other (lib/demo-windows.ts).
+  const peerName = pageParam("peers");
+  const session = createDemoSession(
+    peerName
+      ? createDemoMoves(peerName, {
+        exportPty: (id) => exportShell(id),
+        importPty: (state) => importShell(state),
+      })
+      : undefined,
+  );
+  /** A demo shell whose output and exit go where a spawned one's do. */
+  const newShell = (
+    id: string,
+    cols: number,
+    rows: number,
+    mode: DemoMode,
+  ) =>
+    new DemoShell(
+      id,
+      cols,
+      rows,
+      (data) => {
+        session.recordData(id, data);
+        events.emitData(id, data);
+      },
+      (e) => setTimeout(() => end(id, e), 0),
+      hub,
+      mode,
+    );
+  /** Terminal `id` leaves this page for another one (no exit: it goes on there). */
+  const exportShell = (id: string): DemoPtyState | undefined => {
+    const shell = shells.get(id);
+    const record = session.takeRecord(id);
+    if (!shell && !record) return undefined;
+    if (shell) {
+      shell.dispose();
+      shells.delete(id);
+      hub.remove(id);
+    }
+    const { pull: _pull, ...mode } = shell?.mode ?? { name: "demo-sh" };
+    return {
+      shell: shell
+        ? { cols: shell.cols, rows: shell.rows, cwd: shell.cwd, mode }
+        : null,
+      record: record ?? null,
+    };
+  };
+  /** A terminal from another page starts here under an id of this page. */
+  const importShell = (state: DemoPtyState) => {
+    const id = `demo-${++next}`;
+    const s = state.shell as
+      | { cols: number; rows: number; cwd: string; mode: DemoMode }
+      | null;
+    const record = (state.record as DemoRecord | null) ??
+      { chunks: [], size: 0, seq: 0, cols: s?.cols ?? 80, rows: s?.rows ?? 24 };
+    session.putRecord(id, record);
+    if (s) {
+      const shell = newShell(id, s.cols, s.rows, s.mode);
+      shell.cwd = s.cwd;
+      shells.set(id, shell);
+      hub.add(id, s.mode.agent?.name, s.mode.sandbox === true);
+    }
+    return session.joined(id)!;
+  };
   const end = (id: string, e: PtyExit) => {
     shells.get(id)?.dispose();
     shells.delete(id);
@@ -1491,16 +1655,10 @@ export function createDemoBackend(): PtyBackend {
         : demoAgentOf(options.program);
       const pulling = viaOllama?.pull;
       const id = `demo-${++next}`;
-      const shell = new DemoShell(
+      const shell = newShell(
         id,
         options.cols,
         options.rows,
-        (data) => {
-          session.recordData(id, data);
-          events.emitData(id, data);
-        },
-        (e) => setTimeout(() => end(id, e), 0),
-        hub,
         {
           name: options.shell ? baseName(options.shell) : "demo-sh",
           ...(remote ? { remote } : {}),
@@ -1588,6 +1746,7 @@ export function createDemoBackend(): PtyBackend {
     hubSnapshot: () => hub.snapshot(),
     hubAnswer: (id, action) => hub.answer(id, action),
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
+    hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
     onHubAsk: (cb) => hubAsks.on(cb),
     onHubAskClosed: (cb) => hubAskClosed.on(cb),
@@ -1607,6 +1766,24 @@ export function createDemoBackend(): PtyBackend {
     onCompanion: (cb) => hubCompanion.on(cb),
     onHubSay: (cb) => hubSays.on(cb),
     onHubControl: (cb) => hubControls.on(cb),
+    agentStart: (req) =>
+      attempt(() =>
+        agents.start({
+          ...req,
+          cwd: req.cwd.trim() === "~" || !req.cwd.trim()
+            ? "/Users/demo"
+            : req.cwd.trim().replace(/^~\//, "/Users/demo/"),
+        })
+      ),
+    agentSend: (id, message) => attempt(() => agents.send(id, message)),
+    agentInterrupt: (id) => agents.interrupt(id),
+    agentAnswer: (id, requestId, decision) =>
+      attempt(() => agents.answer(id, requestId, decision)),
+    agentRestart: (id, patch) =>
+      attempt(() => agents.restart(id, patch) ?? null),
+    agentRename: (id, name) => attempt(() => agents.rename(id, name)),
+    agentStop: (id) => attempt(() => agents.stop(id)),
+    onAgent: (cb) => agentUpdates.on(cb),
   };
 }
 

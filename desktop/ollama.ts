@@ -65,13 +65,7 @@ const ESCAPES = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\r/g;
  * answer a hidden PTY never gives; `TERM=dumb` skips the question.
  */
 export class PtyRunner implements CommandRunner {
-  #cli: PtyDockerCli;
-  constructor(appSupportDir: string | undefined) {
-    this.#cli = new PtyDockerCli({
-      ...(appSupportDir ? { appSupportDir } : {}),
-      find: () => Promise.resolve("/usr/bin/env"),
-    });
-  }
+  #cli = new PtyDockerCli({ find: () => Promise.resolve("/usr/bin/env") });
   async run(
     program: string,
     args: string[],
@@ -306,10 +300,10 @@ const nameInput = objectSchema<{ name: string }>((v, issues) => ({
 
 export default defineDesktopExtension({
   name: "ollama",
-  setup: (host) => {
+  setup: () => {
     if (Deno.build.os === "windows") return;
-    const dir = host.appSupportDir || undefined;
-    service = new OllamaService({ runner: new PtyRunner(dir) });
+
+    service = new OllamaService({ runner: new PtyRunner() });
   },
   methods: {
     /** Installed? version, server, models (with `show` facts), loaded models, harnesses. */

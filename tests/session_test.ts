@@ -59,8 +59,8 @@ function app(windows: Parameters<typeof fakeExtensionHost>[0]) {
   return fake;
 }
 
-const join = (window: string) =>
-  session.join.handler({}, ctxOf(window)) as SessionJoin;
+const join = async (window: string): Promise<SessionJoin> =>
+  await session.join.handler({}, ctxOf(window));
 
 Deno.test({
   name:
@@ -74,8 +74,8 @@ Deno.test({
       { id: "main", kind: "main", key: "ws-a" },
       { id: "w2", kind: "window", key: "ws-b" },
     ]);
-    assertEquals(join("main").workspace.id, "ws-a");
-    assertEquals(join("w2").workspace.id, "ws-b");
+    assertEquals((await join("main")).workspace.id, "ws-a");
+    assertEquals((await join("w2")).workspace.id, "ws-b");
     const a1 = await pty.spawn.handler(SH, ctxOf("main"));
     const a2 = await pty.spawn.handler(SH, ctxOf("main"));
     const b = await pty.spawn.handler(SH, ctxOf("w2"));
@@ -131,7 +131,7 @@ Deno.test({
 
       // The workspace's window opens again (its key): the page joins and gets both back.
       fake.open({ id: "w3", kind: "window", key: "ws-a" });
-      const back = join("w3");
+      const back = await join("w3");
       assertEquals(back.workspace.id, "ws-a");
       const r1 = back.ptys.find((p) => p.id === a1.id)!;
       const r2 = back.ptys.find((p) => p.id === a2.id)!;
@@ -184,10 +184,10 @@ Deno.test({
   sanitizeResources: false,
   fn: async () => {
     const fake = app([{ id: "main", kind: "main", key: "ws-q" }]);
-    join("main");
+    await join("main");
     const t = await pty.spawn.handler(SH, ctxOf("main"));
     // A reload is no close: the same window joins again and takes the terminal back.
-    const again = join("main");
+    const again = await join("main");
     assertEquals(again.ptys.map((p) => p.id), [t.id]);
     await fake.close("main");
     assert(terminalSessions().host.isRunning(t.id));
@@ -304,8 +304,8 @@ Deno.test("session: Close Window and End Its Shells closes the key window, then 
   const off = forgetEndedWorkspaces(workspaces, runtime);
   const closed = closingWindows(fake);
   try {
-    join("w1");
-    join("w2");
+    await join("w1");
+    await join("w2");
     workspaces.addPty("ws-1", "p1");
     // The click comes once, with the key window (here not the one used last).
     session.focus.handler({}, ctxOf("w2"));
@@ -335,7 +335,7 @@ Deno.test("session: End workspace from the page ends the calling window's worksp
   const runtime = fakeRuntimeWindows();
   const off = forgetEndedWorkspaces(workspaces, runtime);
   try {
-    join("w2");
+    await join("w2");
     const endWindow = (window: string) =>
       session.endWindow.handler({}, ctxOf(window)) as Promise<
         SessionEndWindow

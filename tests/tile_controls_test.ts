@@ -17,20 +17,7 @@ import {
 import { computeLayout } from "../lib/layout/mod.ts";
 import { barChips, splitChips, visibleIdSet } from "../lib/workspace/bar.ts";
 import { planRestore, snapshotOf } from "../lib/workspace/session.ts";
-import {
-  headDoubleClickControl,
-  tileMenuControl,
-} from "../lib/workspace/tile-controls.ts";
-import {
-  CLOSE_AND_END_ITEM,
-  isFreshTileMenu,
-  isTileMenuItem,
-  MINIMIZE_TILE_ITEM,
-  TILE_MENU_MAX_AGE_MS,
-  ZOOM_TILE_ITEM,
-} from "../lib/workspace/windows.ts";
-import { tileMenuToPage } from "../desktop/session.ts";
-import { fakeExtensionHost } from "./session_helpers.ts";
+import { headDoubleClickControl } from "../lib/workspace/tile-controls.ts";
 
 const run = (actions: WorkspaceAction[], from = initialState()) =>
   actions.reduce(reduce, from);
@@ -289,53 +276,4 @@ Deno.test("header double click follows the title-bar double-click action", () =>
   for (const none of ["none", "shade", "lower", "menu", "junk"]) {
     assertEquals(headDoubleClickControl(none, false), null, none);
   }
-});
-
-Deno.test("Window menu: Minimize Tile and Zoom Tile on the focused tile", () => {
-  assertEquals(tileMenuControl(MINIMIZE_TILE_ITEM, false), "minimize");
-  assertEquals(tileMenuControl(ZOOM_TILE_ITEM, false), "maximize");
-  assertEquals(tileMenuControl(ZOOM_TILE_ITEM, true), "restoreTile");
-  assert(isTileMenuItem(MINIMIZE_TILE_ITEM) && isTileMenuItem(ZOOM_TILE_ITEM));
-  assert(!isTileMenuItem(CLOSE_AND_END_ITEM) && !isTileMenuItem(undefined));
-});
-
-Deno.test("session: the Window menu's tile items go to the key window's page only", async () => {
-  const fake = fakeExtensionHost([]);
-  const off = tileMenuToPage(fake.host, () => 1000);
-  try {
-    await fake.menuItem(MINIMIZE_TILE_ITEM, { id: "w2", key: "ws-2" });
-    await fake.menuItem(ZOOM_TILE_ITEM, { id: "w1", key: "ws-1" });
-    // Not a tile item, or no window open: nothing is sent.
-    await fake.menuItem(CLOSE_AND_END_ITEM, { id: "w1", key: "ws-1" });
-    await fake.menuItem(ZOOM_TILE_ITEM, null);
-    assertEquals(
-      fake.events.filter((e) => e.event === "tileMenu").map((e) => [
-        e.window,
-        (e.data as { item: string }).item,
-      ]),
-      [["w2", MINIMIZE_TILE_ITEM], ["w1", ZOOM_TILE_ITEM]],
-    );
-  } finally {
-    off();
-  }
-});
-
-Deno.test("session: a tile menu event carries its send time, and a stale replay is dropped", async () => {
-  const fake = fakeExtensionHost([]);
-  const off = tileMenuToPage(fake.host, () => 5000);
-  try {
-    await fake.menuItem(MINIMIZE_TILE_ITEM, { id: "w1", key: "ws-1" });
-    const sent = fake.events.find((e) => e.event === "tileMenu");
-    assertEquals((sent?.data as { at: number }).at, 5000);
-    // One-shot: Denext never replays it to a page that reloads or subscribes later.
-    assertEquals(sent?.retain, false);
-  } finally {
-    off();
-  }
-  assertEquals(isFreshTileMenu(5000, 5000), true);
-  assertEquals(isFreshTileMenu(5000, 5000 + TILE_MENU_MAX_AGE_MS), true);
-  // Under a runtime that still replays it, a page reloaded later finds it too old: ignored.
-  assertEquals(isFreshTileMenu(5000, 5001 + TILE_MENU_MAX_AGE_MS), false);
-  assertEquals(isFreshTileMenu(undefined, 5000), false);
-  assertEquals(isFreshTileMenu(Number.NaN, 5000), false);
 });

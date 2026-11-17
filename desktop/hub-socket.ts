@@ -19,7 +19,7 @@
 // with SIGPIPE suppressed (SO_NOSIGPIPE on macOS, MSG_NOSIGNAL on Linux).
 
 import type { ByteStreamEndpoint, StreamConnection } from "@rullama/mcp-server";
-import { errno } from "./pty.ts";
+import { errno } from "./libc.ts";
 
 const IS_DARWIN = Deno.build.os === "darwin";
 const LIBC_PATH = IS_DARWIN ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
@@ -47,6 +47,11 @@ export const SUN_PATH_MAX = IS_DARWIN ? 104 : 108;
 const SYMBOLS = {
   socket: { parameters: ["i32", "i32", "i32"], result: "i32" },
   bind: { parameters: ["i32", "buffer", "u32"], result: "i32" },
+  connect: { parameters: ["i32", "buffer", "u32"], result: "i32" },
+  getsockopt: {
+    parameters: ["i32", "i32", "i32", "buffer", "buffer"],
+    result: "i32",
+  },
   listen: { parameters: ["i32", "i32"], result: "i32" },
   accept: { parameters: ["i32", "pointer", "pointer"], result: "i32" },
   read: { parameters: ["i32", "buffer", "usize"], result: "isize" },
@@ -128,6 +133,91 @@ export function unlinkPath(path: string): boolean {
 
 export function removeDir(path: string): boolean {
   return libc().rmdir(cstr(path)) === 0;
+}
+
+/**
+ * The user's private socket folder, `<base>/qutty-<uid>` (made 0700 when missing): the agent
+ * hub's per-launch folders and the PTY daemon's socket live there. Throws when it is not a real
+ * folder of this user that nobody else may enter.
+ */
+export async function privateUserDir(base = "/tmp"): Promise<string> {
+  return await privateDir(`${base}/qutty-${getuid()}`);
+}
+
+/**
+ * `dir`, made 0700 when missing; throws when it is not a real folder of this user that nobody
+ * else may enter.
+ */
+export async function privateDir(dir: string): Promise<string> {
+  makeDir(dir, 0o700);
+  const st = await Deno.lstat(dir);
+  if (
+    !st.isDirectory || st.isSymlink || st.uid !== getuid() ||
+    ((st.mode ?? 0) & 0o077) !== 0
+  ) {
+    throw new Error(
+      `${dir} is not a private folder of this user; not using it`,
+    );
+  }
+  return dir;
+}
+
+/** `SO_PEERCRED` (Linux): `struct ucred { pid_t pid; uid_t uid; gid_t gid; }`. */
+const SO_PEERCRED = 17;
+
+let peerCache:
+  | Deno.DynamicLibrary<{
+    getpeereid: { parameters: ["i32", "buffer", "buffer"]; result: "i32" };
+  }>["symbols"]
+  | undefined;
+
+/**
+ * The uid of the process at the other end of unix socket `fd` (macOS `getpeereid`, Linux
+ * `SO_PEERCRED`), or `undefined` when the OS will not say.
+ */
+export function peerUid(fd: number): number | undefined {
+  if (IS_DARWIN) {
+    peerCache ??= Deno.dlopen(LIBC_PATH, {
+      getpeereid: { parameters: ["i32", "buffer", "buffer"], result: "i32" },
+    }).symbols;
+    const uid = new Uint32Array(1);
+    const gid = new Uint32Array(1);
+    return peerCache.getpeereid(
+        fd,
+        new Uint8Array(uid.buffer),
+        new Uint8Array(gid.buffer),
+      ) === 0
+      ? uid[0]
+      : undefined;
+  }
+  const cred = new Uint32Array(3);
+  const len = new Uint32Array([12]);
+  return libc().getsockopt(
+      fd,
+      SOL_SOCKET,
+      SO_PEERCRED,
+      new Uint8Array(cred.buffer),
+      new Uint8Array(len.buffer),
+    ) === 0
+    ? cred[1]
+    : undefined;
+}
+
+/**
+ * Connect to the unix socket at `path`: the connection, read through `reactor` (throws when
+ * nothing listens there).
+ */
+export function connectUnix(path: string, reactor: FdReactor): FdConnection {
+  const c = libc();
+  const addr = sockaddrUn(path);
+  const fd = c.socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0) throw new Error(`socket() failed (errno ${errno()})`);
+  if (c.connect(fd, addr, addr.length) !== 0) {
+    const e = errno();
+    c.close(fd);
+    throw new Error(`cannot connect to ${path} (errno ${e})`);
+  }
+  return new FdConnection(fd, reactor);
 }
 
 /** Whether process `pid` exists (`kill(pid, 0)`; EPERM still means it exists). */
