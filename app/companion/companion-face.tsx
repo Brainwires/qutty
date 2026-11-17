@@ -11,17 +11,18 @@
 // squash on poke.
 //
 // The head group is Denext's examples/companion (components/Loopy.tsx on feat/loopy-voice-tools;
-// same author, MIT) unchanged, voice turn included: `voice` says whether the companion is
-// listening, thinking or speaking, and `level` is the mouth step while speaking
-// (lib/companion/lip-sync.ts) or the microphone's while listening. tests/companion_look_test.ts
-// renders the head against the example.
+// same author, MIT), voice turn included: `voice` says whether the companion is listening,
+// thinking or speaking, and `level` is the mouth step while speaking (lib/companion/lip-sync.ts)
+// or the microphone's while listening. Qutty's changes to it are few and listed (lower brows, a
+// gentler smile, catch-lights, cheeks, the `blush` mood; see `FACES`), and
+// tests/companion_look_test.ts renders the head against the example with only those allowed.
 import type { FaceMood, FaceState } from "../../lib/companion/face-machine.ts";
 import { LEVEL_STEPS, mouthShape } from "../../lib/companion/lip-sync.ts";
 import type { MicroExpression } from "../../lib/companion/face-life.ts";
 import { DEFAULT_COMPANION_NAME } from "../../lib/companion/settings.ts";
 
 /** One face: the brows, the eyes' shape and pupils, the mouth, and any extras. */
-interface Face {
+export interface Face {
   /** The left and right brow paths. */
   readonly brows: readonly [string, string];
   /** The eye whites' vertical radius (smaller: sleepier); 0 draws no whites. */
@@ -43,95 +44,112 @@ interface Face {
   readonly mouthOpen?: boolean;
 }
 
-const SMILE = "M71 88 Q80 95 89 88";
+// Qutty's softer face (tests/companion_look_test.ts lists every way it differs from the example):
+// - The brows sit lower, with flatter arches, so that no mood and no move of the face lifts them
+//   past the head's top quarter (the example's surprised, shocked and excited brows rose to and
+//   past the bead's rim). tests/companion_brows_test.ts checks every mood in every move and idle
+//   pose against public/styles.css.
+// - The resting smile is small and gentle (the example's wide crescent read as manic under high
+//   brows, more so stretched by the delighted pose).
+
+/** The resting smile: small and gentle. */
+const SMILE = "M74 89 Q80 93 86 89";
 const FROWN = "M71 92 Q80 85 89 92";
 
-/** The face each mood wears. */
-const FACES: Readonly<Record<FaceMood, Face>> = {
+/** The face each mood wears (tests/companion_brows_test.ts keeps every brow on the head). */
+export const FACES: Readonly<Record<FaceMood, Face>> = {
   neutral: {
-    brows: ["M59 60 Q67 51 76 58", "M84 58 Q93 51 101 60"],
+    brows: ["M61 61 Q68 55 76 59.5", "M84 59.5 Q92 55 99 61"],
     eyeRy: 8.8,
     pupils: { kind: "dots", dx: [1.8, -1.8], dy: 1.8 },
     mouth: SMILE,
   },
   thinking: {
-    brows: ["M59 57 Q67 49 76 55", "M84 58 Q93 54 101 60"],
+    brows: ["M62 60.4 Q68.5 56 76 59", "M84 60 Q92 58 98.5 61.5"],
     eyeRy: 8.8,
     pupils: { kind: "dots", dx: [2.6, 2.6], dy: -2.6 },
     mouth: "M73 90 Q80 91 87 89",
   },
   attention: {
-    brows: ["M59 55 Q67 46 76 53", "M84 53 Q93 46 101 55"],
+    brows: ["M62 60 Q68.5 54.6 76 58.3", "M84 58.3 Q91.5 54.6 98 60"],
     eyeRy: 9.6,
     pupils: { kind: "dots", dx: [2.4, 2.4], dy: -0.5 },
     mouth: "M76 89 a4 4.5 0 1 0 8 0 a4 4.5 0 1 0 -8 0",
     mouthOpen: true,
   },
   success: {
-    brows: ["M59 57 Q67 48 76 55", "M84 55 Q93 48 101 57"],
+    brows: ["M61 60.5 Q68 54.5 76 58.5", "M84 58.5 Q92 54.5 99 60.5"],
     eyeRy: 8.8,
     pupils: { kind: "dots", dx: [1.2, -1.2], dy: 0.8 },
     mouth: "M68 85 Q80 101 92 85 Z",
     mouthOpen: true,
   },
   confused: {
-    brows: ["M59 54 Q67 45 76 52", "M84 61 Q93 60 101 63"],
+    brows: ["M62 60.4 Q68.5 55.6 76 59", "M84 61.5 Q92 61 98.5 63"],
     eyeRy: 8.8,
     pupils: { kind: "dots", dx: [-2.4, 2.4], dy: 1 },
     mouth: "M70 90 Q75 86 80 90 Q85 94 90 89",
   },
   mad: {
-    brows: ["M60 56 L77 63", "M83 63 L100 56"],
+    brows: ["M62.5 59 L77 63.5", "M83 63.5 L97.5 59"],
     eyeRy: 7.4,
     pupils: { kind: "dots", dx: [2, -2], dy: 2.4 },
     mouth: FROWN,
   },
   sad: {
-    brows: ["M60 63 L76 56", "M84 56 L100 63"],
+    brows: ["M61 63 L76 57.5", "M84 57.5 L99 63"],
     eyeRy: 8.8,
     pupils: { kind: "dots", dx: [0.8, -0.8], dy: 3 },
     mouth: FROWN,
   },
   excited: {
-    brows: ["M59 53 Q67 44 76 51", "M84 51 Q93 44 101 53"],
+    brows: ["M62 60 Q68.5 55 76 58.4", "M84 58.4 Q91.5 55 98 60"],
     eyeRy: 9.8,
     pupils: { kind: "dots", dx: [0, 0], dy: 0 },
     mouth: "M67 84 Q80 104 93 84 Z",
     mouthOpen: true,
   },
   sleepy: {
-    brows: ["M60 62 Q67 59 76 62", "M84 62 Q93 59 100 62"],
+    brows: ["M61 62 Q68 59.5 76 62", "M84 62 Q92 59.5 99 62"],
     eyeRy: 2.2,
     pupils: { kind: "none" },
     mouth: "M77 90 a3 2.4 0 1 0 6 0 a3 2.4 0 1 0 -6 0",
     mouthOpen: true,
   },
   love: {
-    brows: ["M59 58 Q67 50 76 56", "M84 56 Q93 50 101 58"],
+    brows: ["M61 60.5 Q68 54.6 76 58.5", "M84 58.5 Q92 54.6 99 60.5"],
     eyeRy: 8.8,
     pupils: { kind: "hearts" },
     mouth: SMILE,
   },
   surprised: {
-    brows: ["M59 52 Q67 43 76 50", "M84 50 Q93 43 101 52"],
+    brows: ["M63 59.6 Q69 55 76 58", "M84 58 Q91 55 97 59.6"],
     eyeRy: 10,
     pupils: { kind: "dots", dx: [0, 0], dy: 0, r: 3 },
     mouth: "M76.5 90 a3.5 4 0 1 0 7 0 a3.5 4 0 1 0 -7 0",
     mouthOpen: true,
   },
   shocked: {
-    brows: ["M60 49 Q67 41 76 47", "M84 47 Q93 41 100 49"],
-    eyeRy: 11,
+    brows: ["M63 59.4 Q69 55.2 76 57.8", "M84 57.8 Q91 55.2 97 59.4"],
+    eyeRy: 10.4,
     pupils: { kind: "dots", dx: [0, 0], dy: 0, r: 2 },
     mouth: "M75 91 a5 7 0 1 0 10 0 a5 7 0 1 0 -10 0",
     mouthOpen: true,
   },
   wow: {
-    brows: ["M59 54 Q67 46 76 52", "M84 52 Q93 46 101 54"],
+    brows: ["M62 60 Q68.5 55 76 58.3", "M84 58.3 Q91.5 55 98 60"],
     eyeRy: 0,
     pupils: { kind: "ovals" },
     mouth: "M74 92 a6 7.5 0 1 0 12 0 a6 7.5 0 1 0 -12 0",
     mouthOpen: true,
+  },
+  // Qutty's own: flattered and a little shy. Soft brows, the eyes glancing down and away, a small
+  // closed smile; the rosy cheeks, their "///" lines and a sparkle are its extras.
+  blush: {
+    brows: ["M61.5 61 Q68 57 76 58.4", "M84 58.4 Q92 57 98.5 61"],
+    eyeRy: 7.6,
+    pupils: { kind: "dots", dx: [-2.2, -2.2], dy: 2.4, r: 3.4 },
+    mouth: "M76 90.5 Q80 92.8 84 90.5",
   },
 };
 
@@ -186,17 +204,64 @@ function Pupils({ face }: { face: Face }) {
       </g>
     );
   }
+  const r = p.r ?? 3.6;
   return (
     <>
-      <circle cx={70 + p.dx[0]} cy={72 + p.dy} r={p.r ?? 3.6} />
-      <circle cx={90 + p.dx[1]} cy={72 + p.dy} r={p.r ?? 3.6} />
+      <circle cx={70 + p.dx[0]} cy={72 + p.dy} r={r} />
+      <circle cx={90 + p.dx[1]} cy={72 + p.dy} r={r} />
+      <path class="companion-glint" d={glint(70 + p.dx[0], 72 + p.dy, r)} />
+      <path class="companion-glint" d={glint(90 + p.dx[1], 72 + p.dy, r)} />
     </>
+  );
+}
+
+/**
+ * Qutty's own: the catch-light on a dot pupil of radius `r` centred on (x, y): a small round
+ * highlight up and to the left (paths, so `.companion-eyes circle` stays the two pupils).
+ */
+const glint = (x: number, y: number, r: number) => {
+  const g = +(r * 0.3).toFixed(2);
+  const gx = +(x - r * 0.32 - g).toFixed(2);
+  const gy = +(y - r * 0.36).toFixed(2);
+  return `M${gx} ${gy} a${g} ${g} 0 1 0 ${2 * g} 0 a${g} ${g} 0 1 0 ${
+    -2 * g
+  } 0`;
+};
+
+/**
+ * Qutty's own: rosy cheeks (a soft radial gradient, `#companion-cheek`) on the happy moods and the
+ * blush, below the outer corner of each eye.
+ */
+function Cheeks({ big }: { big?: boolean }) {
+  const [rx, ry, cy] = big ? [7.6, 4.6, 84] : [6, 3.6, 84.5];
+  return (
+    <g class="companion-cheeks">
+      <ellipse cx="61" cy={cy} rx={rx} ry={ry} />
+      <ellipse cx="99" cy={cy} rx={rx} ry={ry} />
+    </g>
   );
 }
 
 /** The extras a mood adds around the head: a question mark, steam, a tear, z's, hearts, blush. */
 function Extras({ mood }: { mood: FaceMood }) {
   switch (mood) {
+    case "success":
+    case "excited":
+      return <Cheeks />;
+    case "blush":
+      return (
+        <g class="companion-extra companion-blushing">
+          <Cheeks big />
+          <g class="companion-blush-lines">
+            <path d="M57.4 86.4 l2 -3.4 M60.4 86.8 l2 -3.4 M63.4 87.2 l2 -3.4" />
+            <path d="M94.6 87.2 l2 -3.4 M97.6 86.8 l2 -3.4 M100.6 86.4 l2 -3.4" />
+          </g>
+          <path
+            class="companion-blush-sparkle"
+            d="M107 46 q0.8 3.2 4 4 q-3.2 0.8 -4 4 q-0.8 -3.2 -4 -4 q3.2 -0.8 4 -4 Z"
+          />
+        </g>
+      );
     case "confused":
       return (
         <text class="companion-extra companion-question" x="112" y="52">?</text>
@@ -272,8 +337,8 @@ function Extras({ mood }: { mood: FaceMood }) {
 // block).
 
 /** The hot face: worried brows, tired eyes, a panting open mouth. */
-const HOT_FACE: Face = {
-  brows: ["M60 61 Q68 57 76 55", "M84 55 Q92 57 100 61"],
+export const HOT_FACE: Face = {
+  brows: ["M61 61.5 Q68 58 76 57", "M84 57 Q92 58 99 61.5"],
   eyeRy: 6.6,
   pupils: { kind: "dots", dx: [0.6, -0.6], dy: 1.6, r: 3.2 },
   mouth: "M72 87 Q80 84 88 87 Q87 97 80 97 Q73 97 72 87 Z",
@@ -312,6 +377,35 @@ function HotExtras() {
         <path d="M92 44 q-2.5 -3.5 0 -7 q2.5 -3.5 0 -7" />
       </g>
     </g>
+  );
+}
+
+/**
+ * Qutty's own colour accents (public/styles.css, "Colour accents"): the irises (a deep teal ring
+ * around a dark pupil), the warm inside of an open mouth, and the rosy cheeks. A `<defs>` of its
+ * own, after the bead's shading (which stays the example's).
+ */
+function AccentDefs() {
+  return (
+    <defs class="companion-accent-defs">
+      <radialGradient id="companion-iris" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#0c1a22" />
+        <stop offset="0.42" stop-color="#0f2530" />
+        <stop offset="0.5" stop-color="#1b7f8e" />
+        <stop offset="0.86" stop-color="#14606f" />
+        <stop offset="1" stop-color="#0c3a44" />
+      </radialGradient>
+      <linearGradient id="companion-mouth-fill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#4f1a22" />
+        <stop offset="0.55" stop-color="#7a2632" />
+        <stop offset="1" stop-color="#d0566a" />
+      </linearGradient>
+      <radialGradient id="companion-cheek" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ff5f86" stop-opacity="0.9" />
+        <stop offset="0.55" stop-color="#ff7d9b" stop-opacity="0.55" />
+        <stop offset="1" stop-color="#ff9ab2" stop-opacity="0" />
+      </radialGradient>
+    </defs>
   );
 }
 
@@ -429,6 +523,7 @@ export function CompanionFace(
           <stop offset="1" stop-color="#5d666e" />
         </radialGradient>
       </defs>
+      <AccentDefs />
       <g class="companion-face">
         <g class="companion-head">
           <circle

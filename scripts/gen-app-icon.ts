@@ -4,11 +4,11 @@
 //
 // The face is the component's "excited" mood, drawn here as a standalone SVG: the bead, brows, eyes
 // and mouth are the component's shapes (its FACES.excited) with the styles of public/styles.css
-// (.companion-avatar …) resolved into it: the ink, the eye whites, the open mouth's fill and the
-// mood's tinted rim. Change the face there, then mirror it in `face()` below and run this again.
+// (.companion-avatar …) resolved into it: the ink, the eye whites, the colour accents (the teal
+// irises with their catch-lights, the warm open mouth, the rosy cheeks) and the mood's tinted rim. Change the face there, then mirror it in `face()` below and run this again.
 // Every size is rasterized by headless Chromium (Astral, as the e2e harness launches it) at its own
-// size, so each one is sharp; 32 px and under draw a simpler face (no rim, bolder ink) that still
-// reads.
+// size, so each one is sharp; 32 px and under draw a simpler face (no rim, bolder ink, dark pupils,
+// no cheeks) that still reads.
 //
 // Writes icons/source.png (the 1024 master), icons/app-1024.png, icons/app.png (512, Linux),
 // icons/app.icns (iconutil, 16–1024 @1x/@2x), icons/app.ico (16–256) and public/favicon.png (64).
@@ -39,12 +39,39 @@ function squirclePath(): string {
 
 // ---- The face ---------------------------------------------------------------------------------
 
-// The component's colours (public/styles.css): --companion-face-ink, the bead's edge, the open
-// mouth, and the excited mood's tint (--companion-clip).
+// The component's colours (public/styles.css): --companion-face-ink, the bead's edge, the excited
+// mood's tint (--companion-clip), and the accents' gradients (companion-face.tsx AccentDefs).
 const INK = "#1d2b33";
 const BEAD_EDGE = "#4b545b";
-const MOUTH_OPEN = "#5a1f24";
 const TINT = "#ff8a3d";
+
+/** The accents' gradients: the iris, the open mouth, the cheeks (as `AccentDefs` draws them). */
+const ACCENT_DEFS = `
+      <radialGradient id="iris" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#0c1a22"/>
+        <stop offset="0.42" stop-color="#0f2530"/>
+        <stop offset="0.5" stop-color="#1b7f8e"/>
+        <stop offset="0.86" stop-color="#14606f"/>
+        <stop offset="1" stop-color="#0c3a44"/>
+      </radialGradient>
+      <linearGradient id="mouth" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#4f1a22"/>
+        <stop offset="0.55" stop-color="#7a2632"/>
+        <stop offset="1" stop-color="#d0566a"/>
+      </linearGradient>
+      <radialGradient id="cheek" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ff5f86" stop-opacity="0.9"/>
+        <stop offset="0.55" stop-color="#ff7d9b" stop-opacity="0.55"/>
+        <stop offset="1" stop-color="#ff9ab2" stop-opacity="0"/>
+      </radialGradient>`;
+
+/** A dot pupil's catch-light, as the component's `glint` draws it. */
+function glint(x: number, y: number, r: number): string {
+  const g = r * 0.3;
+  return `<circle cx="${(x - r * 0.32).toFixed(2)}" cy="${
+    (y - r * 0.36).toFixed(2)
+  }" r="${g.toFixed(2)}" fill="#ffffff" fill-opacity="0.92"/>`;
+}
 
 /**
  * The companion's excited face, in the drawing's own units (the bead: centre (80, 76), radius 29),
@@ -67,8 +94,14 @@ function face(px: number): string {
       <ellipse cx="70" cy="72" rx="7.2" ry="9.8" fill="#ffffff"/>
       <ellipse cx="90" cy="72" rx="7.2" ry="9.8" fill="#ffffff"/>
     </g>
-    <circle cx="70" cy="72" r="${pupil}" fill="${INK}"/>
-    <circle cx="90" cy="72" r="${pupil}" fill="${INK}"/>`;
+    <circle cx="70" cy="72" r="${pupil}" fill="${small ? INK : "url(#iris)"}"/>
+    <circle cx="90" cy="72" r="${pupil}" fill="${small ? INK : "url(#iris)"}"/>
+    ${small ? "" : glint(70, 72, pupil) + glint(90, 72, pupil)}`;
+  // The rosy cheeks of the happy moods (the component's `Cheeks`), from 48 px up.
+  const cheeks = small ? "" : `<g fill="url(#cheek)">
+      <ellipse cx="61" cy="84.5" rx="6" ry="3.6"/>
+      <ellipse cx="99" cy="84.5" rx="6" ry="3.6"/>
+    </g>`;
   return `
     <defs>
       <radialGradient id="bead" cx="0.36" cy="0.32" r="0.75">
@@ -76,7 +109,7 @@ function face(px: number): string {
         <stop offset="0.35" stop-color="#d9dee3"/>
         <stop offset="0.8" stop-color="#8b959e"/>
         <stop offset="1" stop-color="#5d666e"/>
-      </radialGradient>
+      </radialGradient>${ACCENT_DEFS}
       <filter id="rim" x="-30%" y="-30%" width="160%" height="160%">
         <feDropShadow dx="0" dy="0" stdDeviation="0.6" flood-color="${TINT}"/>
         <feDropShadow dx="0" dy="0" stdDeviation="1.6" flood-color="${TINT}"/>
@@ -90,11 +123,12 @@ function face(px: number): string {
         ${small ? "" : `filter="url(#rim)"`}/>
     </g>
     <g fill="none" stroke="${INK}" stroke-width="${brow}" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M59 53 Q67 44 76 51"/>
-      <path d="M84 51 Q93 44 101 53"/>
+      <path d="M62 60 Q68.5 55 76 58.4"/>
+      <path d="M84 58.4 Q91.5 55 98 60"/>
     </g>
+    ${cheeks}
     ${eyes}
-    <path d="M67 84 Q80 104 93 84 Z" fill="${MOUTH_OPEN}" stroke="${INK}"
+    <path d="M67 84 Q80 104 93 84 Z" fill="url(#mouth)" stroke="${INK}"
       stroke-width="${mouthStroke}" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
 

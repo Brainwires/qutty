@@ -3649,13 +3649,15 @@ kbd {
   opacity: 1;
 }
 
+/* Qutty: the brows' lifts are smaller than the example's (-2px -4deg, -2.5px) so they stay on the
+   head (tests/companion_brows_test.ts). */
 .companion-overlay .companion-avatar[data-state="think"] .companion-brows {
-  transform: translateY(-2px) rotate(-4deg);
+  transform: translateY(-1px) rotate(-3deg);
 }
 
 .companion-overlay .companion-avatar[data-state="celebrate"] .companion-brows,
 .companion-overlay .companion-avatar[data-state="appear"] .companion-brows {
-  transform: translateY(-2.5px);
+  transform: translateY(-1px);
 }
 
 .companion-overlay .companion-avatar[data-state="think"] .companion-thought circle {
@@ -3964,15 +3966,18 @@ kbd {
    avatar's holder by the pointer loop (which eases them itself); only the neutral face's dot
    pupils follow them, and not while thinking (the eyes look up then). The micro-expressions use
    the separate `translate`, `scale` and `rotate` properties, eased here. */
-.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(1),
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes .companion-glint:nth-of-type(1) {
   transform: translate(var(--companion-gaze-lx, 0px), var(--companion-gaze-ly,
     0px));
 }
-.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes circle:nth-of-type(2),
+.companion-overlay .companion-avatar[data-lively][data-mood="neutral"]:not([data-state="think"]) .companion-eyes .companion-glint:nth-of-type(2) {
   transform: translate(var(--companion-gaze-rx, 0px), var(--companion-gaze-ry,
     0px));
 }
 .companion-overlay .companion-avatar[data-lively] .companion-eyes circle,
+.companion-overlay .companion-avatar[data-lively] .companion-eyes .companion-glint,
 .companion-overlay .companion-avatar[data-lively] .companion-brows path {
   transition: translate 260ms ease-out;
 }
@@ -3987,39 +3992,45 @@ kbd {
   transition: rotate 450ms ease-in-out;
 }
 /* A glance aside (each pupil to the same side, inside its eye white). */
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(1),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes .companion-glint:nth-of-type(1) {
   translate: -3.4px 0;
 }
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes circle:nth-of-type(2),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-left"] .companion-eyes .companion-glint:nth-of-type(2) {
   translate: -1.4px 0;
 }
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(1) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(1),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes .companion-glint:nth-of-type(1) {
   translate: 1.4px 0;
 }
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes circle:nth-of-type(2),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="glance-right"] .companion-eyes .companion-glint:nth-of-type(2) {
   translate: 3.4px 0;
 }
-/* A thoughtful look up and aside, the brows lifting. */
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(1) {
+/* A thoughtful look up and aside, the brows lifting a little. */
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(1),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes .companion-glint:nth-of-type(1) {
   translate: -0.6px -5px;
 }
-.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(2) {
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes circle:nth-of-type(2),
+.companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-eyes .companion-glint:nth-of-type(2) {
   translate: 3px -5px;
 }
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="look-up"] .companion-brows path {
-  translate: 0 -1.5px;
+  translate: 0 -0.8px;
 }
 /* A slow brow raise, the right one higher. */
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="brow-raise"] .companion-brows path {
-  translate: 0 -1px;
+  translate: 0 -0.5px;
   transition-duration: 600ms;
 }
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="brow-raise"] .companion-brows path:nth-child(2) {
-  translate: 0 -3.2px;
+  translate: 0 -1.4px;
 }
 /* A small smile: the mouth a little wider and deeper. */
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="smile"] .companion-mouth {
-  scale: 1.15 1.5;
+  scale: 1.1 1.35;
 }
 /* A curious tilt of the head. */
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="tilt"] .companion-head {
@@ -4048,12 +4059,121 @@ kbd {
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="hm"] .companion-brows path:nth-child(1) {
   translate: 0 1.2px;
 }
-/* Delighted, while the pointer is over the face: a big smile, the brows up. */
+/* Delighted, while the pointer is over the face: a warmer smile, the brows up a touch (the
+   example's 1.25 x 1.9 crescent under brows 2.4 up read as manic). */
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="delighted"] .companion-mouth {
-  scale: 1.25 1.9;
+  scale: 1.12 1.55;
 }
 .companion-overlay .companion-avatar[data-mood="neutral"][data-expr="delighted"] .companion-brows path {
-  translate: 0 -2.4px;
+  translate: 0 -1.2px;
+}
+
+/* ---- Colour accents (Qutty's own; app/companion/companion-face.tsx AccentDefs): touches of
+   colour on the steel, the same in dark and light themes (the bead is steel in both). Irises: the
+   dot pupils are a deep teal ring around a dark pupil, with a white catch-light. Open mouths are
+   warm inside, a tongue's pink at the bottom. Rosy cheeks on the happy moods (success, excited,
+   love, blush). Accents, not a rainbow: teal eyes, warm pink mouth and cheeks, and each mood's own
+   tint on its rim. */
+.companion-overlay .companion-avatar .companion-eyes circle {
+  fill: url(#companion-iris);
+}
+.companion-overlay .companion-avatar .companion-eyes .companion-glint {
+  fill: #ffffff;
+  stroke: none;
+  opacity: 0.92;
+}
+.companion-overlay .companion-avatar .companion-mouth.is-open {
+  fill: url(#companion-mouth-fill);
+}
+.companion-overlay .companion-avatar .companion-tongue {
+  fill: #f0808f;
+}
+.companion-overlay .companion-cheeks ellipse {
+  fill: url(#companion-cheek);
+  stroke: none;
+}
+/* Love's blush (the example's pink ellipses at 0.55, hard to see on steel): the rosy gradient,
+   fuller. */
+.companion-overlay .companion-blush ellipse {
+  fill: url(#companion-cheek);
+  opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: 1.3;
+}
+
+/* ---- Blush (Qutty's own mood: flattered, a little shy; the brain's `[mood: blush]`, `qutty-hook
+   say --mood blush`). A rose tint, the cheeks warming in, "///" blush lines, a sparkle, the eyes
+   glancing down and away and the head tipped shyly aside. Reduced motion: the global rule above
+   (`.companion-avatar *`) runs each move once and at once, so the cheeks land shown and the
+   sparkle still. */
+.companion-overlay .companion-avatar[data-mood="blush"] {
+  --companion-clip: #ff8fa6;
+  --companion-clip-edge: #b8435e;
+  --companion-clip-shine: #ffe3ea;
+}
+.companion-overlay .bubble[data-mood="blush"] {
+  border-color: #ff8fa6;
+}
+.companion-overlay .companion-blushing .companion-cheeks ellipse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: companion-blush-in 700ms ease-out both;
+}
+.companion-overlay .companion-avatar .companion-blush-lines path {
+  stroke: #d24a6c;
+  stroke-width: 0.9;
+  opacity: 0.85;
+  animation: companion-blush-lines-in 700ms ease-out 250ms both;
+}
+.companion-overlay .companion-avatar .companion-blush-sparkle {
+  fill: light-dark(#e2537a, #ffb3c4);
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: companion-blush-twinkle 1.8s ease-in-out infinite;
+}
+.companion-overlay .companion-avatar[data-mood="blush"][data-state="idle"] .companion-face,
+.companion-overlay .companion-avatar[data-mood="blush"][data-state="blink"] .companion-face {
+  animation: companion-shy 3.6s ease-in-out infinite;
+}
+@keyframes companion-blush-in {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes companion-blush-lines-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.85;
+  }
+}
+@keyframes companion-blush-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+  50% {
+    opacity: 0.45;
+    scale: 0.7;
+  }
+}
+@keyframes companion-shy {
+  0%,
+  100% {
+    transform: rotate(-6deg) translateY(1px);
+  }
+  50% {
+    transform: rotate(-3deg) translateY(0);
+  }
 }
 
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the

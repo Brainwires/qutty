@@ -12,6 +12,8 @@ import { join } from "@std/path";
 import { type App, ROOT, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
+import { QUTTY_HEAD_PARTS, quttyHead } from "../companion_face_shape.ts";
+import type { FaceMood } from "../../lib/companion/face-machine.ts";
 
 const OVERLAY = "[data-testid=companion-overlay]";
 const BUBBLE = "[data-testid=companion-bubble]";
@@ -386,6 +388,29 @@ suite("companion", (test) => {
     );
   });
 
+  test("a compliment: the brain's [mood: blush] tag blushes the companion and is never shown", async (app) => {
+    await landed(app);
+    await chat(app, "you're cute");
+    const said = await waitBubble(
+      app,
+      (b) => b.kind === "reply" && b.text.includes("thank you"),
+      "the reply",
+    );
+    assertEquals(said.text, "Aw, stop it… thank you!");
+    assertEquals(said.mood, "blush");
+    await waitFor(
+      async () =>
+        (await app.attr(`${OVERLAY} svg.companion-avatar`, "data-mood")) ===
+          "blush",
+      3000,
+      "the blush face",
+    );
+    assert(
+      await app.exists(`${OVERLAY} .companion-blushing .companion-cheeks`),
+      "rosy cheeks",
+    );
+  });
+
   test("an agent's message to the companion: the companion says who wrote, and the agent gets an answer", async (app) => {
     const claude = await launchAgent(app, "claude");
     await app.typeInTerminal(claude, "/msg companion are the tests green?\n");
@@ -671,10 +696,14 @@ suite("companion", (test) => {
       tints: Record<string, string[]>;
       avatar: { viewBox: string; width: number; height: number };
     };
-    /** The companion's head as drawn, and the snapshot's for `mood`, as one line per element. */
+    /**
+     * The companion's head as drawn (without Qutty's additions: catch-lights, cheeks), and the
+     * snapshot's for `mood` with Qutty's listed changes (tests/companion_face_shape.ts), as one
+     * line per element.
+     */
     const compare = (mood: string) =>
       app.eval(
-        (s: string, markup: string) => {
+        (s: string, markup: string, extra: string) => {
           const lines = (g: Element) =>
             [g, ...g.querySelectorAll("*")].map((el) =>
               [
@@ -684,20 +713,25 @@ suite("companion", (test) => {
               ].join(" ")
             );
           const live = document.querySelector(`${s} svg.companion-avatar`)!;
+          const head = live.querySelector(".companion-head")!.cloneNode(
+            true,
+          ) as Element;
+          head.querySelectorAll(extra).forEach((el) => el.remove());
           const parsed = new DOMParser().parseFromString(
             `<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
             "image/svg+xml",
           ).querySelector("g")!;
           return {
             mood: live.getAttribute("data-mood"),
-            live: lines(live.querySelector(".companion-head")!),
+            live: lines(head),
             expected: lines(parsed),
             rim:
               getComputedStyle(live.querySelector(".companion-bead")!).filter,
           };
         },
         OVERLAY,
-        snap.head[mood],
+        quttyHead(mood as FaceMood, snap.head[mood]),
+        QUTTY_HEAD_PARTS,
       );
     const rgb = (hex: string) =>
       `rgb(${

@@ -69,8 +69,9 @@ export function replyTimeoutMs(text: string): number {
  * The bubble for a `turn` update: the whole message to show (`enqueue` when new, `update` when
  * on screen already), or `null` when the turn shows nothing — a turn on agents' messages shows
  * only once it is done, and not when the brain said `(quiet)`. A user turn shows at once: `…`
- * while the brain thinks, then the text as it streams. The companion's mood: `thinking` until the
- * turn ends, then `neutral`, or `sad` when the turn failed.
+ * while the brain thinks, then the text as it streams. The companion's mood: the one the reply's
+ * mood tag names (`[mood: blush]`; lib/companion/mood-tag.ts) as soon as it is known; else
+ * `thinking` until the turn ends, then `neutral`; `sad` when the turn failed.
  */
 export function turnBubble(
   update: Extract<CompanionUpdate, { kind: "turn" }>,
@@ -85,7 +86,9 @@ export function turnBubble(
     id: turnBubbleId(update.turn),
     kind: "reply",
     text,
-    mood: !update.done ? "thinking" : update.isError ? "sad" : "neutral",
+    mood: update.isError
+      ? "sad"
+      : update.mood ?? (update.done ? "neutral" : "thinking"),
     actions: [],
     timeoutMs: update.done ? replyTimeoutMs(text) : 0,
   };
