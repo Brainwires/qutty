@@ -76,6 +76,7 @@ import type { SshListing } from "./ssh-command.ts";
 import { createDemoSsh, remoteOf } from "./ssh-demo.ts";
 import { createDemoHub, type DemoHub } from "./hub-demo.ts";
 import type { ControlCommand, ControlResult } from "./hub/core.ts";
+import type { WebTileReport } from "./hub/web-tiles.ts";
 import type {
   AuditEntry,
   CompanionStatus,
@@ -280,6 +281,8 @@ export interface PtyBackend {
   hubAnswer(id: string, action: AskAnswer["action"]): Promise<boolean>;
   /** Tell the hub terminal `ptyId`'s title (agents see it in `list_peers`). */
   hubSetLabel(ptyId: string, label: string): Promise<void>;
+  /** Tell the hub this window's web tiles (all of them; agents see them as tiles `web-<n>`). */
+  hubWebTiles(tiles: WebTileReport[]): Promise<void>;
   /** A full snapshot of the tiles after every change. */
   onHubTiles(cb: (snapshot: HubSnapshot) => void): () => void;
   /** A new `ask_user` question (each id once, also when the event stream replays). */
@@ -720,6 +723,9 @@ export function createDesktopBackend(
     },
     async hubSetLabel(ptyId, label) {
       await hub.setLabel({ id: ptyId, label });
+    },
+    async hubWebTiles(tiles) {
+      await hub.webTiles({ tiles });
     },
     onHubTiles: (cb) => {
       listenHub();
@@ -1458,6 +1464,11 @@ export function createDemoBackend(): PtyBackend {
     say: hubSays.emit,
     control: hubControls.emit,
   }, { codexUntrusted: pageParam("codexTrust") === "untrusted" });
+  // The e2e suite calls the companion's web tools as its brain would.
+  if (pageParam("test") === "1") {
+    (globalThis as { __e2eCompanionTool?: unknown }).__e2eCompanionTool =
+      hub.companion.tool;
+  }
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
@@ -1588,6 +1599,7 @@ export function createDemoBackend(): PtyBackend {
     hubSnapshot: () => hub.snapshot(),
     hubAnswer: (id, action) => hub.answer(id, action),
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
+    hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
     onHubAsk: (cb) => hubAsks.on(cb),
     onHubAskClosed: (cb) => hubAskClosed.on(cb),

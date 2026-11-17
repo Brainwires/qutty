@@ -116,6 +116,7 @@ import { useHub } from "./use-hub.ts";
 import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
+import { useWebControl } from "./use-web-control.ts";
 import { useVoice } from "./use-voice.ts";
 import { dictating, DictatingBadge, DictationNote } from "./dictation.tsx";
 import type { DictateOutcome } from "../lib/voice/controller.ts";
@@ -380,6 +381,18 @@ function WorkspaceView() {
   // the native web view, else the iframe).
   const webViewsRef = useRef(new Map<string, WebViewHandle>());
   const [webEngine, setWebEngine] = useState<WebEngine | null>(null);
+  // The companion's web tools drive the web tiles (app/use-web-control.ts).
+  const webControl = useWebControl({
+    backend: managerRef.current?.backend,
+    manager: managerRef.current,
+    terminals: state.terminals,
+    views: webViewsRef.current,
+    engine: webEngine,
+    home: state.settings.links.home,
+    openWebTile,
+    closeTile: closeTerminal,
+    focusTile: focusTerminal,
+  });
   const cycling = state.cycle !== null;
   const webHooks = useMemo<WebTileHooks>(() => ({
     engine: webEngine,
@@ -388,6 +401,7 @@ function WorkspaceView() {
     onView: (id, view) => {
       if (view) webViewsRef.current.set(id, view);
       else webViewsRef.current.delete(id);
+      webControl.onView(id, view);
     },
     openTile: (url) => void openWebTile(url),
     cycling,
@@ -403,6 +417,7 @@ function WorkspaceView() {
     openWebTile,
     state.settings.links.home,
     state.settings.links.bookmarksBar,
+    webControl,
   ]);
   // The bookmark manager and History (opened from the bookmarks bar, the star and the `+` menu).
   const webDialog = useWebDialog();
@@ -455,6 +470,7 @@ function WorkspaceView() {
     },
     closeTile: closeTerminal,
     focusTile: focusTerminal,
+    web: webControl.run,
   });
   const refocus = useCallback(() => {
     const id = stateRef.current.focusedId;

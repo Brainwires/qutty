@@ -28,7 +28,9 @@ export function nameProblem(name: string): string | null {
     return "a name uses letters, digits, '.', '_' and '-' (starting with a letter or digit)";
   }
   if (RESERVED.has(name.toLowerCase())) return `"${name}" is reserved`;
-  if (/^pty-\d+$/i.test(name)) return "a name cannot look like a tile id";
+  if (/^(?:pty|web)-\d+$/i.test(name)) {
+    return "a name cannot look like a tile id";
+  }
   return null;
 }
 
@@ -42,6 +44,10 @@ export interface TileSeed {
   cwd?: string;
   /** It runs in the window's shared Docker sandbox. */
   sandbox?: boolean;
+  /** A web tile (named `browser`, `browser-2`, …). */
+  kind?: "web";
+  /** A web tile's page. */
+  url?: string;
 }
 
 /** The tiles, keyed by id. */
@@ -60,7 +66,10 @@ export class Registry {
     const tile: TileInfo = {
       id: seed.id,
       name: this.#freeName(
-        seed.harness ?? `shell-${seed.id.replace(/\D/g, "")}`,
+        seed.harness ??
+          (seed.kind === "web"
+            ? "browser"
+            : `shell-${seed.id.replace(/\D/g, "")}`),
       ),
       status: "idle",
       unread: 0,
@@ -69,6 +78,8 @@ export class Registry {
       ...(seed.label ? { label: seed.label } : {}),
       ...(seed.cwd ? { cwd: seed.cwd } : {}),
       ...(seed.sandbox ? { sandbox: true } : {}),
+      ...(seed.kind === "web" ? { kind: "web" as const } : {}),
+      ...(seed.url ? { url: seed.url } : {}),
     };
     this.#tiles.set(tile.id, tile);
     this.#defaultNamed.add(tile.id);
@@ -154,11 +165,15 @@ export class Registry {
     this.#onChange();
   }
 
-  /** The page's title or a new working directory. */
-  setMeta(id: string, meta: { label?: string; cwd?: string }): void {
+  /** The page's title, a new working directory, or a web tile's page. */
+  setMeta(
+    id: string,
+    meta: { label?: string; cwd?: string; url?: string },
+  ): void {
     const patch: Partial<TileInfo> = {};
     if (meta.label !== undefined) patch.label = meta.label;
     if (meta.cwd !== undefined) patch.cwd = meta.cwd;
+    if (meta.url !== undefined) patch.url = meta.url;
     this.#patch(id, patch);
   }
 

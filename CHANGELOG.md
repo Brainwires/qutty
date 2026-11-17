@@ -25,6 +25,16 @@
     menu for View, "Close Window and End Its Shells" moved to Shell, and the
     layout button's menu no longer lists the tiles (the Window menu does). The
     web version keeps its in-page menus as they were.
+- The companion can now browse. Ask it to look something up or use a site, and
+  it opens a web tile, reads the page, clicks links and buttons, types into
+  fields and submits forms, goes back and forward, scrolls, and can take a
+  picture of the page to look at it. It asks you before submitting anything like
+  a purchase, a payment or a sign-in. Agents in your tiles see web tiles too
+  (with their address and title) and may read a page, but only the companion
+  acts on one. Everything the companion does in a page is listed in Settings →
+  Companion activity. Reading and acting on pages needs the app's own web view
+  (macOS); in the browser demo the companion can only open and navigate local
+  pages.
 - Settings is a dialog in the middle of the window instead of one long popover.
   Categories down the left (General, Appearance, Layout, Tiles, Links & web,
   Sandbox, Agents, Companion, Voice, System monitor), the chosen one on the
