@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new app icon: the companion's face.
 - Web tiles work like a browser for everyday use.
   - Bookmarks: click the star in the address field to bookmark the page (or
     press ⌘D, Ctrl+D elsewhere); a small popover lets you rename it, pick its
