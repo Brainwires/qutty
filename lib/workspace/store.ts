@@ -1139,7 +1139,7 @@ function reduceCore(
       const before = state.settings.links;
       if (
         links.editor === before.editor && links.command === before.command &&
-        links.web === before.web
+        links.web === before.web && links.home === before.home
       ) {
         return state;
       }

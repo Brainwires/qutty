@@ -33,6 +33,8 @@ export interface LaunchMenuProps {
   onToggle(open: boolean): void;
   onLaunch(entry: LaunchEntry): void;
   onConnections(): void;
+  /** "Web page": a new web tile (absent where web tiles can't show any site). */
+  onWebPage?(): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
   /**
@@ -220,6 +222,19 @@ export function LaunchMenu(props: LaunchMenuProps) {
               </span>
             </button>
           )}
+          {props.onWebPage && (
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item launch-item"
+              data-testid="launch-web"
+              title="Open a web page in a new tile"
+              onClick={props.onWebPage}
+            >
+              <LaunchIcon kind="web" />
+              <span class="menu-label">Web page</span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -238,7 +253,7 @@ export function LaunchMenu(props: LaunchMenuProps) {
 
 /** A small glyph per entry kind. */
 function LaunchIcon(
-  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" },
+  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" | "web" },
 ) {
   const common = {
     viewBox: "0 0 16 16",
@@ -291,6 +306,16 @@ function LaunchIcon(
         <svg {...common}>
           <path
             d="M8 1.8 13.5 5v6L8 14.2 2.5 11V5z M2.5 5 8 8.2 13.5 5M8 8.2v6"
+            {...stroke}
+          />
+        </svg>
+      );
+    case "web":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.5" {...stroke} />
+          <path
+            d="M2.5 8h11M8 2.5c-2 2-2 9 0 11M8 2.5c2 2 2 9 0 11"
             {...stroke}
           />
         </svg>

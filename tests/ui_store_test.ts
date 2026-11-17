@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertStrictEquals } from "@std/assert";
+import { DEFAULT_HOME_PAGE } from "../lib/links.ts";
 import {
   barOrderIds,
   DEFAULT_SETTINGS,
@@ -393,12 +394,18 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     editor: "auto",
     command: "",
     web: "tile",
+    home: "https://www.google.com/",
   });
   assertEquals(
     sanitizeSettings({
       links: { editor: "bogus", command: "zed {file}", web: "tab" },
     }).links,
-    { editor: "auto", command: "zed {file}", web: "tile" },
+    {
+      editor: "auto",
+      command: "zed {file}",
+      web: "tile",
+      home: DEFAULT_HOME_PAGE,
+    },
   );
   assertEquals(
     sanitizeSettings({ links: { web: "browser" } }).links.web,
@@ -427,6 +434,7 @@ Deno.test("settings: links default to auto, sanitise, reduce and persist", () =>
     editor: "custom",
     command: "hx {file}",
     web: "browser",
+    home: DEFAULT_HOME_PAGE,
   });
 });
 

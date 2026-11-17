@@ -54,7 +54,13 @@ export interface SwitcherBarProps {
   /** The `+` picker's entries and actions (app/launch-menu.tsx). */
   launch: Pick<
     LaunchMenuProps,
-    "sections" | "plusTitle" | "plusEntryId" | "onLaunch" | "sandbox" | "ollama"
+    | "sections"
+    | "plusTitle"
+    | "plusEntryId"
+    | "onLaunch"
+    | "sandbox"
+    | "ollama"
+    | "onWebPage"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -331,6 +337,14 @@ export function SwitcherBar(props: SwitcherBarProps) {
             setMenu("none");
             props.onConnections();
           }}
+          {...(props.launch.onWebPage
+            ? {
+              onWebPage: () => {
+                setMenu("none");
+                props.launch.onWebPage?.();
+              },
+            }
+            : {})}
           {...(props.launch.ollama
             ? {
               ollama: {

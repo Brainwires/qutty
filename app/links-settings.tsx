@@ -7,6 +7,7 @@ import { useEffect, useState } from "denext";
 import { webEngine } from "../lib/web/engine.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import {
+  DEFAULT_HOME_PAGE,
   EDITOR_PRESETS,
   editorChoice,
   editorPreset,
@@ -26,6 +27,8 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
   const [installed, setInstalled] = useState<string[] | null>(null);
   // The custom command as typed (the store keeps the sanitised form).
   const [draft, setDraft] = useState(settings.command);
+  // The home page as typed; saved (and cleaned up) when the field is left or Enter is pressed.
+  const [homeDraft, setHomeDraft] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -79,6 +82,30 @@ export function LinksSettingsSection(props: LinksSettingsProps) {
               Right-click a link to choose each time.
             </span>
           )}
+      </label>
+      <label class="field">
+        <span class="field-label">Home page</span>
+        <input
+          type="text"
+          class="font-custom"
+          data-testid="setting-links-home"
+          spellcheck={false}
+          autocomplete="off"
+          placeholder={DEFAULT_HOME_PAGE}
+          value={homeDraft ?? settings.home}
+          onInput={(e) => setHomeDraft((e.target as HTMLInputElement).value)}
+          onBlur={() => {
+            if (homeDraft !== null) onChange({ home: homeDraft });
+            setHomeDraft(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+        <span class="field-hint">
+          Where a web tile's Home button goes, and what "Web page" in the{" "}
+          <code>+</code> menu opens. Empty is Google.
+        </span>
       </label>
       <label class="field">
         <span class="field-label">Open files with a line in</span>
