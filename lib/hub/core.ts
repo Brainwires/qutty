@@ -28,6 +28,8 @@ import {
   stopOutput,
 } from "./hooks.ts";
 import type { ScrollbackPage } from "./mirror.ts";
+import { type WebTileReport, WebTiles } from "./web-tiles.ts";
+import type { PageRequest } from "../web/page-script.ts";
 
 /** The longest message text. */
 const MAX_TEXT = 32 * 1024;
@@ -70,12 +72,43 @@ export interface HubEnv {
 export type ControlCommand =
   | { kind: "spawn"; command?: string; profile?: string }
   | { kind: "close"; tileId: string }
-  | { kind: "focus"; tileId: string };
+  | { kind: "focus"; tileId: string }
+  | WebCommand;
 
-/** The page's answer to a {@linkcode ControlCommand}: the spawned tile's PTY id, or why not. */
+/**
+ * A web tile command (the companion's web tools, lib/hub/web-tools.ts): `op` for the page's tile
+ * `tileId` (its own id, `t7`) in the window showing workspace `owner`. `open` has no tile: it
+ * opens one (beside `beside`, a PTY id or a page tile id; in `owner`'s window when given).
+ */
+export interface WebCommand {
+  kind: "web";
+  op: WebOp;
+  tileId?: string;
+  owner?: string;
+}
+
+/** What a web command does. */
+export type WebOp =
+  | PageRequest
+  | { op: "open"; url?: string; beside?: string }
+  | { op: "navigate"; url: string }
+  | { op: "go"; action: "back" | "forward" | "reload" }
+  | { op: "eval"; script: string }
+  | { op: "screenshot" }
+  | { op: "close" }
+  | { op: "focus" };
+
+/**
+ * The page's answer to a {@linkcode ControlCommand}: the spawned tile's PTY id, a web command's
+ * `value` (JSON), or why not. `owner` is the workspace of the window that answered (the desktop
+ * extension adds it).
+ */
 export type ControlResult =
-  | { ok: true; tileId?: string }
+  | { ok: true; tileId?: string; value?: unknown; owner?: string }
   | { ok: false; error: string };
+
+/** The owner of web tiles a page reports without one (the browser demo's single window). */
+export const DEFAULT_WEB_OWNER = "demo";
 
 /** A hook input's `session_id` when it is a plausible id (a uuid, in both harnesses). */
 function sessionIdOf(
@@ -103,6 +136,8 @@ interface OpenAsk {
 export class HubCore {
   readonly registry: Registry;
   readonly mailboxes: Mailboxes;
+  /** The windows' web tiles, in the registry as `web-<n>`. */
+  readonly webTiles: WebTiles;
   #env: HubEnv;
   #asks = new Map<string, OpenAsk>();
   #nextAsk = 0;
@@ -117,6 +152,7 @@ export class HubCore {
         this.#env.companionMail?.();
       }
     });
+    this.webTiles = new WebTiles(this.registry, (id) => this.removeTile(id));
   }
 
   snapshot(): HubSnapshot {
@@ -171,8 +207,29 @@ export class HubCore {
   /** Tile `id`'s screen mirror, or a {@linkcode HubError} when it has none. */
   envMirror(id: string): NonNullable<ReturnType<HubEnv["mirror"]>> {
     const mirror = this.#env.mirror(id);
-    if (!mirror) throw new HubError(`${id} has no screen to read`);
+    if (!mirror) {
+      throw new HubError(
+        this.webTiles.place(id)
+          ? `${id} is a web tile: it has no terminal screen (read_page reads its page)`
+          : `${id} has no screen to read`,
+      );
+    }
     return mirror;
+  }
+
+  // --- web tiles --------------------------------------------------------------------------------
+
+  /** Window `owner`'s page reported its web tiles (all of them). */
+  setWebTiles(owner: string, tiles: readonly WebTileReport[]): void {
+    this.webTiles.sync(owner, tiles);
+  }
+
+  /**
+   * Send web command `command` to the page (the web tools, lib/hub/web-tools.ts `webToolHost`);
+   * the page's answer.
+   */
+  webControl(command: WebCommand): Promise<ControlResult> {
+    return this.#env.control(command);
   }
 
   /**
@@ -191,10 +248,11 @@ export class HubCore {
     }
     const sender = this.#who(from);
     const recipients = to.toLowerCase() === BROADCAST
-      ? this.registry.list().map((t) => t.id).filter((id) => id !== sender.id)
+      ? this.registry.list().filter((t) => t.kind !== "web").map((t) => t.id)
+        .filter((id) => id !== sender.id)
       : to.toLowerCase() === COMPANION
       ? [COMPANION]
-      : [this.tile(to).id];
+      : [this.#agentTile(to).id];
     if (recipients.length === 0) {
       throw new HubError("there are no other tiles to send to");
     }
@@ -210,6 +268,17 @@ export class HubCore {
         ...(replyTo ? { replyTo } : {}),
       })
     );
+  }
+
+  /** The tile `target` names, unless it is a web tile (no agent reads messages there). */
+  #agentTile(target: string): TileInfo {
+    const tile = this.tile(target);
+    if (tile.kind === "web") {
+      throw new HubError(
+        `${tile.id} is a web tile: it has no agent to message`,
+      );
+    }
+    return tile;
   }
 
   /** `read_messages`: the pending messages (marked read), or with `all` the recent history. */
@@ -313,7 +382,13 @@ export class HubCore {
     if (text.length > MAX_TEXT) {
       throw new HubError(`at most ${MAX_TEXT} characters at a time`);
     }
-    await this.#env.write(this.tile(target).id, text);
+    const tile = this.tile(target);
+    if (tile.kind === "web") {
+      throw new HubError(
+        `${tile.id} is a web tile, not a terminal: web_type types into its page`,
+      );
+    }
+    await this.#env.write(tile.id, text);
   }
 
   /**
@@ -350,7 +425,21 @@ export class HubCore {
    * new tile. Throws a {@linkcode HubError} with the page's reason when it fails.
    */
   async control(command: ControlCommand): Promise<{ tileId?: string }> {
-    if (command.kind !== "spawn") this.tile(command.tileId);
+    if (command.kind === "web") throw new HubError("use webControl");
+    // A web tile is closed or focused by its page.
+    const place = command.kind === "spawn"
+      ? undefined
+      : this.webTiles.place(this.tile(command.tileId).id);
+    if (command.kind !== "spawn" && place) {
+      const r = await this.#env.control({
+        kind: "web",
+        op: { op: command.kind },
+        tileId: place.local,
+        owner: place.owner,
+      });
+      if (!r.ok) throw new HubError(r.error);
+      return {};
+    }
     const result = await this.#env.control(command);
     if (!result.ok) throw new HubError(result.error);
     if (command.kind === "spawn" && command.command && result.tileId) {

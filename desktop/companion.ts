@@ -66,6 +66,11 @@ export const AUDIT_FILE = "companion-audit.jsonl";
 const AUDIT_ROTATE_BYTES = 1 << 20;
 /** How long the page has to carry out a control command. */
 const CONTROL_TIMEOUT_MS = 10_000;
+/**
+ * How long it has for a web tile command: a new tile's view mounting and its page loading, or a
+ * click's navigation, are waited for (lib/web/web-control.ts).
+ */
+const WEB_CONTROL_TIMEOUT_MS = 25_000;
 /** How long a waited-for `say` past its own timeout is held. */
 const SAY_SLACK_MS = 2_000;
 
@@ -351,7 +356,10 @@ export class CompanionHost {
   /** Send a command to the page and wait for its answer ({@linkcode HubEnv.control}). */
   control(command: ControlCommand): Promise<ControlResult> {
     const requestId = `ctl-${++this.#nextControl}`;
-    const answer = this.#controls.wait(requestId, CONTROL_TIMEOUT_MS, {
+    const ms = command.kind === "web"
+      ? WEB_CONTROL_TIMEOUT_MS
+      : CONTROL_TIMEOUT_MS;
+    const answer = this.#controls.wait(requestId, ms, {
       ok: false,
       error: "the window did not answer (is it open?)",
     });
