@@ -6,7 +6,7 @@
 // - public/tray-dark.png: the same glyph in the app icon's teal, 64×64, for a dark panel (Linux,
 //   Windows, where the OS tells light from dark).
 // - public/tray.png: the app icon (icons/app-1024.png) at 64×64, for every other panel. Its dark
-//   squircle keeps the teal cat readable on a light panel too. Made with macOS `sips`.
+//   squircle keeps the companion's face readable on a light panel too. Made with macOS `sips`.
 //
 // The glyph is the app icon's cat-eared terminal: a head with two ears and a `>_` prompt cut out.
 //
