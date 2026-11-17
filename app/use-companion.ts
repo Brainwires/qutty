@@ -1,12 +1,13 @@
 // The workspace's half of the companion: its settings sent to the hub (whether the brain may run,
 // and its model), and the commands the companion sends the page — spawn a tile (the login shell
 // or a `+` picker entry), close one, focus one — carried out here, where the tiles live, and
-// answered with the new tile's PTY id or the reason it could not be done.
+// answered with the new tile's PTY id or the reason it could not be done. A web tile command (the
+// companion's web tools) is handed to `web` (app/use-web-control.ts).
 
 import { useEffect, useRef } from "denext";
 import { flatEntries, type LaunchSection } from "../lib/launcher.ts";
 import type { ControlRequest, PtyBackend } from "../lib/pty-client.ts";
-import type { ControlResult } from "../lib/hub/core.ts";
+import type { ControlResult, WebCommand } from "../lib/hub/core.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import type { TerminalProfile } from "../lib/ssh-ui.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
@@ -29,6 +30,10 @@ export interface UseCompanionOptions {
   launchSsh(entryId: string): boolean;
   closeTile(id: string): void;
   focusTile(id: string): void;
+  /** The tile of a hub tile with no PTY (an agent tile's session `agent-3`). */
+  tileOfHub?(hubId: string): string | undefined;
+  /** Carry out a web tile command (app/use-web-control.ts). */
+  web?(command: WebCommand): Promise<ControlResult>;
 }
 
 /** The workspace terminal whose PTY is `ptyId`. */
@@ -77,6 +82,10 @@ export function useCompanion(opts: UseCompanionOptions): void {
       const manager = o.manager;
       if (!manager) return { ok: false, error: "the window is not ready" };
       switch (command.kind) {
+        case "web":
+          return o.web
+            ? await o.web(command)
+            : { ok: false, error: "this window has no web tiles" };
         case "spawn": {
           const entry = command.profile
             ? flatEntries(o.sections).find((e) => e.id === command.profile)
@@ -112,7 +121,8 @@ export function useCompanion(opts: UseCompanionOptions): void {
         }
         case "close":
         case "focus": {
-          const id = byPty(manager, o.terminals(), command.tileId);
+          const id = byPty(manager, o.terminals(), command.tileId) ??
+            o.tileOfHub?.(command.tileId);
           if (!id) {
             return { ok: false, error: "that tile is not in this window" };
           }

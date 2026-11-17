@@ -25,6 +25,11 @@
 // Settings, a tile on top of it or moving, the companion's bubble: lib/web/overlays.ts) the view
 // shows a snapshot of its page instead (`setOccluded`); for what stays over the tile (the
 // companion itself) it leaves a strip of the body free instead (`inset`).
+//
+// The browser around the page: the bookmarks bar (app/bookmarks-bar.tsx), the star, the address
+// field's suggestions, the find bar, page zoom (remembered per site), the page's right-click menu
+// and the Back / Forward lists live in app/web-chrome.tsx; the browser keys (⌘L, ⌘R, ⌘[ …) come
+// from the workspace's one key router (lib/workspace/keys.ts `routeKey`) to `runWebCommand`.
 
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type {
@@ -33,6 +38,16 @@ import type {
   WebViewEventMap,
   WebViewHandle,
 } from "../lib/web/engine.ts";
+import {
+  followUrl,
+  startHistory,
+  type WebHistory,
+} from "../lib/web/history.ts";
+import { recordVisit, titleVisit } from "../lib/web/visits.ts";
+import { setSiteZoom, stepZoom, zoomFor } from "../lib/web/zoom.ts";
+import type { WebKeyCommand } from "../lib/workspace/keys.ts";
+import { visitsStore, zoomStore } from "./web-stores.ts";
+import type { OpenWhere } from "./bookmarks-bar.tsx";
 import {
   areaOverlays,
   coveredByArea,
@@ -65,6 +80,10 @@ export interface WebTileHooks {
   cycling?: boolean;
   /** The home page (Settings → Links → Home page): the toolbar's Home button goes there. */
   home?: string;
+  /** Settings → Links → "Show bookmarks bar" (default on). */
+  bookmarksBar?: boolean;
+  /** Copy text to the clipboard (the page menu's Copy link, Copy). */
+  copy?(text: string): void;
 }
 
 /** Where a web tile is, as its frame knows it (app/tile-cluster.tsx). */
@@ -107,7 +126,61 @@ export interface WebTileView {
   reload(): void;
   stop(): void;
   openExternal(): void;
+  /** The page's title (empty when the engine cannot read it). */
+  title: string;
+  /** Open `url` here (the tile takes the focus), in a new web tile, or in the default browser. */
+  openUrl(url: string, where: OpenWhere): void;
+  /** Whether the bookmarks bar shows. */
+  showBar: boolean;
+  /** The page's zoom (1: 100%). */
+  zoom: number;
+  zoomBy(dir: 1 | -1): void;
+  zoomReset(): void;
+  /** Reload past the cache. */
+  reloadHard(): void;
+  /** What the engine can do beyond showing the page. */
+  can: { zoom: boolean; find: boolean; print: boolean; devTools: boolean };
+  print(): void;
+  devTools(): void;
+  /** The find bar: open, its text, and the matches the engine reported. */
+  find: FindState;
+  setFind(patch: Partial<FindState>): void;
+  /** Bumped by each ⌘F: the find field takes the keyboard (again). */
+  findFocus: number;
+  /** Find `find.text` again, forward or back. */
+  findNext(dir: 1 | -1): void;
+  closeFind(): void;
+  /** The star's popover is open (⌘D or the star). */
+  starOpen: boolean;
+  setStarOpen(open: boolean): void;
+  /** The page asked for its context menu (the tile draws it), in viewport pixels. */
+  pageMenu: PageMenu | null;
+  closePageMenu(): void;
+  /** The pages Back and Forward go to, nearest first. */
+  backList: string[];
+  forwardList: string[];
+  /** Go `n` steps through the history (negative: back). */
+  goBy(n: number): void;
+  /** Copy text to the clipboard. */
+  copy(text: string): void;
+  /** Type `text` into the page's focused field. */
+  insertText(text: string): void;
+  /** Give the keyboard back to the tile's page. */
+  focusPage(): void;
 }
+
+/** The find bar's state. */
+export interface FindState {
+  open: boolean;
+  text: string;
+  matches: number;
+  active: number;
+}
+
+/** The page's context menu, where it was asked for and what is under the pointer. */
+export type PageMenu = WebViewEventMap["context-menu"];
+
+const NO_FIND: FindState = { open: false, text: "", matches: 0, active: 0 };
 
 /** The selector of web tile `id`'s body. */
 const bodyOf = (id: string) =>
@@ -115,6 +188,39 @@ const bodyOf = (id: string) =>
 
 /** The native views by tile id: how `focusWebTile` gives a page the keyboard. */
 const pageFocus = new Map<string, () => void>();
+
+/** What each mounted web tile does with a browser command. */
+const webCommands = new Map<string, (cmd: WebKeyCommand) => void>();
+/** How each mounted web tile goes to a URL (the bookmark manager, History). */
+const webNavigators = new Map<string, (url: string) => void>();
+
+/**
+ * Run browser command `cmd` (lib/workspace/keys.ts `routeKey`) on web tile `id`; `false` when
+ * it is not a mounted web tile.
+ */
+export function runWebCommand(id: string, cmd: WebKeyCommand): boolean {
+  const fn = webCommands.get(id);
+  fn?.(cmd);
+  return !!fn;
+}
+
+/** Show `url` in web tile `id`; `false` when it is not a mounted web tile. */
+export function navigateWebTile(id: string, url: string): boolean {
+  const fn = webNavigators.get(id);
+  fn?.(url);
+  return !!fn;
+}
+
+/** The address field of web tile `id`, focused with its text selected (⌘L). */
+function focusAddressOf(id: string): void {
+  const field = document.querySelector<HTMLInputElement>(
+    `[data-testid="tile"][data-id="${
+      CSS.escape(id)
+    }"] [data-testid="web-address"]`,
+  );
+  field?.focus();
+  field?.select();
+}
 
 /**
  * Give web tile `id` the keyboard: its body, and with the native engine its page (the shortcuts
@@ -133,7 +239,7 @@ export function focusWebTile(id: string): void {
 }
 
 /** Move the keyboard from a control in a web tile's header to the tile's body. */
-function focusBodyOf(el: Element): void {
+export function focusBodyOf(el: Element): void {
   const tile = el.closest<HTMLElement>("[data-testid=tile]");
   tile?.querySelector<HTMLElement>("[data-testid=web-body]")
     ?.focus({ preventScroll: true });
@@ -267,6 +373,33 @@ export function useWebTile(
   const wantsPageRef = useRef(wantsPage);
   wantsPageRef.current = wantsPage;
   const popupAt = useRef(0);
+  const [zoom, setZoomState] = useState(1);
+  const zoomRef = useRef(1);
+  const [find, setFindState] = useState<FindState>(NO_FIND);
+  const [starOpen, setStarOpen] = useState(false);
+  const [pageMenu, setPageMenu] = useState<PageMenu | null>(null);
+  // The tile's own copy of the view's back/forward list (the native view keeps its own and
+  // tells only whether it can go back): what the Back and Forward menus list.
+  const [trail, setTrail] = useState<WebHistory>(() =>
+    startHistory(page?.url ?? "")
+  );
+  const stepRef = useRef(0);
+  const urlRef = useRef(page?.url ?? "");
+
+  /** Put the view at `factor` (the page's site remembers it when `remember`). */
+  const applyZoom = useCallback((factor: number, remember: boolean) => {
+    const v = viewRef.current;
+    if (!v || !engine?.capabilities.zoom) return;
+    if (remember) {
+      zoomStore.set(setSiteZoom(zoomStore.get(), urlRef.current, factor));
+    }
+    if (Math.abs(factor - zoomRef.current) < 1e-3) return;
+    zoomRef.current = factor;
+    setZoomState(factor);
+    void v.setZoom(factor).catch((err) =>
+      console.warn("web tile: zoom refused", err)
+    );
+  }, [engine]);
 
   // Mount the view when the page is one the engine can show; a page it cannot show closes it.
   useEffect(() => {
@@ -296,9 +429,39 @@ export function useWebTile(
             canGoForward: e.canGoForward,
           }));
           report({ url: e.url });
+          urlRef.current = e.url;
+          const step = stepRef.current;
+          stepRef.current = step === 0 ? 0 : step - Math.sign(step);
+          setTrail((t) => followUrl(t, e.url, Math.sign(step)));
+          // A site's zoom comes back with it.
+          applyZoom(zoomFor(zoomStore.get(), e.url), false);
         }),
-        v.on("load", (e) => setView((s) => ({ ...s, load: e.state }))),
-        v.on("title", () => report({})),
+        v.on("load", (e) => {
+          setView((s) => ({ ...s, load: e.state }));
+          if (e.state === "complete" && e.url) {
+            visitsStore.set(
+              recordVisit(visitsStore.get(), { url: e.url }, Date.now()),
+            );
+          }
+        }),
+        v.on("title", (e) => {
+          report({});
+          if (e.title) {
+            visitsStore.set(
+              titleVisit(visitsStore.get(), urlRef.current, e.title),
+            );
+          }
+        }),
+        v.on("find-result", (e) =>
+          setFindState((f) => ({
+            ...f,
+            matches: e.matches,
+            active: e.activeMatch,
+          }))),
+        v.on("context-menu", (e) => {
+          const r = host.getBoundingClientRect();
+          setPageMenu({ ...e, x: r.left + e.x, y: r.top + e.y });
+        }),
         v.on("focus-change", (e) => {
           const f = focusRef.current;
           if (e.focused && !f.focused) f.onFocus(id);
@@ -317,7 +480,12 @@ export function useWebTile(
           hooksRef.current?.openTile?.(e.url);
         }),
       );
-      void v.state().then((s) => live && setView({ ...s }));
+      void v.state().then((s) => {
+        if (!live) return;
+        setView({ ...s });
+        urlRef.current = s.url;
+        applyZoom(zoomFor(zoomStore.get(), s.url), false);
+      });
       void v.setZOrder(zRef.current);
       if (coveredRef.current) void v.setOccluded(true);
       if (engine.capabilities.drawsAboveHtml) {
@@ -337,6 +505,7 @@ export function useWebTile(
     return () => {
       live = false;
       for (const off of offs) off();
+      zoomRef.current = 1;
       if (viewRef.current) hooksRef.current?.onView?.(id, null);
       void viewRef.current?.close();
       viewRef.current = null;
@@ -393,8 +562,119 @@ export function useWebTile(
     return true;
   }, [engine, id]);
 
+  // Another tile (or window) zoomed this site: follow.
+  useEffect(() => {
+    if (!engine?.capabilities.zoom) return;
+    return zoomStore.subscribe((z) =>
+      applyZoom(zoomFor(z, urlRef.current), false)
+    );
+  }, [engine, applyZoom]);
+
+  const goBy = useCallback((n: number) => {
+    const v = viewRef.current;
+    if (!v || n === 0) return;
+    stepRef.current = n;
+    void (async () => {
+      for (let i = 0; i < Math.abs(n); i++) {
+        await (n < 0 ? v.back() : v.forward()).catch(() => {});
+      }
+    })();
+  }, []);
+  const zoomBy = (dir: 1 | -1) =>
+    applyZoom(stepZoom(zoomRef.current, dir), true);
+  const zoomReset = () => applyZoom(1, true);
+  const closeFind = () => {
+    setFindState(NO_FIND);
+    void viewRef.current?.stopFind().catch(() => {});
+  };
+  const findNext = (dir: 1 | -1) => {
+    const text = findRef.current.text;
+    if (!text) return;
+    void viewRef.current?.find(text, { forward: dir === 1 }).catch((err) =>
+      console.warn("web tile: find refused", err)
+    );
+  };
+  const findRef = useRef(find);
+  findRef.current = find;
+  const can = {
+    zoom: !!engine?.capabilities.zoom,
+    find: !!engine?.capabilities.find,
+    print: !!engine?.capabilities.print,
+    devTools: !!engine?.capabilities.devTools,
+  };
+  const reloadHard = () => void viewRef.current?.reload({ ignoreCache: true });
+  const runCommand = (cmd: WebKeyCommand) => {
+    const v = viewRef.current;
+    // A native page that has the keyboard hands it back first: a field of the tile's (the
+    // address, find, the star's popover) is about to take it.
+    const toChrome = () => void v?.blur();
+    switch (cmd.kind) {
+      case "focusAddress":
+        toChrome();
+        return focusAddressOf(id);
+      case "reload":
+        return void v?.reload(
+          cmd.ignoreCache ? { ignoreCache: true } : undefined,
+        );
+      case "stop":
+        return void v?.stop();
+      case "back":
+        return goBy(-1);
+      case "forward":
+        return goBy(1);
+      case "bookmark":
+        toChrome();
+        return setStarOpen((o) => !o);
+      case "find":
+        if (!can.find) return;
+        toChrome();
+        setFindState((f) => ({ ...f, open: true }));
+        // The field takes the keyboard once it renders (app/web-chrome.tsx).
+        findFocusTick.current++;
+        return;
+      case "findNext":
+        return findNext(cmd.dir);
+      case "zoom":
+        return zoomBy(cmd.dir);
+      case "zoomReset":
+        return zoomReset();
+      case "print":
+        if (can.print) {
+          void v?.print().catch((e) => console.warn("web tile: print", e));
+        }
+        return;
+      case "devTools":
+        if (can.devTools) {
+          void v?.openDevTools().catch((e) =>
+            console.warn("web tile: DevTools", e)
+          );
+        }
+        return;
+    }
+  };
+  const findFocusTick = useRef(0);
+  const runRef = useRef(runCommand);
+  runRef.current = runCommand;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  useEffect(() => {
+    if (!isWeb) return;
+    webCommands.set(id, (cmd) => runRef.current(cmd));
+    webNavigators.set(id, (u) => void navigateRef.current(u));
+    return () => {
+      webCommands.delete(id);
+      webNavigators.delete(id);
+    };
+  }, [id, isWeb]);
+
   if (!page) return null;
   const url = embeddable ? view.url || target : target;
+  const copy = (text: string) => {
+    if (hooksRef.current?.copy) return hooksRef.current.copy(text);
+    void globalThis.navigator?.clipboard?.writeText(text).catch(() => {});
+  };
+  const backList = trail.entries.slice(0, trail.index).reverse();
+  const forwardList = trail.entries.slice(trail.index + 1);
   return {
     hostRef,
     url,
@@ -412,96 +692,54 @@ export function useWebTile(
       if (home) navigate(home);
     },
     hasHome: !!hooks?.home && (native || !!engine?.canEmbed(hooks.home)),
-    back: () => void viewRef.current?.back(),
-    forward: () => void viewRef.current?.forward(),
+    back: () => goBy(-1),
+    forward: () => goBy(1),
     reload: () => void viewRef.current?.reload(),
     stop: () => void viewRef.current?.stop(),
     openExternal: () => hooksRef.current?.openExternal(url),
+    title: page.title ?? "",
+    openUrl: (to, where) => {
+      if (where === "browser") return hooksRef.current?.openExternal(to);
+      if (where === "tile" && hooksRef.current?.openTile) {
+        return hooksRef.current.openTile(to);
+      }
+      navigate(to);
+      if (!focusRef.current.focused) focusRef.current.onFocus(id);
+    },
+    showBar: hooks?.bookmarksBar !== false,
+    zoom,
+    zoomBy,
+    zoomReset,
+    reloadHard,
+    can,
+    print: () => runCommand({ kind: "print" }),
+    devTools: () => runCommand({ kind: "devTools" }),
+    find: { ...find, open: find.open && can.find },
+    findFocus: findFocusTick.current,
+    setFind: (patch) => {
+      setFindState((f) => ({ ...f, ...patch }));
+      if (patch.text !== undefined) {
+        if (patch.text) {
+          void viewRef.current?.find(patch.text).catch(() => {});
+        } else void viewRef.current?.stopFind().catch(() => {});
+      }
+    },
+    findNext,
+    closeFind,
+    starOpen,
+    setStarOpen,
+    pageMenu,
+    closePageMenu: () => setPageMenu(null),
+    backList: embeddable ? backList : [],
+    forwardList: embeddable ? forwardList : [],
+    goBy,
+    copy,
+    insertText: (text) => void viewRef.current?.insertText(text),
+    focusPage: () => {
+      const v = viewRef.current;
+      if (v && wantsPageRef.current) void v.focus();
+    },
   };
-}
-
-/** The toolbar in a web tile's header. */
-export function WebToolbar(props: { view: WebTileView }) {
-  const { view } = props;
-  const [draft, setDraft] = useState<string | null>(null);
-  // A click that focuses the field selects its text (the mouseup would undo the selection).
-  const selectedOnFocus = useRef(false);
-  const loading = view.load === "loading";
-  const tool = (
-    testid: string,
-    label: string,
-    glyph: string,
-    run: () => void,
-    disabled = false,
-  ) => (
-    <button
-      type="button"
-      class="web-btn"
-      data-testid={testid}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation();
-        run();
-      }}
-    >
-      {glyph}
-    </button>
-  );
-  return (
-    <span class="web-toolbar" data-testid="web-toolbar">
-      {tool("web-back", "Back", "‹", view.back, !view.canGoBack)}
-      {tool("web-forward", "Forward", "›", view.forward, !view.canGoForward)}
-      {loading && view.embeddable
-        ? tool("web-stop", "Stop", "×", view.stop)
-        : tool("web-reload", "Reload", "↻", view.reload, !view.embeddable)}
-      {tool("web-home", "Home", "⌂", view.home, !view.hasHome)}
-      <input
-        type="text"
-        class="web-address"
-        data-testid="web-address"
-        aria-label="Address"
-        spellcheck={false}
-        autocomplete="off"
-        value={draft ?? view.url}
-        onFocus={(e) => {
-          (e.target as HTMLInputElement).select();
-          selectedOnFocus.current = true;
-        }}
-        onMouseUp={(e) => {
-          if (selectedOnFocus.current) e.preventDefault();
-          selectedOnFocus.current = false;
-        }}
-        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-        onBlur={() => {
-          setDraft(null);
-          selectedOnFocus.current = false;
-        }}
-        onKeyDown={(e) => {
-          const field = e.target as HTMLInputElement;
-          if (e.key === "Enter") {
-            e.preventDefault();
-            // Going somewhere gives the keyboard back to the tile, as a browser does.
-            if (view.navigate(draft ?? view.url)) {
-              setDraft(null);
-              focusBodyOf(field);
-            }
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            setDraft(null);
-            focusBodyOf(field);
-          }
-        }}
-      />
-      {tool(
-        "web-external",
-        "Open in default browser",
-        "↗",
-        view.openExternal,
-      )}
-    </span>
-  );
 }
 
 /** A web tile's body: the engine's view, or the card for a page it cannot show. */

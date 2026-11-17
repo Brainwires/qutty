@@ -14,7 +14,7 @@ const tile = (id: string) => `[data-testid=tile][data-id="${id}"]`;
 
 /** Settings → Sandbox → Shared container (the section opened if folded). */
 async function shareSandbox(app: App): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("sandbox");
   await waitFor(
     () => app.exists("[data-testid=sandbox-settings]"),
     2000,
@@ -62,7 +62,7 @@ const isSandboxed = (app: App, id: string) =>
 
 suite("sandbox", (test) => {
   test("settings: off by default; Shared container shows the status line and persists fields", async (app) => {
-    await app.openSettings();
+    await app.openSettings("sandbox");
     assertEquals((await app.settings()).sandbox?.mode ?? "off", "off");
     assertEquals(await app.exists("[data-testid=sandbox-status]"), false);
     assertEquals(
@@ -174,7 +174,7 @@ suite("sandbox", (test) => {
     await app.waitForText(inside, "root@qutty-sandbox", 5000);
     assert(await isSandboxed(app, inside));
     // Turned off: plain + opens on the host.
-    await app.openSettings();
+    await app.openSettings("sandbox");
     await app.click("[data-testid=setting-sandbox-newTilesInSandbox]");
     await waitFor(
       async () => (await app.settings()).sandbox.newTilesInSandbox === false,

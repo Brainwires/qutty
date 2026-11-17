@@ -8,6 +8,7 @@ import {
   REACTION_RANGES,
 } from "../../lib/companion/settings.ts";
 import { formatMinute, parseMinute } from "../../lib/companion/sleepy.ts";
+import { SettingsLink } from "../settings-ui.tsx";
 
 export interface ReactionSettingsProps {
   settings: CompanionSettings;
@@ -97,11 +98,15 @@ export function ReactionSettings(props: ReactionSettingsProps) {
       )}
       {check("reactBubble", `Say what finished beside ${settings.name}`, !jobs)}
       <span class="field-hint">
-        Shell tiles need the shell integration (Settings → Agent integration:
-        zsh or bash), which marks where each command starts and ends; agents'
-        status notes ("tests passed", "build failed") count too. Never over a
-        question, thinking or a voice turn. Spoken only with the matching voice
-        alert on.
+        Shell tiles need the shell integration (<SettingsLink
+          tab="agents"
+          target="integration-panel"
+        >
+          Settings → Agents → Agent integration
+        </SettingsLink>: zsh or bash), which marks where each command starts and
+        ends; agents' status notes ("tests passed", "build failed") count too.
+        Never over a question, thinking or a voice turn. Spoken only with the
+        matching voice alert on.
       </span>
     </div>
   );

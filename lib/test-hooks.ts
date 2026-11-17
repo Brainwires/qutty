@@ -160,6 +160,7 @@ export function withBackendSpy(
     hubSnapshot: () => backend.hubSnapshot(),
     hubAnswer: (id, action) => backend.hubAnswer(id, action),
     hubSetLabel: (ptyId, label) => backend.hubSetLabel(ptyId, label),
+    hubWebTiles: (tiles) => backend.hubWebTiles(tiles),
     onHubTiles: (cb) => backend.onHubTiles(cb),
     onHubAsk: (cb) => backend.onHubAsk(cb),
     onHubAskClosed: (cb) => backend.onHubAskClosed(cb),
@@ -179,6 +180,15 @@ export function withBackendSpy(
     onCompanion: (cb) => backend.onCompanion(cb),
     onHubSay: (cb) => backend.onHubSay(cb),
     onHubControl: (cb) => backend.onHubControl(cb),
+    agentStart: (req) => backend.agentStart(req),
+    agentSend: (id, message) => backend.agentSend(id, message),
+    agentInterrupt: (id) => backend.agentInterrupt(id),
+    agentAnswer: (id, requestId, decision) =>
+      backend.agentAnswer(id, requestId, decision),
+    agentRestart: (id, patch) => backend.agentRestart(id, patch),
+    agentRename: (id, name) => backend.agentRename(id, name),
+    agentStop: (id) => backend.agentStop(id),
+    onAgent: (cb) => backend.onAgent(cb),
   };
 }
 

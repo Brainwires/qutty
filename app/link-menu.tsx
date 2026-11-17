@@ -21,6 +21,8 @@ export interface LinkMenuProps {
   title: string;
   items: LinkMenuItem[];
   onClose(): void;
+  /** The menu's test id (default `link-menu`; its items' is `<testId>-item`). */
+  testId?: string;
 }
 
 export function LinkMenu(props: LinkMenuProps) {
@@ -61,7 +63,7 @@ export function LinkMenu(props: LinkMenuProps) {
       class="menu link-menu"
       role="menu"
       ref={ref}
-      data-testid="link-menu"
+      data-testid={props.testId ?? "link-menu"}
       style={{ left: `${left}px`, top: `${top}px` }}
       onKeyDown={onKey}
     >
@@ -72,7 +74,7 @@ export function LinkMenu(props: LinkMenuProps) {
           role="menuitem"
           class="menu-item"
           key={item.action}
-          data-testid="link-menu-item"
+          data-testid={`${props.testId ?? "link-menu"}-item`}
           data-action={item.action}
           onClick={() => {
             props.onClose();

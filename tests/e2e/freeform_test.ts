@@ -143,7 +143,7 @@ suite("free-form view", (test) => {
       await app.attr("[data-testid=bar-pattern]", "data-view"),
       "freeform",
     );
-    await app.openSettings();
+    await app.openSettings("layout");
     assertEquals(
       await app.attr(
         '[data-testid=setting-view][data-value="freeform"]',
@@ -410,9 +410,25 @@ suite("free-form view", (test) => {
     );
   });
 
+  test("web build: no native menus, so the layout menu keeps the View choice, the patterns and the Tiles list", async (app) => {
+    const [a, b] = await app.ensureTerminals(2);
+    await app.click("[data-testid=bar-pattern]");
+    assertEquals(await app.count("[data-testid=view-item]"), 5);
+    assert((await app.count("[data-testid=pattern-item]")) > 1);
+    assertEquals(await app.count("[data-testid=tiles-item]"), 2);
+    for (const id of [a, b]) {
+      assert(
+        await app.exists(
+          `[data-testid=tiles-item][data-item="${tileItemId(id)}"]`,
+        ),
+        id,
+      );
+    }
+  });
+
   test("Settings: the default view for new workspaces is saved; this workspace's stays", async (app) => {
     await app.ensureTerminals(1);
-    await app.openSettings();
+    await app.openSettings("layout");
     await app.click(
       '[data-testid=setting-default-view][data-value="freeform"]',
     );

@@ -58,6 +58,8 @@ export interface AgentProfile {
   plain?: boolean;
   /** Runs in the window's shared Docker sandbox. */
   sandbox?: boolean;
+  /** Where it starts (default: the home folder); an agent tile's "Open in terminal" sets it. */
+  cwd?: string;
 }
 
 /** What a terminal runs: a login shell, an agent tool, or ssh to a host. */

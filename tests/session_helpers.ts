@@ -2,6 +2,7 @@
 // extension's `setup(host)` host with windows that open, close and quit, and handler contexts.
 
 import type {
+  DesktopAppMenuItemHandler,
   DesktopCapCtx,
   DesktopConfirmOptions,
   DesktopSecondInstanceEvent,
@@ -48,8 +49,9 @@ type ClosedFn = (info: WindowInfo & { appQuitting: boolean }) => unknown;
 /**
  * A fake extension host: records every emit (with its target window), keeps the open windows,
  * fires the window lifecycle hooks on `close` / `quit`, runs the quit guards on `beforeQuit`,
- * records each `confirm` (the OS message box), answering it with `reply`, hands a Window-menu
- * click to its subscribers on `menuItem`, and counts the extension's own `quit()` calls.
+ * records each `confirm` (the OS message box), answering it with `reply`, hands a menu click (a
+ * Window-menu item or a native menu's) to its subscribers on `menuItem`, and counts the
+ * extension's own `quit()` calls.
  */
 export function fakeExtensionHost(open: WindowInfo[] = []) {
   const events: HostEvent[] = [];
@@ -59,6 +61,7 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
   const quits = new Set<() => unknown>();
   const guards = new Set<() => boolean | Promise<boolean>>();
   const menuItems = new Set<DesktopWindowMenuItemHandler>();
+  const appMenuItems = new Set<DesktopAppMenuItemHandler>();
   const relaunches = new Set<
     (event: DesktopSecondInstanceEvent) => void | Promise<void>
   >();
@@ -122,7 +125,7 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     setWindowMenuAppItems: (): never => {
       throw new Error("unused");
     },
-    onAppMenuItem: () => () => {},
+    onAppMenuItem: on(appMenuItems),
     onNotificationClick: () => () => {},
     onWillNavigate: () => () => {},
   };
@@ -139,14 +142,18 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     /** How many times the extension called `host.quit()`. */
     quits: 0,
     /**
-     * A click on the app's Window-menu item `id` with `keyWindow` (`null`: no window open), as
-     * Denext hands it over: once to each subscriber. Resolves once they all have.
+     * A click on menu item `id` with `keyWindow` (`null`: no window open), as Denext hands it
+     * over: once to each subscriber, the Window-menu items' and the native menus'
+     * (`onAppMenuItem`). Resolves once they all have.
      */
     async menuItem(
       id: string,
       keyWindow: { id: string; key?: string } | null,
     ): Promise<void> {
       for (const fn of [...menuItems]) await fn(id, { keyWindow });
+      for (const fn of [...appMenuItems]) {
+        await fn(id, { source: "menu", keyWindow, menu: "qutty:shell" });
+      }
     },
     /** A quit: the `onBeforeQuit` guards (`false` from any of them cancels it). */
     async beforeQuit(): Promise<boolean> {

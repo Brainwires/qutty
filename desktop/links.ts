@@ -9,6 +9,8 @@
 //   executable) is revealed instead of opened.
 // - `editors` / `edit`: which of the editor presets are installed, and running the configured
 //   editor command template on a file at a line.
+// - Help → "Qutty on GitHub" (the native menus, lib/workspace/menus.ts): the project's page in the
+//   default browser, with or without a window open.
 //
 // Why not Denext's `shell` capability (`openExternal` / `openPath` / `reveal`, Denext 4.13.1): it
 // confines `openPath` and `reveal` to the app's own data, cache and documents folders (or a path
@@ -28,6 +30,7 @@ import {
   strList,
 } from "./schema.ts";
 import { resolveProgram } from "./pty.ts";
+import { ITEM, REPO_URL } from "../lib/workspace/menus.ts";
 import { type CommandRunner, PtyRunner } from "./ollama.ts";
 import {
   EDITOR_PRESETS,
@@ -262,10 +265,16 @@ const editInput = objectSchema<LinkEditRequest>((v, issues) => {
 
 export default defineDesktopExtension({
   name: "links",
-  setup: () => {
+  setup: (host) => {
     if (Deno.build.os === "windows") return;
     service = new LinkService({
       runner: new PtyRunner(),
+    });
+    host.onAppMenuItem((id) => {
+      if (id !== ITEM.repo) return;
+      service?.open({ kind: "url", url: REPO_URL }).catch((err) =>
+        console.error("links: could not open the project page", err)
+      );
     });
   },
   methods: {

@@ -86,6 +86,21 @@ export interface WebViewEventMap {
     repeat: boolean;
     forwarded: boolean;
   };
+  /** A {@linkcode WebViewHandle.find} search's matches (`activeMatch` 1-based, `0`: none). */
+  "find-result": { matches: number; activeMatch: number };
+  /**
+   * A context menu was asked for in the page (with `capabilities.contextMenu` the engine draws
+   * none: the tile draws its own): where (CSS pixels from the view's top left) and what is under
+   * the pointer.
+   */
+  "context-menu": {
+    x: number;
+    y: number;
+    linkUrl?: string;
+    imageUrl?: string;
+    selectionText?: string;
+    isEditable: boolean;
+  };
   closed: Record<string, never>;
 }
 
@@ -112,6 +127,16 @@ export interface WebEngineCapabilities {
   evaluate: boolean;
   /** Its forward keys reach the app while a page has the keyboard (`keydown`, `forwarded`). */
   forwardKeys: boolean;
+  /** `setZoom` / `getZoom` work. */
+  zoom: boolean;
+  /** `find` / `stopFind` work (and `find-result` comes). */
+  find: boolean;
+  /** `print` works. */
+  print: boolean;
+  /** `openDevTools` may work (it is still refused unless the app's DevTools are on). */
+  devTools: boolean;
+  /** The page's context menu is the tile's (`context-menu`), not the engine's. */
+  contextMenu: boolean;
 }
 
 /** One page view (Denext's `WebViewHandle`, minus `capture`, `evaluate` and `setBounds`). */
@@ -146,7 +171,28 @@ export interface WebViewHandle {
    * into (a cross-origin frame), or nothing editable has the focus.
    */
   insertText(text: string): Promise<boolean>;
+  /**
+   * Run `script` in the page (an isolated world that shares its DOM) and resolve with its JSON
+   * completion value: the companion's web tools (lib/web/web-control.ts). Absent where the engine
+   * cannot (the iframe).
+   */
+  evaluate?(script: string): Promise<unknown>;
+  /** A picture of the page (`web_screenshot`). Absent where the engine cannot (the iframe). */
+  capture?(
+    opts: { format: "jpeg" | "png"; quality?: number; scale?: number },
+  ): Promise<Blob>;
   state(): Promise<WebViewState>;
+  /** Zoom the page (0.25 to 5; 1 is 100%). */
+  setZoom(factor: number): Promise<void>;
+  getZoom(): Promise<number>;
+  /** Find `text` in the page (the same text again: the next match); results come as `find-result`. */
+  find(text: string, opts?: { forward?: boolean }): Promise<void>;
+  /** End the find (its highlights go). */
+  stopFind(): Promise<void>;
+  /** The OS print dialog for the page. */
+  print(): Promise<void>;
+  /** The engine's developer tools for the page. */
+  openDevTools(): Promise<void>;
   on<K extends keyof WebViewEventMap>(
     event: K,
     fn: (ev: WebViewEventMap[K]) => void,
@@ -255,6 +301,7 @@ class IframeView implements WebViewHandle {
   #title = "";
   #focused = false;
   #closed = false;
+  #zoom = 1;
   readonly #listeners: Listeners = {};
   readonly #offs: (() => void)[] = [];
 
@@ -320,6 +367,7 @@ class IframeView implements WebViewHandle {
     frame.setAttribute("referrerpolicy", "no-referrer");
     frame.setAttribute("data-testid", "web-frame");
     frame.title = "Web page";
+    this.#applyZoom(frame);
     frame.addEventListener("load", () => {
       if (frame !== this.#frame || stopped || this.#closed) return;
       this.#readTitle(frame);
@@ -337,6 +385,47 @@ class IframeView implements WebViewHandle {
       this.#emit("title", { title: "" });
     }
     if (!stopped) this.#setLoad("loading");
+  }
+
+  /**
+   * A frame's page cannot be zoomed from outside: the frame is laid out `1 / zoom` as big and
+   * scaled by `zoom`, which is what a browser's page zoom looks like.
+   */
+  #applyZoom(frame: HTMLIFrameElement): void {
+    const z = this.#zoom;
+    const s = frame.style;
+    s.width = z === 1 ? "" : `${100 / z}%`;
+    s.height = z === 1 ? "" : `${100 / z}%`;
+    s.transform = z === 1 ? "" : `scale(${z})`;
+    s.transformOrigin = z === 1 ? "" : "0 0";
+  }
+
+  setZoom(factor: number): Promise<void> {
+    if (!Number.isFinite(factor)) return Promise.reject(new Error("bad zoom"));
+    this.#zoom = Math.min(5, Math.max(0.25, factor));
+    if (this.#frame) this.#applyZoom(this.#frame);
+    return Promise.resolve();
+  }
+
+  getZoom(): Promise<number> {
+    return Promise.resolve(this.#zoom);
+  }
+
+  /** A cross-origin frame cannot be searched from outside. */
+  find(): Promise<void> {
+    return Promise.reject(unsupported("find"));
+  }
+
+  stopFind(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  print(): Promise<void> {
+    return Promise.reject(unsupported("print"));
+  }
+
+  openDevTools(): Promise<void> {
+    return Promise.reject(unsupported("openDevTools"));
   }
 
   /** The title of a same-origin page; a cross-origin one (every page here) hides it. */
@@ -460,6 +549,13 @@ class IframeView implements WebViewHandle {
   }
 }
 
+/** The error a call the engine cannot make rejects with (`code: "unsupported"`, as Denext's). */
+function unsupported(what: string): Error {
+  return Object.assign(new Error(`${what} is not supported here`), {
+    code: "unsupported",
+  });
+}
+
 /** The page's own origin (never embedded: see lib/web/url.ts `canEmbedInFrame`). */
 function appOrigin(): string | undefined {
   try {
@@ -478,6 +574,11 @@ export const IframeEngine: WebEngine = {
     capture: false,
     evaluate: false,
     forwardKeys: false,
+    zoom: true,
+    find: false,
+    print: false,
+    devTools: false,
+    contextMenu: false,
   },
   canEmbed: (url) => canEmbedInFrame(url, appOrigin()),
   mount: (host, url) => Promise.resolve(new IframeView(host, url)),

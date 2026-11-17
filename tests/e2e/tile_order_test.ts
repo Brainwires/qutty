@@ -11,7 +11,7 @@ const tileSel = (id: string) => `[data-testid=tile][data-id="${id}"]`;
 
 /** Turn the setting off (or on) through Settings → Layout. */
 async function setFocusToMain(app: App, on: boolean): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("layout");
   const checked = await app.eval(
     () =>
       document.querySelector<HTMLInputElement>(
@@ -226,7 +226,7 @@ suite("tile order", (test) => {
     assertSameRects(await app.tileRects(), swapped, "after the remount");
     await app.reload();
     assertEquals((await app.settings()).focusToMain, false);
-    await app.openSettings();
+    await app.openSettings("layout");
     assertEquals(
       await app.eval(() =>
         document.querySelector<HTMLInputElement>(

@@ -358,7 +358,7 @@ suite("voice", (test) => {
 
   test("Settings → Voice: a cloud engine's key is saved out of the page, then push-to-talk uses that engine", async (app) => {
     const KEY = "[data-testid=voice-key-deepgram]";
-    await app.openSettings();
+    await app.openSettings("voice");
     await waitFor(
       () => app.exists("[data-testid=voice-settings]"),
       2000,
@@ -423,7 +423,7 @@ suite("voice", (test) => {
     await app.click("[data-testid=voice-review-cancel]");
 
     // Remove: the row says no key again.
-    await app.openSettings();
+    await app.openSettings("voice");
     await waitFor(
       async () => (await app.attr(KEY, "data-saved")) === "true",
       2000,
@@ -438,7 +438,7 @@ suite("voice", (test) => {
   });
 
   test("Settings → Voice: toggles persist; the engine status shows", async (app) => {
-    await app.openSettings();
+    await app.openSettings("voice");
     await waitFor(
       () => app.exists("[data-testid=voice-settings]"),
       2000,
@@ -600,7 +600,7 @@ suite("voice", (test) => {
   });
 
   test("Settings → Voice: the dictate key is off by default, and never the hold-to-talk key", async (app) => {
-    await app.openSettings();
+    await app.openSettings("voice");
     await waitFor(
       () => app.exists("[data-testid=voice-settings]"),
       2000,

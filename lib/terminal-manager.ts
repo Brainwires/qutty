@@ -792,6 +792,7 @@ export class TerminalManager {
       agent?: string;
       ollamaModel?: string;
       sandbox?: boolean;
+      cwd?: string;
     }
   > {
     const sandbox = profile.kind !== "ssh" && profile.sandbox
@@ -817,6 +818,7 @@ export class TerminalManager {
             args: profile.args ?? [],
             agent: profile.name,
             ...sandbox,
+            ...(profile.cwd && !profile.sandbox ? { cwd: profile.cwd } : {}),
           };
       case "ssh": {
         const { program, args } = await this.#backend.sshCommand(
@@ -936,6 +938,16 @@ export class TerminalManager {
   /** The folder terminal `id`'s shell started in (titles are shortened against it). */
   home(id: string): string | undefined {
     return this.#terms.get(id)?.home;
+  }
+
+  /**
+   * Local terminal `id`'s working folder (its foreground process's, else OSC 7's, else where it
+   * started); `undefined` for an SSH tile, an unknown id, or when nobody can tell.
+   */
+  async cwd(id: string): Promise<string | undefined> {
+    const m = this.#terms.get(id);
+    if (!m || m.profile.kind === "ssh" || m.profile.sandbox) return undefined;
+    return await this.#linkCwd(m);
   }
 
   /** An SSH tile's remote working directory, from its last OSC 7 report. */

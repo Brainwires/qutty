@@ -322,7 +322,7 @@ suite("scaled tiles", (test) => {
       3000,
       "a scaled inactive tile after reload",
     );
-    await app.openSettings();
+    await app.openSettings("appearance");
     assertEquals(
       await app.attr(
         "[data-testid=setting-inactive-tiles][data-value=scale]",

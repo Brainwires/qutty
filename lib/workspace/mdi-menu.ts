@@ -3,19 +3,13 @@
  * commands and the list of tiles, as menu items with their ids, labels and state. One pure model
  * feeds every surface:
  *
- * - today: the in-app View menu in the switcher bar (app/switcher-bar.tsx renders
- *   {@linkcode viewMenu} and {@linkcode windowAppItems} as they are), and the static Window-menu
- *   items (`desktop.menu.window.items`, denext.config.ts: {@linkcode STATIC_WINDOW_ITEMS}, which
- *   carry no state);
- * - later (Denext's draft menu API, 4.18): `desktop.menu.menus: [{ id: VIEW_MENU_ID, label:
- *   "View", after: "edit", items: viewMenu(...) }]` with `setMenuItemState(id, { checked,
- *   enabled }, { windowId })` from {@linkcode viewMenu}, and
- *   `setWindowMenuAppItems(windowId, windowAppItems(...))` for the tile list under the native
- *   window list. The item shapes here are that API's `MenuItem` and window app item, one to one,
- *   and the ids are stable, so wiring it is one small change in the page.
+ * - the in-app View menu in the switcher bar (app/switcher-bar.tsx renders {@linkcode viewMenu}
+ *   and {@linkcode windowAppItems} as they are): the web build, and a desktop runtime without
+ *   native menus;
+ * - the native menus (lib/workspace/menus.ts): the View menu's items and the Window menu's tile
+ *   list use these ids and labels, so a native click and an in-app one are the same item.
  *
- * A click (an in-app item, or the Window menu's `{ id, keyWindow }`) is read back with
- * {@linkcode menuCommand}.
+ * A click is read back with {@linkcode menuCommand}.
  *
  * @module
  */
@@ -62,9 +56,6 @@ export const MDI_ITEM_IDS = {
 
 /** A view or arrange command. */
 export type MdiCommand = keyof typeof MDI_ITEM_IDS;
-
-/** A menu item id that names a view or arrange command. */
-export type MdiItemId = typeof MDI_ITEM_IDS[MdiCommand];
 
 /** The labels (macOS style: title case, no ellipsis, as they do their thing at once). */
 export const MDI_LABELS: Record<MdiCommand, string> = {
@@ -176,24 +167,9 @@ export function windowAppItems(input: MdiMenuInput): WindowAppItem[] {
   ];
 }
 
-/**
- * Today's static Window-menu items (`desktop.menu.window.items`: no state, no shortcuts): the
- * View choice and the arrange commands, with the labels the model gives them.
- */
-export const STATIC_WINDOW_ITEMS: readonly { id: MdiItemId; label: string }[] =
-  (Object.keys(MDI_ITEM_IDS) as MdiCommand[]).map((c) => ({
-    id: MDI_ITEM_IDS[c],
-    label: MDI_LABELS[c],
-  }));
-
 const COMMAND_OF = new Map<string, MdiCommand>(
   (Object.keys(MDI_ITEM_IDS) as MdiCommand[]).map((c) => [MDI_ITEM_IDS[c], c]),
 );
-
-/** Whether a menu item id is one of the view or arrange items. */
-export function isMdiItem(id: unknown): id is MdiItemId {
-  return typeof id === "string" && COMMAND_OF.has(id);
-}
 
 /** What a click on menu item `id` asks for, or `null` for an id that is not this model's. */
 export function menuCommand(

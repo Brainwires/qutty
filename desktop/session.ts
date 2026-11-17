@@ -6,11 +6,10 @@
 // one for real; `endWindow` ends the calling window's own workspace once the page has closed the
 // window (the Workspaces menu's "End workspace", the close button set to end its shells).
 //
-// The Window menu's "Close Window and End Its Shells" (`desktop.menu.window.items`) arrives here
-// once per click with the key window (`host.onWindowMenuItem`): its workspace is ended and the
-// window closed, after asking when an agent there is busy. Its tile items ("Minimize Tile",
-// "Zoom Tile") go on to the key window's page as a `tileMenu` event (`tileMenuToPage`): the page
-// acts on its focused tile.
+// The Shell menu's "Close Window and End Its Shells" (the native menus, lib/workspace/menus.ts)
+// arrives here once per click with the key window (`host.onAppMenuItem`): its workspace is ended
+// and the window closed, after asking when an agent there is busy. The menus' other items reach
+// the key window's page itself (app/use-native-menus.ts).
 //
 // The quit guard lives here too: Cmd+Q kills every terminal, so with an agent at work the OS's own
 // message box asks first (`host.confirm`, app-modal: it works with no window open), and the guard
@@ -19,8 +18,13 @@
 // The window lifecycle goes to tray mode (desktop/tray.ts): closing the last window leaves the app
 // in the menu bar / tray while terminals run, and quits when none does.
 //
-// Events: `changed` (the workspace list, to every window); `tileMenu` (a Window-menu tile item,
-// to the key window only).
+// Tiles move between windows here too (desktop/tile-move.ts): `moveTargets`, `moveTile`,
+// `arrivals`, `dragOver` / `dragEnd`; a page joining takes its workspace's pending arrivals into
+// its snapshot, and a save names the arrivals it shows and drops the tiles that moved away.
+// `requestTileMove` / `tileMoveTargets` are for a native Window-menu "Move Tile to".
+//
+// Events: `changed` (the workspace list, to every window); `tileArrived`, `tileLeft`,
+// `dragHover`, `moveRequest` (one-shot, to one window: desktop/tile-move.ts).
 
 import {
   defineDesktopExtension,
@@ -37,14 +41,33 @@ import {
 import { terminalSessions } from "./pty.ts";
 import { type QuitKeeper, shellKeeper } from "./kept-shells.ts";
 import { type TrayMode, trayMode } from "./tray.ts";
-import { closeAppWindow } from "./windows.ts";
-import {
-  CLOSE_AND_END_ITEM,
-  isPageMenuItem,
-} from "../lib/workspace/windows.ts";
+import { appWindowBounds, closeAppWindow } from "./windows.ts";
+import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
+import {
+  snapshotHasTile,
+  withArrivals,
+  withoutTile,
+} from "../lib/workspace/session.ts";
+import {
+  type DragHover,
+  dragOverInput,
+  moveInput,
+  type MoveRequest,
+  type MoveResult,
+  type MoveTarget,
+  type TileArrival,
+  TileMover,
+} from "./tile-move.ts";
 
-export type { PtyReplay, WorkspaceInfo };
+export type {
+  DragHover,
+  MoveResult,
+  MoveTarget,
+  PtyReplay,
+  TileArrival,
+  WorkspaceInfo,
+};
 
 /** What `join` answers. */
 export interface SessionJoin {
@@ -63,7 +86,9 @@ export interface SessionEndWindow {
 /** The biggest snapshot a page may save (its tiles, layout and order: a few KiB in practice). */
 const MAX_SNAPSHOT_CHARS = 256 * 1024;
 
-const saveInput = objectSchema<{ snapshot: unknown }>((v, issues) => {
+const saveInput = objectSchema<
+  { snapshot: unknown; arrived?: string[] }
+>((v, issues) => {
   let size = Infinity;
   try {
     size = JSON.stringify(v.snapshot ?? null).length;
@@ -78,7 +103,11 @@ const saveInput = objectSchema<{ snapshot: unknown }>((v, issues) => {
       path: ["snapshot"],
     });
   }
-  return { snapshot: v.snapshot };
+  // The tiles moved here that this snapshot shows now (desktop/tile-move.ts).
+  const arrived = Array.isArray(v.arrived)
+    ? v.arrived.filter((m): m is string => typeof m === "string").slice(0, 64)
+    : undefined;
+  return { snapshot: v.snapshot, ...(arrived ? { arrived } : {}) };
 });
 
 const idInput = objectSchema<{ id: string }>((v, issues) => ({
@@ -327,17 +356,17 @@ export function createEndWindow(ask: AskEnd): EndWindow {
 }
 
 /**
- * The Window menu's "Close Window and End Its Shells" (`desktop.menu.window.items`): each click
- * arrives once, with the key window. Its workspace is ended (after asking when an agent there is
+ * The Shell menu's "Close Window and End Its Shells" (the native menus): each click arrives once,
+ * with the key window. Its workspace is ended (after asking when an agent there is
  * busy) once `close` has closed the window, without its page's close guard. With no window open,
  * or a window that shows no workspace, nothing happens. Returns the unsubscribe.
  */
 export function closeAndEndFromMenu(
-  host: Pick<DesktopExtensionHost, "onWindowMenuItem">,
+  host: Pick<DesktopExtensionHost, "onAppMenuItem">,
   ask: AskEnd,
   close: (windowId: string) => void = closeAppWindow,
 ): () => void {
-  return host.onWindowMenuItem(async (item, { keyWindow }) => {
+  return host.onAppMenuItem(async (item, { keyWindow }) => {
     if (item !== CLOSE_AND_END_ITEM || !keyWindow) return;
     const id = workspaces.workspaceOfWindow(keyWindow.id);
     if (id === undefined || !(await ask(id))) return;
@@ -347,43 +376,83 @@ export function closeAndEndFromMenu(
   });
 }
 
-/** What the key window's page gets for a Window-menu tile item. */
-export interface TileMenuEvent {
-  item: string;
-  /**
-   * When it was sent (ms since the epoch). Denext replays retained events to a page that
-   * subscribes later (a reload), so the page drops one older than `TILE_MENU_MAX_AGE_MS`
-   * (lib/workspace/windows.ts) rather than act on a stale click.
-   */
+let endWindow: EndWindow | undefined;
+let mover: TileMover | undefined;
+let pageEmit: DesktopExtensionHost["emit"] | undefined;
+
+/** The tile mover over the extension's host (desktop/tile-move.ts). */
+export function createTileMover(
+  host: Pick<
+    DesktopExtensionHost,
+    "emit" | "windows" | "openWindow" | "onWindowClosed"
+  >,
+  bounds: (id: string) => ReturnType<typeof appWindowBounds> = appWindowBounds,
+  close: (id: string) => void = closeAppWindow,
+): TileMover {
+  const m = new TileMover({
+    workspaces,
+    sessions: terminalSessions(),
+    emit: (event, data, window) =>
+      host.emit(event, data, { window, retain: false }),
+    windows: () => host.windows(),
+    bounds,
+    openWindow: (options) => host.openWindow(options),
+    closeWindow: close,
+  });
+  // A window that closes mid-drag: whatever it hovered is told it was left.
+  host.onWindowClosed((info) => m.dragEnd(info.id));
+  return m;
+}
+
+/** What a page gets to move its focused tile (`moveRequest`). */
+export interface MoveRequestEvent {
+  /** A window's id, or `"new"`: a new window. */
+  to: string;
+  /** When it was asked (ms since the epoch): a page drops an old one. */
   at: number;
 }
 
 /**
- * The Window menu's tile items ("Minimize Tile", "Zoom Tile") and view / arrange items ("Tiled
- * View", "Cascade Tiles", ...: lib/workspace/mdi-menu.ts): each click is handed to the key
- * window's page (`tileMenu`), which acts on its focused tile or its workspace's view. With no
- * window open nothing happens.
- * Returns the unsubscribe.
+ * Move window `windowId`'s focused tile to window `to` (or `"new"`: a new window), as its tile
+ * header's "Move to Window" does: for the Window menu (desktop.ts / the native menus), which knows
+ * the key window and the others. The page moves it (it knows which tile is focused). Nothing
+ * happens before the extension is set up.
  */
-export function tileMenuToPage(
-  host: Pick<DesktopExtensionHost, "onWindowMenuItem" | "emit">,
-  now: () => number = Date.now,
-): () => void {
-  return host.onWindowMenuItem((item, { keyWindow }) => {
-    if (!isPageMenuItem(item) || !keyWindow) return;
-    const event: TileMenuEvent = { item, at: now() };
-    // One-shot (Denext 4.18): a page that reloads or subscribes later never sees an old click.
-    // The page also drops a stale `at` (lib/workspace/windows.ts), for a runtime that ignores it.
-    host.emit("tileMenu", event, { window: keyWindow.id, retain: false });
-  });
+export function requestTileMove(windowId: string, to: string): void {
+  const event: MoveRequestEvent = { to, at: Date.now() };
+  pageEmit?.("moveRequest", event, { window: windowId, retain: false });
 }
 
-let endWindow: EndWindow | undefined;
+/** The other windows window `windowId` can move a tile to (for a Window-menu "Move Tile to" list). */
+export function tileMoveTargets(windowId: string): MoveTarget[] {
+  return mover?.targets(windowId) ?? [];
+}
+
+const requireMover = (): TileMover => {
+  if (!mover) throw new DesktopCapError("unavailable", "session is not set up");
+  return mover;
+};
+
+/** Move a tile of window `windowId` as its page's `moveTile` does (the self-test's). */
+export function moveTileFrom(
+  windowId: string,
+  request: MoveRequest,
+): MoveResult {
+  return requireMover().move(windowId, request);
+}
 
 export default defineDesktopExtension({
   name: "session",
-  events: ["changed", "tileMenu"],
+  events: [
+    "changed",
+    "tileArrived",
+    "tileLeft",
+    "dragHover",
+    "moveRequest",
+  ],
   setup: (host) => {
+    mover = createTileMover(host);
+    pageEmit = (event, data, options) => host.emit(event, data, options);
     let timer: ReturnType<typeof setTimeout> | undefined;
     workspaces.onChanged(() => {
       if (timer !== undefined) return;
@@ -397,7 +466,6 @@ export default defineDesktopExtension({
     const ask = createAskEnd(host);
     endWindow = createEndWindow(ask);
     closeAndEndFromMenu(host, ask);
-    tileMenuToPage(host);
   },
   methods: {
     /** Show the calling window's workspace: its snapshot and its terminals, attached here. */
@@ -409,9 +477,16 @@ export default defineDesktopExtension({
         const window = windowOf(ctx);
         const sessions = terminalSessions();
         const joined = workspaces.join(window, sessions.keyOf(window));
+        // Tiles moved here that no page has shown yet join the snapshot (desktop/tile-move.ts).
+        const pending = workspaces.takeArrivals(joined.id);
+        const snapshot = withArrivals(
+          joined.snapshot,
+          TileMover.pendingTiles(pending),
+        );
+        if (pending.length > 0) workspaces.save(joined.id, snapshot);
         return {
           workspace: { id: joined.id, name: joined.name },
-          snapshot: joined.snapshot,
+          snapshot,
           ptys: sessions.attachWorkspace(joined.id, window),
         };
       },
@@ -427,8 +502,51 @@ export default defineDesktopExtension({
             "this window has not joined a workspace",
           );
         }
-        workspaces.save(id, (args as { snapshot: unknown }).snapshot);
+        const { snapshot, arrived } = args as {
+          snapshot: unknown;
+          arrived?: string[];
+        };
+        workspaces.ackArrivals(id, arrived ?? []);
+        // A save sent before a tile moved away may still have it: it is gone from here.
+        let snap = snapshot;
+        for (const tile of workspaces.departures(id)) {
+          if (snapshotHasTile(snap, tile)) snap = withoutTile(snap, tile);
+        }
+        workspaces.save(id, snap);
       },
+    },
+    /** The other windows a tile can move to (the tile header's "Move to Window"). */
+    moveTargets: {
+      input: emptyInput,
+      handler: (_args: unknown, ctx): MoveTarget[] =>
+        requireMover().targets(windowOf(ctx)),
+    },
+    /** Move one of the calling window's tiles to another window, or a new one. */
+    moveTile: {
+      input: moveInput,
+      handler: (args: unknown, ctx): MoveResult =>
+        requireMover().move(windowOf(ctx), args as MoveRequest),
+    },
+    /** The tiles moved to the calling window, waiting for its page (each with its terminal). */
+    arrivals: {
+      input: emptyInput,
+      handler: (_args: unknown, ctx): TileArrival[] =>
+        requireMover().arrivals(windowOf(ctx)),
+    },
+    /** A tile dragged out of the calling window: which window is under the pointer. */
+    dragOver: {
+      input: dragOverInput,
+      handler: (args: unknown, ctx): { target: string | null } =>
+        requireMover().dragOver(
+          windowOf(ctx),
+          args as Parameters<TileMover["dragOver"]>[1],
+        ),
+    },
+    /** The calling window's tile drag ended. */
+    dragEnd: {
+      input: emptyInput,
+      handler: (_args: unknown, ctx): void =>
+        requireMover().dragEnd(windowOf(ctx)),
     },
     /** Every workspace (the page's Workspaces menu). */
     list: {

@@ -99,7 +99,7 @@ suite("agent hub", (test) => {
   test("ask_user (companion Off): the card's buttons answer the waiting agent; questions queue; dismiss", async (app) => {
     // With the companion shown, questions go to the companion's bubble (companion_test.ts); Off,
     // the card.
-    await app.openSettings();
+    await app.openSettings("companion");
     await app.click('[data-testid=setting-companion-mode][data-value="off"]');
     await app.closeSettings();
     const claude = await launchAgent(app, "claude");
@@ -153,15 +153,12 @@ suite("agent hub", (test) => {
     await waitFor(async () => !(await app.exists(ASK)), 3000, "closed");
   });
 
-  test("integration: folded by default; shows what Install changes; Install / Uninstall toggle", async (app) => {
-    await app.openSettings();
-    const toggle = '[data-testid=section-toggle][data-section="integration"]';
-    assertEquals(await app.attr(toggle, "aria-expanded"), "false");
-    await app.click(toggle);
-    await waitFor(
-      async () => (await app.attr(toggle, "aria-expanded")) === "true",
-      2000,
-      "unfolded",
+  test("integration: under Settings → Agents; shows what Install changes; Install / Uninstall toggle", async (app) => {
+    await app.openSettings("agents");
+    assert(
+      await app.exists(
+        "[data-testid=integration-section] [data-testid=integration-panel]",
+      ),
     );
     await waitFor(() => app.exists(rowSel("codex")), 3000, "the rows");
     const rows = await app.eval(() =>

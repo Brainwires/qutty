@@ -34,7 +34,7 @@ async function statusText(app: App): Promise<string> {
 
 suite("companion brain", (test) => {
   test("brain: Ollama lists only models that can call tools; the choice reaches the hub and persists", async (app) => {
-    await app.openSettings();
+    await app.openSettings("companion");
     await waitFor(
       () => app.exists("[data-testid=companion-settings]"),
       2000,
@@ -82,7 +82,7 @@ suite("companion brain", (test) => {
   });
 
   test("brain: the API key brain keeps its key out of the page; Save, Replace and Remove", async (app) => {
-    await app.openSettings();
+    await app.openSettings("companion");
     await waitFor(
       () => app.exists("[data-testid=companion-settings]"),
       2000,

@@ -12,7 +12,7 @@
 // click toggles it without closing the menu) says whether the shell or agent picked next runs
 // in the sandbox or on the host; it starts from Settings' "new tiles open in the sandbox".
 
-import { useEffect, useRef } from "denext";
+import { Fragment, useEffect, useRef } from "denext";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
 import {
   type LaunchEntry,
@@ -35,6 +35,12 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** "Web page": a new web tile (absent where web tiles can't show any site). */
   onWebPage?(): void;
+  /** "Claude Code (chat)" beside an installed Claude Code: a new agent tile (app/agent-tile.tsx). */
+  onAgentChat?(): void;
+  /** "Bookmarks…": the bookmark manager (app/bookmark-manager.tsx). */
+  onBookmarks?(): void;
+  /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
+  onHistory?(): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
   /**
@@ -173,7 +179,25 @@ export function LaunchMenu(props: LaunchMenuProps) {
               <div class="launch-heading" aria-hidden="true">
                 {section.title}
               </div>
-              {section.entries.map(item)}
+              {section.entries.map((entry) => (
+                <Fragment key={entry.id}>
+                  {item(entry)}
+                  {entry.kind === "agent" && entry.agent.name === "claude" &&
+                    props.onAgentChat && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="menu-item launch-item"
+                      data-testid="launch-agent-chat"
+                      title="Claude Code in a chat tile: streamed transcript, tool calls, permissions"
+                      onClick={props.onAgentChat}
+                    >
+                      <LaunchIcon kind="chat" />
+                      <span class="menu-label">{entry.label} (chat)</span>
+                    </button>
+                  )}
+                </Fragment>
+              ))}
               {section.id === "ollama" && props.ollama && (
                 <button
                   type="button"
@@ -235,6 +259,32 @@ export function LaunchMenu(props: LaunchMenuProps) {
               <span class="menu-label">Web page</span>
             </button>
           )}
+          {props.onBookmarks && (
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item launch-item"
+              data-testid="launch-bookmarks"
+              title="Manage, import and export the web tiles' bookmarks"
+              onClick={props.onBookmarks}
+            >
+              <LaunchIcon kind="bookmarks" />
+              <span class="menu-label">Bookmarks…</span>
+            </button>
+          )}
+          {props.onHistory && (
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item launch-item"
+              data-testid="launch-history"
+              title="The pages web tiles visited"
+              onClick={props.onHistory}
+            >
+              <LaunchIcon kind="history" />
+              <span class="menu-label">History…</span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -253,7 +303,16 @@ export function LaunchMenu(props: LaunchMenuProps) {
 
 /** A small glyph per entry kind. */
 function LaunchIcon(
-  props: { kind: LaunchEntry["kind"] | "connections" | "sandbox" | "web" },
+  props: {
+    kind:
+      | LaunchEntry["kind"]
+      | "connections"
+      | "sandbox"
+      | "web"
+      | "bookmarks"
+      | "history"
+      | "chat";
+  },
 ) {
   const common = {
     viewBox: "0 0 16 16",
@@ -310,6 +369,19 @@ function LaunchIcon(
           />
         </svg>
       );
+    case "bookmarks":
+      return (
+        <svg {...common}>
+          <path d="M4.5 2.5h7v11L8 10.5l-3.5 3z" {...stroke} />
+        </svg>
+      );
+    case "history":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.5" {...stroke} />
+          <path d="M8 5v3l2 1.5" {...stroke} />
+        </svg>
+      );
     case "web":
       return (
         <svg {...common}>
@@ -325,6 +397,15 @@ function LaunchIcon(
         <svg {...common}>
           <circle cx="8" cy="8" r="5.5" {...stroke} />
           <path d="M8 5.5v5M5.5 8h5" {...stroke} />
+        </svg>
+      );
+    case "chat":
+      return (
+        <svg {...common}>
+          <path
+            d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6.2h6M5 8.2h4"
+            {...stroke}
+          />
         </svg>
       );
   }

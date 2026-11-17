@@ -78,7 +78,7 @@ suite("visual", (test) => {
     await app.run(ids[1], "colors");
     await app.run(ids[2], "ls");
     for (const id of THEME_IDS) {
-      await app.openSettings();
+      await app.openSettings("appearance");
       await app.click(`[data-testid=setting-theme][data-value="${id}"]`);
       await waitFor(
         () =>
@@ -156,7 +156,7 @@ suite("visual", (test) => {
       );
     }
     for (const theme of THEME_IDS) {
-      await app.openSettings();
+      await app.openSettings("appearance");
       await app.click(`[data-testid=setting-theme][data-value="${theme}"]`);
       await waitFor(
         () =>

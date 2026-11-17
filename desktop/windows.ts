@@ -68,3 +68,18 @@ export function closeAppWindow(id: string): void {
     console.error(`window ${id}: could not close it`, err);
   }
 }
+
+/**
+ * Window `id`'s frame on screen (`DesktopWindowRef.getBounds`), for a tile dragged between windows
+ * (desktop/tile-move.ts). `null` when it is gone, when the runtime cannot say, or before desktop.ts
+ * shared the runtime's windows.
+ */
+export function appWindowBounds(
+  id: string,
+): { x: number; y: number; width: number; height: number } | null {
+  try {
+    return shared[WINDOWS_KEY]?.get(id)?.getBounds() ?? null;
+  } catch {
+    return null;
+  }
+}

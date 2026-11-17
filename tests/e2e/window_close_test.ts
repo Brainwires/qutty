@@ -37,7 +37,7 @@ async function ask(app: App): Promise<void> {
 
 /** Pick `value` in Settings → Windows. */
 async function setWindowClose(app: App, value: string): Promise<void> {
-  await app.openSettings();
+  await app.openSettings("general");
   await app.eval((v: string) => {
     const el = document.querySelector<HTMLSelectElement>(
       "[data-testid=setting-window-close]",
@@ -169,7 +169,7 @@ suite("window close", (test) => {
       "remembered",
     );
     // Settings → Windows shows the remembered choice.
-    await app.openSettings();
+    await app.openSettings("general");
     assertEquals(
       await app.eval(() =>
         document.querySelector<HTMLSelectElement>(
@@ -208,5 +208,33 @@ suite("window close", (test) => {
       2000,
       "remembered keep",
     );
+  });
+
+  test("settings: General shows Keep shells running after quitting, and search finds it", async (app) => {
+    await app.openSettings("general");
+    await waitFor(
+      () => app.exists("[data-testid=setting-keep-shells]"),
+      2000,
+      "the keep-shells switch in General",
+    );
+    await app.eval(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        "[data-testid=settings-search]",
+      )!;
+      el.focus();
+      el.select();
+    });
+    await app.page.keyboard.type("keep shells");
+    const visible = (sel: string) =>
+      app.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        return !!el && el.getClientRects().length > 0;
+      }, sel);
+    await waitFor(
+      () => visible("[data-testid=setting-keep-shells]"),
+      2000,
+      "found by search",
+    );
+    await app.closeSettings();
   });
 });

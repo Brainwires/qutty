@@ -28,6 +28,7 @@ import {
   DEFAULT_SETTINGS,
   type Settings,
   SETTINGS_STORAGE_KEY,
+  type SettingsTab,
 } from "../../lib/workspace/store.ts";
 
 export const ROOT = fromFileUrl(new URL("../../", import.meta.url));
@@ -313,6 +314,8 @@ export interface OpenOptions {
   reducedMotion?: boolean;
   /** Extra query string (appended after `pty=demo&test=1`). */
   query?: string;
+  /** Keep the origin's storage (a second page of the same app: `App.openPeer`). */
+  keepStorage?: boolean;
 }
 
 const DEFAULT_W = 1400;
@@ -437,10 +440,12 @@ export class App {
       width: this.opts.width ?? DEFAULT_W,
       height: this.opts.height ?? DEFAULT_H,
     });
-    await this.cdp.Storage.clearDataForOrigin({
-      origin: this.origin,
-      storageTypes: "all",
-    });
+    if (!this.opts.keepStorage) {
+      await this.cdp.Storage.clearDataForOrigin({
+        origin: this.origin,
+        storageTypes: "all",
+      });
+    }
     if (this.opts.reducedMotion) {
       await this.page.emulateMediaFeatures([{
         name: "prefers-reduced-motion",
@@ -456,6 +461,22 @@ export class App {
     }
     await this.page.goto(this.url, { waitUntil: "load" });
     await this.waitReady();
+  }
+
+  /**
+   * A second page of the app in the same browser (another "window"; with `?peers=<name>` the demo
+   * pages move tiles to each other, lib/demo-windows.ts), booted with its first terminal. The
+   * caller closes it (`page.close()`).
+   */
+  async openPeer(query: string): Promise<App> {
+    const page = await this.page.browser().newPage();
+    const peer = new App(page, this.origin, {
+      ...this.opts,
+      query,
+      keepStorage: true,
+    });
+    await peer.boot();
+    return peer;
   }
 
   /** Wait for the app to be interactive with its first terminal at a prompt. */
@@ -1119,7 +1140,8 @@ export class App {
     }
   }
 
-  async openSettings(): Promise<void> {
+  /** Open the Settings dialog (from the bar's button), on `tab` when given. */
+  async openSettings(tab?: SettingsTab): Promise<void> {
     if (!(await this.exists("[data-testid=settings-panel]"))) {
       await this.click("[data-testid=bar-settings]");
     }
@@ -1128,6 +1150,22 @@ export class App {
       2000,
       "the settings panel",
     );
+    if (tab) await this.settingsTab(tab);
+  }
+
+  /** Show Settings tab `tab` (the dialog must be open): click it unless it is shown already. */
+  async settingsTab(tab: SettingsTab): Promise<void> {
+    const panel = `[data-testid=settings-category][data-tab="${tab}"]`;
+    const shown = () =>
+      this.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        return !!el && !el.hidden &&
+          !document.querySelector(".settings-content.is-searching");
+      }, panel);
+    if (!(await shown())) {
+      await this.click(`[data-testid=settings-tab][data-tab="${tab}"]`);
+    }
+    await waitFor(shown, 2000, `the ${tab} settings tab`);
   }
 
   async closeSettings(): Promise<void> {
@@ -1146,7 +1184,7 @@ export class App {
     key: "decay" | "masterRatio" | "maxVisible" | "gap",
     value: number,
   ): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("layout");
     await this.eval(
       (k: string, v: number) => {
         const el = document.querySelector<HTMLInputElement>(
@@ -1171,7 +1209,7 @@ export class App {
 
   /** Pick a pattern through the settings panel. */
   async setPatternViaSettings(pattern: string): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("layout");
     await this.click(
       `[data-testid=setting-pattern][data-pattern="${pattern}"]`,
     );
@@ -1183,7 +1221,7 @@ export class App {
   }
 
   async setBarPosition(position: string): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("general");
     await this.click(
       `[data-testid=setting-bar-position][data-value="${position}"]`,
     );
@@ -1196,7 +1234,7 @@ export class App {
   }
 
   async setBarOrder(order: "mru" | "created"): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("general");
     await this.click(`[data-testid=setting-bar-order][data-value="${order}"]`);
     await waitFor(
       async () => (await this.settings()).barOrder === order,
@@ -1206,7 +1244,7 @@ export class App {
   }
 
   async setInactiveTiles(mode: "resize" | "scale"): Promise<void> {
-    await this.openSettings();
+    await this.openSettings("appearance");
     await this.click(
       `[data-testid=setting-inactive-tiles][data-value="${mode}"]`,
     );

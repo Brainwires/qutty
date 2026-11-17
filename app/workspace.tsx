@@ -12,10 +12,13 @@
 // Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
 // terminals that kept running while no window showed it, or started with its first shell, and the
 // page saves its snapshot as it changes. Unmounting (the page going away) leaves the PTYs running.
+// A tile moves to another window by its header's menu or by dragging its header out of the window
+// (`useTileMove`): its PTY only changes owner; tiles moved here arrive the same way.
 //
 // The view: each workspace is tiled (the layout engine) or free-form (MDI: tiles as windows the
-// user moves and resizes), picked in the bar's View menu, Settings → Layout or the Window menu
-// (`useFreeformView`, lib/workspace/freeform.ts, lib/workspace/mdi-menu.ts).
+// user moves and resizes), picked in the bar's View menu, Settings → Layout or the native View
+// menu (`useFreeformView`, lib/workspace/freeform.ts, lib/workspace/mdi-menu.ts). The native menu
+// bar (desktop app) follows the workspace and acts on it through `useNativeMenus`.
 //
 // Focus discipline: every action that changes the focused terminal is run through `run`, which
 // computes the next state with the pure reducer first so the right xterm can be focused without
@@ -53,6 +56,7 @@ import {
   type KeyCommand,
   type KeyPlatform,
   pttAvailable,
+  routeKey,
   shortcutLabel,
 } from "../lib/workspace/keys.ts";
 import { visibleIdSet } from "../lib/workspace/bar.ts";
@@ -77,19 +81,23 @@ import {
   reduce,
   saveSettings,
   SETTINGS_STORAGE_KEY,
+  type SettingsTab,
   shownMru,
   type WorkspaceAction,
 } from "../lib/workspace/store.ts";
 import {
   headDoubleClickControl,
   type TileControl,
-  tileMenuControl,
 } from "../lib/workspace/tile-controls.ts";
 import { useSession } from "./use-session.ts";
+import { useTileMove } from "./use-tile-move.ts";
+import { WindowDrop } from "./window-drop.tsx";
+import type { TileArrival } from "../lib/session-client.ts";
 import { useWindowClose } from "./use-window-close.ts";
 import { CloseWindowDialog } from "./close-window-dialog.tsx";
-import { isTileMenuItem, type WindowClose } from "../lib/workspace/windows.ts";
+import type { WindowClose } from "../lib/workspace/windows.ts";
 import { useFreeformView } from "./use-freeform-view.ts";
+import { useNativeMenus } from "./use-native-menus.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -113,6 +121,7 @@ import { useHub } from "./use-hub.ts";
 import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
+import { useWebControl } from "./use-web-control.ts";
 import { useVoice } from "./use-voice.ts";
 import { dictating, DictatingBadge, DictationNote } from "./dictation.tsx";
 import type { DictateOutcome } from "../lib/voice/controller.ts";
@@ -126,7 +135,19 @@ import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
 import { OllamaDialog } from "./ollama-dialog.tsx";
-import { focusWebTile, type WebTileHooks } from "./web-tile.tsx";
+import {
+  focusWebTile,
+  navigateWebTile,
+  runWebCommand,
+  type WebTileHooks,
+} from "./web-tile.tsx";
+import { openWebDialog, useWebDialog } from "./web-stores.ts";
+import { BookmarkManager } from "./bookmark-manager.tsx";
+import { HistoryDialog } from "./history-dialog.tsx";
+import type { OpenWhere } from "./bookmarks-bar.tsx";
+import { focusAgentTile } from "./agent-tile.tsx";
+import { type AgentTilesView, useAgentTiles } from "./use-agent-tiles.tsx";
+import { AgentsMenu } from "./agents-panel.tsx";
 import {
   detectWebEngine,
   IframeEngine,
@@ -174,6 +195,8 @@ function WorkspaceView() {
   const [platform, setPlatform] = useState<KeyPlatform>("mac");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** A Settings deep link: the `data-testid` of the control to show once the dialog is open. */
+  const [settingsTarget, setSettingsTarget] = useState<string | null>(null);
   /** The SSH tile whose port forwards are open. */
   const [forwardsFor, setForwardsFor] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -200,18 +223,25 @@ function WorkspaceView() {
     const before = stateRef.current;
     const after = reduce(before, action);
     dispatch(action);
-    // A web tile takes the keyboard itself once it renders (app/web-tile.tsx).
+    // A web or agent tile takes the keyboard itself once it renders (app/web-tile.tsx,
+    // app/agent-tile.tsx).
     const id = after.focusedId;
-    if (id && id !== before.focusedId && !isWebTile(after.terminals, id)) {
+    if (
+      id && id !== before.focusedId && !isWebTile(after.terminals, id) &&
+      !isAgentTile(after.terminals, id)
+    ) {
       managerRef.current?.focus(id);
     }
   }, []);
 
-  /** Give tile `id` the keyboard: its terminal, or a web tile's body. */
+  /** Give tile `id` the keyboard: its terminal, a web tile's body, an agent tile's prompt. */
   const focusKeyboard = useCallback((id: string) => {
     if (isWebTile(stateRef.current.terminals, id)) focusWebTile(id);
+    else if (isAgentTile(stateRef.current.terminals, id)) focusAgentTile(id);
     else managerRef.current?.focus(id);
   }, []);
+  /** The agent tiles (app/use-agent-tiles.tsx), for what is declared before them. */
+  const agentsRef = useRef<AgentTilesView | null>(null);
 
   /** A web tile showing `url`, beside the focused tile (it becomes the focused one). */
   const openWebTile = useCallback((url: string) => {
@@ -322,13 +352,22 @@ function WorkspaceView() {
   }, [openTile, ollama.status.path]);
   /** Plain `+`, ⌘T and the empty state's button: what Settings says plain `+` opens. */
   const newTerminal = launcher.openPlus;
+  const hubIdOfAgent = useCallback(
+    (id: string) => agentsRef.current?.hubIdOf(id),
+    [],
+  );
   const hubTileOf = useHub(
     managerRef.current,
     state.terminals,
     state.settings.tileTitle,
+    hubIdOfAgent,
   );
 
   const closeTerminal = useCallback((id: string) => {
+    // An agent tile's session ends with it.
+    if (isAgentTile(stateRef.current.terminals, id)) {
+      agentsRef.current?.store?.close(id);
+    }
     managerRef.current?.dispose(id);
     sshRef.current.forget(id);
     run({ type: "remove", id });
@@ -366,6 +405,18 @@ function WorkspaceView() {
   // the native web view, else the iframe).
   const webViewsRef = useRef(new Map<string, WebViewHandle>());
   const [webEngine, setWebEngine] = useState<WebEngine | null>(null);
+  // The companion's web tools drive the web tiles (app/use-web-control.ts).
+  const webControl = useWebControl({
+    backend: managerRef.current?.backend,
+    manager: managerRef.current,
+    terminals: state.terminals,
+    views: webViewsRef.current,
+    engine: webEngine,
+    home: state.settings.links.home,
+    openWebTile,
+    closeTile: closeTerminal,
+    focusTile: focusTerminal,
+  });
   const cycling = state.cycle !== null;
   const webHooks = useMemo<WebTileHooks>(() => ({
     engine: webEngine,
@@ -374,11 +425,36 @@ function WorkspaceView() {
     onView: (id, view) => {
       if (view) webViewsRef.current.set(id, view);
       else webViewsRef.current.delete(id);
+      webControl.onView(id, view);
     },
     openTile: (url) => void openWebTile(url),
     cycling,
     home: state.settings.links.home,
-  }), [webEngine, cycling, openWebTile, state.settings.links.home]);
+    bookmarksBar: state.settings.links.bookmarksBar,
+    copy: (text) =>
+      void globalThis.navigator?.clipboard?.writeText(text).catch((err) =>
+        console.warn("web tile: the clipboard refused", err)
+      ),
+  }), [
+    webEngine,
+    cycling,
+    openWebTile,
+    state.settings.links.home,
+    state.settings.links.bookmarksBar,
+    webControl,
+  ]);
+  // The bookmark manager and History (opened from the bookmarks bar, the star and the `+` menu).
+  const webDialog = useWebDialog();
+  /** Open `url` from a browser dialog: in the focused web tile, a new one, or the browser. */
+  const openFromDialog = useCallback((url: string, where: OpenWhere) => {
+    if (where === "browser") return linksRef.current.openInBrowser(url);
+    const id = stateRef.current.focusedId;
+    if (
+      where === "here" && id && isWebTile(stateRef.current.terminals, id) &&
+      navigateWebTile(id, url)
+    ) return focusWebTile(id);
+    openWebTile(url);
+  }, [openWebTile]);
   // The keys a native web view hands back while its page has the keyboard: the workspace's
   // shortcuts and the talk keys.
   const { pttKey, dictateKey } = state.settings.voice;
@@ -388,7 +464,10 @@ function WorkspaceView() {
     );
   }, [webEngine, pttKey, dictateKey, platform]);
 
+  // A tile moved here from another window (`useTileMove`, below: it needs the layout).
+  const arriveRef = useRef<(a: TileArrival) => string | null>(() => null);
   const session = useSession({
+    arrive: (a) => arriveRef.current(a),
     manager: ready ? managerRef.current : null,
     state,
     seqRef,
@@ -399,6 +478,10 @@ function WorkspaceView() {
       if (stateRef.current.terminals.length === 0) {
         openTile({ kind: "shell", sandbox: false });
       }
+    },
+    chat: {
+      rows: (id) => agentsRef.current?.store?.rows(id) ?? [],
+      restored: (id, rows) => agentsRef.current?.store?.restored(id, rows),
     },
   });
 
@@ -418,10 +501,27 @@ function WorkspaceView() {
     },
     closeTile: closeTerminal,
     focusTile: focusTerminal,
+    tileOfHub: (hubId) => agentsRef.current?.tileOfHub(hubId),
+    web: webControl.run,
   });
   const refocus = useCallback(() => {
     const id = stateRef.current.focusedId;
     if (id) focusKeyboard(id);
+  }, []);
+  /** Close Settings and give the keyboard back to the focused tile. */
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setSettingsTarget(null);
+    refocus();
+  }, [refocus]);
+  /**
+   * Open Settings on `tab` (and scroll to the control `target`, a `data-testid`); with no tab, on
+   * the one used last (the native app menu's Settings…, ⌘,).
+   */
+  const openSettings = useCallback((tab?: SettingsTab, target?: string) => {
+    if (tab) dispatch({ type: "setSettingsTab", tab });
+    setSettingsTarget(target ?? null);
+    setSettingsOpen(true);
   }, []);
   // The close button (Settings → Windows). A remembered choice is saved at once: Keep Running
   // closes the window before the settings effect would run.
@@ -437,7 +537,8 @@ function WorkspaceView() {
     onCancel: refocus,
   });
   const modalOpen = ssh.dialog !== null || ssh.browseFor !== null ||
-    ollamaOpen || forwardsFor !== null || windowClose.asking;
+    ollamaOpen || forwardsFor !== null || windowClose.asking ||
+    webDialog !== null;
   // The close question takes Escape: the settings popover (which would swallow it) goes.
   useEffect(() => {
     if (windowClose.asking) setSettingsOpen(false);
@@ -463,6 +564,12 @@ function WorkspaceView() {
       const manager = managerRef.current;
       const id = stateRef.current.focusedId;
       if (!manager || !id) return "no-tile";
+      // An agent tile: into its prompt box.
+      if (isAgentTile(stateRef.current.terminals, id)) {
+        return agentsRef.current?.store?.insert(id, text)
+          ? "typed"
+          : "not-editable";
+      }
       if (isWebTile(stateRef.current.terminals, id)) {
         const view = webViewsRef.current.get(id);
         if (!view) return "not-editable";
@@ -478,6 +585,34 @@ function WorkspaceView() {
       return "typed";
     },
   });
+  // Agent tiles (app/use-agent-tiles.tsx): Claude Code as a chat tile.
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const dictation = useMemo(() => ({
+    press: () => voiceRef.current.pressDictate(),
+    release: (heldMs: number) => voiceRef.current.release(heldMs),
+  }), []);
+  // A link in a transcript: a web tile where they show any site (the native engine), else the
+  // default browser.
+  const openAgentUrl = useCallback((url: string) => {
+    if (webEngine?.capabilities.drawsAboveHtml) void openWebTile(url);
+    else linksRef.current.openInBrowser(url);
+  }, [webEngine, openWebTile]);
+  const agentTiles = useAgentTiles({
+    backend: ready ? managerRef.current?.backend ?? null : null,
+    manager: ready ? managerRef.current : null,
+    state,
+    dispatch,
+    run,
+    nextId: () => `t${++seqRef.current}`,
+    openTile,
+    openUrl: openAgentUrl,
+    closeTile: closeTerminal,
+    refocus,
+    ...(companionShown ? { dictation } : {}),
+  });
+  agentsRef.current = agentTiles;
+
   // The lite system monitor: the bar meter, and the companion's hot face (with Lively on).
   const monitor = state.settings.monitor;
   const hotWanted = monitor.hotCompanion && state.settings.companion.lively &&
@@ -696,10 +831,10 @@ function WorkspaceView() {
     if (!ready) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && settingsOpen) {
-        // Swallow it: the Escape that closes the panel must not also reach the shell.
+        // Swallow it: the Escape that closes the dialog must not also reach the shell.
         e.preventDefault();
         e.stopPropagation();
-        setSettingsOpen(false);
+        closeSettings();
         return;
       }
       // A cycle whose modifier was let go unheard (a native web view had the keyboard, and it
@@ -707,10 +842,21 @@ function WorkspaceView() {
       if (
         stateRef.current.cycle && !(platform === "mac" ? e.metaKey : e.ctrlKey)
       ) dispatch({ type: "endCycle" });
-      const cmd = commandForKey(e, platform);
-      if (!cmd) return;
+      // The one router: over a focused web tile its browser keys first (⌘L, ⌘R, ⌘[ …).
+      const focusedId = stateRef.current.focusedId;
+      const routed = routeKey(
+        e,
+        platform,
+        !!focusedId && isWebTile(stateRef.current.terminals, focusedId),
+      );
+      if (!routed) return;
       e.preventDefault();
       e.stopPropagation();
+      if (routed.scope === "web") {
+        if (!modalOpen && focusedId) runWebCommand(focusedId, routed.cmd);
+        return;
+      }
+      const cmd = routed.cmd;
       // A modal dialog has the keyboard: only its own shortcut (which closes it) still works.
       if (modalOpen && cmd.kind !== "openConnections") return;
       runCommand(cmd);
@@ -731,19 +877,7 @@ function WorkspaceView() {
       globalThis.removeEventListener("keyup", onKeyUp, true);
       globalThis.removeEventListener("blur", onBlur);
     };
-  }, [ready, platform, runCommand, settingsOpen, modalOpen]);
-
-  // The Window menu's "Minimize Tile" / "Zoom Tile", chosen with this window key: the focused tile.
-  useEffect(() => {
-    const session = ready ? managerRef.current?.backend.session : undefined;
-    if (!session) return;
-    return session.onTileMenu((item) => {
-      if (!isTileMenuItem(item)) return void viewRef.current.menuItem(item);
-      const id = stateRef.current.focusedId;
-      if (!id) return;
-      tileControl(tileMenuControl(item, isMaximized(stateRef.current, id)), id);
-    });
-  }, [ready, tileControl]);
+  }, [ready, platform, runCommand, settingsOpen, modalOpen, closeSettings]);
 
   // Title polling: the focused terminal, right away on focus and every couple of seconds.
   const focusedId = state.focusedId;
@@ -841,8 +975,52 @@ function WorkspaceView() {
     run,
     focus: focusTerminal,
   });
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  const tileMove = useTileMove({
+    manager: ready ? managerRef.current : null,
+    moves: ready ? managerRef.current?.backend.session.moves : undefined,
+    state,
+    seqRef,
+    tiles: view.tiles,
+    bounds,
+    cluster: clusterRef,
+    run,
+    focus: focusKeyboard,
+    forget: (id) => sshRef.current.forget(id),
+  });
+  arriveRef.current = tileMove.arrive;
+  const nativeMenus = useNativeMenus({
+    ready: ready && desktop,
+    platform,
+    state,
+    broadcast: broadcast.on,
+    sections: launcher.sections,
+    ollama: ollama.status.installed,
+    webPage: webEngine?.capabilities.drawsAboveHtml === true,
+    webDialogs: webEngine !== null,
+    agentChat: true,
+    modalOpen,
+    ...(tileMove.enabled && managerRef.current?.backend.session.moves
+      ? { moves: managerRef.current.backend.session.moves }
+      : {}),
+    handlers: {
+      runCommand,
+      openSettings,
+      menuItem: view.menuItem,
+      setPattern: (pattern) => run({ type: "setLayout", patch: { pattern } }),
+      setBarPosition: (position) => run({ type: "setBarPosition", position }),
+      tileControl,
+      launch: launcher.launchFromMenu,
+      openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
+      openWebDialog: (kind) => openWebDialog({ kind }),
+      openOllama: () => setOllamaOpen(true),
+      openAgentChat: () => agentTiles.openLaunch(),
+      moveTile: (to) => {
+        const id = stateRef.current.focusedId;
+        if (id) void tileMove.moveTo(id, to);
+      },
+      onFocus: launcher.refresh,
+    },
+  });
   const visibleIds = useMemo(
     () => visibleIdSet({ tiles: view.tiles }),
     [view.tiles],
@@ -917,6 +1095,12 @@ function WorkspaceView() {
                 void openWebTile(stateRef.current.settings.links.home),
             }
             : {}),
+          ...(webEngine
+            ? {
+              onBookmarks: () => openWebDialog({ kind: "bookmarks" }),
+              onHistory: () => openWebDialog({ kind: "history" }),
+            }
+            : {}),
           ...(ollama.status.installed
             ? {
               ollama: {
@@ -925,6 +1109,7 @@ function WorkspaceView() {
               },
             }
             : {}),
+          onAgentChat: agentTiles.openLaunch,
         }}
         onLaunchOpen={() => {
           launcher.refresh();
@@ -940,14 +1125,24 @@ function WorkspaceView() {
         onBroadcast={broadcast.toggle}
         onPattern={(pattern) => run({ type: "setLayout", patch: { pattern } })}
         onMenuItem={view.menuItem}
-        onToggleSettings={() => setSettingsOpen((o) => !o)}
+        nativeMenus={nativeMenus}
+        onToggleSettings={() =>
+          settingsOpen ? closeSettings() : setSettingsOpen(true)}
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
-          <WorkspacesMenu
-            session={session}
-            now={now}
-            newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
-          />
+          <>
+            <AgentsMenu
+              agents={agentTiles.summaries}
+              nameOf={(id) =>
+                state.terminals.find((t) => t.id === id)?.title ?? id}
+              onFocus={focusTerminal}
+            />
+            <WorkspacesMenu
+              session={session}
+              now={now}
+              newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
+            />
+          </>
         }
       />
       <div class="cluster" ref={clusterRef} data-testid="cluster">
@@ -975,9 +1170,12 @@ function WorkspaceView() {
             onMaximize={(id) => tileControl("maximize", id)}
             onRestore={(id) => tileControl("restoreTile", id)}
             onHeadDoubleClick={headDoubleClick}
+            windowDrag={tileMove.drag}
+            onHeadMenu={tileMove.enabled ? tileMove.openMenu : undefined}
             dropTargetId={ssh.dropTarget}
             agentOf={hubTileOf}
             web={webHooks}
+            agent={agentTiles.hooks}
             renderHeadActions={(entry) =>
               entry.ssh && (
                 <SshHeadActions
@@ -1013,6 +1211,16 @@ function WorkspaceView() {
               )}
           />
         )}
+        {tileMove.hover && (
+          <WindowDrop
+            hover={tileMove.hover}
+            view={state.view}
+            keepsPlaces={keep}
+            tiles={view.tiles}
+            bounds={bounds}
+            cluster={clusterRef.current}
+          />
+        )}
         {manager && !companionShown && <DictationNote state={voice.state} />}
         {manager && companionShown && (
           <CompanionOverlay
@@ -1039,6 +1247,8 @@ function WorkspaceView() {
             }}
             {...(reactions.reaction ? { reaction: reactions.reaction } : {})}
             onReactionShown={reactions.onShown}
+            onOpenSettings={() =>
+              openSettings("companion", "setting-companion-brain")}
           />
         )}
         {broadcast.on && (
@@ -1089,7 +1299,8 @@ function WorkspaceView() {
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
-          onToggleSection={(section) => run({ type: "toggleSection", section })}
+          onTab={(tab) => run({ type: "setSettingsTab", tab })}
+          target={settingsTarget}
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
@@ -1107,7 +1318,7 @@ function WorkspaceView() {
             }
             : {})}
           backend={manager?.backend ?? null}
-          onClose={() => setSettingsOpen(false)}
+          onClose={closeSettings}
         />
       )}
       {manager && ollamaOpen && (
@@ -1122,6 +1333,28 @@ function WorkspaceView() {
             run({ type: "setOllama", patch: { libraryLookedAt: Date.now() } })}
           onClose={() => {
             setOllamaOpen(false);
+            refocus();
+          }}
+        />
+      )}
+      {agentTiles.dialog}
+      {webDialog?.kind === "bookmarks" && (
+        <BookmarkManager
+          {...(webDialog.folderId ? { folderId: webDialog.folderId } : {})}
+          {...(webDialog.selectId ? { selectId: webDialog.selectId } : {})}
+          desktop={desktop}
+          open={openFromDialog}
+          onClose={() => {
+            openWebDialog(null);
+            refocus();
+          }}
+        />
+      )}
+      {webDialog?.kind === "history" && (
+        <HistoryDialog
+          open={openFromDialog}
+          onClose={() => {
+            openWebDialog(null);
             refocus();
           }}
         />
@@ -1151,6 +1384,16 @@ function WorkspaceView() {
           title={links.menu.title}
           items={links.menu.items}
           onClose={links.closeMenu}
+        />
+      )}
+      {tileMove.menu && (
+        <LinkMenu
+          x={tileMove.menu.x}
+          y={tileMove.menu.y}
+          title={tileMove.menu.title}
+          items={tileMove.menu.items}
+          onClose={tileMove.closeMenu}
+          testId="tile-move-menu"
         />
       )}
       {manager && forwardsFor && (
@@ -1229,4 +1472,12 @@ function isWebTile(
   id: string,
 ): boolean {
   return terminals.some((t) => t.id === id && t.web !== undefined);
+}
+
+/** Whether tile `id` is an agent tile (a chat, no terminal). */
+function isAgentTile(
+  terminals: readonly { id: string; chat?: unknown }[],
+  id: string,
+): boolean {
+  return terminals.some((t) => t.id === id && t.chat !== undefined);
 }

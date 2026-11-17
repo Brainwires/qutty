@@ -9,6 +9,9 @@
 // (`fitNow` resizes the PTY only when the grid changes), and once more at the end.
 //
 // A header press that does not move (a click, the first half of a double click) is no drag.
+//
+// A header drag that leaves the window may take the tile to another window (`cross`,
+// app/use-tile-move.ts): released outside, the tile's rect is not stored (it goes, or stays put).
 
 import { useCallback, useEffect, useRef, useState } from "denext";
 import type { Rect } from "../lib/layout/mod.ts";
@@ -18,6 +21,7 @@ import {
   moveRect,
   resizeRect,
 } from "../lib/workspace/freeform.ts";
+import type { WindowDrag } from "./use-tile-move.ts";
 
 /** What a free-form tile needs from the cluster. */
 export interface FreeformTiles {
@@ -54,13 +58,18 @@ export function useFreeformDrag(opts: {
   enabled: boolean;
   /** Fit the tile's terminal now (resizes its PTY when its grid changed). */
   fit(id: string): void;
+  /** A header drag may leave the window for another one. */
+  cross?: WindowDrag;
 }): { live: Rect | null; start: StartDrag } {
   const [live, setLive] = useState<Rect | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
   const stopRef = useRef<(() => void) | null>(null);
-  // Unmounted mid-drag: the listeners go.
-  useEffect(() => () => stopRef.current?.(), []);
+  // Unmounted mid-drag: the listeners go (and a window hovered from outside is told).
+  useEffect(() => () => {
+    if (stopRef.current) optsRef.current.cross?.cancel();
+    stopRef.current?.();
+  }, []);
 
   const start = useCallback<StartDrag>((e, edge, el) => {
     const o = optsRef.current;
@@ -94,6 +103,7 @@ export function useFreeformDrag(opts: {
         moved = true;
         capture();
       }
+      if (!edge) optsRef.current.cross?.move(ev, id);
       const ff = optsRef.current.ff;
       if (!ff) return;
       current = edge
@@ -116,15 +126,20 @@ export function useFreeformDrag(opts: {
       } catch { /* gone */ }
       stopRef.current = null;
     };
-    const end = () => {
+    const end = (ev?: PointerEvent) => {
       if (stopRef.current !== stop) return;
+      const cross = optsRef.current.cross;
+      // Released outside the window: the tile goes to the window there (or stays where it was).
+      const away = moved && !edge && ev?.type === "pointerup" &&
+        (cross?.drop(ev, id) ?? false);
+      if (!away && (!ev || ev.type !== "pointerup")) cross?.cancel();
       stop();
-      if (moved) optsRef.current.ff?.onRect(id, current);
+      if (moved && !away) optsRef.current.ff?.onRect(id, current);
       setLive(null);
       if (moved && edge) fitSoon();
     };
     const onEnd = (ev: PointerEvent) => {
-      if (ev.pointerId === pointer) end();
+      if (ev.pointerId === pointer) end(ev);
     };
     const onBlur = () => end();
     globalThis.addEventListener("pointermove", onMove, true);

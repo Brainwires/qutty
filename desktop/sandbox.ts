@@ -308,7 +308,8 @@ export default defineDesktopExtension({
       });
       setSandboxProvider(service);
       const s = service;
-      workspaces.onEnded((id) => {
+      // Once ended and no tile moved to another window still runs in its container.
+      workspaces.onRetired((id) => {
         s.release(id).catch((e) =>
           console.error(`sandbox: ${id} did not stop`, e)
         );
