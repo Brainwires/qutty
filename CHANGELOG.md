@@ -19,6 +19,8 @@
     links in" says, as a ⌘-clicked link in a terminal does, instead of always in
     a web tile in the desktop app.
 
+## 0.6.0 — Claude Code chat tiles, an everyday in-app browser, the companion browses, Settings dialog, native menus, shells survive quitting, tiles move between windows
+
 - Broadcast input (cluster SSH) is easier to aim. Turning it on (the bar's
   broadcast button or ⇧⌘I) now checks every visible terminal tile in the
   workspace at once, so typing reaches them all straight away and you untick the
