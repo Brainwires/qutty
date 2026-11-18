@@ -30,7 +30,7 @@ import type {
   DesktopWindowMenuAppItem,
 } from "denext/desktop/app";
 import { type LayoutPattern, PATTERN_INFO } from "../layout/mod.ts";
-import type { KeyCommand, KeyPlatform } from "./keys.ts";
+import type { KeyCommand, KeyPlatform, WebKeyCommand } from "./keys.ts";
 import type { ViewMode } from "./freeform.ts";
 import {
   MDI_ITEM_IDS,
@@ -69,6 +69,8 @@ export const ITEM = {
   webPage: "qutty:launch-web",
   bookmarks: "qutty:web:bookmarks",
   history: "qutty:web:history",
+  findInPage: "qutty:web:find",
+  devTools: "qutty:web:devtools",
   agentChat: "qutty:launch-agent-chat",
   ollama: "qutty:launch-ollama",
   nextLayout: "qutty:layout:next",
@@ -373,6 +375,11 @@ export function viewMenuSpec(platform: KeyPlatform): DesktopMenuUpdate {
       item(ITEM.actualSize, "Actual Size"),
       item(ITEM.zoomTogether, "Zoom All Tiles Together", { type: "checkbox" }),
       SEP,
+      // The focused web tile's (its keys, ⌘F and ⌥⌘I, are the page's: no accelerators here, so a
+      // terminal keeps Ctrl+F where the window's accelerators win).
+      item(ITEM.findInPage, "Find in Page…"),
+      item(ITEM.devTools, "Developer Tools"),
+      SEP,
       {
         label: "Switcher Bar",
         items: [
@@ -421,6 +428,8 @@ export interface NativeMenuInput {
   broadcast: boolean;
   /** View → "Zoom All Tiles Together" is on. */
   zoomTogether?: boolean;
+  /** The focused tile is a web tile (Find in Page…, Developer Tools). */
+  webFocused?: boolean;
   /** Every tile, in the switcher bar's order (⌘1 is the first). */
   tiles: readonly MenuTile[];
 }
@@ -454,6 +463,9 @@ export function menuInput(
     maximizedId: maximizedId(state),
     broadcast,
     zoomTogether: state.settings.zoomTogether,
+    webFocused: state.terminals.some((t) =>
+      t.id === state.focusedId && t.web !== undefined
+    ),
     tiles,
   };
 }
@@ -486,6 +498,8 @@ export function menuItemStates(
     [ITEM.zoomOut]: { enabled: focused },
     [ITEM.actualSize]: { enabled: focused },
     [ITEM.zoomTogether]: { checked: input.zoomTogether === true },
+    [ITEM.findInPage]: { enabled: input.webFocused === true },
+    [ITEM.devTools]: { enabled: input.webFocused === true },
   };
   for (
     const id of [
@@ -596,7 +610,9 @@ export type MenuAction =
   /** "Claude Code (chat)": a new agent tile. */
   | { kind: "agentChat" }
   /** View → "Zoom All Tiles Together" on / off. */
-  | { kind: "zoomTogether" };
+  | { kind: "zoomTogether" }
+  /** A browser command for the focused web tile (app/web-tile.tsx `runWebCommand`). */
+  | { kind: "web"; command: WebKeyCommand };
 
 const KEY_ITEMS: Record<string, KeyCommand> = {
   [ITEM.newTile]: { kind: "newTerminal" },
@@ -636,6 +652,10 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.agentChat) return { kind: "agentChat" };
   if (id === ITEM.zoomTogether) return { kind: "zoomTogether" };
+  if (id === ITEM.findInPage) return { kind: "web", command: { kind: "find" } };
+  if (id === ITEM.devTools) {
+    return { kind: "web", command: { kind: "devTools" } };
+  }
   if (id === ITEM.ollama) return { kind: "ollama" };
   if (id.startsWith(MOVE_PREFIX) && id.length > MOVE_PREFIX.length) {
     return { kind: "moveTile", to: id.slice(MOVE_PREFIX.length) };

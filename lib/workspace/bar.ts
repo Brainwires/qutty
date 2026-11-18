@@ -69,3 +69,26 @@ export function splitChips(
     minimized: chips.filter((c) => c.minimized),
   };
 }
+
+/**
+ * Where the chip strip must scroll to show a chip, or `null` when it is in view. All in one axis
+ * and in the strip's content coordinates: the chip spans `start..end` where it is laid out (its
+ * FLIP transform aside), the strip shows `scroll..scroll + size` of a content `content` long. A
+ * chip longer than the strip shows its start. The answer is an absolute position (clamped to the
+ * strip's range), so asking again while a smooth scroll runs aims at the same place instead of
+ * adding a second step to the first.
+ */
+export function chipScrollTarget(
+  chip: { start: number; end: number },
+  strip: { scroll: number; size: number; content: number },
+): number | null {
+  const lo = strip.scroll;
+  const hi = strip.scroll + strip.size;
+  // Half a pixel either way is in view (fractional layouts).
+  if (chip.start >= lo - 0.5 && chip.end <= hi + 0.5) return null;
+  const want = chip.start < lo || chip.end - chip.start > strip.size
+    ? chip.start
+    : chip.end - strip.size;
+  const max = Math.max(0, strip.content - strip.size);
+  return Math.min(max, Math.max(0, Math.round(want)));
+}

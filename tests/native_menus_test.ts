@@ -583,6 +583,36 @@ Deno.test("native menus: the input comes from the workspace's state", () => {
   );
 });
 
+Deno.test("native menus: Find in Page… and Developer Tools act on the focused web tile, with no shortcut", () => {
+  const all = flat(viewMenuSpec("mac").items);
+  for (const id of [ITEM.findInPage, ITEM.devTools]) {
+    const i = all.find((x) => x.id === id);
+    assert(i, id);
+    assertEquals(i.accelerator, undefined, "the page's keys, not the menu's");
+  }
+  assertEquals(menuAction(ITEM.findInPage), {
+    kind: "web",
+    command: { kind: "find" },
+  });
+  assertEquals(menuAction(ITEM.devTools), {
+    kind: "web",
+    command: { kind: "devTools" },
+  });
+  // Enabled only while a web tile has the focus.
+  const off = menuItemStates(INPUT);
+  assertEquals(off[ITEM.findInPage], { enabled: false });
+  assertEquals(off[ITEM.devTools], { enabled: false });
+  const on = menuItemStates({ ...INPUT, webFocused: true });
+  assertEquals(on[ITEM.findInPage], { enabled: true });
+  const state = [
+    { type: "add", id: "a", now: 1, title: "one" },
+    { type: "add", id: "w", now: 2, web: { url: "https://example.com/" } },
+  ].reduce((s, a) => reduce(s, a as WorkspaceAction), initialState());
+  assertEquals(menuInput(state, false).webFocused, true);
+  const back = reduce(state, { type: "focus", id: "a", now: 3 });
+  assertEquals(menuInput(back, false).webFocused, false);
+});
+
 Deno.test("native menus: a menu click right after the same key the page ran is dropped once", () => {
   let now = 1000;
   const guard = createShortcutGuard(() => now);

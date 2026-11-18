@@ -19,6 +19,7 @@ import { parseKept, respawnPlan, retarget } from "../lib/ptyd/kept.ts";
 import { PtyDaemon } from "../desktop/ptyd.ts";
 import { PtydClient } from "../desktop/ptyd-client.ts";
 import {
+  foregroundGroup,
   type PtyDataEvent,
   type PtyExitEvent,
   PtyHost,
@@ -410,6 +411,48 @@ Deno.test("PtyHost: a terminal in the daemon runs like a local one; adopt and re
   await c.close();
 });
 
+Deno.test("PtyHost: output after the foreground group changed says so (a program quit back to its shell)", async () => {
+  const local = fakeOpenPty();
+  const events: PtyDataEvent[] = [];
+  const groups = new Map<number, number>();
+  const host = new PtyHost(
+    (e, d) => void (e === "data" && events.push(d as PtyDataEvent)),
+    { openPty: local.open, foreground: (pid) => groups.get(pid) },
+  );
+  const t = await host.spawn({
+    cols: 80,
+    rows: 24,
+    shell: "/bin/sh",
+    cwd: "/",
+  });
+  const pty = local.opened[0];
+  const print = async (s: string) => {
+    const n = events.length;
+    pty.print(s);
+    await until(JSON.stringify(s), () => events.length > n);
+    return events.at(-1)!;
+  };
+  // No group yet, then the shell's: the first one known is not a change.
+  assertEquals((await print("starting\r\n")).fg, undefined);
+  groups.set(pty.pid, 100);
+  assertEquals((await print("$ ")).fg, undefined);
+  // A harness starts (its own group), runs, and quits back to the shell's prompt.
+  groups.set(pty.pid, 200);
+  assertEquals((await print("✻ Claude Code\r\n")).fg, 200);
+  assertEquals((await print("working…\r\n")).fg, undefined);
+  groups.set(pty.pid, 100);
+  assertEquals((await print("$ ")).fg, 100);
+  // The OS will not say (the program is gone): nothing reported.
+  groups.delete(pty.pid);
+  assertEquals((await print("x")).fg, undefined);
+  host.kill(t.id);
+  await until("the exit", () => pty.ended);
+});
+
+Deno.test("foregroundGroup: undefined for a process that does not exist", () => {
+  assertEquals(foregroundGroup(2 ** 30), undefined);
+});
+
 /** Fake files for the keeper. */
 function memoryFiles(seed: Record<string, string> = {}) {
   const files = new Map(Object.entries(seed));
@@ -526,6 +569,86 @@ Deno.test("keeper: a kept workspace comes back on its running shells at the next
   await two.exit();
   await until("the daemon's end", () => dmn.idle() === 1);
 });
+
+Deno.test("keeper: a quit right after a tile moved to another window keeps the moved tile", async () => {
+  const dmn = daemon();
+  const files = memoryFiles();
+  const one = launch(dmn, files);
+  await one.keeper.start(one.deps);
+  one.workspaces.join("main", "ws-a");
+  one.workspaces.join("other", "ws-b");
+  const t = await one.sessions.spawn({
+    cols: 80,
+    rows: 24,
+    shell: "/bin/sh",
+    cwd: "/",
+  }, { id: "main" });
+  await until("the shell", () => dmn.d.running === 1);
+  one.workspaces.save("ws-a", {
+    v: 1,
+    seq: 1,
+    terminals: [MOVED_ENTRY("t1")],
+    mru: ["t1"],
+    tiles: { t1: { ptyId: t.id, profile: { kind: "shell" } } },
+  });
+  // The move (desktop/tile-move.ts): the source snapshot loses the tile, the terminal changes
+  // workspace, and the target holds it as a pending arrival until its page saves it. The quit
+  // comes before that save.
+  one.workspaces.save("ws-a", {
+    v: 1,
+    seq: 1,
+    terminals: [],
+    mru: [],
+    tiles: {},
+  });
+  one.workspaces.movePty(t.id, "ws-b");
+  one.workspaces.addArrival("ws-b", "m-1", {
+    tile: {
+      entry: MOVED_ENTRY("t1"),
+      tile: { ptyId: t.id, profile: { kind: "shell" } },
+    },
+  });
+  assertEquals(await one.keeper.keepForNextLaunch(), 1);
+  const file = JSON.parse(files.files.get(`/app/${KEPT_FILE}`)!);
+  const kept = file.workspaces.find((w: { id: string }) => w.id === "ws-b");
+  assertEquals(kept.terms.map((x: { ptyId: string }) => x.ptyId), [t.id]);
+  const keptTiles = Object.values(
+    kept.snapshot.tiles as Record<string, { ptyId?: string }>,
+  );
+  assertEquals(
+    keptTiles.map((x) => x.ptyId),
+    [t.id],
+    "the moved tile is in the record",
+  );
+  await one.fake.quit();
+  await one.exit();
+
+  // The next launch: the target window comes back with the tile on its running shell.
+  const two = launch(dmn, files);
+  await two.keeper.start(two.deps);
+  assertEquals(two.workspaces.ptysOf("ws-b"), [t.id]);
+  const joined = two.workspaces.join("other", "ws-b");
+  const tiles = Object.values(
+    (joined.snapshot as { tiles: Record<string, { ptyId?: string }> }).tiles,
+  );
+  assertEquals(tiles.map((x) => x.ptyId), [t.id]);
+  await two.fake.quit();
+  await until("the shell's end", () => dmn.ptys.opened[0].ended);
+  await two.exit();
+});
+
+/** A tile entry as a snapshot (or a moved tile) holds it. */
+function MOVED_ENTRY(id: string) {
+  return {
+    id,
+    title: "zsh",
+    createdAt: 1,
+    lastUsedAt: 2,
+    exited: false,
+    exitCode: null,
+    activity: false,
+  };
+}
 
 /** A snapshot with one shell tile on `pty`. */
 function SNAPSHOT_FOR(pty: string) {

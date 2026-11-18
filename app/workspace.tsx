@@ -819,6 +819,10 @@ function WorkspaceView() {
         dispatch({ type: "commandRunning", id, running }),
       onBell: (id) => dispatch({ type: "bell", id }),
       onTitle: (id, title) => dispatch({ type: "programTitle", id, title }),
+      // A program started or quit back to its shell (the backend saw the foreground group change
+      // with its output): read what runs now, focused or not, OSC 133 or not. The harness
+      // overlay goes by it.
+      onForeground: (id) => void pollTitle(id),
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
@@ -1087,6 +1091,7 @@ function WorkspaceView() {
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
       openAgentChat: () => agentTiles.openLaunch(),
+      webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
         const id = stateRef.current.focusedId;
         if (id) void tileMove.moveTo(id, to);

@@ -34,6 +34,7 @@ import {
   commandForKey,
   type KeyCommand,
   type KeyPlatform,
+  type WebKeyCommand,
 } from "../lib/workspace/keys.ts";
 import {
   appMenu,
@@ -98,6 +99,8 @@ export interface NativeMenuHandlers {
   openAgentChat(): void;
   /** View → "Zoom All Tiles Together" on / off. */
   toggleZoomTogether(): void;
+  /** A browser command for web tile `id` (Find in Page…, Developer Tools). */
+  webCommand(id: string, cmd: WebKeyCommand): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
 }
@@ -326,6 +329,9 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.openAgentChat();
         case "zoomTogether":
           return h.toggleZoomTogether();
+        case "web":
+          if (focused) h.webCommand(focused, action.command);
+          return;
       }
     });
   }, [windowId, guard]);

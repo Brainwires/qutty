@@ -144,6 +144,9 @@ export function withBackendSpy(
     sysSample: () => backend.sysSample(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
+    ...(backend.onForeground
+      ? { onForeground: (id, cb) => backend.onForeground!(id, cb) }
+      : {}),
     sshHosts: () => backend.sshHosts(),
     sshSaveHost: (host) => backend.sshSaveHost(host),
     sshDeleteHost: (alias) => backend.sshDeleteHost(alias),

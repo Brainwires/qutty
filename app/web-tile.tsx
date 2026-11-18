@@ -156,6 +156,8 @@ export interface WebTileView {
   setFind(patch: Partial<FindState>): void;
   /** Bumped by each ⌘F: the find field takes the keyboard (again). */
   findFocus: number;
+  /** Open the find bar (⌘F), its field taking the keyboard. */
+  openFind(): void;
   /** Find `find.text` again, forward or back. */
   findNext(dir: 1 | -1): void;
   closeFind(): void;
@@ -767,6 +769,7 @@ export function useWebTile(
       }
     },
     findNext,
+    openFind: () => runCommand({ kind: "find" }),
     closeFind,
     starOpen,
     setStarOpen,

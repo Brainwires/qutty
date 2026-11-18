@@ -12,7 +12,11 @@
  * - the title the program set (OSC 0 / 2: Claude Code's "✳ Claude Code", "Codex", …).
  *
  * A shell in the foreground means the harness has exited (the hub keeps a tile's harness once it
- * registered), so nothing is detected then, and nothing in an exited tile.
+ * registered), so nothing is detected then, and nothing in an exited tile. The foreground process
+ * is read again whenever it changes: the desktop backend sees the terminal's foreground group
+ * change as output arrives (desktop/pty.ts, the `data` event's `fg`), so a harness quitting back
+ * to its shell is noticed at the shell's prompt, in an unfocused tile and without OSC 133 marks
+ * too.
  *
  * Pure and client-safe.
  *

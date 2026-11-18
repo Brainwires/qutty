@@ -445,6 +445,23 @@ Deno.test("desktop: output is routed by id", () => {
   c.off();
 });
 
+Deno.test("desktop: a foreground change comes after its output, per id, once (a replay is dropped)", () => {
+  const { bridge, backend } = setup();
+  const seen: string[] = [];
+  const offData = backend.onData("pty-1", (d) => seen.push(`data ${d}`));
+  const off = backend.onForeground!("pty-1", () => seen.push("fg"));
+  backend.onForeground!("pty-2", () => seen.push("fg pty-2"));
+  bridge.data("pty-1", 1, "working");
+  bridge.fire("data", { id: "pty-1", data: { seq: 2, data: "$ ", fg: 100 } });
+  // A replay of the same frame is a repeat: no second change.
+  bridge.fire("data", { id: "pty-1", data: { seq: 2, data: "$ ", fg: 100 } });
+  assertEquals(seen, ["data working", "data $ ", "fg"]);
+  off();
+  bridge.fire("data", { id: "pty-1", data: { seq: 3, data: "x", fg: 7 } });
+  assertEquals(seen.at(-1), "data x", "unsubscribed");
+  offData();
+});
+
 Deno.test("desktop: seq dedupe drops replays and stale frames, per id", () => {
   const { bridge, backend } = setup();
   const a = collect(backend, "pty-1");

@@ -55,6 +55,8 @@ export async function fixture(
     codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
     /** The agent tiles' backend (default: Claude Code). */
     createAgent?: HubServiceOptions["createAgent"];
+    /** The config files (default: the real ones, in the temporary home). */
+    fs?: HubServiceOptions["fs"];
   } = {},
 ): Promise<Fixture> {
   // /tmp, not $TMPDIR: macOS's is long, and sun_path holds 104 bytes.
@@ -70,6 +72,7 @@ export async function fixture(
     ...(opts.shellBrains ? { shellBrains: opts.shellBrains } : {}),
     ...(opts.codexHooks ? { codexHooks: opts.codexHooks } : {}),
     ...(opts.createAgent ? { createAgent: opts.createAgent } : {}),
+    ...(opts.fs ? { fs: opts.fs } : {}),
   });
   return {
     hub,

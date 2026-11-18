@@ -21,7 +21,7 @@ import {
 import { makeWindowDraggable } from "denext/desktop/window";
 import { type LayoutPattern, PATTERN_INFO } from "../lib/layout/mod.ts";
 import { type KeyPlatform, shortcutLabel } from "../lib/workspace/keys.ts";
-import { barChips } from "../lib/workspace/bar.ts";
+import { barChips, chipScrollTarget } from "../lib/workspace/bar.ts";
 import {
   type BarPosition,
   PATTERNS,
@@ -126,22 +126,41 @@ function chipPositions(els: Map<string, HTMLElement>): Map<string, ChipPos> {
   return out;
 }
 
-/** Scroll `list` so chip `el` is in view, by where the chip is laid out (its FLIP transform aside). */
-function revealChip(list: HTMLElement, el: HTMLElement, vertical: boolean) {
+/**
+ * Where `list` must scroll to show chip `el` (`null`: it is in view), by where the chip is laid
+ * out (its FLIP transform aside), as an absolute position of the strip.
+ */
+function chipTarget(
+  list: HTMLElement,
+  el: HTMLElement,
+  vertical: boolean,
+): number | null {
   const t = getComputedStyle(el).transform;
   const m = t && t !== "none" ? new DOMMatrixReadOnly(t) : undefined;
   const r = el.getBoundingClientRect();
   const box = list.getBoundingClientRect();
-  const [start, end, lo, hi] = vertical
-    ? [r.top - (m?.m42 ?? 0), r.bottom - (m?.m42 ?? 0), box.top, box.bottom]
-    : [r.left - (m?.m41 ?? 0), r.right - (m?.m41 ?? 0), box.left, box.right];
-  const by = start < lo
-    ? start - lo
-    : end > hi
-    ? Math.min(end - hi, start - lo)
-    : 0;
-  if (by !== 0) list.scrollBy(vertical ? { top: by } : { left: by });
+  // The chip in the strip's content coordinates: its viewport place, less the strip's, plus how
+  // far the strip is scrolled right now (a smooth scroll under way included).
+  const [start, end] = vertical
+    ? [r.top - (m?.m42 ?? 0), r.bottom - (m?.m42 ?? 0)]
+      .map((v) => v - box.top - list.clientTop + list.scrollTop)
+    : [r.left - (m?.m41 ?? 0), r.right - (m?.m41 ?? 0)]
+      .map((v) => v - box.left - list.clientLeft + list.scrollLeft);
+  return chipScrollTarget({ start, end }, {
+    scroll: vertical ? list.scrollTop : list.scrollLeft,
+    size: vertical ? list.clientHeight : list.clientWidth,
+    content: vertical ? list.scrollHeight : list.scrollWidth,
+  });
 }
+
+/** How many frames a strip with a reveal pending may stand still before it is aimed again. */
+const STALL_FRAMES = 8;
+/** How many times a stalled reveal is aimed again before it is given up. */
+const STALL_TRIES = 4;
+
+/** The strip's scroll position on its axis. */
+const scrollPos = (list: HTMLElement, vertical: boolean) =>
+  vertical ? list.scrollTop : list.scrollLeft;
 
 export function SwitcherBar(props: SwitcherBarProps) {
   const barRef = useRef<HTMLElement | null>(null);
@@ -220,13 +239,99 @@ export function SwitcherBar(props: SwitcherBarProps) {
     prevRects.current = chipPositions(chipEls.current);
   });
 
-  // Which chips are scrolled out of view → the "+N" menu.
+  // Keep the focused chip in view. Not `scrollIntoView`: a focus change that reorders the chips
+  // (MRU order) has just inverted them for FLIP, and the chip's box is still drawn where it was;
+  // scrolling to that would scroll to its old place (with Reduce Motion, for good).
+  //
+  // A reveal is wanted from a focus change (or a reorder) until the chip is seen in view, and is
+  // checked again whenever the strip settles (the measure below: a smooth scroll's end, a FLIP
+  // glide's end, a resize). The strip's smooth scroll did not always run or finish (a reorder or
+  // a resize under way, a second focus change), which left the focused chip (first in MRU order)
+  // scrolled out of view on the left; aiming at an absolute place again until it is in view fixes
+  // that, and no timer is involved. Someone else scrolling the strip drops the wish: the user (a
+  // wheel, a press in it), or any scroll that moves away from where the bar aims (a script's
+  // `scrollIntoView`), so the bar never fights it.
+  const reveal = useRef({
+    want: false,
+    aim: null as number | null,
+    /** The strip's position at the last scroll event or aim. */
+    at: 0,
+  });
+  const focusedRef = useRef(focusedId);
+  focusedRef.current = focusedId;
+  const verticalRef = useRef(vertical);
+  verticalRef.current = vertical;
+  /** Scroll toward the focused chip if it is wanted and not in view (`settled`: no scroll runs). */
+  const revealFocused = useRef((settled: boolean) => {
+    const r = reveal.current;
+    const list = listRef.current;
+    const id = focusedRef.current;
+    const el = id ? chipEls.current.get(id) : undefined;
+    if (!r.want || !list || !el) return;
+    const v = verticalRef.current;
+    const target = chipTarget(list, el, v);
+    if (target === null) {
+      r.want = false;
+      r.aim = null;
+      return;
+    }
+    // On its way there already: asking again mid-scroll would only restart it.
+    if (
+      !settled && r.aim !== null && Math.abs(target - r.aim) <= 1 &&
+      Math.abs(scrollPos(list, v) - target) > 1
+    ) return;
+    r.aim = target;
+    r.at = scrollPos(list, v);
+    list.scrollTo(v ? { top: target } : { left: target });
+    watchStall();
+  }).current;
+  /**
+   * While a reveal is pending, watch the strip frame by frame: a smooth scroll that stopped short
+   * fires no event at all (no `scrollend`), so a strip that has not moved for
+   * {@linkcode STALL_FRAMES} frames is aimed again. Ends once the chip is in view or the reveal
+   * is dropped; a frame callback, not a timer, and nothing here touches the keyboard.
+   */
+  const stallFrame = useRef(0);
+  const watchStall = () => {
+    if (stallFrame.current) return;
+    let last = NaN;
+    let still = 0;
+    let tries = 0;
+    const tick = () => {
+      stallFrame.current = 0;
+      const list = listRef.current;
+      if (!reveal.current.want || !list) return;
+      const pos = scrollPos(list, verticalRef.current);
+      still = Math.abs(pos - last) < 0.5 ? still + 1 : 0;
+      last = pos;
+      if (still >= STALL_FRAMES) {
+        still = 0;
+        // A strip that cannot get there (it never moves) is not chased for ever.
+        if (++tries > STALL_TRIES) return void (reveal.current.want = false);
+        revealFocused(true);
+        if (!reveal.current.want) return;
+      }
+      stallFrame.current = requestAnimationFrame(tick);
+    };
+    stallFrame.current = requestAnimationFrame(tick);
+  };
+  useEffect(() => () => cancelAnimationFrame(stallFrame.current), []);
+  useEffect(() => {
+    reveal.current = { want: true, aim: null, at: 0 };
+    revealFocused(true);
+  }, [focusedId, orderKey]);
+
+  // Which chips are scrolled out of view → the "+N" menu; and the focused chip's reveal, checked
+  // again as the strip settles.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
     let frame = 0;
+    let settled = false;
     const measure = () => {
       frame = 0;
+      revealFocused(settled);
+      settled = false;
       const box = list.getBoundingClientRect();
       const hidden: string[] = [];
       for (const id of ids) {
@@ -245,36 +350,48 @@ export function SwitcherBar(props: SwitcherBarProps) {
         : hidden)
       );
     };
-    const schedule = () => {
+    const schedule = (still = true) => {
+      settled ||= still;
       if (!frame) frame = requestAnimationFrame(measure);
     };
+    const settle = () => schedule(true);
+    const moving = () => {
+      // A scroll away from the aim is someone else's: the reveal stands down.
+      const r = reveal.current;
+      const pos = scrollPos(list, verticalRef.current);
+      if (
+        r.want && r.aim !== null &&
+        Math.abs(pos - r.aim) > Math.abs(r.at - r.aim) + 1
+      ) r.want = false;
+      r.at = pos;
+      schedule(false);
+    };
     schedule();
-    const ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver(settle);
     ro.observe(list);
     // A chip changing width (its title arrives) moves the ones after it without resizing the list.
     for (const el of chipEls.current.values()) ro.observe(el);
-    list.addEventListener("scroll", schedule, { passive: true });
+    list.addEventListener("scroll", moving, { passive: true });
+    list.addEventListener("scrollend", settle);
     // The first measure runs while moved chips are still gliding (FLIP) and new ones are still
     // scaling in, so their rects are not final: measure again when those motions end.
-    list.addEventListener("transitionend", schedule);
-    list.addEventListener("animationend", schedule);
+    list.addEventListener("transitionend", settle);
+    list.addEventListener("animationend", settle);
+    // The user scrolling the strip: the focused chip need not come back into view.
+    const userScroll = () => void (reveal.current.want = false);
+    list.addEventListener("wheel", userScroll, { passive: true });
+    list.addEventListener("pointerdown", userScroll);
     return () => {
       ro.disconnect();
-      list.removeEventListener("scroll", schedule);
-      list.removeEventListener("transitionend", schedule);
-      list.removeEventListener("animationend", schedule);
+      list.removeEventListener("scroll", moving);
+      list.removeEventListener("scrollend", settle);
+      list.removeEventListener("transitionend", settle);
+      list.removeEventListener("animationend", settle);
+      list.removeEventListener("wheel", userScroll);
+      list.removeEventListener("pointerdown", userScroll);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [orderKey, vertical]);
-
-  // Keep the focused chip in view. Not `scrollIntoView`: a focus change that reorders the chips
-  // (MRU order) has just inverted them for FLIP, and the chip's box is still drawn where it was;
-  // scrolling to that would scroll to its old place (with Reduce Motion, for good).
-  useEffect(() => {
-    const list = listRef.current;
-    const el = focusedId ? chipEls.current.get(focusedId) : undefined;
-    if (list && el) revealChip(list, el, vertical);
-  }, [focusedId]);
 
   // Close menus on Escape or an outside click.
   useEffect(() => {

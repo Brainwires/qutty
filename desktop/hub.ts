@@ -371,6 +371,11 @@ export class HubService {
   /** Codex's verdict on Qutty's installed hooks: asked once per start, again after an Install. */
   #codexHooks: () => Promise<ListedCodexHook[] | undefined>;
   #codexTrust: Promise<CodexTrustCheck | undefined> | undefined;
+  /**
+   * Counts `integration()` calls: one whose read of the files was overtaken by a newer call (the
+   * start's background refresh racing an Install) must not clear what the newer one found.
+   */
+  #integrationRun = 0;
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -843,16 +848,22 @@ export class HubService {
   // --- integration -----------------------------------------------------------------------------
 
   async integration(): Promise<IntegrationStatus[]> {
+    const run = ++this.#integrationRun;
     const status = await integrationStatus(this.#fs, this.files, this.paths);
-    this.#installed = {
-      claude: status.find((s) => s.target === "claude")?.installed ?? false,
-      codex: status.find((s) => s.target === "codex")?.installed ?? false,
-    };
+    // Overtaken while reading (a newer call read the files later): the newer answer stands.
+    const latest = run === this.#integrationRun;
+    if (latest) {
+      this.#installed = {
+        claude: status.find((s) => s.target === "claude")?.installed ?? false,
+        codex: status.find((s) => s.target === "codex")?.installed ?? false,
+      };
+    }
     const codex = status.find((s) => s.target === "codex");
     if (!codex?.installed) {
-      this.#codexTrust = undefined;
+      if (latest) this.#codexTrust = undefined;
       return status;
     }
+    if (!latest && !this.#codexTrust) return status;
     const check = await (this.#codexTrust ??= this.#codexHooks().then(
       (hooks) => hooks && codexTrustCheck(hooks, this.paths),
       () => undefined,

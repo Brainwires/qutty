@@ -124,6 +124,21 @@ Deno.test("web tiles: list_peers shows them with kind web and their page; read_s
   assertStringIncludes(resultText(scroll), "web-1 is a web tile");
 });
 
+Deno.test("web tiles: read_screen of a page the window cannot read gives its title, URL and why", async () => {
+  const { call } = webHub(() => ({
+    ok: false,
+    error: "this page can't be read here: the iframe engine (the browser demo)",
+  }));
+  const r = await call("read_screen", { tile: "browser" });
+  assert(!r.isError, "an answer, not an error");
+  const screen = JSON.parse(resultText(r));
+  assertEquals(
+    [screen.kind, screen.url, screen.title, screen.screen],
+    ["web", "https://shop.example/", "Shop", ""],
+  );
+  assertStringIncludes(screen.note, "iframe engine");
+});
+
 Deno.test("web tools: a tile's agent may read a page but not act on one (refusals audited)", async () => {
   const { call, env, calls } = webHub(() => ({
     ok: true,
