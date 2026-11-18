@@ -42,8 +42,8 @@ export type TrayMenuItem =
     disabled?: boolean;
   };
 
-/** "1 terminal" / "3 terminals". */
-function terminals(n: number): string {
+/** "1 terminal" / "3 terminals" (also the Dock menu's, desktop/dock-menu.ts). */
+export function terminals(n: number): string {
   return n === 1 ? "1 terminal" : `${n} terminals`;
 }
 
@@ -253,10 +253,16 @@ export class TrayMode {
     const action = trayMenuAction(id);
     if (!action) return;
     if (action.kind === "quit") return this.#quit();
-    if (action.kind === "new") {
-      return this.#open(workspaceWindow(newWorkspaceId(), true));
-    }
+    if (action.kind === "new") return void this.newWindow();
     this.showWorkspace(action.id);
+  }
+
+  /**
+   * Open a window on a fresh workspace (the tray's and the Dock menu's New Window). Returns the
+   * window's id, or `undefined` when none opened.
+   */
+  newWindow(): string | undefined {
+    return this.#open(workspaceWindow(newWorkspaceId(), true));
   }
 
   /** Focus workspace `id`'s window, or reopen it when it is detached. */
@@ -264,18 +270,19 @@ export class TrayMode {
     const rt = this.#rt;
     if (!rt) return;
     const open = rt.windows.byKey(id);
-    if (!open) return this.#open(workspaceWindow(id));
+    if (!open) return void this.#open(workspaceWindow(id));
     this.#regular();
     open.show();
     open.focus();
   }
 
-  #open(options: DesktopOpenWindowOptions): void {
+  #open(options: DesktopOpenWindowOptions): string | undefined {
     this.#regular();
     try {
-      this.#rt?.windows.open(options);
+      return this.#rt?.windows.open(options)?.id;
     } catch (err) {
       console.error("tray: could not open a window", err);
+      return undefined;
     }
   }
 

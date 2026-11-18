@@ -353,6 +353,20 @@
     "After 4.16").
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
+  - Done: the macOS Dock menu, like iTerm2's (desktop/dock-menu.ts): the open
+    workspace windows (the frontmost checked; a click brings it forward), New
+    Window, New Terminal (in the frontmost window, else a new one), "Claude Code
+    (chat)" when Claude Code is installed, and Reopen Closed Window ▸ (the
+    detached workspaces with running terminals). The app process sets it on
+    `Deno.dock` directly, so it works with no window open and outlives page
+    reloads; a window's commands wait for its page (`session` extension,
+    `takeDockCommands`). Not tried in a real window yet.
+  - Needs Denext: a backend Dock menu (`DesktopRuntime.setDockMenu` /
+    `onDockMenuItem`). `setQuickActions` / `onQuickAction` from a page take
+    titles only (no separators, checks or submenus), and a click goes to every
+    open window's page and to none with no window open, so Qutty goes around
+    them to the runtime's `Deno.dock`. Open: SSH connections in the Dock menu
+    (the host list and the connect live in the page).
 
 - [x] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).
