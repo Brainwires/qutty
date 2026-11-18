@@ -598,7 +598,8 @@ type HubEventName =
   | "control"
   | "companion"
   | "say"
-  | "agent";
+  | "agent"
+  | "companionWindow";
 
 /**
  * Where one of the hub's events goes with several windows: `{}` is every window, `{ window }`
@@ -614,14 +615,28 @@ type HubEventName =
  *   follows the user), or every window when none joined a workspace yet. A `control` for a web
  *   tile (its command names the tile's workspace, `owner`) goes to the window showing that
  *   workspace, and nowhere while none does.
+ * - With the floating companion showing (`floating`: its window's id, desktop/companion-window.ts)
+ *   every `ask` and `say` goes to it, a detached workspace's questions too: the workspace windows
+ *   draw no companion then. `companion` (the brain's status and replies) goes to every window
+ *   (the floating one shows the replies; Settings in each window shows the status). `control`
+ *   still goes to a workspace window, which has the tiles.
+ * - `companionWindow` (the floating window opened or closed) goes to every window.
  */
 export function hubEventTarget(
   registry: WorkspaceRegistry,
   event: HubEventName,
   data: unknown,
+  floating?: string,
 ): { window?: string } | null {
-  if (event === "tiles" || event === "askClosed" || event === "agent") {
+  if (
+    event === "tiles" || event === "askClosed" || event === "agent" ||
+    event === "companionWindow"
+  ) {
     return {};
+  }
+  if (floating !== undefined) {
+    if (event === "ask" || event === "say") return { window: floating };
+    if (event === "companion") return {};
   }
   if (event === "control") {
     const owner = (data as { command?: { owner?: unknown } } | null)?.command

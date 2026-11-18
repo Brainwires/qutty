@@ -42,6 +42,7 @@ import { terminalSessions } from "./pty.ts";
 import { type QuitKeeper, shellKeeper } from "./kept-shells.ts";
 import { type TrayMode, trayMode } from "./tray.ts";
 import { appWindowBounds, closeAppWindow } from "./windows.ts";
+import { isCompanionWindow } from "./companion-window.ts";
 import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 import {
@@ -133,9 +134,17 @@ const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
 /** How long the `changed` event waits to coalesce a burst of changes. */
 const CHANGED_DEBOUNCE_MS = 100;
 
-/** Whether a window still shows the app (the tray panel does not count). */
+/**
+ * Whether a window of the app's own is open: the tray panel and the floating companion's window
+ * (desktop/companion-window.ts) do not count.
+ */
+function isAppWindow(w: { id: string; kind: string }): boolean {
+  return w.kind !== "panel" && !isCompanionWindow(w.id);
+}
+
+/** Whether a window still shows the app ({@linkcode isAppWindow}). */
 function hasAppWindow(host: Pick<DesktopExtensionHost, "windows">): boolean {
-  return host.windows().some((w) => w.kind !== "panel");
+  return host.windows().some(isAppWindow);
 }
 
 /**
@@ -154,7 +163,7 @@ export function followWindows(
   mode: Pick<TrayMode, "windowOpened" | "lastWindowClosed"> = trayMode,
 ): () => void {
   const offOpened = host.onWindowOpened((info) => {
-    if (info.kind !== "panel") mode.windowOpened();
+    if (isAppWindow(info)) mode.windowOpened();
   });
   const offClosed = host.onWindowClosed((info) => {
     if (info.appQuitting) return;

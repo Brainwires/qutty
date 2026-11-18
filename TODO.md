@@ -167,7 +167,27 @@
   - Done: dragging the companion (snaps to the nearest corner, which is the
     Corner setting) and the mic level driving its listening pulse (`level`
     events from desktop/voice.ts, ~20 Hz while capturing).
-  - Next: a floating window (Denext multi-window).
+  - Done: a floating window (Settings → Companion → Floating;
+    desktop/companion-window.ts, app/companion/floating-companion.tsx, the
+    `/companion` route). One transparent, frameless, non-activating window for
+    the app, on top, off the taskbar, clicks let through outside the companion
+    (a hit region, else forwarded click-through), dragged by the companion and
+    reopened where it was dropped, on every Space unless turned off. Once its
+    page is ready every `ask` and `say` goes to it (a detached workspace's
+    questions too) and the workspace windows draw no companion; `companion` goes
+    to every window. Its chat box takes the keyboard (`focusWindow`), and
+    closing the chat hands it back to the last-used workspace window. With every
+    workspace window closed it stays (the app lives in the tray while terminals
+    run); tray mode, the Dock's reopen and tile moves ignore it. Floating is
+    grayed out with the reason where the system can't float it (no transparent
+    window, no click-through, Wayland without layer-shell, the browser demo),
+    and the companion stays in the window there.
+  - Floating, open: never hand-checked in a real window yet (the logic is unit
+    tested, the page in the demo e2e). The hot face and the reactions to
+    finished jobs are not shown while floating (they follow a window's tiles),
+    and push-to-talk from a workspace window sends without the review box and
+    without the floating face listening. Typing into the floating chat box on
+    Linux (a layer-shell surface made with `focusable: false`) is untried.
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP

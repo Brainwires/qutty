@@ -13,7 +13,7 @@ import type { FaceMood } from "./face-machine.ts";
 
 export type { AuditEntry, BrainState };
 
-/** Where the companion is drawn: in the window, floating (later: Denext multi-window), or not. */
+/** Where the companion is drawn: in the window, in a floating window of its own, or not. */
 export type CompanionMode = "window" | "floating" | "off";
 /** Every mode, in the order Settings lists them. */
 export const COMPANION_MODES: readonly CompanionMode[] = [

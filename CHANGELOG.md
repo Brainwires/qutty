@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- The companion can float. Settings → Companion → Floating puts it in a
+  transparent window of its own, above the other windows: the face, the speech
+  bubble, the chat box, the questions' buttons and the mic, Summarize and Stop
+  buttons, with clicks passing through everywhere around them. Drag the
+  companion to move it; it opens there next time. One floating companion serves
+  every workspace window: agents' questions and `qutty-hook say` from any of
+  them show in its bubble, and the windows draw no companion of their own. It
+  never takes the keyboard from a terminal, except while its chat box is open;
+  closing the chat gives the keyboard back. "On every Space" (on by default)
+  keeps it on every virtual desktop. With every window closed it stays while
+  Qutty lives in the menu bar or tray, so questions still reach you. Switching
+  between In window, Floating and Off takes effect at once. Where the system
+  can't float a window (no transparency or click-through, Wayland without
+  layer-shell) Floating is grayed out with the reason and the companion stays in
+  the window.
+
 ## 0.7.0 — Codex and API agent tiles, a Changes tab and presets, per-tile zoom, qutty.org
 
 - Agent tiles run Codex, a local Ollama model, or Anthropic's API, not only

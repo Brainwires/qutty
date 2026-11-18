@@ -29,6 +29,9 @@
 // - The companion (desktop/companion.ts): its own socket and privileged identity, the brain
 //   runtime (`companion` events, `companionSend` / `companionConfigure` / `companionStatus`), the
 //   audit log, and `qutty-hook say …` lines (`say` events, answered with `companionSayDone`).
+//   The floating companion's window (desktop/companion-window.ts: `companionWindow`,
+//   `companionWindowState`, `companionWindowReady`, `companionRefocus`, the `companionWindow`
+//   event): once its page is ready, the bubbles and questions of every workspace go there.
 //   The API key brain's Anthropic key is kept in the OS keychain through this extension's own
 //   secure store (`host.secureStore`: Denext's `<app identifier>/ext/hub`, which no page can read;
 //   lib/secrets/api-keys.ts): the page sets or clears it and asks whether one is set
@@ -71,6 +74,13 @@ import {
   unlinkPath,
 } from "./hub-socket.ts";
 import { askVisibleIn, hubEventTarget, workspaces } from "./workspace-host.ts";
+import { companionWindow, isCompanionWindow } from "./companion-window.ts";
+import { focusAppWindow } from "./windows.ts";
+import {
+  type CompanionWindowRequest,
+  type CompanionWindowState,
+  windowRequestFrom,
+} from "../lib/companion/floating.ts";
 import { HubCore } from "../lib/hub/core.ts";
 import type { WebTileReport } from "../lib/hub/web-tiles.ts";
 import {
@@ -316,7 +326,8 @@ export type HubEvent =
   | "control"
   | "companion"
   | "say"
-  | "agent";
+  | "agent"
+  | "companionWindow";
 
 export interface HubServiceOptions {
   home: string;
@@ -987,11 +998,25 @@ async function start(host: DesktopExtensionHost): Promise<void> {
     socketDir,
     appSupportDir: host.appSupportDir,
     secureStore: () => host.secureStore,
-    // With several windows each event goes where it belongs (desktop/workspace-host.ts).
+    // With several windows each event goes where it belongs (desktop/workspace-host.ts), the
+    // floating companion's window (desktop/companion-window.ts) among them.
     emit: (event, data) => {
-      const to = hubEventTarget(workspaces, event, data);
+      const to = hubEventTarget(
+        workspaces,
+        event,
+        data,
+        companionWindow.target(),
+      );
       if (to) host.emit(event, data, to);
     },
+  });
+  // The floating companion's window, opened by the host for whichever workspace window asks.
+  companionWindow.install({
+    open: (options) =>
+      host.openWindow(
+        options as unknown as Parameters<typeof host.openWindow>[0],
+      ),
+    emit: (state) => host.emit("companionWindow", state),
   });
   await installHubFiles(hub.paths);
   service = hub;
@@ -1148,6 +1173,17 @@ const configureInput = objectSchema<
   },
 );
 
+const windowRequestInput = objectSchema<CompanionWindowRequest>(
+  (v, issues) => {
+    const request = windowRequestFrom(v);
+    if (typeof request === "string") {
+      issues.push({ message: request });
+      return { open: false };
+    }
+    return request;
+  },
+);
+
 const keySetInput = objectSchema<{ key: string }>((v, issues) => ({
   key: str(v, "key", issues, API_KEY_MAX + 64),
 }));
@@ -1188,6 +1224,7 @@ export default defineDesktopExtension({
     "companion",
     "say",
     "agent",
+    "companionWindow",
   ],
   setup: (host) => {
     // Never throw into the app's startup: a hub that cannot start leaves the terminals as they were.
@@ -1204,8 +1241,10 @@ export default defineDesktopExtension({
       handler: (_args: unknown, ctx): HubSnapshot & { asks: AskRequest[] } => {
         const snap = service?.snapshot() ??
           { running: false, tiles: [], asks: [] };
-        // Only the questions of this window's tiles (and the companion's).
+        // Only the questions of this window's tiles (and the companion's); the floating
+        // companion's window gets them all.
         const window = ctx.windowId ?? "main";
+        if (isCompanionWindow(window)) return snap;
         return {
           ...snap,
           asks: snap.asks.filter((a) =>
@@ -1294,6 +1333,37 @@ export default defineDesktopExtension({
       handler: async (): Promise<void> => {
         const keys = requireService().keys;
         await asValidation(() => keys.clear("anthropic"));
+      },
+    },
+    /**
+     * Settings → Companion → Floating: open the floating companion's window (again: a no-op) or
+     * close it (desktop/companion-window.ts). Every workspace window asks while Floating is on.
+     */
+    companionWindow: {
+      input: windowRequestInput,
+      handler: (args: unknown): CompanionWindowState =>
+        companionWindow.request(args as CompanionWindowRequest),
+    },
+    /** Whether the floating companion's window is open and showing the companion. */
+    companionWindowState: {
+      input: emptyInput,
+      handler: (): CompanionWindowState => companionWindow.state(),
+    },
+    /** The floating companion's page loaded: the bubbles and questions go to it from now. */
+    companionWindowReady: {
+      input: emptyInput,
+      handler: (_args: unknown, ctx): boolean =>
+        companionWindow.ready(ctx.windowId),
+    },
+    /**
+     * The floating companion is done with the keyboard (its chat box closed): give it back to the
+     * workspace window used last.
+     */
+    companionRefocus: {
+      input: emptyInput,
+      handler: (): void => {
+        const window = workspaces.activeWindow();
+        if (window !== undefined) focusAppWindow(window);
       },
     },
     /** The button pressed under a waited-for `qutty-hook say` (`null`: closed). */

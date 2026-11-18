@@ -10,6 +10,11 @@
 // the review box. While it listens, the microphone's level (0–1, about 20 times a second) is
 // followed for the companion's pulse, and drops back to 0 when listening stops.
 //
+// With the companion floating (app/companion/floating-companion.tsx) each window has a voice layer:
+// the floating one reads the answers aloud and reviews its mic's transcripts; a workspace window
+// keeps its talk keys (the keyboard is there) and its tile alerts, but leaves the answers
+// (`answers: false`) and the review box (`review: false`) to the floating companion.
+//
 // In the browser demo the engines are fakes (lib/voice/client.ts `createDemoVoice`, a timed TTS),
 // which the e2e suite drives through `window.__e2eVoice` in test mode.
 
@@ -57,6 +62,12 @@ export interface UseVoiceOptions {
    * the hold-to-dictate key does not.
    */
   enabled: boolean;
+  /** Whether a transcript may wait for review (default `enabled`): the review box is shown here. */
+  review?: boolean;
+  /** Read the companion's answers aloud here (default `true`). */
+  answers?: boolean;
+  /** Say the tile alerts (Settings → Voice → alerts) here (default `true`). */
+  alerts?: boolean;
   /** The companion's name (Settings → Companion → Name): the summary phrase may address it. */
   companionName?: string;
   /** Type `text` into the focused tile (its terminal, or a web tile's page, which answers late). */
@@ -138,10 +149,10 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       engine: () => sttEngine(optsRef.current.settings.sttEngine, voice, keys),
       // Review only where the review box can be shown (on the companion).
       settings: () => {
-        const { settings, enabled, companionName } = optsRef.current;
+        const { settings, enabled, companionName, review } = optsRef.current;
         return {
           dictate: settings.dictate,
-          review: settings.review && enabled,
+          review: settings.review && (review ?? enabled),
           ...(companionName !== undefined ? { name: companionName } : {}),
         };
       },
@@ -170,6 +181,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   useEffect(() => {
     if (!backend) return;
     return backend.onCompanion((update) => {
+      if (optsRef.current.answers === false) return;
       const say = answerToSpeak(update, optsRef.current.settings);
       if (say) queue.say(say.text, "answer", say.key);
     });
@@ -181,7 +193,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     let prev: TileInfo[] | undefined;
     const onTiles = (snapshot: HubSnapshot) => {
       const s = optsRef.current.settings;
-      if (prev && anyAlertOn(s)) {
+      if (prev && anyAlertOn(s) && optsRef.current.alerts !== false) {
         for (const alert of tileAlerts(prev, snapshot.tiles, s)) {
           queue.say(alert.text, "alert");
         }

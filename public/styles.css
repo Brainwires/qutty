@@ -4281,6 +4281,24 @@ kbd {
   top: 6px;
   flex-direction: column-reverse;
 }
+/* The floating companion's own window (app/companion/floating-companion.tsx): a transparent page,
+   the companion at its bottom left with the bubble and the chat box above it. The window lets
+   clicks through outside them (app/companion/use-floating-window.ts). */
+html[data-floating],
+html[data-floating] body {
+  background: transparent;
+}
+.floating-companion {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+.companion-overlay[data-floating] {
+  left: 6px;
+  bottom: 6px;
+  width: calc(100% - 12px);
+  max-width: none;
+}
 .companion-overlay .bubble,
 .companion-overlay .poke,
 .companion-overlay .companion-chat {

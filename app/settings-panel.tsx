@@ -61,6 +61,7 @@ import { AgentPresetsSection } from "./agent-presets-settings.tsx";
 import type { AgentPreset } from "../lib/agent/presets.ts";
 import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
+import type { FloatingSupport } from "../lib/companion/floating.ts";
 import type { SandboxSettings } from "../lib/sandbox/settings.ts";
 import { SandboxSettingsSection } from "./sandbox-settings.tsx";
 import { OllamaSettingsSection } from "./ollama-settings.tsx";
@@ -116,6 +117,8 @@ export interface SettingsPanelProps {
   onPlusOpens(plusOpens: PlusOpens): void;
   /** Settings → Companion. */
   onCompanion(patch: Partial<CompanionSettings>): void;
+  /** Whether the companion can float here, and why not (absent: not known yet). */
+  floating?: FloatingSupport;
   /** Settings → Sandbox. */
   onSandbox(patch: Partial<SandboxSettings>): void;
   /** Settings → Voice. */
@@ -705,6 +708,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         settings={settings.companion}
         backend={props.backend}
         {...(props.ollama ? { ollama: props.ollama.status } : {})}
+        {...(props.floating ? { floating: props.floating } : {})}
         onChange={props.onCompanion}
       />
     ),
