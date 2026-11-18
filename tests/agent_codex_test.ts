@@ -30,6 +30,7 @@ import {
 } from "../lib/agent/transcript.ts";
 import { AgentSessions, type AgentUpdate } from "../lib/agent/sessions.ts";
 import { agentModels, sanitizeChat } from "../lib/agent/tile.ts";
+import { revertPlan, sessionChanges } from "../lib/agent/changes.ts";
 import { agentStartInput } from "../desktop/agent-host.ts";
 import { waitUntil } from "./hub_helpers.ts";
 
@@ -527,4 +528,90 @@ Deno.test("agent kinds: the tile's chat and the start request keep the backend",
     agent: "gemini",
   });
   assert("issues" in bad && bad.issues?.[0].path?.[0] === "agent");
+});
+
+Deno.test("codex: Allow always is Codex's acceptForSession for that request only; a later command still asks", async () => {
+  for (const agent of ["codex", undefined] as const) {
+    const sessions = new AgentSessions({
+      emit() {},
+      createAdapter: () => new DemoCodexAdapter(),
+      hub: {
+        open: (_id, info) => ({ env: {}, name: info.agent ?? "claude" }),
+        close() {},
+        setStatus() {},
+        rename: (_id, name) => name,
+      },
+    });
+    const snap = sessions.start({ ...(agent ? { agent } : {}), cwd: "/p" });
+    const asking = () => sessions.snapshot(snap.id)!.transcript.asking;
+    const first = sessions.approve(snap.id, {
+      toolName: "Bash",
+      input: { command: "ls" },
+    });
+    assertEquals(asking().length, 1);
+    assert(sessions.answer(snap.id, asking()[0], "always"));
+    // The adapter gets "always" (Codex's client sends `acceptForSession`).
+    assertEquals(await first, "always");
+    let settled = false;
+    const second = sessions.approve(snap.id, {
+      toolName: "Bash",
+      input: { command: "rm -rf build" },
+    }).then((d) => {
+      settled = true;
+      return d;
+    });
+    await Promise.resolve();
+    if (agent === "codex") {
+      // No rule per tool name: a different command is asked again.
+      assertEquals(settled, false);
+      assertEquals(asking().length, 1);
+      assert(sessions.answer(snap.id, asking()[0], "deny"));
+      assertEquals(await second, "deny");
+    } else {
+      // Claude Code: "Allow always" is remembered for the tool, as before.
+      assertEquals(await second, "allow");
+      assertEquals(asking().length, 0);
+    }
+    sessions.stopAll();
+  }
+});
+
+Deno.test("codex: a change to several files is one diff per file in the Changes tab, with no revert", () => {
+  const events: AgentEvent[] = [];
+  const client = new CodexAppServer({
+    write: () => Promise.resolve(),
+    sink: { event: (e) => events.push(e) },
+    hooks: { approve: () => Promise.resolve("deny") },
+  });
+  client.line(JSON.stringify({
+    method: "item/completed",
+    params: {
+      threadId: "t",
+      turnId: "u",
+      item: {
+        type: "fileChange",
+        id: "fc1",
+        status: "completed",
+        changes: [
+          {
+            path: "/p/a.txt",
+            kind: { type: "update" },
+            diff: "@@ -1 +1 @@\n-a\n+A\n",
+          },
+          { path: "/p/b.txt", kind: { type: "add" }, diff: "new\n" },
+        ],
+      },
+    },
+  }));
+  const rows = events.reduce(reduceTranscript, emptyTranscript()).rows;
+  const files = sessionChanges(rows, "/p");
+  assertEquals(files.map((f) => [f.path, f.added, f.removed]), [
+    ["/p/a.txt", 1, 1],
+    ["/p/b.txt", 1, 0],
+  ]);
+  // Known only as diffs: revert refuses instead of "succeeding" with nothing undone.
+  assertEquals(revertPlan(files[0].changes, "A\n"), {
+    ok: false,
+    reason: "the agent's change is only known as a diff",
+  });
 });

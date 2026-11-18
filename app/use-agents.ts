@@ -13,7 +13,9 @@ import {
   agentDefaultName,
   type AgentMessage,
   type PermissionDecision,
+  type PermissionMode,
 } from "../lib/agent/adapter.ts";
+import type { RevertResult } from "../lib/agent/changes.ts";
 import type { AgentSnapshot, AgentUpdate } from "../lib/agent/sessions.ts";
 import {
   reduceTranscript,
@@ -24,7 +26,9 @@ import {
   type AgentChat,
   type AgentGroup,
   agentGroup,
+  agentHarness,
 } from "../lib/agent/tile.ts";
+import type { AgentHarness } from "../lib/agent/avatar.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 
@@ -36,6 +40,11 @@ export interface AgentTileState {
   review: boolean;
   /** Why the session could not open. */
   failed?: string;
+  /**
+   * The Changes tab's reviewed files: per path, the last change accepted or reverted (its tool
+   * row id); later changes show again.
+   */
+  reviewed?: Readonly<Record<string, string>>;
 }
 
 /** One tile's summary for the Agents panel and the workspace. */
@@ -45,6 +54,8 @@ export interface AgentSummary {
   group: AgentGroup;
   /** What it does or asks, in a few words. */
   detail: string;
+  /** The harness it runs on (its avatar's colour). */
+  harness: AgentHarness;
 }
 
 /** What the store reports to the workspace. */
@@ -126,6 +137,7 @@ export class AgentStore {
       name: s.snap?.name ?? agentDefaultName(s.snap?.spec.agent),
       group: this.#group(s),
       detail: this.#detail(s),
+      harness: agentHarness(s.snap?.spec.agent),
     }));
   }
 
@@ -188,6 +200,8 @@ export class AgentStore {
         ...(chat.model ? { model: chat.model } : {}),
         ...(chat.session ? { resumeId: chat.session } : {}),
         ...(chat.mode ? { permissionMode: chat.mode } : {}),
+        ...(chat.systemPrompt ? { systemPrompt: chat.systemPrompt } : {}),
+        ...(chat.allowedTools ? { allowedTools: chat.allowedTools } : {}),
         ...(chat.agentId ? { attach: chat.agentId } : {}),
         ...(entry.title && entry.title !== agentDefaultName(chat.agent)
           ? { name: entry.title }
@@ -224,7 +238,11 @@ export class AgentStore {
     const old = this.#tiles.get(tileId);
     if (old?.snap) this.#byAgent.delete(old.snap.id);
     this.#byAgent.set(snap.id, tileId);
-    this.#set(tileId, { review: old?.review ?? false, snap });
+    this.#set(tileId, {
+      review: old?.review ?? false,
+      snap,
+      ...(old?.reviewed ? { reviewed: old.reviewed } : {}),
+    });
   }
 
   #set(tileId: string, s: AgentTileState): void {
@@ -330,15 +348,53 @@ export class AgentStore {
     }
   }
 
-  /** Another model (`""`: the default), or a new session. */
-  restart(tileId: string, patch: { model?: string; fresh?: boolean }): void {
+  /** Another model (`""`: the default) or permission mode, or a new session. */
+  restart(
+    tileId: string,
+    patch: { model?: string; permissionMode?: PermissionMode; fresh?: boolean },
+  ): void {
     const id = this.agentOf(tileId);
     if (!id) return;
     if (patch.model !== undefined) {
       this.#events.meta(tileId, { model: patch.model || undefined });
     }
-    if (patch.fresh) this.#events.meta(tileId, { session: undefined });
+    if (patch.permissionMode) {
+      this.#events.meta(tileId, { mode: patch.permissionMode });
+    }
+    if (patch.fresh) {
+      this.#events.meta(tileId, { session: undefined });
+      const s = this.#tiles.get(tileId);
+      if (s?.reviewed) this.#set(tileId, { ...s, reviewed: {} });
+    }
     void this.#backend.agentRestart(id, patch).catch(() => {});
+  }
+
+  /** The Changes tab: file `path`'s changes up to row `rowId` are reviewed (accepted, reverted). */
+  markReviewed(tileId: string, marks: Readonly<Record<string, string>>): void {
+    const s = this.#tiles.get(tileId);
+    if (!s) return;
+    this.#set(tileId, { ...s, reviewed: { ...s.reviewed, ...marks } });
+  }
+
+  /**
+   * Revert files the session changed (each after what was reviewed already); each file's result.
+   * The reverted ones are marked reviewed.
+   */
+  async revert(tileId: string, paths: string[]): Promise<RevertResult[]> {
+    const id = this.agentOf(tileId);
+    if (!id) throw new Error("the session is not open");
+    const reviewed = this.#tiles.get(tileId)?.reviewed ?? {};
+    const results = await this.#backend.agentRevert(
+      id,
+      paths.map((path) => ({
+        path,
+        ...(reviewed[path] ? { after: reviewed[path] } : {}),
+      })),
+    );
+    const marks: Record<string, string> = {};
+    for (const r of results) if (r.ok && r.through) marks[r.path] = r.through;
+    if (Object.keys(marks).length > 0) this.markReviewed(tileId, marks);
+    return results;
   }
 
   /** Rename the tile's agent; resolves with the name, rejects with the reason. */

@@ -518,7 +518,12 @@ const LOOKS = new Set(["Read", "Glob", "Grep", "LS"]);
 
 /** What the transcript view draws: a row, or a run of look-only tool calls. */
 export type DisplayItem =
-  | { kind: "row"; row: Row }
+  | {
+    kind: "row";
+    row: Row;
+    /** A tool call's permission question, drawn under its row (not after it). */
+    permission?: Extract<Row, { type: "permission" }>;
+  }
   | {
     kind: "group";
     id: string;
@@ -542,8 +547,35 @@ function groupLabel(
   return parts.join(", ");
 }
 
-/** The rows as the view draws them: two or more finished look-only calls in a row are one item. */
+/**
+ * Each permission question that is about a tool call in `rows` (its `toolUseId`), by the call's
+ * id: the view draws it with its tool row instead of where it arrived.
+ */
+function questionsByTool(
+  rows: readonly Row[],
+): Map<string, Extract<Row, { type: "permission" }>> {
+  const tools = new Set<string>();
+  const out = new Map<string, Extract<Row, { type: "permission" }>>();
+  for (const r of rows) {
+    if (r.type === "tool") tools.add(r.id);
+    else if (r.type === "permission" && r.toolUseId && tools.has(r.toolUseId)) {
+      out.set(r.toolUseId, r);
+    }
+  }
+  return out;
+}
+
+/**
+ * The rows as the view draws them: two or more finished look-only calls in a row are one item; a
+ * permission question goes with the tool call it is about.
+ */
 export function displayItems(rows: readonly Row[]): DisplayItem[] {
+  const questions = questionsByTool(rows);
+  const attached = new Set([...questions.values()].map((q) => q.id));
+  const rowItem = (r: Row): DisplayItem => {
+    const q = r.type === "tool" ? questions.get(r.id) : undefined;
+    return q ? { kind: "row", row: r, permission: q } : { kind: "row", row: r };
+  };
   const out: DisplayItem[] = [];
   let run: Extract<Row, { type: "tool" }>[] = [];
   const flush = () => {
@@ -554,18 +586,22 @@ export function displayItems(rows: readonly Row[]): DisplayItem[] {
         label: groupLabel(run),
         rows: run,
       });
-    } else for (const r of run) out.push({ kind: "row", row: r });
+    } else for (const r of run) out.push(rowItem(r));
     run = [];
   };
   for (const r of rows) {
-    if (r.type === "tool" && LOOKS.has(r.name) && r.status === "done") {
+    if (r.type === "permission" && attached.has(r.id)) continue;
+    if (
+      r.type === "tool" && LOOKS.has(r.name) && r.status === "done" &&
+      !questions.has(r.id)
+    ) {
       run.push(r);
       continue;
     }
     // Thinking between two reads does not break the run.
     if (r.type === "thinking" && run.length > 0 && !r.text) continue;
     flush();
-    out.push({ kind: "row", row: r });
+    out.push(rowItem(r));
   }
   flush();
   return out;
@@ -618,6 +654,12 @@ export function transcriptText(
   maxLines = 200,
 ): string[] {
   const lines: string[] = [];
+  const questions = questionsByTool(t.rows);
+  const attached = new Set([...questions.values()].map((q) => q.id));
+  const question = (r: Extract<Row, { type: "permission" }>) =>
+    `? Allow ${permissionText(r, t.cwd)}? ${
+      r.decision ? `(${r.decision})` : "[Allow / Allow always / Deny]"
+    }`;
   for (const r of t.rows) {
     switch (r.type) {
       case "user":
@@ -640,20 +682,17 @@ export function transcriptText(
         break;
       case "tool": {
         const title = toolTitle(r.name, r.input, t.cwd);
+        const q = questions.get(r.id);
         lines.push(
           "",
           `● ${title.name}${title.arg ? `(${title.arg})` : ""}`,
+          ...(q ? [`  ${question(q)}`] : []),
           `  ⎿  ${toolSummary(r)}`,
         );
         break;
       }
       case "permission":
-        lines.push(
-          "",
-          `? Allow ${permissionText(r, t.cwd)}? ${
-            r.decision ? `(${r.decision})` : "[Allow / Allow always / Deny]"
-          }`,
-        );
+        if (!attached.has(r.id)) lines.push("", question(r));
         break;
       case "error":
         lines.push("", `! ${r.text}`);
@@ -678,6 +717,12 @@ const SAVED_ROW_CHARS = 8_000;
 
 const clipText = (s: string, max = SAVED_ROW_CHARS) =>
   s.length > max ? `${s.slice(0, max)}\n… (cut)` : s;
+
+/** A tool detail without the file it had before (`original`). */
+function withoutOriginal(d: ToolDetail): ToolDetail {
+  const { original: _o, ...rest } = d;
+  return rest;
+}
 
 /** A row's size in characters, roughly (what the saved copy budgets on). */
 function rowChars(r: Row): number {
@@ -707,7 +752,8 @@ export function savedRows(rows: readonly Row[], maxChars = SAVED_CHARS): Row[] {
         ...(r.detail
           ? {
             detail: {
-              ...r.detail,
+              // A whole file is too big for the saved copy (a resume reads Claude Code's own).
+              ...withoutOriginal(r.detail),
               ...(r.detail.stdout !== undefined
                 ? { stdout: clipText(r.detail.stdout, 2000) }
                 : {}),
@@ -719,6 +765,17 @@ export function savedRows(rows: readonly Row[], maxChars = SAVED_CHARS): Row[] {
                   patch: r.detail.patch.slice(0, 20).map((h) => ({
                     ...h,
                     lines: h.lines.slice(0, 200),
+                  })),
+                }
+                : {}),
+              ...(r.detail.files
+                ? {
+                  files: r.detail.files.slice(0, 20).map((f) => ({
+                    path: f.path,
+                    patch: f.patch.slice(0, 20).map((h) => ({
+                      ...h,
+                      lines: h.lines.slice(0, 200),
+                    })),
                   })),
                 }
                 : {}),

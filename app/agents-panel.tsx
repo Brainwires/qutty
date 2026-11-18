@@ -1,12 +1,13 @@
 // The Agents panel: a switcher-bar button (shown while the window has agent tiles) whose popover
-// lists them grouped as Needs you, To review and Working (then Idle), each with what it does or
-// asks; a click focuses the tile. The button's badge counts the tiles that need you. Registered as
+// lists them grouped as Needs you, To review and Working (then Idle), each with its avatar and
+// what it does or asks; a click focuses the tile. The button's badge counts the tiles that need you. Registered as
 // an HTML overlay so native web views step aside while it is open.
 
 import { useEffect, useRef, useState } from "denext";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
 import { AGENT_GROUPS } from "../lib/agent/tile.ts";
 import type { AgentSummary } from "./use-agents.ts";
+import { AgentAvatar } from "./agent-avatar.tsx";
 
 export function AgentsMenu(props: {
   agents: AgentSummary[];
@@ -104,6 +105,10 @@ export function AgentsMenu(props: {
                       class="agent-dot"
                       data-group={a.group}
                       aria-hidden="true"
+                    />
+                    <AgentAvatar
+                      name={props.nameOf(a.id)}
+                      harness={a.harness}
                     />
                     <span class="menu-label">{props.nameOf(a.id)}</span>
                     <span class="agents-detail">{a.detail}</span>

@@ -50,6 +50,10 @@ export interface AgentStartRequest {
   /** Resume this Claude Code session. */
   resumeId?: string;
   permissionMode?: PermissionMode;
+  /** A preset's system prompt, added to the harness's own. */
+  systemPrompt?: string;
+  /** A preset's tools allowed without asking. */
+  allowedTools?: string[];
   /** The tile's name (the hub name), when it had one. */
   name?: string;
   /** The session this tile had: attach to it when it still runs. */
@@ -149,6 +153,8 @@ export class AgentSessions {
       ...(req.model ? { model: req.model } : {}),
       ...(req.resumeId ? { resumeId: req.resumeId } : {}),
       ...(req.permissionMode ? { permissionMode: req.permissionMode } : {}),
+      ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
+      ...(req.allowedTools?.length ? { allowedTools: req.allowedTools } : {}),
     };
     const hub = this.#deps.hub?.open(id, {
       cwd: req.cwd,
@@ -177,7 +183,11 @@ export class AgentSessions {
       env: hub?.env ?? {},
       transcript,
       seq: 0,
-      broker: new PermissionBroker(id),
+      // Codex keeps "Allow always" itself (`acceptForSession`, for that command): a rule here
+      // per tool name would let every later command through.
+      broker: new PermissionBroker(id, {
+        rememberAlways: req.agent !== "codex",
+      }),
       queue: [],
       stopped: false,
     };
@@ -450,6 +460,15 @@ export class AgentSessions {
     this.#deps.hub?.setStatus(s.id, "idle");
     this.#emitSnapshot(s);
     return this.#snapshot(s);
+  }
+
+  /** A line of the session layer's own in the transcript ("Reverted notes.md"). */
+  notice(id: string, text: string): boolean {
+    const s = this.#sessions.get(id);
+    if (!s || s.stopped) return false;
+    s.transcript = withNotice(s.transcript, text, this.#now());
+    this.#emitSnapshot(s);
+    return true;
   }
 
   /** Rename the session's tile (its hub name); the name it got. Throws with the reason. */

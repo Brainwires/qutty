@@ -5,7 +5,8 @@
  *
  * The broker keeps the open questions of one session, answers them, withdraws them (an
  * interrupt, the session ending: denied) and remembers "Allow always" for the rest of the
- * session, per tool. {@linkcode approveToolArgs} reads `approve_tool`'s arguments and
+ * session, per tool — unless the harness remembers it itself (Codex: "Allow always" is its
+ * `acceptForSession` for that one request, so a later, different command still asks). {@linkcode approveToolArgs} reads `approve_tool`'s arguments and
  * {@linkcode approveToolReply} writes the answer Claude Code expects.
  *
  * Pure.
@@ -31,9 +32,17 @@ export class PermissionBroker {
   #next = 0;
   #prefix: string;
 
-  /** @param prefix Request ids start with it (unique per session). */
-  constructor(prefix = "perm") {
+  #remember: boolean;
+
+  /**
+   * @param prefix Request ids start with it (unique per session).
+   * @param opts.rememberAlways Answer later questions about a tool allowed always at once
+   *   (default). Off where the harness keeps its own, narrower rule (Codex's `acceptForSession`):
+   *   "always" then goes to the harness and nothing is remembered here.
+   */
+  constructor(prefix = "perm", opts: { rememberAlways?: boolean } = {}) {
     this.#prefix = prefix;
+    this.#remember = opts.rememberAlways ?? true;
   }
 
   /** Whether "Allow always" was picked for this tool. */
@@ -64,7 +73,9 @@ export class PermissionBroker {
     const open = this.#open.get(requestId);
     if (!open) return false;
     this.#open.delete(requestId);
-    if (decision === "always") this.#always.add(open.request.toolName);
+    if (decision === "always" && this.#remember) {
+      this.#always.add(open.request.toolName);
+    }
     open.resolve(decision);
     return true;
   }

@@ -131,6 +131,9 @@ export function needsApproval(
   }
 }
 
+/** The largest file kept as it was before an edit or a write (the Changes tab's revert). */
+const MAX_ORIGINAL = 1024 * 1024;
+
 /** The longest output handed back from a command or a read. */
 const MAX_OUTPUT = 30_000;
 
@@ -236,7 +239,10 @@ export class InferenceAgentAdapter implements AgentAdapter {
       label: this.label,
       provider: this.#opts.provider,
       tools,
-      systemPrompt: codingSystemPrompt(spec.cwd),
+      // A preset's role after Qutty's own instructions.
+      systemPrompt: spec.systemPrompt
+        ? `${codingSystemPrompt(spec.cwd)}\n\n${spec.systemPrompt}`
+        : codingSystemPrompt(spec.cwd),
       maxIterations: this.#opts.maxIterations ?? 40,
       maxTokens: 8192,
       ...(this.#opts.history ? { history: this.#opts.history } : {}),
@@ -356,7 +362,8 @@ export class InferenceAgentAdapter implements AgentAdapter {
         isError: true,
       });
     }
-    if (need) {
+    // A preset's allowed tools (plain names here: `Bash`, `Edit`) go ahead without asking.
+    if (need && !this.#spec?.allowedTools?.includes(name)) {
       const decision = await this.#hooks!.approve({
         toolName: name,
         input: args,
@@ -406,12 +413,21 @@ export class InferenceAgentAdapter implements AgentAdapter {
       case "Write": {
         const content = typeof args.content === "string" ? args.content : "";
         const path = pathArg();
+        // The file before (`null`: new), so the Changes tab can take the write back.
+        const original = await host.readFile(path).then(
+          (t): string | null | undefined =>
+            t.length <= MAX_ORIGINAL ? t : undefined,
+          (e) => (e as Error)?.name === "NotFound" ? null : undefined,
+        );
         await host.writeFile(path, content);
         const lines = content ? content.replace(/\n$/, "").split("\n") : [];
         return {
           text: `Wrote ${path}`,
           isError: false,
-          detail: { wroteLines: lines.length },
+          detail: {
+            wroteLines: lines.length,
+            ...(original !== undefined ? { original } : {}),
+          },
         };
       }
       case "Edit": {
@@ -439,7 +455,10 @@ export class InferenceAgentAdapter implements AgentAdapter {
         return {
           text: `The file ${path} has been updated.`,
           isError: false,
-          detail: { patch: editPatch(before, index, oldString, newString) },
+          detail: {
+            patch: editPatch(before, index, oldString, newString),
+            ...(before.length <= MAX_ORIGINAL ? { original: before } : {}),
+          },
         };
       }
       default: {

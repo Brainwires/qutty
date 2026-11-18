@@ -299,16 +299,27 @@ function toolResult(
       if (status === "declined") {
         return { text: "The user declined this change.", isError: true };
       }
-      const patch = fileChanges(item).flatMap((c) =>
-        codexPatch(c.diff, c.kind)
-      );
-      const paths = fileChanges(item).map((c) => c.path).join(", ");
+      const changes = fileChanges(item);
+      const each = changes.map((c) => ({
+        path: c.path,
+        patch: codexPatch(c.diff, c.kind),
+      }));
+      const patch = each.flatMap((c) => c.patch);
+      const paths = changes.map((c) => c.path).join(", ");
       return failed
         ? { text: `The change to ${paths} failed.`, isError: true }
         : {
           text: `Updated ${paths}`,
           isError: false,
-          ...(patch.length > 0 ? { detail: { patch } } : {}),
+          ...(patch.length > 0
+            ? {
+              detail: {
+                patch,
+                // The Changes tab's per-file diffs (the row names only the first file).
+                ...(each.length > 1 ? { files: each } : {}),
+              },
+            }
+            : {}),
         };
     }
     case "mcpToolCall":

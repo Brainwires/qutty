@@ -173,11 +173,15 @@ import {
   agentStartInput,
   agentStartRequest,
   answerAgentInput,
+  claudeHistory,
   idInput,
   renameAgentInput,
   restartAgentInput,
+  revertAgentInput,
+  revertFs,
   sendAgentInput,
 } from "./agent-host.ts";
+import { revertFiles, shortPath } from "../lib/agent/changes.ts";
 
 export type { AskRequest, HubSnapshot, IntegrationStatus, IntegrationTarget };
 
@@ -1365,12 +1369,23 @@ export default defineDesktopExtension({
       input: agentStartInput,
       handler: (args: unknown, ctx) =>
         asValidation(async () => {
+          const input = args as AgentStartInput;
+          const agents = requireService().agents;
+          const home = Deno.env.get("HOME") ?? "/";
+          // A resumed session's history from Claude Code's own transcript file (read only),
+          // unless the tile attaches to its session still running here.
+          const live = input.attach !== undefined && agents.has(input.attach);
           const req: AgentStartRequest = await agentStartRequest(
-            args as AgentStartInput,
-            Deno.env.get("HOME") ?? "/",
+            input,
+            home,
             workspaces.workspaceOfWindow(ctx.windowId ?? "main"),
+            live ? undefined : (cwd, session) =>
+              claudeHistory(cwd, session, {
+                home,
+                configDir: Deno.env.get("CLAUDE_CONFIG_DIR"),
+              }),
           );
-          return requireService().agents.start(req);
+          return agents.start(req);
         }),
     },
     /** A message for the agent (queued while a turn runs). */
@@ -1421,6 +1436,38 @@ export default defineDesktopExtension({
         return asValidation(async () =>
           requireService().agents.rename(id, name)
         );
+      },
+    },
+    /**
+     * Put files the session changed back as they were before its changes (the Changes tab's
+     * Revert): only its own changes, only inside its folder; each file's result.
+     */
+    agentRevert: {
+      input: revertAgentInput,
+      handler: async (args: unknown) => {
+        const { id, files } = args as {
+          id: string;
+          files: { path: string; after?: string }[];
+        };
+        const agents = requireService().agents;
+        const snap = agents.snapshot(id);
+        if (!snap) throw new Error(`no such agent: ${id}`);
+        const results = await revertFiles(
+          snap.transcript.rows,
+          snap.spec.cwd,
+          files,
+          revertFs,
+        );
+        const done = results.filter((r) => r.ok);
+        if (done.length > 0) {
+          agents.notice(
+            id,
+            `Reverted ${
+              done.map((r) => shortPath(r.path, snap.spec.cwd)).join(", ")
+            }`,
+          );
+        }
+        return results;
       },
     },
     /** End an agent tile's session (its tile closed). */

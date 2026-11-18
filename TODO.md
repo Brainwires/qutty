@@ -501,16 +501,24 @@
         queue), the reasoning effort in the header.
   - [ ] Ollama / API agent: streamed replies (the loop calls the provider
         unstreamed), images for the API, a Grep / Glob tool of its own.
-  - [ ] A Changes tab: the session's edits as one diff to review (accept,
-        revert, open in the editor).
-  - [ ] Avatars for agents.
-  - [ ] Per-agent roles / presets (system prompt, model, permission mode,
-        allowed tools), picked in the `+` menu.
-  - [ ] The permission mode in the header (default / accept edits / plan); the
-        session layer already restarts with another mode.
-  - [ ] Interleave a permission question with its tool row (it shows after the
-        row today), and a resumed session's history from Claude Code's own
-        transcript file instead of only the saved copy.
+  - [x] A Changes tab: the session's edits as one diff to review (accept,
+        revert, open in the editor). From the tool rows
+        (`lib/agent/changes.ts`); revert restores the original when the file is
+        as the agent left it, else undoes edit by edit, only inside the
+        session's folder.
+    - Open: reviewed / accepted marks live in the page (lost on reload); a
+      `git diff` view of changes made outside tool calls (Bash) is not shown.
+  - [x] Avatars for agents (`lib/agent/avatar.ts`, in the backend's colour:
+        `agentHarness` reads the tile's `AgentKind`).
+  - [x] Per-agent roles / presets (system prompt, model, permission mode,
+        allowed tools), picked in the `+` menu; edited in Settings → Agents.
+  - [x] The permission mode in the header (ask / accept edits / plan / bypass).
+  - [x] Interleave a permission question with its tool row, and a resumed
+        session's history from Claude Code's own transcript file instead of only
+        the saved copy.
+    - Codex: the Changes tab shows its file changes (each file's diff) but has
+      no Revert (Codex reports diffs, not edits Qutty can undo); a preset's
+      system prompt and allowed tools are not passed to Codex yet.
   - Not doing: embedding t3code (sidecar, worker mode, PTY adapter). The agent
     tile replaces it (decided 2026-11-17).
 

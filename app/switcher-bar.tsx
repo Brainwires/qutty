@@ -64,6 +64,7 @@ export interface SwitcherBarProps {
     | "onWebPage"
     | "onAgentChat"
     | "apiKeyChat"
+    | "agentPresets"
     | "onBookmarks"
     | "onHistory"
   >;
@@ -474,9 +475,9 @@ export function SwitcherBar(props: SwitcherBarProps) {
             : {})}
           {...(props.launch.onAgentChat
             ? {
-              onAgentChat: (agent) => {
+              onAgentChat: (agent, preset) => {
                 setMenu("none");
-                props.launch.onAgentChat?.(agent);
+                props.launch.onAgentChat?.(agent, preset);
               },
             }
             : {})}

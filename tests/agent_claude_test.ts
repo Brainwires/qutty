@@ -264,9 +264,20 @@ Deno.test("parser: without partial messages, whole text blocks are the text", ()
 });
 
 Deno.test("toolDetail: a Write's lines, stderr kept, nothing for an unknown shape", () => {
+  // A write that created its file: there was nothing before (the Changes tab removes it).
   assertEquals(toolDetail({ type: "create", content: "a\nb\n" }), {
     wroteLines: 2,
+    original: null,
   });
+  // An edit: the file before it, when small enough to keep.
+  assertEquals(
+    toolDetail({ originalFile: "x\n", oldString: "x", newString: "y" }),
+    { original: "x\n" },
+  );
+  assertEquals(
+    toolDetail({ originalFile: "x".repeat(600 * 1024) }),
+    undefined,
+  );
   assertEquals(
     toolDetail({ stdout: "", stderr: "boom", interrupted: true }),
     { stdout: "", stderr: "boom", interrupted: true },

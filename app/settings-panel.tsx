@@ -57,6 +57,8 @@ import {
 import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
 import { AgentIntegration } from "./agent-integration.tsx";
+import { AgentPresetsSection } from "./agent-presets-settings.tsx";
+import type { AgentPreset } from "../lib/agent/presets.ts";
 import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
 import type { SandboxSettings } from "../lib/sandbox/settings.ts";
@@ -123,6 +125,8 @@ export interface SettingsPanelProps {
   onOllama(patch: Partial<OllamaSettings>): void;
   /** Settings → Links & web. */
   onLinks(patch: Partial<LinkSettings>): void;
+  /** Settings → Agents → Presets (the whole list). */
+  onAgentPresets(presets: AgentPreset[]): void;
   /** Settings → System monitor. */
   onMonitor(patch: Partial<MonitorSettings>): void;
   /**
@@ -677,6 +681,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <>
         <SettingsGroup title="Agent integration" testid="integration-section">
           <AgentIntegration backend={props.backend} />
+        </SettingsGroup>
+        <SettingsGroup title="Presets" testid="presets-section">
+          <AgentPresetsSection
+            presets={settings.agentPresets}
+            onChange={props.onAgentPresets}
+          />
         </SettingsGroup>
         {props.ollama && (
           <SettingsGroup title="Ollama" testid="ollama-section">

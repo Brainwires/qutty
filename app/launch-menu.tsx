@@ -39,11 +39,17 @@ export interface LaunchMenuProps {
   /**
    * "Claude Code (chat)" beside an installed Claude Code (and "Codex (chat)" beside Codex,
    * "Ollama (chat)" in the Ollama section, "Anthropic API (chat)" with a saved key): a new agent
-   * tile (app/agent-tile.tsx) on that backend.
+   * tile (app/agent-tile.tsx) on that backend; with a preset's id, one of the presets listed
+   * under its backend's item.
    */
-  onAgentChat?(agent: AgentKind): void;
+  onAgentChat?(agent: AgentKind, presetId?: string): void;
   /** An Anthropic API key is saved: offer "Anthropic API (chat)". */
   apiKeyChat?: boolean;
+  /**
+   * Settings → Agents → Presets: each a "<name> (chat)" item under its backend's "(chat)" item
+   * (`agent` absent: Claude Code's).
+   */
+  agentPresets?: readonly { id: string; name: string; agent?: AgentKind }[];
   /** "Bookmarks…": the bookmark manager (app/bookmark-manager.tsx). */
   onBookmarks?(): void;
   /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
@@ -78,6 +84,37 @@ function ChatItem(
       <LaunchIcon kind="chat" />
       <span class="menu-label">{label} (chat)</span>
     </button>
+  );
+}
+
+/** The presets (Settings → Agents) on backend `agent`: each a "<name> (chat)" item. */
+function PresetItems(
+  props: {
+    agent: AgentKind;
+    presets: LaunchMenuProps["agentPresets"];
+    onOpen(agent: AgentKind, presetId: string): void;
+  },
+) {
+  return (
+    <>
+      {(props.presets ?? []).filter((p) =>
+        (p.agent ?? "claude") === props.agent
+      ).map((p) => (
+        <button
+          type="button"
+          role="menuitem"
+          class="menu-item launch-item launch-preset"
+          data-testid="launch-agent-preset"
+          data-id={p.id}
+          key={`preset-${p.id}`}
+          title={`A chat tile with the "${p.name}" preset (Settings → Agents)`}
+          onClick={() => props.onOpen(props.agent, p.id)}
+        >
+          <LaunchIcon kind="chat" />
+          <span class="menu-label">{p.name} (chat)</span>
+        </button>
+      ))}
+    </>
   );
 }
 
@@ -220,6 +257,16 @@ export function LaunchMenu(props: LaunchMenuProps) {
                       onOpen={props.onAgentChat}
                     />
                   )}
+                  {entry.kind === "agent" &&
+                    (entry.agent.name === "claude" ||
+                      entry.agent.name === "codex") &&
+                    props.onAgentChat && (
+                    <PresetItems
+                      agent={entry.agent.name}
+                      presets={props.agentPresets}
+                      onOpen={props.onAgentChat}
+                    />
+                  )}
                 </Fragment>
               ))}
               {section.id === "ollama" && props.ollama && (
@@ -247,12 +294,26 @@ export function LaunchMenu(props: LaunchMenuProps) {
                 </button>
               )}
               {section.id === "ollama" && props.ollama && props.onAgentChat && (
-                <ChatItem agent="ollama" onOpen={props.onAgentChat} />
+                <>
+                  <ChatItem agent="ollama" onOpen={props.onAgentChat} />
+                  <PresetItems
+                    agent="ollama"
+                    presets={props.agentPresets}
+                    onOpen={props.onAgentChat}
+                  />
+                </>
               )}
             </div>
           ))}
           {props.apiKeyChat && props.onAgentChat && (
-            <ChatItem agent="anthropic" onOpen={props.onAgentChat} />
+            <>
+              <ChatItem agent="anthropic" onOpen={props.onAgentChat} />
+              <PresetItems
+                agent="anthropic"
+                presets={props.agentPresets}
+                onOpen={props.onAgentChat}
+              />
+            </>
           )}
           <div class="launch-sep" role="separator" />
           {props.sandbox && (

@@ -37,7 +37,38 @@
   while the focused tile is maximized. It was the same toggle as Maximize /
   Restore under a second name, and with one tile in the window it changed
   nothing on screen.
-
+- Agent tiles review what the agent changed, and start in a role.
+  - A Changes tab (beside the transcript, once the session edits a file): the
+    session's Edit, MultiEdit and Write calls as one diff per file, with Open in
+    the editor (Settings → Links' editor, at the first changed line), Accept
+    (the file leaves the list until the agent changes it again) and Revert, per
+    file or all, asked first in the tab. Revert only takes back this session's
+    changes, inside its folder: the file as it was before them when it is still
+    as the agent left it, else each edit undone where its text still is; a file
+    that changed in a way it cannot undo is left alone and says why.
+  - Presets (roles) in Settings → Agents: a name, a model, a permission mode,
+    tools allowed without asking and a system prompt added to Claude Code's own.
+    Each is a "(chat)" item in the `+` menu and a choice in the new-agent
+    dialog; a tile keeps what it started with.
+  - The permission mode in the header (ask / accept edits / plan / bypass,
+    bypass confirmed first); switching restarts the session, resumed.
+  - A permission question shows under the tool call it is about, not after it.
+  - A tile that resumes a Claude Code session shows its history from Claude
+    Code's own transcript file (`~/.claude/projects/…/<session>.jsonl`, only
+    read), falling back to the saved copy.
+  - Avatars: a small pattern from each agent's name in its backend's colour
+    (Claude Code, Codex, Ollama, the API), in the tile header and the Agents
+    panel.
+  - On Codex, Ollama and the API too: a preset names its backend (Settings →
+    Agents → Agent) and shows under that backend's "(chat)" item; Ollama and the
+    API take its system prompt and allowed tools (plain tool names), Codex its
+    model and permission mode. The mode menu says what each mode does on Codex
+    (its approval policy and sandbox). Codex's file changes show in the Changes
+    tab file by file, without Revert (Codex reports diffs, not edits Qutty can
+    undo); Ollama's and the API's edits and writes can be reverted.
+  - On a Codex tile, "Allow always" is Codex's own allow-for-the-session of that
+    one request: a later, different command is asked again, instead of every
+    command going ahead once one was allowed always.
 - The app icon wears the companion's everyday face: the neutral face it has at
   rest in the app (arched brows, teal eyes, a small closed smile) instead of the
   excited one with the open mouth. The Dock, taskbar, tray and favicon icons

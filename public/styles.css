@@ -6167,6 +6167,201 @@ pre.agent-detail {
   color: var(--agent-red, var(--red));
 }
 
+/* A question about a tool call, inside its row (between its head and its summary). */
+.agent-perm.is-inline {
+  margin: 3px 0 2px calc(1.6ch + 2px);
+}
+
+/* The agent's avatar (app/agent-avatar.tsx): the header, the Agents panel. */
+.agent-avatar {
+  flex: none;
+  display: block;
+  border-radius: 3px;
+}
+.agents-item .agent-avatar {
+  margin-right: 2px;
+}
+
+/* The permission mode button and its menu. */
+.agent-mode[data-mode="acceptEdits"] {
+  color: var(--tint-green, var(--accent));
+}
+.agent-mode[data-mode="plan"] {
+  color: var(--tint-blue, var(--accent));
+}
+.agent-mode[data-mode="bypassPermissions"] {
+  border-color: var(--red);
+  color: var(--red);
+}
+.menu.agent-menu .menu-hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.menu.agent-menu .menu-item.is-danger .menu-label {
+  color: var(--red);
+}
+.agent-mode-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 4px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+/* Transcript | Changes, over the body once the session changed a file. */
+.agent-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 4px 34px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.agent-tab {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: var(--text-3);
+  font: 11px/1 var(--mono);
+  cursor: pointer;
+}
+.agent-tab:hover {
+  color: var(--text);
+}
+.agent-tab[aria-selected="true"] {
+  border-color: var(--line);
+  background: rgba(var(--hi-rgb), 0.05);
+  color: var(--text);
+}
+.agent-tab-count {
+  min-width: 14px;
+  padding: 1px 4px;
+  border-radius: 7px;
+  background: var(--tint-yellow, var(--amber));
+  color: var(--ink);
+  font-size: 9.5px;
+  text-align: center;
+}
+
+/* The Changes tab (app/agent-changes.tsx). */
+.agent-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-changes-bar,
+.agent-change-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-changes-spacer {
+  flex: 1;
+}
+.agent-change-add {
+  color: var(--agent-green, var(--accent));
+}
+.agent-change-del {
+  color: var(--agent-red, var(--red));
+}
+.agent-change-new {
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  color: var(--text-3);
+  font-size: 10px;
+}
+.agent-change-name {
+  margin-left: 0;
+  padding-left: 0;
+  font-weight: 600;
+}
+.agent-scroll[hidden] {
+  display: none;
+}
+.agent-link-btn.is-danger {
+  color: var(--agent-red, var(--red));
+}
+.agent-changes-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--agent-red, var(--red));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--agent-red, #e07a74) 8%, transparent);
+}
+.agent-changes-confirm > span {
+  flex: 1 1 220px;
+}
+.agent-change-error {
+  color: var(--agent-red, var(--red));
+}
+.agent-change-file .agent-diff {
+  margin-top: 4px;
+}
+
+/* A preset in the + menu, under "Claude Code (chat)". */
+.launch-preset .menu-label {
+  padding-left: 10px;
+}
+
+/* Settings → Agents → Presets (app/agent-presets-settings.tsx). */
+.agent-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-preset-item {
+  appearance: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.agent-preset-item.is-active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(var(--hi-rgb), 0.06);
+}
+.agent-preset-editor {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+.agent-preset-prompt {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--text);
+  font: 12px/1.4 var(--mono);
+}
+.agent-preset-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* The assistant's markdown. */
 .md {
   white-space: normal;

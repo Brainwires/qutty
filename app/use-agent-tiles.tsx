@@ -2,9 +2,10 @@
 // store (app/use-agents.ts) with its events turned into workspace actions (the session saved in
 // the entry, the name as the title, a finished turn and new output as the tile's activity), the
 // hooks the tiles draw with (app/agent-tile.tsx: the terminal font and colours, links, "Open in
-// terminal", dictation, reading a reply aloud, pictures of web tiles), the + menu's "Claude Code
-// (chat)" (and Codex, Ollama, Anthropic API) with its folder question, and the lookups the hub
-// badges, the companion and dictation need.
+// terminal", dictation, reading a reply aloud, pictures of web tiles, the Changes tab's editor),
+// the + menu's "Claude Code (chat)" (and Codex, Ollama, Anthropic API) and their presets
+// (Settings → Agents) with the folder question, and the lookups the hub badges, the companion and
+// dictation need.
 
 import { useCallback, useEffect, useMemo, useState } from "denext";
 import type { ReactNode } from "denext";
@@ -20,6 +21,8 @@ import { themeById } from "../lib/workspace/themes.ts";
 import { agentDefaultName, type AgentKind } from "../lib/agent/adapter.ts";
 import { type AgentStore, type AgentSummary, useAgents } from "./use-agents.ts";
 import { AgentLaunchDialog, type AgentTileHooks } from "./agent-tile.tsx";
+import type { AgentChat } from "../lib/agent/tile.ts";
+import type { AgentPreset } from "../lib/agent/presets.ts";
 
 export interface AgentTilesView {
   store: AgentStore | null;
@@ -29,8 +32,11 @@ export interface AgentTilesView {
   hubIdOf(id: string): string | undefined;
   /** The agent tile whose session is hub tile `hubId`. */
   tileOfHub(hubId: string): string | undefined;
-  /** "Claude Code (chat)" (or another backend's): ask for the folder, then open the tile. */
-  openLaunch(agent?: AgentKind): void;
+  /**
+   * "Claude Code (chat)" (or another backend's, or one of their presets): ask for the folder,
+   * then open the tile.
+   */
+  openLaunch(agent?: AgentKind, presetId?: string): void;
   /** Whether an Anthropic API key is saved (the + menu offers "Anthropic API (chat)"). */
   apiKey: boolean;
   /** Ask again whether a key is saved (the + menu opened). */
@@ -56,6 +62,7 @@ export function useAgentTiles(o: {
   dictation?: AgentTileHooks["dictation"];
   speech?: AgentTileHooks["speech"];
   capture?: AgentTileHooks["capture"];
+  openInEditor?: AgentTileHooks["openInEditor"];
 }): AgentTilesView {
   const { dispatch } = o;
   const { store, summaries } = useAgents({
@@ -77,12 +84,16 @@ export function useAgentTiles(o: {
   });
 
   const [asking, setAsking] = useState<
-    { cwd: string; agent?: AgentKind } | null
+    { cwd: string; agent?: AgentKind; preset?: string } | null
   >(null);
   const { manager, state } = o;
-  const openLaunch = useCallback((agent?: AgentKind) => {
+  const openLaunch = useCallback((agent?: AgentKind, preset?: string) => {
     const ask = (cwd: string) =>
-      setAsking({ cwd, ...(agent && agent !== "claude" ? { agent } : {}) });
+      setAsking({
+        cwd,
+        ...(agent && agent !== "claude" ? { agent } : {}),
+        ...(preset ? { preset } : {}),
+      });
     // The folder of the focused tile when it is known (shell marks, OSC 7, the process's), else
     // the home folder.
     const focused = state.terminals.find((t) => t.id === state.focusedId);
@@ -172,6 +183,7 @@ export function useAgentTiles(o: {
         dispatch({ type: "title", id, title: got });
       },
       close: closeTile,
+      ...(o.openInEditor ? { openInEditor: o.openInEditor } : {}),
       ...(o.dictation ? { dictation: o.dictation } : {}),
       ...(o.speech ? { speech: o.speech } : {}),
       ...(o.capture ? { capture: o.capture } : {}),
@@ -191,6 +203,7 @@ export function useAgentTiles(o: {
     o.dictation,
     o.speech,
     o.capture,
+    o.openInEditor,
   ]);
 
   const hubIdOf = useCallback((id: string) => store?.agentOf(id), [store]);
@@ -198,21 +211,28 @@ export function useAgentTiles(o: {
     store,
   ]);
 
+  const presets = state.settings.agentPresets;
   const dialog = asking && (
     <AgentLaunchDialog
       initialCwd={asking.cwd}
       {...(asking.agent ? { agent: asking.agent } : {})}
+      presets={presets.filter((p) => p.agent === asking.agent)}
+      {...(asking.preset ? { initialPreset: asking.preset } : {})}
       onCancel={() => {
         setAsking(null);
         o.refocus();
       }}
-      onOpen={(cwd) => {
+      onOpen={(cwd, presetId) => {
         setAsking(null);
         run({
           type: "add",
           id: o.nextId(),
           now: Date.now(),
-          chat: { cwd, ...(asking.agent ? { agent: asking.agent } : {}) },
+          chat: presetChat(
+            cwd,
+            asking.agent,
+            presets.find((p) => p.id === presetId),
+          ),
           title: agentDefaultName(asking.agent),
         });
       }}
@@ -229,5 +249,26 @@ export function useAgentTiles(o: {
     apiKey,
     refreshApiKey,
     dialog,
+  };
+}
+
+/**
+ * A new agent tile's entry data: its folder and backend, and what its preset (if any) starts it
+ * with.
+ */
+function presetChat(
+  cwd: string,
+  agent: AgentKind | undefined,
+  preset: AgentPreset | undefined,
+): AgentChat {
+  const base: AgentChat = { cwd, ...(agent ? { agent } : {}) };
+  if (!preset) return base;
+  return {
+    ...base,
+    preset: preset.name,
+    ...(preset.model ? { model: preset.model } : {}),
+    ...(preset.mode ? { mode: preset.mode } : {}),
+    ...(preset.systemPrompt ? { systemPrompt: preset.systemPrompt } : {}),
+    ...(preset.allowedTools ? { allowedTools: [...preset.allowedTools] } : {}),
   };
 }

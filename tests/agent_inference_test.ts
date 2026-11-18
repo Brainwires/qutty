@@ -52,6 +52,7 @@ type Step =
 class PlayedProvider implements Provider {
   readonly name = "played";
   seen: Message[][] = [];
+  options: ChatOptions[] = [];
   #steps: Step[];
   #ids = 0;
 
@@ -62,9 +63,10 @@ class PlayedProvider implements Provider {
   chat(
     messages: Message[],
     _tools: Tool[] | undefined,
-    _options: ChatOptions,
+    options: ChatOptions,
   ): Promise<ChatResponse> {
     this.seen.push([...messages]);
+    this.options.push(options);
     const step = this.#steps.shift() ?? { say: "(end of script)" };
     if (step === "hang") return new Promise<never>(() => {});
     if (step instanceof Error) return Promise.reject(step);
@@ -128,6 +130,8 @@ function session(
   opts: {
     mode?: PermissionMode;
     answer?: PermissionDecision | "never";
+    systemPrompt?: string;
+    allowedTools?: string[];
   } = {},
 ) {
   const provider = new PlayedProvider(steps);
@@ -145,6 +149,8 @@ function session(
     {
       cwd: "/p",
       ...(opts.mode ? { permissionMode: opts.mode } : {}),
+      ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
+      ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
     },
     { event: (e) => events.push(e) },
     {
@@ -432,4 +438,32 @@ Deno.test("inference backends: no key, no Ollama, no model; the adapter for each
     createAgentAdapter({ cwd: "/p", agent: "anthropic" }, tile, opts).label
       .startsWith("Anthropic API"),
   );
+});
+
+Deno.test("inference agent: a preset's role and allowed tools; an edit keeps the file before", async () => {
+  const s = session([
+    {
+      call: [
+        ["Bash", { command: "ls" }],
+        ["Edit", {
+          file_path: "notes.md",
+          old_string: "hello",
+          new_string: "bye",
+        }],
+      ],
+    },
+    { say: "Done." },
+  ], { systemPrompt: "You are the reviewer.", allowedTools: ["Bash"] });
+  await s.start;
+  await s.adapter.send({ text: "x" });
+  await waitUntil(() => s.turns() === 1);
+  // Bash is allowed by the preset; the edit still asks.
+  assertEquals(s.asked.map((a) => a.toolName), ["Edit"]);
+  assert(
+    JSON.stringify([s.provider.seen[0], s.provider.options[0]]).includes(
+      "You are the reviewer.",
+    ),
+  );
+  const edit = toolRows(s.transcript().rows).find((r) => r.name === "Edit");
+  assertEquals(edit?.detail?.original, "hello from a file\nsecond line\n");
 });

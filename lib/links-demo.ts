@@ -31,6 +31,9 @@ const DEMO_FS = new Set([
   "/Users/demo/Source/qutty/src/main.ts",
   "/Users/demo/Source/qutty/README.md",
   "/Users/demo/notes.md",
+  "/Users/demo/project/",
+  "/Users/demo/project/notes.md",
+  "/Users/demo/project/summary.md",
   "/Users/demo/build.sh",
   "/Users/demo/todo.txt",
 ]);

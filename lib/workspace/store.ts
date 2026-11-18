@@ -48,6 +48,7 @@ import {
   type VoiceSettings,
 } from "../voice/settings.ts";
 import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
+import { type AgentPreset, sanitizePresets } from "../agent/presets.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
 import {
@@ -256,6 +257,8 @@ export interface Settings extends FontSettings {
   zoomTogether: boolean;
   /** The shared zoom level while tiles zoom together (1: 100%; lib/workspace/tile-zoom.ts). */
   sharedZoom: number;
+  /** Settings → Agents → Presets: agent tile roles, picked in the `+` menu (lib/agent/presets.ts). */
+  agentPresets: AgentPreset[];
 }
 
 /** The whole workspace. */
@@ -393,6 +396,8 @@ export type WorkspaceAction =
   | { type: "setSandbox"; patch: Partial<SandboxSettings> }
   | { type: "setOllama"; patch: Partial<OllamaSettings> }
   | { type: "setLinks"; patch: Partial<LinkSettings> }
+  /** Settings → Agents → Presets: the whole list. */
+  | { type: "setAgentPresets"; presets: unknown }
   | { type: "setMonitor"; patch: Partial<MonitorSettings> }
   | { type: "setWindowClose"; windowClose: WindowClose }
   | { type: "launched"; entryId: string }
@@ -438,6 +443,7 @@ export const DEFAULT_SETTINGS: Settings = {
   harnessOverlay: true,
   zoomTogether: false,
   sharedZoom: 1,
+  agentPresets: [],
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -468,6 +474,10 @@ function cloneSettings(s: Settings): Settings {
     links: { ...s.links },
     monitor: { ...s.monitor },
     activity: { ...s.activity },
+    agentPresets: s.agentPresets.map((p) => ({
+      ...p,
+      ...(p.allowedTools ? { allowedTools: [...p.allowedTools] } : {}),
+    })),
     ollama: {
       ...s.ollama,
       recents: s.ollama.recents.map((p) => ({ ...p })),
@@ -606,6 +616,9 @@ export function sanitizeSettings(
     out.defaultView = sanitizeViewMode(r.defaultView);
   }
   if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
+  if (r.agentPresets !== undefined) {
+    out.agentPresets = sanitizePresets(r.agentPresets);
+  }
   if (SETTINGS_TABS.includes(r.settingsTab as SettingsTab)) {
     out.settingsTab = r.settingsTab as SettingsTab;
   }
@@ -1340,6 +1353,16 @@ function reduceCore(
         return state;
       }
       return { ...state, settings: { ...state.settings, links } };
+    }
+    case "setAgentPresets": {
+      const agentPresets = sanitizePresets(action.presets);
+      if (
+        JSON.stringify(agentPresets) ===
+          JSON.stringify(state.settings.agentPresets)
+      ) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, agentPresets } };
     }
     case "setMonitor": {
       const monitor = sanitizeMonitor(action.patch, state.settings.monitor);
