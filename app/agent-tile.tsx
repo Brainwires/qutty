@@ -1,16 +1,20 @@
 // An agent tile's insides (the frame — position, phase, header, close — is app/tile-cluster.tsx's,
 // shared with the terminals and web tiles): a coding agent's chat drawn like a terminal.
 //
-// - The header (`AgentHead`): a status dot, the agent's name (its hub name; click to edit), the
-//   model picker (Claude Code's aliases, lib/agent/tile.ts), what it is doing, and a menu: Open in
-//   terminal (`claude --resume <session>` in a normal tile, in the same folder: the real TUI),
-//   New session, Close.
+// - The header (`AgentHead`): a status dot, the agent's avatar (app/agent-avatar.tsx, in its
+//   backend's colour), its name (its hub name; click to edit), the model picker (the backend's
+//   models, lib/agent/tile.ts `agentModels`), the permission mode (ask / accept edits / plan /
+//   bypass: the session restarts, resumed), what it is doing, and a menu: Open in terminal
+//   (`claude --resume <session>` or `codex resume <thread>` in a normal tile, in the same folder:
+//   the real TUI), New session, Close.
 // - The body (`AgentBody`): the transcript (lib/agent/transcript.ts rows) in the terminal's font
 //   and colours — the user's prompts after a `>`, the assistant's markdown, thinking (dim,
 //   collapsed), tool calls as `● Tool(arg)` rows with a `⎿` summary that expand to the diff, the
 //   command and its output, or the input and result; permission questions with Allow, Allow
-//   always and Deny; a footer per turn (done · tok/s · time · cost). It sticks to the bottom
-//   unless you scrolled up ("Jump to latest").
+//   always and Deny, under the tool call they are about; a footer per turn (done · tok/s · time ·
+//   cost). It sticks to the bottom unless you scrolled up ("Jump to latest").
+// - Once the session changed a file, tabs over the body: Transcript and Changes (the session's
+//   edits as one diff to accept, revert or open: app/agent-changes.tsx).
 // - The side rail: jump to the top, jump to the latest, maximize / restore the tile (the tile's
 //   own control), and read the last reply aloud (the companion's voice; again to stop).
 // - The prompt box: two lines at least, it grows with its text; Enter sends, Shift+Enter is a new
@@ -35,7 +39,13 @@ import {
   useRef,
   useState,
 } from "denext";
-import type { PermissionDecision } from "../lib/agent/adapter.ts";
+import {
+  type AgentKind,
+  agentLabel,
+  PERMISSION_MODES,
+  type PermissionDecision,
+  type PermissionMode,
+} from "../lib/agent/adapter.ts";
 import {
   diffLines,
   displayItems,
@@ -47,11 +57,16 @@ import {
   type Transcript,
 } from "../lib/agent/transcript.ts";
 import {
-  AGENT_MODELS,
   agentGroup,
+  agentHarness,
+  agentModels,
   groupText,
+  MODE_LABELS,
+  modeHint,
   modelLabel,
 } from "../lib/agent/tile.ts";
+import { sessionChanges } from "../lib/agent/changes.ts";
+import type { AgentPreset } from "../lib/agent/presets.ts";
 import {
   highlight,
   type MdInline,
@@ -62,6 +77,8 @@ import { lastReply } from "../lib/agent/prompt-box.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import { type AgentStore, type AgentTileState } from "./use-agents.ts";
 import { Modal } from "./modal.tsx";
+import { AgentAvatar } from "./agent-avatar.tsx";
+import { ChangesView, diffClass } from "./agent-changes.tsx";
 import {
   type Capture,
   type Dictation,
@@ -82,6 +99,8 @@ export interface AgentTileHooks {
   openUrl(url: string): void;
   /** Run `claude --resume <session>` in a terminal tile in the agent's folder. */
   openInTerminal(tileId: string): void;
+  /** Open a file at a line in the editor Settings → Links picks (the Changes tab). */
+  openInEditor?: (path: string, line?: number) => void;
   /** The tile's name changed in its header. */
   rename(tileId: string, name: string): Promise<void>;
   close(tileId: string): void;
@@ -120,6 +139,14 @@ function useAgentState(
   return state;
 }
 
+/** Tile `entry`'s backend (absent: Claude Code). */
+function agentOf(
+  entry: TerminalEntry,
+  state: AgentTileState | undefined,
+): AgentKind | undefined {
+  return entry.chat?.agent ?? state?.snap?.spec.agent;
+}
+
 /** Milliseconds since `since`, updated each animation frame (seconds resolution). */
 function useElapsed(since: number | undefined): number {
   const [now, setNow] = useState(() => Date.now());
@@ -156,10 +183,28 @@ export function AgentHead(
   const t = state?.snap?.transcript;
   const group = state?.failed ? "needs" : agentGroup(t, state?.review ?? false);
   const elapsed = useElapsed(t?.running ? t.turnStartedAt : undefined);
-  const [menu, setMenu] = useState<"none" | "model" | "more">("none");
+  const [menu, setMenu] = useState<"none" | "model" | "mode" | "more">(
+    "none",
+  );
+  /** Bypass picked: asking to confirm it in the menu. */
+  const [bypass, setBypass] = useState(false);
   const anchor = useRef<HTMLSpanElement | null>(null);
-  useDismiss(menu !== "none", anchor, () => setMenu("none"));
+  useDismiss(menu !== "none", anchor, () => {
+    setMenu("none");
+    setBypass(false);
+  });
   const model = entry.chat?.model ?? state?.snap?.spec.model;
+  const agent = agentOf(entry, state);
+  // Ollama and the API run in Qutty: no terminal UI to open the session in.
+  const hasTerminal = agent === undefined || agent === "claude" ||
+    agent === "codex";
+  const mode: PermissionMode = entry.chat?.mode ??
+    state?.snap?.spec.permissionMode ?? "default";
+  const pickMode = (m: PermissionMode) => {
+    setMenu("none");
+    setBypass(false);
+    if (m !== mode) hooks.store.restart(id, { permissionMode: m });
+  };
   const status = t?.running && t.asking.length === 0
     ? `working ${formatDuration(elapsed).replace(/\.\ds$/, "s")}`
     : groupText(group);
@@ -170,6 +215,11 @@ export function AgentHead(
         data-group={group}
         data-testid="agent-dot"
         aria-hidden="true"
+      />
+      <AgentAvatar
+        name={entry.title}
+        harness={agentHarness(agent)}
+        size={15}
       />
       <NameField
         name={entry.title}
@@ -185,6 +235,22 @@ export function AgentHead(
         onClick={() => setMenu(menu === "model" ? "none" : "model")}
       >
         {modelLabel(model)}
+        <span class="agent-caret" aria-hidden="true">▾</span>
+      </button>
+      <button
+        type="button"
+        class="agent-model agent-mode"
+        data-testid="agent-mode"
+        data-mode={mode}
+        title={`Permission mode: ${modeHint(mode, agent)}`}
+        aria-haspopup="menu"
+        aria-expanded={menu === "mode"}
+        onClick={() => {
+          setBypass(false);
+          setMenu(menu === "mode" ? "none" : "mode");
+        }}
+      >
+        {MODE_LABELS[mode]}
         <span class="agent-caret" aria-hidden="true">▾</span>
       </button>
       <span
@@ -209,7 +275,7 @@ export function AgentHead(
       </button>
       {menu === "model" && (
         <div class="menu agent-menu" role="menu" data-testid="agent-models">
-          {AGENT_MODELS.map((m) => (
+          {agentModels(agent, t?.models).map((m) => (
             <button
               type="button"
               role="menuitemradio"
@@ -232,6 +298,45 @@ export function AgentHead(
           ))}
         </div>
       )}
+      {menu === "mode" && (
+        <div class="menu agent-menu" role="menu" data-testid="agent-modes">
+          {PERMISSION_MODES.map((m) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={mode === m}
+              class={`menu-item${mode === m ? " is-active" : ""}${
+                m === "bypassPermissions" ? " is-danger" : ""
+              }`}
+              data-mode={m}
+              key={m}
+              title={modeHint(m, agent)}
+              onClick={() =>
+                m === "bypassPermissions" && mode !== m
+                  ? setBypass(true)
+                  : pickMode(m)}
+            >
+              <span class="menu-check">{mode === m ? "●" : ""}</span>
+              <span class="menu-label">{MODE_LABELS[m]}</span>
+              <span class="menu-hint">{modeHint(m, agent)}</span>
+            </button>
+          ))}
+          {bypass && (
+            <div class="agent-mode-confirm" data-testid="agent-bypass-confirm">
+              <span>Run every tool without asking?</span>
+              <button
+                type="button"
+                class="btn-primary agent-btn is-danger"
+                data-testid="agent-bypass-yes"
+                onClick={() =>
+                  pickMode("bypassPermissions")}
+              >
+                Bypass
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {menu === "more" && (
         <div class="menu agent-menu" role="menu" data-testid="agent-more">
           <button
@@ -239,8 +344,10 @@ export function AgentHead(
             role="menuitem"
             class="menu-item"
             data-testid="agent-open-terminal"
-            disabled={!t?.sessionId && !entry.chat?.session}
-            title="Open this session in Claude Code's own terminal UI"
+            disabled={!hasTerminal || (!t?.sessionId && !entry.chat?.session)}
+            title={`Open this session in ${
+              agentLabel(agent)
+            }'s own terminal UI`}
             onClick={() => {
               setMenu("none");
               hooks.openInTerminal(id);
@@ -399,6 +506,14 @@ export function AgentBody(
   };
   const elapsed = useElapsed(t?.running ? t.turnStartedAt : undefined);
   const reply = lastReply(t?.rows ?? []);
+  const cwd = t?.cwd ?? entry.chat?.cwd;
+  const [tab, setTab] = useState<"log" | "changes">("log");
+  // Every file the session changed, and those left to review (the Changes tab's).
+  const changedAny = t ? sessionChanges(t.rows, cwd).length > 0 : false;
+  const pending = t && changedAny
+    ? sessionChanges(t.rows, cwd, state?.reviewed)
+    : [];
+  const showChanges = tab === "changes" && changedAny;
 
   return (
     <div
@@ -413,11 +528,64 @@ export function AgentBody(
         }
       }}
     >
+      {changedAny && (
+        <div class="agent-tabs" role="tablist" data-testid="agent-tabs">
+          <button
+            type="button"
+            role="tab"
+            class="agent-tab"
+            aria-selected={!showChanges}
+            data-testid="agent-tab-log"
+            onClick={() =>
+              setTab("log")}
+          >
+            Transcript
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="agent-tab"
+            aria-selected={showChanges}
+            data-testid="agent-tab-changes"
+            data-count={String(pending.length)}
+            onClick={() =>
+              setTab("changes")}
+          >
+            Changes
+            {pending.length > 0 && (
+              <span class="agent-tab-count">{pending.length}</span>
+            )}
+          </button>
+        </div>
+      )}
+      {showChanges && (
+        <div class="agent-scroll" data-testid="agent-changes-scroll">
+          <ChangesView
+            files={pending}
+            {...(cwd ? { cwd } : {})}
+            hooks={{
+              accept: (marks) =>
+                hooks.store.markReviewed(id, marks),
+              // Codex reports its file changes as diffs, not edits Qutty can undo.
+              ...(agentOf(entry, state) !== "codex"
+                ? {
+                  revert: (paths: string[]) =>
+                    hooks.store.revert(id, paths),
+                }
+                : {}),
+              ...(hooks.openInEditor
+                ? { openInEditor: hooks.openInEditor }
+                : {}),
+            }}
+          />
+        </div>
+      )}
       <div
         class="agent-scroll"
         ref={scrollRef}
         data-testid="agent-scroll"
         onScroll={onScroll}
+        hidden={showChanges}
       >
         <div class="agent-log" data-testid="agent-log">
           {state?.failed && (
@@ -459,7 +627,7 @@ export function AgentBody(
         onLatest={jump}
         onMaximize={props.maximized ? props.onRestore : props.onMaximize}
       />
-      {!stuck && (
+      {!stuck && !showChanges && (
         <button
           type="button"
           class="agent-jump"
@@ -502,6 +670,7 @@ function Rows(props: { t: Transcript; hooks: AgentTileHooks; tileId: string }) {
               t={t}
               hooks={props.hooks}
               tileId={props.tileId}
+              {...(item.permission ? { question: item.permission } : {})}
             />
           )
       )}
@@ -510,9 +679,17 @@ function Rows(props: { t: Transcript; hooks: AgentTileHooks; tileId: string }) {
 }
 
 function RowView(
-  props: { row: Row; t: Transcript; hooks: AgentTileHooks; tileId: string },
+  props: {
+    row: Row;
+    t: Transcript;
+    hooks: AgentTileHooks;
+    tileId: string;
+    /** The tool call's permission question, drawn under its head. */
+    question?: Extract<Row, { type: "permission" }>;
+  },
 ) {
   const { row, hooks } = props;
+  const q = props.question;
   switch (row.type) {
     case "user":
       return (
@@ -546,7 +723,18 @@ function RowView(
     case "thinking":
       return <Thinking row={row} />;
     case "tool":
-      return <ToolRow row={row} t={props.t} />;
+      return (
+        <ToolRow row={row} t={props.t}>
+          {q && (
+            <Permission
+              row={q}
+              t={props.t}
+              inline
+              onAnswer={(d) => hooks.store.answer(props.tileId, q.id, d)}
+            />
+          )}
+        </ToolRow>
+      );
     case "permission":
       return (
         <Permission
@@ -620,6 +808,8 @@ function ToolRow(
     row: Extract<Row, { type: "tool" }>;
     t: Transcript;
     nested?: boolean;
+    /** Its permission question (between its head and its summary). */
+    children?: ReactNode;
   },
 ) {
   const { row } = props;
@@ -646,6 +836,7 @@ function ToolRow(
         <span class="agent-tool-name">{title.name}</span>
         {title.arg && <span class="agent-tool-arg">({title.arg})</span>}
       </button>
+      {props.children}
       <div class="agent-tool-sum" data-testid="agent-tool-summary">
         <span class="agent-elbow">⎿</span> {toolSummary(row)}
       </div>
@@ -754,9 +945,6 @@ function ToolDetailView(props: { row: Extract<Row, { type: "tool" }> }) {
   );
 }
 
-const diffClass = (sign: string) =>
-  sign === "+" ? "add" : sign === "-" ? "del" : sign === "@" ? "hunk" : "ctx";
-
 /** Long output, cut to its first lines until "show all". */
 function Clipped(props: { text: string }) {
   const [all, setAll] = useState(false);
@@ -786,6 +974,8 @@ function Permission(
   props: {
     row: Extract<Row, { type: "permission" }>;
     t: Transcript;
+    /** Drawn inside its tool call's row (the title is the row's already). */
+    inline?: boolean;
     onAnswer(d: PermissionDecision): void;
   },
 ) {
@@ -803,14 +993,21 @@ function Permission(
     : "";
   return (
     <div
-      class={`agent-row agent-perm${open ? " is-open" : ""}`}
+      class={`agent-row agent-perm${open ? " is-open" : ""}${
+        props.inline ? " is-inline" : ""
+      }`}
       data-testid="agent-permission"
       data-decision={row.decision ?? ""}
+      data-inline={props.inline ? "true" : undefined}
     >
       <div class="agent-perm-q">
         <span class="agent-mark">?</span>
-        Allow <b>{title.name}</b>
-        {title.arg && <span class="agent-tool-arg">({title.arg})</span>}?
+        {props.inline ? "Allow this" : (
+          <>
+            Allow <b>{title.name}</b>
+            {title.arg && <span class="agent-tool-arg">({title.arg})</span>}
+          </>
+        )}?
       </div>
       {preview && <pre class="agent-perm-preview">{preview}</pre>}
       {open
@@ -1021,11 +1218,26 @@ function Prompt(
 // Launching
 // ---------------------------------------------------------------------------------------------
 
-/** "Claude Code (chat)": which folder the agent works in. */
+/** "Claude Code (chat)": which folder the agent works in, and with which preset (role). */
 export function AgentLaunchDialog(
-  props: { initialCwd: string; onOpen(cwd: string): void; onCancel(): void },
+  props: {
+    initialCwd: string;
+    /** The backend (absent: Claude Code). */
+    agent?: AgentKind;
+    /** Settings → Agents → Presets (the backend's). */
+    presets: readonly AgentPreset[];
+    /** The preset picked in the `+` menu. */
+    initialPreset?: string;
+    onOpen(cwd: string, presetId?: string): void;
+    onCancel(): void;
+  },
 ) {
   const [cwd, setCwd] = useState(props.initialCwd);
+  const [preset, setPreset] = useState(
+    props.presets.some((p) => p.id === props.initialPreset)
+      ? props.initialPreset!
+      : "",
+  );
   const ref = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -1041,10 +1253,10 @@ export function AgentLaunchDialog(
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (cwd.trim()) props.onOpen(cwd.trim());
+          if (cwd.trim()) props.onOpen(cwd.trim(), preset || undefined);
         }}
       >
-        <div class="agent-launch-title">✻ Claude Code (chat)</div>
+        <div class="agent-launch-title">✻ {agentLabel(props.agent)} (chat)</div>
         <label class="agent-launch-label" for="agent-launch-cwd">
           Working folder
         </label>
@@ -1057,6 +1269,25 @@ export function AgentLaunchDialog(
           value={cwd}
           onInput={(e) => setCwd((e.target as HTMLInputElement).value)}
         />
+        {props.presets.length > 0 && (
+          <>
+            <label class="agent-launch-label" for="agent-launch-preset">
+              Preset
+            </label>
+            <select
+              id="agent-launch-preset"
+              class="field-select agent-launch-input"
+              data-testid="agent-launch-preset"
+              value={preset}
+              onChange={(e) => setPreset((e.target as HTMLSelectElement).value)}
+            >
+              <option value="">None</option>
+              {props.presets.map((p) => (
+                <option value={p.id} key={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </>
+        )}
         <div class="agent-launch-actions">
           <button
             type="button"

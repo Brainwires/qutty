@@ -5,13 +5,23 @@
  * (lib/agent/claude-stream.ts), so the demo drives the tile exactly as the real thing would:
  *
  * - any prompt: thinking, a line of text, a `Read` of `notes.md`, a `Grep`, an `Edit` of
- *   `notes.md` that asks for permission (Allow applies the change, Deny refuses it), a `Bash`
+ *   `notes.md` that asks for permission (Allow applies the change, Deny refuses it; the greeting
+ *   flips between hello and goodbye each time), a `Bash`
  *   command, and a markdown answer (a heading, a list, a code block, a link), then a footer;
  * - a prompt with `plan`: only the looking (thinking, text, the read and the grep), no edit;
  * - a prompt with `slow`: the same, a step every 400 ms (time to interrupt it);
  * - a prompt with `fail`: the turn fails with an API error;
  * - a prompt with `hello`: a one-line answer, no tools;
- * - a prompt `link <url>`: a one-line answer linking to `<url>`, no tools.
+ * - a prompt `link <url>`: a one-line answer linking to `<url>`, no tools;
+ * - a prompt with `write`: after the edit, a `Write` that creates `summary.md` (asking too).
+ *
+ * The session's permission mode counts as Claude Code's would: `plan` only looks, `acceptEdits`
+ * and `bypassPermissions` edit without asking.
+ *
+ * The edits are real on a small in-memory file system ({@linkcode DemoFiles}, shared by a demo
+ * backend's sessions: the Changes tab reverts them), and each session writes its history the way
+ * Claude Code writes its transcript file ({@linkcode DemoHistory}: a resumed session reads it,
+ * lib/agent/claude-history.ts).
  *
  * Client-safe.
  *
@@ -26,9 +36,61 @@ import type {
   AgentSink,
 } from "./adapter.ts";
 import { ClaudeStreamParser } from "./claude-stream.ts";
+import type { RevertFs } from "./changes.ts";
 
-/** The demo's folder for paths (the demo has no file system). */
+/** The demo's folder for paths. */
 const DEMO_CWD = "/Users/demo/project";
+
+/** The demo's files: what its agent edits and the Changes tab reverts. */
+export class DemoFiles implements RevertFs {
+  #files = new Map<string, string>([
+    [`${DEMO_CWD}/notes.md`, "hello from a file\nsecond line\n"],
+  ]);
+
+  get(path: string): string | null {
+    return this.#files.get(path) ?? null;
+  }
+
+  set(path: string, content: string): void {
+    this.#files.set(path, content);
+  }
+
+  read(path: string): Promise<string | null> {
+    return Promise.resolve(this.get(path));
+  }
+
+  write(path: string, content: string): Promise<void> {
+    this.set(path, content);
+    return Promise.resolve();
+  }
+
+  remove(path: string): Promise<void> {
+    this.#files.delete(path);
+    return Promise.resolve();
+  }
+}
+
+/** The demo's "transcript files": each session's lines, as Claude Code writes them. */
+export class DemoHistory {
+  #sessions = new Map<string, string[]>();
+
+  append(sessionId: string, line: Record<string, unknown>): void {
+    let lines = this.#sessions.get(sessionId);
+    if (!lines) this.#sessions.set(sessionId, lines = []);
+    lines.push(
+      JSON.stringify({
+        ...line,
+        sessionId,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
+
+  /** Session `sessionId`'s file, `undefined` when it has none. */
+  file(sessionId: string): string | undefined {
+    return this.#sessions.get(sessionId)?.join("\n");
+  }
+}
 
 const ANSWER = [
   "## What changed",
@@ -73,6 +135,13 @@ export class DemoAgentAdapter implements AgentAdapter {
   #msg = 0;
   #cost = 0;
   #timers = new Set<ReturnType<typeof setTimeout>>();
+  #files: DemoFiles;
+  #history: DemoHistory | undefined;
+
+  constructor(opts: { files?: DemoFiles; history?: DemoHistory } = {}) {
+    this.#files = opts.files ?? new DemoFiles();
+    this.#history = opts.history;
+  }
 
   // deno-lint-ignore require-await
   async start(
@@ -89,9 +158,56 @@ export class DemoAgentAdapter implements AgentAdapter {
       }-0000-4000-8000-000000000000`;
   }
 
-  #line(v: unknown): void {
+  #line(v: Record<string, unknown>): void {
     if (!this.#sink) return;
     for (const e of this.#parser.line(JSON.stringify(v))) this.#sink.event(e);
+    // The transcript file has the whole messages (its tool results' `toolUseResult`).
+    if (v.type === "assistant" || v.type === "user") {
+      const { tool_use_result: result, ...rest } = v;
+      this.#history?.append(this.#session, {
+        ...rest,
+        ...(result !== undefined ? { toolUseResult: result } : {}),
+      });
+    }
+  }
+
+  /** The demo's edit tools on its file system: Claude Code's `tool_use_result` for them. */
+  #edit(path: string, oldText: string, newText: string) {
+    const original = this.#files.get(path) ?? "";
+    this.#files.set(path, original.replace(oldText, () => newText));
+    return {
+      filePath: path,
+      oldString: oldText,
+      newString: newText,
+      originalFile: original,
+      structuredPatch: [{
+        oldStart: 1,
+        oldLines: 2,
+        newStart: 1,
+        newLines: 2,
+        lines: [`-${oldText}`, `+${newText}`, " second line"],
+      }],
+    };
+  }
+
+  #write(path: string, content: string) {
+    const original = this.#files.get(path);
+    this.#files.set(path, content);
+    const lines = content.replace(/\n$/, "").split("\n");
+    return original === null
+      ? {
+        type: "create",
+        filePath: path,
+        content,
+        structuredPatch: [{
+          oldStart: 0,
+          oldLines: 0,
+          newStart: 1,
+          newLines: lines.length,
+          lines: lines.map((l) => `+${l}`),
+        }],
+      }
+      : { type: "update", filePath: path, content, originalFile: original };
   }
 
   #sleep(ms: number): Promise<void> {
@@ -111,13 +227,18 @@ export class DemoAgentAdapter implements AgentAdapter {
     const prompt = message.text.toLowerCase();
     const step = prompt.includes("slow") ? 400 : 25;
     const started = Date.now();
+    const mode = this.#spec?.permissionMode ?? "default";
+    this.#history?.append(this.#session, {
+      type: "user",
+      message: { role: "user", content: message.text },
+    });
     this.#line({
       type: "system",
       subtype: "init",
       cwd: this.#spec?.cwd ?? DEMO_CWD,
       session_id: this.#session,
       model: this.#spec?.model ?? "claude-opus-5-5",
-      permissionMode: "default",
+      permissionMode: mode,
     });
     const msgStart = () => {
       const id = `msg_demo_${++this.#msg}`;
@@ -269,47 +390,67 @@ export class DemoAgentAdapter implements AgentAdapter {
       () => Promise.resolve({ text: "notes.md" }),
     );
     if (!live()) return;
-    if (prompt.includes("plan")) {
+    if (prompt.includes("plan") || mode === "plan") {
       // Looks only: no edit, nothing to ask.
       await text("The greeting is on the first line of notes.md.");
       return end(false, "The greeting is on the first line.", 64);
     }
+    // Asks in the default mode (accept edits and bypass do not ask for edits).
+    const ask = async (toolName: string, input: Record<string, unknown>) =>
+      mode === "acceptEdits" || mode === "bypassPermissions" ||
+      await this.#hooks!.approve({
+          toolName,
+          input,
+          toolUseId: `toolu_demo_${this.#msg}`,
+        }) !== "deny";
+    const denied = {
+      text: "The user denied this tool call in Qutty.",
+      isError: true,
+    };
+    // The greeting flips each time (an edit whose text is gone would fail, as Claude Code's does).
+    const greeting = (this.#files.get(`${DEMO_CWD}/notes.md`) ?? "").includes(
+        "goodbye from a file",
+      )
+      ? ["goodbye from a file", "hello from a file"]
+      : ["hello from a file", "goodbye from a file"];
     const editInput = {
       file_path: `${DEMO_CWD}/notes.md`,
-      old_string: "hello from a file",
-      new_string: "goodbye from a file",
+      old_string: greeting[0],
+      new_string: greeting[1],
     };
     let allowed = false;
     await tool("Edit", editInput, async () => {
-      const decision = await this.#hooks!.approve({
-        toolName: "Edit",
-        input: editInput,
-        toolUseId: `toolu_demo_${this.#msg}`,
-      });
-      allowed = decision !== "deny";
+      allowed = await ask("Edit", editInput);
       return allowed
         ? {
           text: `The file ${DEMO_CWD}/notes.md has been updated successfully.`,
-          detail: {
-            structuredPatch: [{
-              oldStart: 1,
-              oldLines: 2,
-              newStart: 1,
-              newLines: 2,
-              lines: [
-                "-hello from a file",
-                "+goodbye from a file",
-                " second line",
-              ],
-            }],
-          },
+          detail: this.#edit(
+            editInput.file_path,
+            editInput.old_string,
+            editInput.new_string,
+          ),
         }
-        : {
-          text: "The user denied this tool call in Qutty.",
-          isError: true,
-        };
+        : denied;
     });
     if (!live()) return;
+    if (prompt.includes("write")) {
+      const writeInput = {
+        file_path: `${DEMO_CWD}/summary.md`,
+        content: "# Summary\n\nThe greeting now says goodbye.\n",
+      };
+      await tool(
+        "Write",
+        writeInput,
+        async () =>
+          await ask("Write", writeInput)
+            ? {
+              text: `File created successfully at: ${writeInput.file_path}`,
+              detail: this.#write(writeInput.file_path, writeInput.content),
+            }
+            : denied,
+      );
+      if (!live()) return;
+    }
     await tool(
       "Bash",
       { command: "git diff --stat", description: "Show the change" },

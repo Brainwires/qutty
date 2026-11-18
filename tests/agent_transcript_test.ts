@@ -169,6 +169,85 @@ Deno.test("a permission question, answered with Deny: the tool row is denied", (
   assertEquals(again.rows.filter((r) => r.type === "permission").length, 1);
 });
 
+Deno.test("a permission question is drawn with the tool call it is about", () => {
+  const t = all([
+    { kind: "user", text: "do it", at: 1 },
+    { kind: "toolStart", id: "toolu_1", name: "Bash", at: 2 },
+    {
+      kind: "toolInput",
+      id: "toolu_1",
+      name: "Bash",
+      input: { command: "make" },
+      at: 2,
+    },
+    { kind: "text", id: "m:0", delta: "meanwhile", at: 3 },
+    {
+      kind: "permission",
+      requestId: "q1",
+      toolName: "Bash",
+      input: { command: "make" },
+      toolUseId: "toolu_1",
+      at: 4,
+    },
+    // A question about no known call (no tool use id) stays where it came.
+    {
+      kind: "permission",
+      requestId: "q2",
+      toolName: "WebFetch",
+      input: { url: "https://x" },
+      at: 5,
+    },
+  ]);
+  const items = displayItems(t.rows);
+  assertEquals(
+    items.map((i) =>
+      i.kind === "row"
+        ? `${i.row.type}${i.permission ? `+${i.permission.id}` : ""}`
+        : "group"
+    ),
+    ["user", "tool+q1", "text", "permission"],
+  );
+  // `read_screen`: the question right under its call's title.
+  const text = transcriptText(t);
+  const at = text.indexOf("● Bash(make)");
+  assert(text[at + 1].includes("? Allow Bash(make)?"), text.join("\n"));
+  assertEquals(text.filter((l) => l.includes("? Allow")).length, 2);
+  // A look-only call with a question is not folded into a "Read 2 files" group.
+  const reads = all([
+    { kind: "toolStart", id: "r1", name: "Read", at: 1 },
+    { kind: "toolResult", id: "r1", text: "x", isError: false, at: 1 },
+    { kind: "toolStart", id: "r2", name: "Read", at: 2 },
+    {
+      kind: "permission",
+      requestId: "q3",
+      toolName: "Read",
+      input: {},
+      toolUseId: "r2",
+      at: 2,
+    },
+    { kind: "permissionDone", requestId: "q3", decision: "allow", at: 3 },
+    { kind: "toolResult", id: "r2", text: "y", isError: false, at: 3 },
+  ]);
+  assertEquals(
+    displayItems(reads.rows).map((i) => i.kind === "row" ? i.row.id : "group"),
+    ["r1", "r2"],
+  );
+});
+
+Deno.test("savedRows leaves out a file's whole earlier content", () => {
+  const rows: Row[] = [{
+    type: "tool",
+    id: "t1",
+    name: "Edit",
+    status: "done",
+    detail: { original: "x".repeat(10), readLines: 1 },
+    at: 1,
+  }];
+  const [saved] = savedRows(rows);
+  assert(saved.type === "tool");
+  assertEquals(saved.detail, { readLines: 1 });
+});
+
 Deno.test("deltas append to their row; a failed turn shows its error and fails the footer", () => {
   let t = all([
     { kind: "user", text: "hi", at: 1 },

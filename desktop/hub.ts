@@ -161,18 +161,27 @@ import type {
   AgentStartRequest,
   AgentUpdate,
 } from "../lib/agent/sessions.ts";
-import type { AgentAdapter, AgentSessionSpec } from "../lib/agent/adapter.ts";
+import {
+  type AgentAdapter,
+  agentDefaultName,
+  type AgentKind,
+  type AgentSessionSpec,
+} from "../lib/agent/adapter.ts";
 import {
   agentSessions,
   type AgentStartInput,
   agentStartInput,
   agentStartRequest,
   answerAgentInput,
+  claudeHistory,
   idInput,
   renameAgentInput,
   restartAgentInput,
+  revertAgentInput,
+  revertFs,
   sendAgentInput,
 } from "./agent-host.ts";
+import { revertFiles, shortPath } from "../lib/agent/changes.ts";
 
 export type { AskRequest, HubSnapshot, IntegrationStatus, IntegrationTarget };
 
@@ -371,6 +380,11 @@ export class HubService {
   /** Codex's verdict on Qutty's installed hooks: asked once per start, again after an Install. */
   #codexHooks: () => Promise<ListedCodexHook[] | undefined>;
   #codexTrust: Promise<CodexTrustCheck | undefined> | undefined;
+  /**
+   * Counts `integration()` calls: one whose read of the files was overtaken by a newer call (the
+   * start's background refresh racing an Install) must not clear what the newer one found.
+   */
+  #integrationRun = 0;
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -419,6 +433,7 @@ export class HubService {
     this.agents = agentSessions({
       emit: (update: AgentUpdate) => this.#emit("agent", update),
       hubArgs: () => hubArgsFor("claude", this.paths, this.#installed),
+      anthropicKey: () => this.keys.get("anthropic"),
       ...(opts.createAgent ? { createAdapter: opts.createAgent } : {}),
       hub: {
         open: (id, info) => this.#agentTileOpen(id, info),
@@ -591,7 +606,7 @@ export class HubService {
    */
   #agentTileOpen(
     id: string,
-    info: { cwd: string; name?: string },
+    info: { cwd: string; name?: string; agent?: AgentKind },
   ): { env: Record<string, string>; name: string } {
     const path = this.socketPath(id);
     const identity: HubIdentity = { role: "tile", tileId: id };
@@ -601,7 +616,11 @@ export class HubService {
         void this.#serve(conn, identity);
       }),
     );
-    const tile = this.core.addTile({ id, cwd: info.cwd, harness: "claude" });
+    const tile = this.core.addTile({
+      id,
+      cwd: info.cwd,
+      harness: agentDefaultName(info.agent),
+    });
     let name = tile.name;
     if (info.name && info.name !== name) {
       try {
@@ -843,16 +862,22 @@ export class HubService {
   // --- integration -----------------------------------------------------------------------------
 
   async integration(): Promise<IntegrationStatus[]> {
+    const run = ++this.#integrationRun;
     const status = await integrationStatus(this.#fs, this.files, this.paths);
-    this.#installed = {
-      claude: status.find((s) => s.target === "claude")?.installed ?? false,
-      codex: status.find((s) => s.target === "codex")?.installed ?? false,
-    };
+    // Overtaken while reading (a newer call read the files later): the newer answer stands.
+    const latest = run === this.#integrationRun;
+    if (latest) {
+      this.#installed = {
+        claude: status.find((s) => s.target === "claude")?.installed ?? false,
+        codex: status.find((s) => s.target === "codex")?.installed ?? false,
+      };
+    }
     const codex = status.find((s) => s.target === "codex");
     if (!codex?.installed) {
-      this.#codexTrust = undefined;
+      if (latest) this.#codexTrust = undefined;
       return status;
     }
+    if (!latest && !this.#codexTrust) return status;
     const check = await (this.#codexTrust ??= this.#codexHooks().then(
       (hooks) => hooks && codexTrustCheck(hooks, this.paths),
       () => undefined,
@@ -1344,12 +1369,23 @@ export default defineDesktopExtension({
       input: agentStartInput,
       handler: (args: unknown, ctx) =>
         asValidation(async () => {
+          const input = args as AgentStartInput;
+          const agents = requireService().agents;
+          const home = Deno.env.get("HOME") ?? "/";
+          // A resumed session's history from Claude Code's own transcript file (read only),
+          // unless the tile attaches to its session still running here.
+          const live = input.attach !== undefined && agents.has(input.attach);
           const req: AgentStartRequest = await agentStartRequest(
-            args as AgentStartInput,
-            Deno.env.get("HOME") ?? "/",
+            input,
+            home,
             workspaces.workspaceOfWindow(ctx.windowId ?? "main"),
+            live ? undefined : (cwd, session) =>
+              claudeHistory(cwd, session, {
+                home,
+                configDir: Deno.env.get("CLAUDE_CONFIG_DIR"),
+              }),
           );
-          return requireService().agents.start(req);
+          return agents.start(req);
         }),
     },
     /** A message for the agent (queued while a turn runs). */
@@ -1400,6 +1436,38 @@ export default defineDesktopExtension({
         return asValidation(async () =>
           requireService().agents.rename(id, name)
         );
+      },
+    },
+    /**
+     * Put files the session changed back as they were before its changes (the Changes tab's
+     * Revert): only its own changes, only inside its folder; each file's result.
+     */
+    agentRevert: {
+      input: revertAgentInput,
+      handler: async (args: unknown) => {
+        const { id, files } = args as {
+          id: string;
+          files: { path: string; after?: string }[];
+        };
+        const agents = requireService().agents;
+        const snap = agents.snapshot(id);
+        if (!snap) throw new Error(`no such agent: ${id}`);
+        const results = await revertFiles(
+          snap.transcript.rows,
+          snap.spec.cwd,
+          files,
+          revertFs,
+        );
+        const done = results.filter((r) => r.ok);
+        if (done.length > 0) {
+          agents.notice(
+            id,
+            `Reverted ${
+              done.map((r) => shortPath(r.path, snap.spec.cwd)).join(", ")
+            }`,
+          );
+        }
+        return results;
       },
     },
     /** End an agent tile's session (its tile closed). */

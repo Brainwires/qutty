@@ -9,8 +9,9 @@
  * session, a rename). The hub side (`AgentHubSide`) makes each session a hub tile: its socket and
  * name, and its status (busy while a turn runs, waiting on a question or an error, idle after).
  *
- * The desktop app runs it in the hub extension with the Claude Code adapter (desktop/hub.ts); the
- * demo backend runs it in the page with the scripted adapter (lib/agent/demo.ts).
+ * The desktop app runs it in the hub extension with the Claude Code, Codex and inference adapters
+ * (desktop/hub.ts, desktop/agent-host.ts); the demo backend runs it in the page with the scripted
+ * adapters (lib/agent/demo.ts, lib/agent/codex-demo.ts).
  *
  * Pure (no Deno APIs): the adapters and the hub come in through {@linkcode AgentSessionsDeps}.
  *
@@ -19,7 +20,9 @@
 
 import {
   type AgentAdapter,
+  agentDefaultName,
   type AgentEvent,
+  type AgentKind,
   type AgentMessage,
   type AgentSessionSpec,
   type PermissionDecision,
@@ -40,11 +43,17 @@ import type { TileStatus } from "../hub/protocol.ts";
 
 /** What the page asks for when it opens (or reopens) an agent tile. */
 export interface AgentStartRequest {
+  /** The backend (absent: Claude Code). */
+  agent?: AgentKind;
   cwd: string;
   model?: string;
   /** Resume this Claude Code session. */
   resumeId?: string;
   permissionMode?: PermissionMode;
+  /** A preset's system prompt, added to the harness's own. */
+  systemPrompt?: string;
+  /** A preset's tools allowed without asking. */
+  allowedTools?: string[];
   /** The tile's name (the hub name), when it had one. */
   name?: string;
   /** The session this tile had: attach to it when it still runs. */
@@ -76,8 +85,11 @@ export type AgentUpdate =
 
 /** The hub's side of an agent tile. */
 export interface AgentHubSide {
-  /** Make `id` a hub tile; its environment (the socket) and its name. */
-  open(id: string, info: { cwd: string; name?: string }): {
+  /**
+   * Make `id` a hub tile; its environment (the socket) and its name (`name`, else a free one
+   * like `agent`'s default name).
+   */
+  open(id: string, info: { cwd: string; name?: string; agent?: AgentKind }): {
     env: Record<string, string>;
     name: string;
   };
@@ -136,14 +148,18 @@ export class AgentSessions {
     if (old && !old.stopped) return this.#snapshot(old);
     const id = `agent-${++this.#next}`;
     const spec: AgentSessionSpec = {
+      ...(req.agent && req.agent !== "claude" ? { agent: req.agent } : {}),
       cwd: req.cwd,
       ...(req.model ? { model: req.model } : {}),
       ...(req.resumeId ? { resumeId: req.resumeId } : {}),
       ...(req.permissionMode ? { permissionMode: req.permissionMode } : {}),
+      ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
+      ...(req.allowedTools?.length ? { allowedTools: req.allowedTools } : {}),
     };
     const hub = this.#deps.hub?.open(id, {
       cwd: req.cwd,
       ...(req.name ? { name: req.name } : {}),
+      ...(spec.agent ? { agent: spec.agent } : {}),
     });
     let transcript = emptyTranscript(req.rows ?? []);
     transcript = {
@@ -161,13 +177,17 @@ export class AgentSessions {
     }
     const s: Session = {
       id,
-      name: hub?.name ?? req.name ?? "claude",
+      name: hub?.name ?? req.name ?? agentDefaultName(req.agent),
       ...(req.owner ? { owner: req.owner } : {}),
       spec,
       env: hub?.env ?? {},
       transcript,
       seq: 0,
-      broker: new PermissionBroker(id),
+      // Codex keeps "Allow always" itself (`acceptForSession`, for that command): a rule here
+      // per tool name would let every later command through.
+      broker: new PermissionBroker(id, {
+        rememberAlways: req.agent !== "codex",
+      }),
       queue: [],
       stopped: false,
     };
@@ -440,6 +460,15 @@ export class AgentSessions {
     this.#deps.hub?.setStatus(s.id, "idle");
     this.#emitSnapshot(s);
     return this.#snapshot(s);
+  }
+
+  /** A line of the session layer's own in the transcript ("Reverted notes.md"). */
+  notice(id: string, text: string): boolean {
+    const s = this.#sessions.get(id);
+    if (!s || s.stopped) return false;
+    s.transcript = withNotice(s.transcript, text, this.#now());
+    this.#emitSnapshot(s);
+    return true;
   }
 
   /** Rename the session's tile (its hub name); the name it got. Throws with the reason. */

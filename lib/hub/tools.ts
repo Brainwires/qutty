@@ -294,7 +294,23 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
     async (a) => {
       const tile = core.tile(str(a, "tile", 256));
       if (tile.kind === "web") {
-        const read = await readWebTile(web, tile.id);
+        let read: Awaited<ReturnType<typeof readWebTile>>;
+        try {
+          read = await readWebTile(web, tile.id);
+        } catch (e) {
+          // A page the window cannot look inside (the iframe engine, a closed window): what
+          // the hub knows of it, the title and the URL, and why there is no text.
+          if (!(e instanceof HubError)) throw e;
+          return {
+            tile: tile.id,
+            name: tile.name,
+            kind: "web",
+            url: tile.url ?? "",
+            title: tile.label ?? "",
+            screen: "",
+            note: e.message,
+          };
+        }
         return {
           tile: tile.id,
           name: tile.name,

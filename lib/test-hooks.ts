@@ -144,6 +144,9 @@ export function withBackendSpy(
     sysSample: () => backend.sysSample(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
+    ...(backend.onForeground
+      ? { onForeground: (id, cb) => backend.onForeground!(id, cb) }
+      : {}),
     sshHosts: () => backend.sshHosts(),
     sshSaveHost: (host) => backend.sshSaveHost(host),
     sshDeleteHost: (alias) => backend.sshDeleteHost(alias),
@@ -188,6 +191,7 @@ export function withBackendSpy(
       backend.agentAnswer(id, requestId, decision),
     agentRestart: (id, patch) => backend.agentRestart(id, patch),
     agentRename: (id, name) => backend.agentRename(id, name),
+    agentRevert: (id, files) => backend.agentRevert(id, files),
     agentStop: (id) => backend.agentStop(id),
     onAgent: (cb) => backend.onAgent(cb),
   };

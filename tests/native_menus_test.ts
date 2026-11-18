@@ -259,8 +259,9 @@ Deno.test("native menus: the View menu has the view radios, the Layout and Switc
       ITEM.minimizeTile,
       ITEM.maximizeTile,
       ITEM.restoreTile,
-      ITEM.bigger,
-      ITEM.smaller,
+      ITEM.zoomIn,
+      ITEM.zoomOut,
+      ITEM.zoomTogether,
       ITEM.actualSize,
       MDI_ITEM_IDS.cascade,
     ]
@@ -378,7 +379,7 @@ Deno.test("native menus: clicks map to what the page does", () => {
     kind: "key",
     command: { kind: "closeFocused" },
   });
-  assertEquals(menuAction(ITEM.zoomTile), {
+  assertEquals(menuAction(ITEM.maximizeTile), {
     kind: "key",
     command: { kind: "toggleMonocle" },
   });
@@ -462,7 +463,10 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
   assertEquals(s[patternItemId("grid")], { checked: false, enabled: true });
   assertEquals(s[barItemId("top")], { checked: true });
   assertEquals(s[ITEM.restoreTile], { enabled: false });
-  assertEquals(s[ITEM.maximizeTile], { enabled: true });
+  assertEquals(s[ITEM.maximizeTile], { checked: false, enabled: true });
+  assertEquals(s[ITEM.zoomIn], { enabled: true });
+  assertEquals(s[ITEM.actualSize], { enabled: true });
+  assertEquals(s[ITEM.zoomTogether], { checked: false });
   assertEquals(s[ITEM.closeTile], { enabled: true });
   assertEquals(s[ITEM.broadcast], { checked: false });
   assertEquals(s[MDI_ITEM_IDS.cascade], { enabled: false });
@@ -470,7 +474,7 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
 
   const max = menuItemStates({ ...INPUT, maximizedId: "b" });
   assertEquals(max[ITEM.restoreTile], { enabled: true });
-  assertEquals(max[ITEM.maximizeTile], { enabled: false });
+  assertEquals(max[ITEM.maximizeTile], { checked: true, enabled: true });
 
   const free = menuItemStates({ ...INPUT, view: "freeform", broadcast: true });
   assertEquals(free[MDI_ITEM_IDS.viewFreeform], { checked: true });
@@ -483,9 +487,22 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
   assertEquals(free[ITEM.broadcast], { checked: true });
 
   const empty = menuItemStates({ ...INPUT, focusedId: null, tiles: [] });
-  for (const id of [ITEM.closeTile, ITEM.minimizeTile, ITEM.maximizeTile]) {
+  for (
+    const id of [
+      ITEM.closeTile,
+      ITEM.minimizeTile,
+      ITEM.zoomIn,
+      ITEM.zoomOut,
+      ITEM.actualSize,
+    ]
+  ) {
     assertEquals(empty[id], { enabled: false }, id);
   }
+  assertEquals(empty[ITEM.maximizeTile], { checked: false, enabled: false });
+  assertEquals(
+    menuItemStates({ ...INPUT, zoomTogether: true })[ITEM.zoomTogether],
+    { checked: true },
+  );
 });
 
 Deno.test("native menus: only changed states are pushed", () => {
@@ -564,6 +581,36 @@ Deno.test("native menus: the input comes from the workspace's state", () => {
     // The bar's order (most recent first by default).
     [["a", "one", true], ["b", "two", false]],
   );
+});
+
+Deno.test("native menus: Find in Page… and Developer Tools act on the focused web tile, with no shortcut", () => {
+  const all = flat(viewMenuSpec("mac").items);
+  for (const id of [ITEM.findInPage, ITEM.devTools]) {
+    const i = all.find((x) => x.id === id);
+    assert(i, id);
+    assertEquals(i.accelerator, undefined, "the page's keys, not the menu's");
+  }
+  assertEquals(menuAction(ITEM.findInPage), {
+    kind: "web",
+    command: { kind: "find" },
+  });
+  assertEquals(menuAction(ITEM.devTools), {
+    kind: "web",
+    command: { kind: "devTools" },
+  });
+  // Enabled only while a web tile has the focus.
+  const off = menuItemStates(INPUT);
+  assertEquals(off[ITEM.findInPage], { enabled: false });
+  assertEquals(off[ITEM.devTools], { enabled: false });
+  const on = menuItemStates({ ...INPUT, webFocused: true });
+  assertEquals(on[ITEM.findInPage], { enabled: true });
+  const state = [
+    { type: "add", id: "a", now: 1, title: "one" },
+    { type: "add", id: "w", now: 2, web: { url: "https://example.com/" } },
+  ].reduce((s, a) => reduce(s, a as WorkspaceAction), initialState());
+  assertEquals(menuInput(state, false).webFocused, true);
+  const back = reduce(state, { type: "focus", id: "a", now: 3 });
+  assertEquals(menuInput(back, false).webFocused, false);
 });
 
 Deno.test("native menus: a menu click right after the same key the page ran is dropped once", () => {
@@ -715,7 +762,7 @@ Deno.test("native menus: the Window menu's Move Tile to items, and their clicks"
   assert(!one.some((i) => i.id === moveItemId("new")));
 });
 
-Deno.test("native menus: Claude Code's entry has its (chat) twin, as in the + menu", () => {
+Deno.test("native menus: Claude Code's and Codex's entries have their (chat) twins, as in the + menu", () => {
   const sub = shellMenu("mac", {
     sections: [{
       id: "agents",
@@ -744,11 +791,17 @@ Deno.test("native menus: Claude Code's entry has its (chat) twin, as in the + me
     "Claude Code",
     "Claude Code (chat)",
     "Codex",
+    "Codex (chat)",
     "-",
     "Connections…",
   ]);
   assertEquals(sub[2].id, ITEM.agentChat);
   assertEquals(menuAction(ITEM.agentChat), { kind: "agentChat" });
+  assertEquals(sub[4].id, ITEM.agentChatCodex);
+  assertEquals(menuAction(ITEM.agentChatCodex), {
+    kind: "agentChat",
+    agent: "codex",
+  });
   // Without agent tiles: no twin.
   assert(
     !shellMenu("mac", {

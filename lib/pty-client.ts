@@ -99,7 +99,16 @@ import type {
   PermissionDecision,
   PermissionMode,
 } from "./agent/adapter.ts";
-import { DemoAgentAdapter } from "./agent/demo.ts";
+import { agentDefaultName } from "./agent/adapter.ts";
+import { DemoAgentAdapter, DemoFiles, DemoHistory } from "./agent/demo.ts";
+import { DemoCodexAdapter } from "./agent/codex-demo.ts";
+import {
+  revertFiles,
+  type RevertResult,
+  type RevertTarget,
+  shortPath,
+} from "./agent/changes.ts";
+import { historyRows } from "./agent/claude-history.ts";
 import {
   createDemoSession,
   createDesktopSession,
@@ -254,6 +263,12 @@ export interface PtyBackend {
   onData(id: string, cb: (data: string) => void): () => void;
   /** Called once when terminal `id` ends (immediately if it already has). */
   onExit(id: string, cb: (exit: PtyExit) => void): () => void;
+  /**
+   * Terminal `id`'s foreground process changed (a program started, or quit back to its shell),
+   * as its output showed: `info` says what runs now. Only where the backend can tell (the
+   * desktop app); absent elsewhere.
+   */
+  onForeground?(id: string, cb: () => void): () => void;
 
   // --- SSH (desktop/ssh.ts) ------------------------------------------------------------------
 
@@ -383,6 +398,11 @@ export interface PtyBackend {
   ): Promise<AgentSnapshot | null>;
   /** Rename the agent tile (its hub name); the name it got (rejects with the reason). */
   agentRename(id: string, name: string): Promise<string>;
+  /**
+   * Put files the session changed back as they were before its changes (only its own changes,
+   * only inside its folder); each file's result.
+   */
+  agentRevert(id: string, files: RevertTarget[]): Promise<RevertResult[]>;
   /** End the session (its tile closed). */
   agentStop(id: string): Promise<void>;
   /** Every agent session's updates (each page follows its own tiles' ids). */
@@ -435,6 +455,22 @@ export class PtyEvents {
     { chunks: string[]; size: number; timer: ReturnType<typeof setTimeout> }
   >();
   #exited = new Map<string, PtyExit>();
+  #fg = new Map<string, Set<() => void>>();
+
+  /** Terminal `id`'s foreground process changed (nothing is kept for later subscribers). */
+  emitForeground(id: string): void {
+    for (const cb of [...(this.#fg.get(id) ?? [])]) cb();
+  }
+
+  onForeground(id: string, cb: () => void): () => void {
+    let subs = this.#fg.get(id);
+    if (!subs) this.#fg.set(id, subs = new Set());
+    subs.add(cb);
+    return () => {
+      subs.delete(cb);
+      if (subs.size === 0 && this.#fg.get(id) === subs) this.#fg.delete(id);
+    };
+  }
 
   emitData(id: string, data: string): void {
     const subs = this.#data.get(id);
@@ -642,10 +678,12 @@ export function createDesktopBackend(
     // Each terminal's events reach the window showing its workspace only, as `{ id, data }`
     // (denext's owned resources, desktop/terminal-sessions.ts).
     onDesktopEvent<PtyEventOf<PtyDataEvent>>("pty", "data", (e) => {
-      const { seq, data } = e.data;
+      const { seq, data, fg } = e.data;
       if (seq <= (lastSeq.get(e.id) ?? 0)) return;
       lastSeq.set(e.id, seq);
       events.emitData(e.id, data);
+      // After the output, so `info` is read once the terminal shows what changed.
+      if (fg !== undefined) events.emitForeground(e.id);
     });
     onDesktopEvent<PtyEventOf<PtyExitEvent>>("pty", "exit", (e) => {
       // `lastSeq` is kept after the exit: a replay of the stream re-sends the dead terminal's
@@ -729,6 +767,10 @@ export function createDesktopBackend(
     onExit: (id, cb) => {
       listen();
       return events.onExit(id, cb);
+    },
+    onForeground: (id, cb) => {
+      listen();
+      return events.onForeground(id, cb);
     },
     async sshHosts() {
       return await ssh.sshHosts({});
@@ -866,6 +908,9 @@ export function createDesktopBackend(
     },
     async agentRename(id, name) {
       return await hub.agentRename({ id, name });
+    },
+    async agentRevert(id, files) {
+      return await hub.agentRevert({ id, files }) as RevertResult[];
     },
     async agentStop(id) {
       await hub.agentStop({ id });
@@ -1613,19 +1658,32 @@ export function createDemoBackend(): PtyBackend {
     (globalThis as { __e2eCompanionTool?: unknown }).__e2eCompanionTool =
       hub.companion.tool;
   }
-  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts), each
-  // session a tile of the demo hub.
+  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts) or the
+  // scripted Codex (lib/agent/codex-demo.ts: the real JSON-RPC client), each session a tile of
+  // the demo hub. The in-process backends (Ollama, the API) run the Claude Code script.
   const agentUpdates = fanout<AgentUpdate>();
+  const agentFiles = new DemoFiles();
+  const agentHistory = new DemoHistory();
   const agents = new AgentSessions({
     emit: agentUpdates.emit,
-    createAdapter: () => new DemoAgentAdapter(),
+    createAdapter: (spec) =>
+      spec.agent === "codex"
+        ? new DemoCodexAdapter()
+        : new DemoAgentAdapter({ files: agentFiles, history: agentHistory }),
     hub: {
-      open: (id) => ({ env: {}, name: hub.add(id, "claude") }),
+      open: (id, info) => ({
+        env: {},
+        name: hub.add(id, agentDefaultName(info.agent)),
+      }),
       close: (id) => hub.remove(id),
       setStatus: (id, status, note) => hub.setStatus(id, status, note),
       rename: (id, name) => hub.rename(id, name),
     },
   });
+  // The e2e suite ends a session as the app quitting would (a resume reads its history then).
+  if (pageParam("test") === "1") {
+    (globalThis as { __e2eAgents?: unknown }).__e2eAgents = agents;
+  }
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
@@ -1835,14 +1893,22 @@ export function createDemoBackend(): PtyBackend {
     onHubSay: (cb) => hubSays.on(cb),
     onHubControl: (cb) => hubControls.on(cb),
     agentStart: (req) =>
-      attempt(() =>
-        agents.start({
+      attempt(() => {
+        // A resumed session's history from its "transcript file", as the desktop reads Claude
+        // Code's (desktop/agent-host.ts), unless the tile attaches to its live session.
+        const live = req.attach !== undefined && agents.has(req.attach);
+        const file = req.resumeId && !live && !req.agent
+          ? agentHistory.file(req.resumeId)
+          : undefined;
+        const rows = file ? historyRows(file) : [];
+        return agents.start({
           ...req,
           cwd: req.cwd.trim() === "~" || !req.cwd.trim()
             ? "/Users/demo"
             : req.cwd.trim().replace(/^~\//, "/Users/demo/"),
-        })
-      ),
+          ...(rows.length > 0 ? { rows } : {}),
+        });
+      }),
     agentSend: (id, message) => attempt(() => agents.send(id, message)),
     agentInterrupt: (id) => agents.interrupt(id),
     agentAnswer: (id, requestId, decision) =>
@@ -1850,6 +1916,26 @@ export function createDemoBackend(): PtyBackend {
     agentRestart: (id, patch) =>
       attempt(() => agents.restart(id, patch) ?? null),
     agentRename: (id, name) => attempt(() => agents.rename(id, name)),
+    agentRevert: async (id, files) => {
+      const snap = agents.snapshot(id);
+      if (!snap) throw new Error(`no such agent: ${id}`);
+      const results = await revertFiles(
+        snap.transcript.rows,
+        snap.spec.cwd,
+        files,
+        agentFiles,
+      );
+      const done = results.filter((r) => r.ok);
+      if (done.length > 0) {
+        agents.notice(
+          id,
+          `Reverted ${
+            done.map((r) => shortPath(r.path, snap.spec.cwd)).join(", ")
+          }`,
+        );
+      }
+      return results;
+    },
     agentStop: (id) => attempt(() => agents.stop(id)),
     onAgent: (cb) => agentUpdates.on(cb),
   };

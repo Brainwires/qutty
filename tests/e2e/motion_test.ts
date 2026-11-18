@@ -350,6 +350,60 @@ suite("motion", (test) => {
     }
   });
 
+  test("chips: the focused chip comes into view after a focus change, even if its scroll is cut short", async (app) => {
+    // The strip overflows and is scrolled to its far end; a keyboard focus change puts the
+    // focused chip first (MRU order). Its smooth scroll is stopped where it is, over a few
+    // frames (as a reorder or a resize under way could leave it): the bar aims again once the
+    // strip settles, and the chip ends up in view.
+    for (let i = 1; i < 16; i++) await app.newTerminal("shortcut");
+    const inView = (id: string) =>
+      app.eval((id: string) => {
+        const list = document.querySelector("[data-testid=chips]")!;
+        const chip = list.querySelector(`[data-testid=chip][data-id="${id}"]`)!;
+        const a = list.getBoundingClientRect();
+        const b = chip.getBoundingClientRect();
+        return b.left >= a.left - 1 && b.right <= a.right + 1;
+      }, id);
+    for (let k = 0; k < 4; k++) {
+      await app.settle();
+      await app.focusChip((await app.mru()).at(-1)!);
+      await app.settle();
+      const before = await app.mru();
+      await app.eval(() => {
+        const list = document.querySelector<HTMLElement>(
+          "[data-testid=chips]",
+        )!;
+        list.scrollTo({ left: list.scrollWidth, behavior: "instant" });
+      });
+      await app.shortcut("Backquote");
+      // Stop the strip where it is, for a few frames.
+      await app.eval(() =>
+        new Promise<void>((done) => {
+          const list = document.querySelector<HTMLElement>(
+            "[data-testid=chips]",
+          )!;
+          let n = 0;
+          const stop = () => {
+            list.scrollTo({ left: list.scrollLeft, behavior: "instant" });
+            if (++n < 4) requestAnimationFrame(stop);
+            else done();
+          };
+          requestAnimationFrame(stop);
+        })
+      );
+      await waitFor(
+        async () => (await app.focusedId()) === before[1],
+        3000,
+        `Mod+\` to focus ${before[1]}`,
+      );
+      await waitFor(
+        () => inView(before[1]),
+        5000,
+        `the focused chip ${before[1]} in view`,
+      );
+    }
+  });
+
   // ---- Stress -------------------------------------------------------------------------------
 
   test("stress: 16 terminals, 50 random focus actions, layout consistent with MRU", async (app) => {

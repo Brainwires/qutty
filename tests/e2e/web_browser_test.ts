@@ -295,14 +295,24 @@ suite("web browser", (test) => {
         2000,
         "100%",
       );
-      // From a terminal, ⌘= is the font again.
+      // From a terminal, ⌘= zooms that tile (its indicator), not the page nor Settings' font.
       const term = (await app.tiles()).find((t) => t.id !== web)!.id;
       await app.focusChip(term);
       await app.shortcut("Equal");
       await waitFor(
-        async () => (await app.settings()).fontSize === font + 1,
+        async () =>
+          (await app.eval(
+            (sel: string) => document.querySelector(sel)?.textContent ?? null,
+            `${tileSel(term)} [data-testid=tile-zoom]`,
+          )) === "110%",
         2000,
-        "the font grew",
+        "the terminal tile zoomed",
+      );
+      assertEquals((await app.settings()).fontSize, font);
+      assertEquals(
+        await app.exists(`${tileSel(web)} [data-testid=web-zoom]`),
+        false,
+        "the page stays at 100%",
       );
     });
   });

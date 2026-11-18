@@ -8,7 +8,8 @@
 // - public/tray.png: the app icon (icons/app-1024.png) at 64×64, for every other panel. Its dark
 //   squircle keeps the companion's face readable on a light panel too. Made with macOS `sips`.
 //
-// The glyph is the app icon's cat-eared terminal: a head with two ears and a `>_` prompt cut out.
+// The glyph is Qutty's own monochrome mark, not a copy of the app icon (that is the companion's
+// face, too detailed for an 18 pt template): a head with two ears and a `>_` prompt cut out.
 //
 //   deno run -A scripts/gen-tray-icons.ts
 

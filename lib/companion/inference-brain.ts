@@ -80,6 +80,8 @@ export interface InferenceBrainOptions {
    * Ollama brain asks for 0.2).
    */
   temperature?: number;
+  /** The most tokens a reply may have (default 1024: the companion answers in a few lines). */
+  maxTokens?: number;
 }
 
 /** How long a conversation is: its messages serialized, each reply's own blocks included. */
@@ -185,6 +187,8 @@ export class InferenceBrain implements BrainAdapter {
   #messages: Message[] = [];
   #stop = new AbortController();
   #turns = 0;
+  /** The conversation before the turn under way (what an interrupt goes back to). */
+  #before: Message[] | undefined;
 
   constructor(opts: InferenceBrainOptions) {
     this.#opts = opts;
@@ -210,9 +214,22 @@ export class InferenceBrain implements BrainAdapter {
     this.#stop.abort();
   }
 
+  /**
+   * Stop the turn under way and forget it (the conversation goes back to before its user
+   * message, so no tool call is left without its result); the session takes the next turn. The
+   * stopped turn reports nothing.
+   */
+  interrupt(): void {
+    this.#stop.abort();
+    this.#stop = new AbortController();
+    if (this.#before) this.#messages = this.#before;
+    this.#before = undefined;
+  }
+
   async #turn(sink: BrainSink, text: string): Promise<void> {
     const signal = this.#stop.signal;
     const history = this.#opts.history ?? "trim";
+    this.#before = [...this.#messages];
     this.#messages = history === "trim"
       ? trimConversation([...this.#messages, Message.user(text)])
       : appendOrFresh(this.#messages, Message.user(text), history.fresh);
@@ -238,6 +255,7 @@ export class InferenceBrain implements BrainAdapter {
       };
     }
     if (signal.aborted) return; // stopped on purpose: no events
+    this.#before = undefined;
     sink.event({
       kind: "turnEnd",
       text: result.success
@@ -256,11 +274,13 @@ export class InferenceBrain implements BrainAdapter {
     const t = this.#opts.temperature;
     const options = new ChatOptions({
       ...(t === undefined ? {} : { temperature: t }),
-      max_tokens: 1024,
+      max_tokens: this.#opts.maxTokens ?? 1024,
       system: this.#opts.systemPrompt ?? COMPANION_SYSTEM_PROMPT,
       signal,
     });
-    const add = (m: Message) => this.#messages.push(m);
+    const add = (m: Message) => {
+      if (!signal.aborted) this.#messages.push(m);
+    };
     return {
       agentId: () => id,
       maxIterations: () => this.#opts.maxIterations ?? 12,
@@ -272,7 +292,12 @@ export class InferenceBrain implements BrainAdapter {
       extractToolUses: toolUsesOf,
       isCompletion: (r) => toolUsesOf(r).length === 0,
       executeTool: async (use) => {
-        sink.event({ kind: "toolUse", name: use.name, input: use.input });
+        sink.event({
+          kind: "toolUse",
+          name: use.name,
+          input: use.input,
+          id: use.id,
+        });
         const args = use.input && typeof use.input === "object" &&
             !Array.isArray(use.input)
           ? use.input as Record<string, unknown>

@@ -8,7 +8,8 @@
 // tile (overflow) is never fitted — xterm would measure a 0×0 box and shrink the PTY.
 //
 // Font: `setFont` applies the family/size/line height to every live terminal (parked ones too)
-// and refits the visible ones; a parked one refits when it is shown again. A web font finishing
+// and refits the visible ones; a parked one refits when it is shown again. `setZoom` scales one
+// terminal's size by its tile's zoom (lib/workspace/tile-zoom.ts) the same way. A web font finishing
 // loading (`document.fonts` `loadingdone`) re-measures the cell and refits, since xterm only
 // measures when its font options change.
 //
@@ -55,6 +56,7 @@ import {
   type TerminalFontOptions,
   terminalFontOptions,
 } from "./workspace/fonts.ts";
+import { isActualSize, zoomedFontSize } from "./workspace/tile-zoom.ts";
 import { DEFAULT_THEME_ID, themeById } from "./workspace/themes.ts";
 import { DEFAULT_SANDBOX, type SandboxSettings } from "./sandbox/settings.ts";
 import {
@@ -140,6 +142,12 @@ export interface TerminalManagerEvents {
    * `TITLE_THROTTLE_MS` per terminal, with the latest title.
    */
   onTitle?(id: string, title: string): void;
+  /**
+   * The foreground process of terminal `id` changed (a program started, or quit back to its
+   * shell), as the backend saw with its output; `info` says what runs now. Where the backend
+   * can tell (`PtyBackend.onForeground`).
+   */
+  onForeground?(id: string): void;
   /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
   platform?: "mac" | "other";
   /**
@@ -226,6 +234,8 @@ export class TerminalManager {
   /** A terminal asked to focus before it was opened (a new one): focused once attached. */
   #pendingFocus: string | null = null;
   #font: TerminalFontOptions = { ...DEFAULT_TERMINAL_FONT };
+  /** Each tile's zoom, when not 100% (its font is `#font.fontSize` times it). */
+  #zooms = new Map<string, number>();
   #unwatchFonts: (() => void) | null = null;
   #theme: ITheme = { ...themeById(DEFAULT_THEME_ID).terminal };
   /** The broadcast members (two or more), or `null`: each tile gets its own input only. */
@@ -260,15 +270,43 @@ export class TerminalManager {
     for (const m of this.#terms.values()) {
       if (m.disposed) continue;
       const o = m.term.options;
+      const size = this.#fontSizeOf(m.id);
       if (o.fontFamily !== font.fontFamily) o.fontFamily = font.fontFamily;
-      if (o.fontSize !== font.fontSize) o.fontSize = font.fontSize;
+      if (o.fontSize !== size) o.fontSize = size;
       if (o.lineHeight !== font.lineHeight) o.lineHeight = font.lineHeight;
       if (o.fontWeight !== font.fontWeight) o.fontWeight = font.fontWeight;
-      this.#clearAtlas(m);
-      // A parked (display:none) terminal cannot measure its cell; it re-measures when shown.
-      if (m.hidden) m.fontStale = true;
-      else this.scheduleFit(m.id);
+      this.#refont(m);
     }
+  }
+
+  /**
+   * Tile `id`'s zoom: its terminal's font is the font's size times `zoom` (whole px). A visible
+   * terminal refits and its PTY is resized; a parked one when it is shown again. Kept for a
+   * terminal not created yet.
+   */
+  setZoom(id: string, zoom: number): void {
+    if (Math.abs((this.#zooms.get(id) ?? 1) - zoom) < 1e-3) return;
+    if (isActualSize(zoom)) this.#zooms.delete(id);
+    else this.#zooms.set(id, zoom);
+    const m = this.#terms.get(id);
+    if (!m || m.disposed) return;
+    const size = this.#fontSizeOf(id);
+    if (m.term.options.fontSize === size) return;
+    m.term.options.fontSize = size;
+    this.#refont(m);
+  }
+
+  /** The font size of tile `id`'s terminal: the font's, at the tile's zoom. */
+  #fontSizeOf(id: string): number {
+    return zoomedFontSize(this.#font.fontSize, this.#zooms.get(id) ?? 1);
+  }
+
+  /** After a font option changed: a fresh glyph atlas, and a refit (now, or once shown). */
+  #refont(m: Managed): void {
+    this.#clearAtlas(m);
+    // A parked (display:none) terminal cannot measure its cell; it re-measures when shown.
+    if (m.hidden) m.fontStale = true;
+    else this.scheduleFit(m.id);
   }
 
   /** Apply a colour theme to every live terminal (parked ones included) and to new ones. */
@@ -363,7 +401,7 @@ export class TerminalManager {
       cursorBlink: true,
       cursorStyle: "bar",
       fontFamily: this.#font.fontFamily,
-      fontSize: this.#font.fontSize,
+      fontSize: this.#fontSizeOf(id),
       lineHeight: this.#font.lineHeight,
       fontWeight: this.#font.fontWeight,
       letterSpacing: 0,
@@ -771,6 +809,10 @@ export class TerminalManager {
         this.#events.onActivity(m.id);
       }
     }));
+    const fg = this.#backend.onForeground?.(ptyId, () => {
+      if (!m.disposed && m.ptyId === ptyId) this.#events.onForeground?.(m.id);
+    });
+    if (fg) m.unsubs.push(fg);
     m.unsubs.push(this.#backend.onExit(ptyId, (exit) => {
       if (m.disposed || m.ptyId !== ptyId) return;
       m.exited = true;

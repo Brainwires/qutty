@@ -20,7 +20,6 @@ import {
   DEFAULT_FONT_SETTINGS,
   type FontSettings,
   sanitizeFont,
-  stepFontSize,
 } from "./fonts.ts";
 import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
 import type { SshProfile } from "../ssh-ui.ts";
@@ -49,6 +48,7 @@ import {
   type VoiceSettings,
 } from "../voice/settings.ts";
 import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
+import { type AgentPreset, sanitizePresets } from "../agent/presets.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
 import {
@@ -85,6 +85,12 @@ import {
 } from "./freeform.ts";
 import { reduceView, type ViewAction } from "./view.ts";
 import { appendId, sanitizeOrder, swapIds } from "./tile-order.ts";
+import {
+  clampTileZoom,
+  isActualSize,
+  sanitizeTileZoom,
+  stepTileZoom,
+} from "./tile-zoom.ts";
 
 /** Where the switcher bar sits. */
 export type BarPosition = "top" | "bottom" | "left" | "right";
@@ -182,6 +188,12 @@ export interface TerminalEntry extends TileSignals {
    * page) still running. Restoring it (its chip, `focus`, `restoreTile`) tiles it again.
    */
   minimized?: boolean;
+  /**
+   * The tile's own zoom (View → Zoom In / Zoom Out; lib/workspace/tile-zoom.ts), absent at 100%: a
+   * terminal's font over Settings' size, an agent tile's content. Never set on a web tile (its
+   * page's zoom is remembered per site).
+   */
+  zoom?: number;
 }
 
 /** An agent tool a tile runs (lib/launcher.ts). */
@@ -238,6 +250,15 @@ export interface Settings extends FontSettings {
    * (app/harness-overlay.tsx), unless its own header menu turned it off.
    */
   harnessOverlay: boolean;
+  /**
+   * View → "Zoom All Tiles Together": zooming changes one shared level (`sharedZoom`) that every
+   * tile in every window shows, instead of the focused tile's own zoom.
+   */
+  zoomTogether: boolean;
+  /** The shared zoom level while tiles zoom together (1: 100%; lib/workspace/tile-zoom.ts). */
+  sharedZoom: number;
+  /** Settings → Agents → Presets: agent tile roles, picked in the `+` menu (lib/agent/presets.ts). */
+  agentPresets: AgentPreset[];
 }
 
 /** The whole workspace. */
@@ -338,6 +359,17 @@ export type WorkspaceAction =
   | { type: "setLayout"; patch: Partial<LayoutOptions> }
   | { type: "cyclePattern"; dir?: 1 | -1 }
   | { type: "toggleMonocle" }
+  /**
+   * View → Zoom In / Zoom Out on tile `id` (not a web tile: its page zooms itself): its own zoom,
+   * or the shared level while tiles zoom together.
+   */
+  | { type: "zoomTile"; id: string; dir: 1 | -1 }
+  /** View → Actual Size on tile `id` (or its zoom indicator): back to 100%. */
+  | { type: "resetTileZoom"; id: string }
+  /** The shared zoom level (a web tile zooming while tiles zoom together). */
+  | { type: "setSharedZoom"; zoom: number }
+  /** View → "Zoom All Tiles Together". */
+  | { type: "setZoomTogether"; on: boolean }
   /** A tile's Minimize: out of the layout, into the switcher bar (its shell keeps running). */
   | { type: "minimize"; id: string; now: number }
   /** A tile's Maximize: focus it and show it alone (monocle, remembering the pattern). */
@@ -364,13 +396,13 @@ export type WorkspaceAction =
   | { type: "setSandbox"; patch: Partial<SandboxSettings> }
   | { type: "setOllama"; patch: Partial<OllamaSettings> }
   | { type: "setLinks"; patch: Partial<LinkSettings> }
+  /** Settings → Agents → Presets: the whole list. */
+  | { type: "setAgentPresets"; presets: unknown }
   | { type: "setMonitor"; patch: Partial<MonitorSettings> }
   | { type: "setWindowClose"; windowClose: WindowClose }
   | { type: "launched"; entryId: string }
   | { type: "setSettingsTab"; tab: SettingsTab }
   | { type: "setFont"; patch: Partial<FontSettings> }
-  | { type: "stepFontSize"; dir: 1 | -1 }
-  | { type: "resetFontSize" }
   | { type: "hydrateSettings"; settings: Partial<Settings> }
   | {
     /** A workspace shown again (lib/workspace/session.ts): its tiles, order and layout. */
@@ -409,6 +441,9 @@ export const DEFAULT_SETTINGS: Settings = {
   tileTitle: "program",
   defaultView: "tiled",
   harnessOverlay: true,
+  zoomTogether: false,
+  sharedZoom: 1,
+  agentPresets: [],
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -439,6 +474,10 @@ function cloneSettings(s: Settings): Settings {
     links: { ...s.links },
     monitor: { ...s.monitor },
     activity: { ...s.activity },
+    agentPresets: s.agentPresets.map((p) => ({
+      ...p,
+      ...(p.allowedTools ? { allowedTools: [...p.allowedTools] } : {}),
+    })),
     ollama: {
       ...s.ollama,
       recents: s.ollama.recents.map((p) => ({ ...p })),
@@ -545,6 +584,10 @@ export function sanitizeSettings(
   if (typeof r.harnessOverlay === "boolean") {
     out.harnessOverlay = r.harnessOverlay;
   }
+  if (typeof r.zoomTogether === "boolean") out.zoomTogether = r.zoomTogether;
+  if (r.sharedZoom !== undefined) {
+    out.sharedZoom = sanitizeTileZoom(r.sharedZoom) ?? 1;
+  }
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
@@ -573,6 +616,9 @@ export function sanitizeSettings(
     out.defaultView = sanitizeViewMode(r.defaultView);
   }
   if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
+  if (r.agentPresets !== undefined) {
+    out.agentPresets = sanitizePresets(r.agentPresets);
+  }
   if (SETTINGS_TABS.includes(r.settingsTab as SettingsTab)) {
     out.settingsTab = r.settingsTab as SettingsTab;
   }
@@ -868,6 +914,66 @@ function updateTerminal(
     return changed ? { ...t, ...patch } : t;
   });
   return changed ? { ...state, terminals } : state;
+}
+
+/** The zoom actions (lib/workspace/tile-zoom.ts). */
+type ZoomAction = Extract<
+  WorkspaceAction,
+  { type: "zoomTile" | "resetTileZoom" | "setSharedZoom" | "setZoomTogether" }
+>;
+
+/** `state` with the shared zoom level at `zoom` (the same state when it is already there). */
+function withSharedZoom(state: WorkspaceState, zoom: number): WorkspaceState {
+  const sharedZoom = clampTileZoom(zoom);
+  return Math.abs(sharedZoom - state.settings.sharedZoom) < 1e-3
+    ? state
+    : { ...state, settings: { ...state.settings, sharedZoom } };
+}
+
+/** Tile `id` at its own zoom `zoom` (100%: none stored); a web tile has none. */
+function withTileZoom(
+  state: WorkspaceState,
+  id: string,
+  zoom: number,
+): WorkspaceState {
+  const entry = state.terminals.find((t) => t.id === id);
+  if (!entry || entry.web) return state;
+  const next = isActualSize(zoom) ? undefined : clampTileZoom(zoom);
+  if (next === entry.zoom) return state;
+  const terminals = state.terminals.map((t) => {
+    if (t.id !== id) return t;
+    const { zoom: _z, ...rest } = t;
+    return next === undefined ? rest : { ...rest, zoom: next };
+  });
+  return { ...state, terminals };
+}
+
+/** Zoom In / Zoom Out / Actual Size and the zoom settings. */
+function reduceZoom(state: WorkspaceState, action: ZoomAction): WorkspaceState {
+  const together = state.settings.zoomTogether;
+  switch (action.type) {
+    case "zoomTile": {
+      if (together) {
+        return withSharedZoom(
+          state,
+          stepTileZoom(state.settings.sharedZoom, action.dir),
+        );
+      }
+      const own = state.terminals.find((t) => t.id === action.id)?.zoom ?? 1;
+      return withTileZoom(state, action.id, stepTileZoom(own, action.dir));
+    }
+    case "resetTileZoom":
+      return together
+        ? withSharedZoom(state, 1)
+        : withTileZoom(state, action.id, 1);
+    case "setSharedZoom":
+      return withSharedZoom(state, action.zoom);
+    case "setZoomTogether":
+      return action.on === together ? state : {
+        ...state,
+        settings: { ...state.settings, zoomTogether: action.on },
+      };
+  }
 }
 
 /** Whether tile `id` is a web tile (no PTY, so no terminal signals). */
@@ -1248,6 +1354,16 @@ function reduceCore(
       }
       return { ...state, settings: { ...state.settings, links } };
     }
+    case "setAgentPresets": {
+      const agentPresets = sanitizePresets(action.presets);
+      if (
+        JSON.stringify(agentPresets) ===
+          JSON.stringify(state.settings.agentPresets)
+      ) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, agentPresets } };
+    }
     case "setMonitor": {
       const monitor = sanitizeMonitor(action.patch, state.settings.monitor);
       if (JSON.stringify(monitor) === JSON.stringify(state.settings.monitor)) {
@@ -1287,12 +1403,11 @@ function reduceCore(
       };
     case "setFont":
       return withFont(state, action.patch);
-    case "stepFontSize":
-      return withFont(state, {
-        fontSize: stepFontSize(state.settings.fontSize, action.dir),
-      });
-    case "resetFontSize":
-      return withFont(state, { fontSize: DEFAULT_FONT_SETTINGS.fontSize });
+    case "zoomTile":
+    case "resetTileZoom":
+    case "setSharedZoom":
+    case "setZoomTogether":
+      return reduceZoom(state, action);
     case "hydrateSettings":
       return withSettings(
         state,

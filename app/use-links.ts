@@ -238,6 +238,8 @@ export function useLinks(opts: UseLinksOptions) {
     openLink,
     /** Open `url` in the default browser (a web tile's "Open in default browser"). */
     openInBrowser: openUrl,
+    /** Open a local file at a line in the editor Settings → Links picks (an agent's Changes). */
+    openInEditor: (path: string, line?: number) => void edit(path, line),
     closeMenu() {
       setMenu(null);
       optsRef.current.refocus();

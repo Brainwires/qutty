@@ -57,6 +57,8 @@ import {
 import type { LaunchSection, PlusOpens } from "../lib/launcher.ts";
 import { ThemePreview } from "./theme-preview.tsx";
 import { AgentIntegration } from "./agent-integration.tsx";
+import { AgentPresetsSection } from "./agent-presets-settings.tsx";
+import type { AgentPreset } from "../lib/agent/presets.ts";
 import { CompanionSettingsSection } from "./companion/companion-settings.tsx";
 import type { CompanionSettings } from "../lib/companion/settings.ts";
 import type { SandboxSettings } from "../lib/sandbox/settings.ts";
@@ -99,6 +101,8 @@ export interface SettingsPanelProps {
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
   onFont(patch: Partial<FontSettings>): void;
+  /** Settings → Appearance → Zoom (also View → "Zoom All Tiles Together"). */
+  onZoomTogether(on: boolean): void;
   onTheme(theme: ThemeId): void;
   /** A tab was picked (remembered as `settings.settingsTab`). */
   onTab(tab: SettingsTab): void;
@@ -121,6 +125,8 @@ export interface SettingsPanelProps {
   onOllama(patch: Partial<OllamaSettings>): void;
   /** Settings → Links & web. */
   onLinks(patch: Partial<LinkSettings>): void;
+  /** Settings → Agents → Presets (the whole list). */
+  onAgentPresets(presets: AgentPreset[]): void;
   /** Settings → System monitor. */
   onMonitor(patch: Partial<MonitorSettings>): void;
   /**
@@ -156,14 +162,14 @@ const SHORTCUTS: [string, string][] = [
   ["Mod+]", "Next in recency order"],
   ["Mod+[", "Previous in recency order"],
   ["Mod+`", "Jump to last used"],
-  ["Mod+Enter", "Toggle monocle"],
+  ["Mod+Enter", "Maximize / restore the focused tile"],
   ["Mod+Shift+L", "Cycle pattern"],
   ["Mod+Shift+B", "Move the bar"],
   ["Mod+Shift+O", "SSH connections"],
   ["Mod+Shift+I", "Broadcast input on / off"],
-  ["Mod+=", "Bigger font"],
-  ["Mod+-", "Smaller font"],
-  ["Mod+0", "Default font size"],
+  ["Mod+=", "Zoom the focused tile in"],
+  ["Mod+-", "Zoom the focused tile out"],
+  ["Mod+0", "Focused tile at actual size"],
 ];
 
 const SAMPLE = "~/src ❯ git status  0O1lI {}[] => !=";
@@ -507,6 +513,23 @@ export function SettingsPanel(props: SettingsPanelProps) {
             onFont={props.onFont}
           />
         </SettingsGroup>
+        <SettingsGroup title="Zoom" testid="zoom-section">
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              data-testid="setting-zoom-together"
+              checked={settings.zoomTogether}
+              onChange={(e) =>
+                props.onZoomTogether((e.target as HTMLInputElement).checked)}
+            />
+            <span class="field-label">Zoom all tiles together</span>
+          </label>
+          <span class="field-hint">
+            {settings.zoomTogether
+              ? "Zoom In / Zoom Out change one level every tile in every window shows. A site zoomed on its own keeps its zoom until Actual Size."
+              : "Zoom In / Zoom Out (View menu) change the focused tile only, over the font size above. Web pages keep a zoom per site."}
+          </span>
+        </SettingsGroup>
         <SettingsGroup title="Inactive tiles">
           <div class="field">
             <span class="field-label">Inactive tiles</span>
@@ -658,6 +681,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <>
         <SettingsGroup title="Agent integration" testid="integration-section">
           <AgentIntegration backend={props.backend} />
+        </SettingsGroup>
+        <SettingsGroup title="Presets" testid="presets-section">
+          <AgentPresetsSection
+            presets={settings.agentPresets}
+            onChange={props.onAgentPresets}
+          />
         </SettingsGroup>
         {props.ollama && (
           <SettingsGroup title="Ollama" testid="ollama-section">

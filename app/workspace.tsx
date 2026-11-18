@@ -113,6 +113,7 @@ import { RemoteBrowser } from "./remote-browser.tsx";
 import { SshHeadActions, SshTileOverlay } from "./ssh-overlays.tsx";
 import { ForwardsDialog } from "./forwards-panel.tsx";
 import { useBroadcast } from "./use-broadcast.ts";
+import { useTileZoom } from "./use-tile-zoom.ts";
 import { BroadcastBanner, BroadcastCheck } from "./broadcast-banner.tsx";
 import { useSsh } from "./use-ssh.ts";
 import { useLinks } from "./use-links.ts";
@@ -244,6 +245,9 @@ function WorkspaceView() {
       managerRef.current?.focus(id);
     }
   }, []);
+
+  // Per-tile zoom (⌘= / ⌘- / ⌘0, the View menu; lib/workspace/tile-zoom.ts).
+  const tileZoom = useTileZoom({ ready, state, manager: managerRef, run });
 
   /** Give tile `id` the keyboard: its terminal, a web tile's body, an agent tile's prompt. */
   const focusKeyboard = useCallback((id: string) => {
@@ -442,6 +446,8 @@ function WorkspaceView() {
     cycling,
     home: state.settings.links.home,
     bookmarksBar: state.settings.links.bookmarksBar,
+    sharedZoom: tileZoom.web.sharedZoom,
+    setSharedZoom: tileZoom.web.setSharedZoom,
     copy: (text) =>
       void globalThis.navigator?.clipboard?.writeText(text).catch((err) =>
         console.warn("web tile: the clipboard refused", err)
@@ -453,6 +459,7 @@ function WorkspaceView() {
     state.settings.links.home,
     state.settings.links.bookmarksBar,
     webControl,
+    tileZoom.web,
   ]);
   // The bookmark manager and History (opened from the bookmarks bar, the star and the `+` menu).
   const webDialog = useWebDialog();
@@ -646,6 +653,11 @@ function WorkspaceView() {
     (url: string) => linksRef.current.openLink(url),
     [],
   );
+  // The Changes tab's "Open": the editor Settings → Links picks, at the first changed line.
+  const openInEditor = useCallback(
+    (path: string, line?: number) => linksRef.current.openInEditor(path, line),
+    [],
+  );
   const agentTiles = useAgentTiles({
     backend: ready ? managerRef.current?.backend ?? null : null,
     manager: ready ? managerRef.current : null,
@@ -660,6 +672,7 @@ function WorkspaceView() {
     ...(companionShown ? { dictation } : {}),
     speech,
     ...(capture ? { capture } : {}),
+    openInEditor,
   });
   agentsRef.current = agentTiles;
 
@@ -724,17 +737,16 @@ function WorkspaceView() {
         return run({ type: "cycleBarPosition" });
       case "toggleMonocle":
         return run({ type: "toggleMonocle" });
-      case "fontSize":
-        return run({ type: "stepFontSize", dir: cmd.dir });
-      case "fontSizeReset":
-        return run({ type: "resetFontSize" });
+      case "zoom":
+      case "zoomReset":
+        return tileZoom.runZoom(cmd);
       case "openConnections":
         setSettingsOpen(false);
         return sshRef.current.toggleDialog();
       case "toggleBroadcast":
         return broadcastRef.current.toggle();
     }
-  }, [newTerminal, closeTerminal, run]);
+  }, [newTerminal, closeTerminal, run, tileZoom.runZoom]);
 
   // Boot: environment, persisted settings, the terminal manager, the first terminal.
   useEffect(() => {
@@ -813,6 +825,10 @@ function WorkspaceView() {
         dispatch({ type: "commandRunning", id, running }),
       onBell: (id) => dispatch({ type: "bell", id }),
       onTitle: (id, title) => dispatch({ type: "programTitle", id, title }),
+      // A program started or quit back to its shell (the backend saw the foreground group change
+      // with its output): read what runs now, focused or not, OSC 133 or not. The harness
+      // overlay goes by it.
+      onForeground: (id) => void pollTitle(id),
       platform: plat,
       isWorkspaceShortcut: (e) =>
         commandForKey(e, plat) !== null ||
@@ -1080,12 +1096,14 @@ function WorkspaceView() {
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
-      openAgentChat: () => agentTiles.openLaunch(),
+      openAgentChat: (agent) => agentTiles.openLaunch(agent),
+      webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
         const id = stateRef.current.focusedId;
         if (id) void tileMove.moveTo(id, to);
       },
       onFocus: launcher.refresh,
+      toggleZoomTogether: tileZoom.toggleTogether,
     },
   });
   const visibleIds = useMemo(
@@ -1235,10 +1253,13 @@ function WorkspaceView() {
             }
             : {}),
           onAgentChat: agentTiles.openLaunch,
+          ...(agentTiles.apiKey ? { apiKeyChat: true } : {}),
+          agentPresets: state.settings.agentPresets,
         }}
         onLaunchOpen={() => {
           launcher.refresh();
           ollama.refresh();
+          agentTiles.refreshApiKey();
         }}
         onRefocus={() => {
           const id = stateRef.current.focusedId;
@@ -1299,6 +1320,8 @@ function WorkspaceView() {
             onMaximize={(id) => tileControl("maximize", id)}
             onRestore={(id) => tileControl("restoreTile", id)}
             onHeadDoubleClick={headDoubleClick}
+            zoomOf={tileZoom.zoomOf}
+            onZoomReset={tileZoom.resetZoom}
             windowDrag={tileMove.drag}
             onHeadMenu={openHeadMenu}
             dropTargetId={ssh.dropTarget}
@@ -1432,6 +1455,7 @@ function WorkspaceView() {
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onHarnessOverlay={(on) => run({ type: "setHarnessOverlay", on })}
           onFont={(patch) => run({ type: "setFont", patch })}
+          onZoomTogether={(on) => run({ type: "setZoomTogether", on })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           onTab={(tab) => run({ type: "setSettingsTab", tab })}
           target={settingsTarget}
@@ -1444,6 +1468,8 @@ function WorkspaceView() {
           {...(ollama.loaded ? { ollama } : {})}
           onOllama={(patch) => run({ type: "setOllama", patch })}
           onLinks={(patch) => run({ type: "setLinks", patch })}
+          onAgentPresets={(presets) =>
+            run({ type: "setAgentPresets", presets })}
           onMonitor={(patch) => run({ type: "setMonitor", patch })}
           {...(windowClose.guarded
             ? {

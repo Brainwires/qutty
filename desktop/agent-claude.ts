@@ -32,6 +32,33 @@ const START_TIMEOUT_MS = 15_000;
 /** How many diagnostic lines are kept for an exit's reason. */
 const LOG_LINES = 6;
 
+/** An agent process's last diagnostic lines, and why it ended in a few words. */
+export class ExitLog {
+  #lines: string[] = [];
+  #name: string;
+
+  /** @param name What the reason calls the agent (`Claude Code`). */
+  constructor(name: string) {
+    this.#name = name;
+  }
+
+  remember(line: string): void {
+    this.#lines.push(line);
+    if (this.#lines.length > LOG_LINES) this.#lines.shift();
+  }
+
+  /** Why it ended (its last diagnostic line when there is one). */
+  reason(exit: PtyExitEvent): string {
+    const last = this.#lines.at(-1);
+    const how = exit.signal
+      ? `signal ${exit.signal}`
+      : `exit code ${exit.exitCode}`;
+    return last
+      ? `${this.#name} ended: ${last.slice(0, 200)} (${how})`
+      : `${this.#name} ended (${how})`;
+  }
+}
+
 export interface ClaudeAgentOptions {
   /** The tile's hub variables (its socket). */
   env: Record<string, string>;
@@ -51,7 +78,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   #host: PtyHost | undefined;
   #id: string | undefined;
   #parser = new ClaudeStreamParser();
-  #log: string[] = [];
+  #log = new ExitLog("Claude Code");
   #stopped = false;
   #interrupts = 0;
 
@@ -91,13 +118,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           }
         }
         for (const e of this.#parser.push(chunk)) {
-          if (e.kind === "log") this.#remember(e.message);
+          if (e.kind === "log") this.#log.remember(e.message);
           sink.event(e);
         }
         return;
       }
       const exit = data as PtyExitEvent;
-      const reason = this.#reason(exit);
+      const reason = this.#log.reason(exit);
       this.#host = undefined;
       if (!isReady) failed(new Error(reason));
       else if (!this.#stopped) {
@@ -146,21 +173,5 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   stop(): void {
     this.#stopped = true;
     if (this.#host && this.#id) this.#host.kill(this.#id);
-  }
-
-  #remember(line: string): void {
-    this.#log.push(line);
-    if (this.#log.length > LOG_LINES) this.#log.shift();
-  }
-
-  /** Why the session ended, in a few words (its last diagnostic line when there is one). */
-  #reason(exit: PtyExitEvent): string {
-    const last = this.#log.at(-1);
-    const how = exit.signal
-      ? `signal ${exit.signal}`
-      : `exit code ${exit.exitCode}`;
-    return last
-      ? `Claude Code ended: ${last.slice(0, 200)} (${how})`
-      : `Claude Code ended (${how})`;
   }
 }
