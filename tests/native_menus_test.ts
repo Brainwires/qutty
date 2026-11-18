@@ -259,8 +259,9 @@ Deno.test("native menus: the View menu has the view radios, the Layout and Switc
       ITEM.minimizeTile,
       ITEM.maximizeTile,
       ITEM.restoreTile,
-      ITEM.bigger,
-      ITEM.smaller,
+      ITEM.zoomIn,
+      ITEM.zoomOut,
+      ITEM.zoomTogether,
       ITEM.actualSize,
       MDI_ITEM_IDS.cascade,
     ]
@@ -378,7 +379,7 @@ Deno.test("native menus: clicks map to what the page does", () => {
     kind: "key",
     command: { kind: "closeFocused" },
   });
-  assertEquals(menuAction(ITEM.zoomTile), {
+  assertEquals(menuAction(ITEM.maximizeTile), {
     kind: "key",
     command: { kind: "toggleMonocle" },
   });
@@ -462,7 +463,10 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
   assertEquals(s[patternItemId("grid")], { checked: false, enabled: true });
   assertEquals(s[barItemId("top")], { checked: true });
   assertEquals(s[ITEM.restoreTile], { enabled: false });
-  assertEquals(s[ITEM.maximizeTile], { enabled: true });
+  assertEquals(s[ITEM.maximizeTile], { checked: false, enabled: true });
+  assertEquals(s[ITEM.zoomIn], { enabled: true });
+  assertEquals(s[ITEM.actualSize], { enabled: true });
+  assertEquals(s[ITEM.zoomTogether], { checked: false });
   assertEquals(s[ITEM.closeTile], { enabled: true });
   assertEquals(s[ITEM.broadcast], { checked: false });
   assertEquals(s[MDI_ITEM_IDS.cascade], { enabled: false });
@@ -470,7 +474,7 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
 
   const max = menuItemStates({ ...INPUT, maximizedId: "b" });
   assertEquals(max[ITEM.restoreTile], { enabled: true });
-  assertEquals(max[ITEM.maximizeTile], { enabled: false });
+  assertEquals(max[ITEM.maximizeTile], { checked: true, enabled: true });
 
   const free = menuItemStates({ ...INPUT, view: "freeform", broadcast: true });
   assertEquals(free[MDI_ITEM_IDS.viewFreeform], { checked: true });
@@ -483,9 +487,22 @@ Deno.test("native menus: state follows the workspace (checks, Restore only when 
   assertEquals(free[ITEM.broadcast], { checked: true });
 
   const empty = menuItemStates({ ...INPUT, focusedId: null, tiles: [] });
-  for (const id of [ITEM.closeTile, ITEM.minimizeTile, ITEM.maximizeTile]) {
+  for (
+    const id of [
+      ITEM.closeTile,
+      ITEM.minimizeTile,
+      ITEM.zoomIn,
+      ITEM.zoomOut,
+      ITEM.actualSize,
+    ]
+  ) {
     assertEquals(empty[id], { enabled: false }, id);
   }
+  assertEquals(empty[ITEM.maximizeTile], { checked: false, enabled: false });
+  assertEquals(
+    menuItemStates({ ...INPUT, zoomTogether: true })[ITEM.zoomTogether],
+    { checked: true },
+  );
 });
 
 Deno.test("native menus: only changed states are pushed", () => {

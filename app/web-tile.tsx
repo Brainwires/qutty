@@ -45,7 +45,8 @@ import {
   type WebHistory,
 } from "../lib/web/history.ts";
 import { recordVisit, titleVisit } from "../lib/web/visits.ts";
-import { setSiteZoom, stepZoom, zoomFor } from "../lib/web/zoom.ts";
+import { ownSiteZoom, setSiteZoom, stepZoom } from "../lib/web/zoom.ts";
+import { pageZoom, stepTileZoom } from "../lib/workspace/tile-zoom.ts";
 import type { WebKeyCommand } from "../lib/workspace/keys.ts";
 import { visitsStore, zoomStore } from "./web-stores.ts";
 import type { OpenWhere } from "./bookmarks-bar.tsx";
@@ -83,6 +84,13 @@ export interface WebTileHooks {
   home?: string;
   /** Settings → Links → "Show bookmarks bar" (default on). */
   bookmarksBar?: boolean;
+  /**
+   * The shared zoom level while tiles zoom together (View → "Zoom All Tiles Together"), else
+   * `null`: a page without a zoom of its own shows it (lib/workspace/tile-zoom.ts).
+   */
+  sharedZoom?: number | null;
+  /** Set the shared level (⌘= / ⌘- / ⌘0 on a page without a zoom of its own, tiles together). */
+  setSharedZoom?(zoom: number): void;
   /** Copy text to the clipboard (the page menu's Copy link, Copy). */
   copy?(text: string): void;
 }
@@ -392,6 +400,12 @@ export function useWebTile(
   );
   const stepRef = useRef(0);
   const urlRef = useRef(page?.url ?? "");
+  const sharedZoom = hooks?.sharedZoom ?? null;
+  const sharedRef = useRef(sharedZoom);
+  sharedRef.current = sharedZoom;
+  /** The zoom `url` shows: its site's own, else the shared level (tiles together), else 100%. */
+  const zoomOf = (url: string, sites = zoomStore.get()) =>
+    pageZoom(ownSiteZoom(sites, url), sharedRef.current);
 
   /** Put the view at `factor` (the page's site remembers it when `remember`). */
   const applyZoom = useCallback((factor: number, remember: boolean) => {
@@ -441,7 +455,7 @@ export function useWebTile(
           stepRef.current = step === 0 ? 0 : step - Math.sign(step);
           setTrail((t) => followUrl(t, e.url, Math.sign(step)));
           // A site's zoom comes back with it.
-          applyZoom(zoomFor(zoomStore.get(), e.url), false);
+          applyZoom(zoomOf(e.url), false);
         }),
         v.on("load", (e) => {
           setView((s) => ({ ...s, load: e.state }));
@@ -494,7 +508,7 @@ export function useWebTile(
         if (!live) return;
         setView({ ...s });
         urlRef.current = s.url;
-        applyZoom(zoomFor(zoomStore.get(), s.url), false);
+        applyZoom(zoomOf(s.url), false);
       });
       void v.setZOrder(zRef.current);
       if (coveredRef.current) void v.setOccluded(true);
@@ -576,9 +590,13 @@ export function useWebTile(
   useEffect(() => {
     if (!engine?.capabilities.zoom) return;
     return zoomStore.subscribe((z) =>
-      applyZoom(zoomFor(z, urlRef.current), false)
+      applyZoom(zoomOf(urlRef.current, z), false)
     );
   }, [engine, applyZoom]);
+  // The shared level changed, or tiles stopped zooming together: follow.
+  useEffect(() => {
+    if (engine?.capabilities.zoom) applyZoom(zoomOf(urlRef.current), false);
+  }, [engine, applyZoom, sharedZoom]);
 
   const goBy = useCallback((n: number) => {
     const v = viewRef.current;
@@ -590,9 +608,23 @@ export function useWebTile(
       }
     })();
   }, []);
-  const zoomBy = (dir: 1 | -1) =>
+  // Tiles zooming together: a page without a zoom of its own steps the shared level; one with
+  // its own steps that, and Actual Size forgets it (the page joins the shared level again).
+  const together = () =>
+    sharedRef.current !== null &&
+    ownSiteZoom(zoomStore.get(), urlRef.current) === undefined;
+  const zoomBy = (dir: 1 | -1) => {
+    const shared = sharedRef.current;
+    if (shared !== null && together()) {
+      return hooksRef.current?.setSharedZoom?.(stepTileZoom(shared, dir));
+    }
     applyZoom(stepZoom(zoomRef.current, dir), true);
-  const zoomReset = () => applyZoom(1, true);
+  };
+  const zoomReset = () => {
+    if (sharedRef.current === null) return applyZoom(1, true);
+    if (together()) return hooksRef.current?.setSharedZoom?.(1);
+    zoomStore.set(setSiteZoom(zoomStore.get(), urlRef.current, 1));
+  };
   const closeFind = () => {
     setFindState(NO_FIND);
     void viewRef.current?.stopFind().catch(() => {});

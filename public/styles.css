@@ -347,6 +347,28 @@ kbd {
   color: var(--red);
   font-size: 10.5px;
 }
+/* A tile not at 100% (lib/workspace/tile-zoom.ts): its zoom, like a web page's zoom pill; a
+   click goes back to actual size. */
+.tile-zoom {
+  appearance: none;
+  flex: none;
+  height: 14px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+  font: 600 9.5px/14px var(--sans);
+  cursor: pointer;
+}
+.tile-zoom:hover {
+  background: rgba(var(--accent-rgb), 0.24);
+}
+/* An agent tile's transcript and prompt, and a harness overlay's prompt, at the tile's zoom. */
+.tile .agent-log,
+.tile .agent-prompt {
+  zoom: var(--tile-zoom, 1);
+}
 .tile-close,
 .tile-ctl,
 .chip-close {

@@ -104,18 +104,18 @@ Deno.test("keys: a focused web tile takes its browser keys; every other shortcut
     scope: "workspace",
     cmd: { kind: "cycle", dir: -1 },
   });
-  // ⌘= zooms the page over a web tile, the font from a terminal.
+  // ⌘= zooms the page over a web tile, the focused tile from a terminal.
   assertEquals(routeKey(cmd("Equal"), "mac", true), {
     scope: "web",
     cmd: { kind: "zoom", dir: 1 },
   });
   assertEquals(routeKey(cmd("Equal"), "mac", false), {
     scope: "workspace",
-    cmd: { kind: "fontSize", dir: 1 },
+    cmd: { kind: "zoom", dir: 1 },
   });
   assertEquals(routeKey(cmd("Digit0"), "mac", false), {
     scope: "workspace",
-    cmd: { kind: "fontSizeReset" },
+    cmd: { kind: "zoomReset" },
   });
   // The rest stays the workspace's over a web tile too.
   assertEquals(routeKey(cmd("KeyT"), "mac", true), {

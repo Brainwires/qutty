@@ -62,8 +62,13 @@ function zoomKey(url: string): string {
 
 /** The zoom remembered for `url`'s site (1 when none). */
 export function zoomFor(z: SiteZoom, url: string): number {
+  return ownSiteZoom(z, url) ?? 1;
+}
+
+/** The zoom `url`'s site has of its own (`undefined`: none remembered). */
+export function ownSiteZoom(z: SiteZoom, url: string): number | undefined {
   const key = zoomKey(url);
-  return (key && z.sites[key]) || 1;
+  return (key && z.sites[key]) || undefined;
 }
 
 /** Remember `zoom` for `url`'s site (100% forgets it). */

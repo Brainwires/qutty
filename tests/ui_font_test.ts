@@ -140,17 +140,18 @@ Deno.test("sanitizeFont / sanitizeSettings: bad family, custom, clamping, missin
   assertEquals(junk.fontWeight, "normal");
 });
 
-Deno.test("store: setFont, stepFontSize clamps, resetFontSize; no-ops keep identity", () => {
+Deno.test("store: setFont clamps the size; no-ops keep identity", () => {
   let s = initialState();
-  s = reduce(s, { type: "stepFontSize", dir: 1 });
+  s = reduce(s, { type: "setFont", patch: { fontSize: 14 } });
   assertEquals(s.settings.fontSize, 14);
-  s = reduce(s, { type: "setFont", patch: { fontSize: 32 } });
-  assertStrictEquals(reduce(s, { type: "stepFontSize", dir: 1 }), s, "at max");
-  s = reduce(s, { type: "resetFontSize" });
-  assertEquals(s.settings.fontSize, 13);
-  assertStrictEquals(reduce(s, { type: "resetFontSize" }), s);
-  s = reduce(s, { type: "setFont", patch: { fontSize: 9 } });
-  assertStrictEquals(reduce(s, { type: "stepFontSize", dir: -1 }), s, "at min");
+  assertStrictEquals(
+    reduce(s, { type: "setFont", patch: { fontSize: 14 } }),
+    s,
+  );
+  s = reduce(s, { type: "setFont", patch: { fontSize: 99 } });
+  assertEquals(s.settings.fontSize, 32, "clamped to the max");
+  s = reduce(s, { type: "setFont", patch: { fontSize: 1 } });
+  assertEquals(s.settings.fontSize, 9, "clamped to the min");
   s = reduce(s, {
     type: "setFont",
     patch: { fontFamily: "bogus", lineHeight: 1.4 },

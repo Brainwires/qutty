@@ -446,8 +446,7 @@
   - [ ] Native engine, open: the hub's `read_screen` answers nothing for a web
         tile (the page's title, URL and visible text through `evaluate`); a
         page-initiated download or permission has no Qutty UI beyond the OS save
-        panel; no zoom, find-in-page or DevTools controls (Denext has `setZoom`,
-        `find`, `openDevTools`).
+        panel.
   - [ ] `[::1]` pages open in the default browser with the iframe engine: a CSP
         host-source has no IPv6 literal, so the page's `frame-src` cannot allow
         them (the native engine is not bound by the page's CSP and shows them).

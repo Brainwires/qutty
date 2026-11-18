@@ -96,6 +96,8 @@ export interface NativeMenuHandlers {
   moveTile(to: string): void;
   /** "Claude Code (chat)": a new agent tile. */
   openAgentChat(): void;
+  /** View → "Zoom All Tiles Together" on / off. */
+  toggleZoomTogether(): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
 }
@@ -322,6 +324,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.moveTile(action.to);
         case "agentChat":
           return h.openAgentChat();
+        case "zoomTogether":
+          return h.toggleZoomTogether();
       }
     });
   }, [windowId, guard]);

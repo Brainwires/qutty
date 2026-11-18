@@ -31,7 +31,7 @@ Deno.test("macOS shortcuts use ⌘", () => {
   assertEquals(cmd("Digit9"), { kind: "focusOrdinal", ordinal: 9 });
   assertEquals(
     cmd("Digit0"),
-    { kind: "fontSizeReset" },
+    { kind: "zoomReset" },
     "⌘0 is not an ordinal",
   );
   assertEquals(cmd("BracketRight"), { kind: "cycle", dir: 1 });
@@ -136,19 +136,19 @@ Deno.test("formatAge / shortenPath / makeTitle", () => {
   assertEquals(makeTitle({ process: "  " }), "shell");
 });
 
-Deno.test("font size shortcuts: Mod+= / Mod++ / Mod+- / Mod+0 on mac and other", () => {
+Deno.test("zoom shortcuts: Mod+= / Mod++ / Mod+- / Mod+0 on mac and other", () => {
   for (const press of [cmd, ctrl]) {
-    assertEquals(press("Equal"), { kind: "fontSize", dir: 1 }, "Mod+=");
+    assertEquals(press("Equal"), { kind: "zoom", dir: 1 }, "Mod+=");
     assertEquals(
       press("Equal", { shiftKey: true }),
-      { kind: "fontSize", dir: 1 },
+      { kind: "zoom", dir: 1 },
       "Mod++ (Shift+=)",
     );
-    assertEquals(press("NumpadAdd"), { kind: "fontSize", dir: 1 });
-    assertEquals(press("Minus"), { kind: "fontSize", dir: -1 }, "Mod+-");
-    assertEquals(press("NumpadSubtract"), { kind: "fontSize", dir: -1 });
-    assertEquals(press("Digit0"), { kind: "fontSizeReset" }, "Mod+0");
-    assertEquals(press("Numpad0"), { kind: "fontSizeReset" });
+    assertEquals(press("NumpadAdd"), { kind: "zoom", dir: 1 });
+    assertEquals(press("Minus"), { kind: "zoom", dir: -1 }, "Mod+-");
+    assertEquals(press("NumpadSubtract"), { kind: "zoom", dir: -1 });
+    assertEquals(press("Digit0"), { kind: "zoomReset" }, "Mod+0");
+    assertEquals(press("Numpad0"), { kind: "zoomReset" });
     assertEquals(press("Minus", { shiftKey: true }), null, "Mod+_ is not ours");
     assertEquals(
       press("Digit0", { shiftKey: true }),

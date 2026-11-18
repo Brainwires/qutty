@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Zoom per tile. View → Zoom In, Zoom Out and Actual Size (⌘= or ⌘+, ⌘-, ⌘0,
+  numpad keys too; Ctrl elsewhere) zoom the focused tile only: a terminal's font
+  grows or shrinks over Settings' font size and its grid refits, an agent tile's
+  transcript and prompt and a harness overlay's prompt scale, and a web page
+  zooms as before, remembered per site. A tile that is not at 100% shows its
+  zoom in its header; a click there puts it back. Each tile keeps its zoom when
+  the workspace is shown again and when it moves to another window. The terminal
+  font's own size stays in Settings → Appearance, which ⌘= / ⌘- / ⌘0 no longer
+  change.
+- View → "Zoom All Tiles Together" (also Settings → Appearance → Zoom, off by
+  default): zooming changes one level that every tile in every window shows. Web
+  pages follow it, except a site zoomed on its own, which keeps its zoom until
+  Actual Size hands it back to the shared level. Turning it off gives each tile
+  its own zoom back.
+- View → "Zoom Tile" is now "Maximize Tile" (⌘↩), a checkbox that is checked
+  while the focused tile is maximized. It was the same toggle as Maximize /
+  Restore under a second name, and with one tile in the window it changed
+  nothing on screen.
+
 - The app icon wears the companion's everyday face: the neutral face it has at
   rest in the app (arched brows, teal eyes, a small closed smile) instead of the
   excited one with the open mouth. The Dock, taskbar, tray and favicon icons

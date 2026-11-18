@@ -75,10 +75,10 @@ export const ITEM = {
   minimizeTile: "qutty:tile:minimize",
   maximizeTile: "qutty:tile:maximize",
   restoreTile: "qutty:tile:restore",
-  zoomTile: "qutty:tile:zoom",
-  bigger: "qutty:font:bigger",
-  smaller: "qutty:font:smaller",
-  actualSize: "qutty:font:reset",
+  zoomIn: "qutty:zoom:in",
+  zoomOut: "qutty:zoom:out",
+  actualSize: "qutty:zoom:reset",
+  zoomTogether: "qutty:zoom:together",
   nextBar: "qutty:bar:next",
   nextTile: "qutty:tiles:next",
   previousTile: "qutty:tiles:previous",
@@ -129,9 +129,9 @@ const ACCELERATORS: Record<string, string> = {
   [ITEM.connections]: "CmdOrCtrl+Shift+O",
   [ITEM.broadcast]: "CmdOrCtrl+Shift+I",
   [ITEM.nextLayout]: "CmdOrCtrl+Shift+L",
-  [ITEM.zoomTile]: "CmdOrCtrl+Enter",
-  [ITEM.bigger]: "CmdOrCtrl+=",
-  [ITEM.smaller]: "CmdOrCtrl+-",
+  [ITEM.maximizeTile]: "CmdOrCtrl+Enter",
+  [ITEM.zoomIn]: "CmdOrCtrl+=",
+  [ITEM.zoomOut]: "CmdOrCtrl+-",
   [ITEM.actualSize]: "CmdOrCtrl+0",
   [ITEM.nextBar]: "CmdOrCtrl+Shift+B",
   [ITEM.nextTile]: "CmdOrCtrl+]",
@@ -157,10 +157,10 @@ export function keyAccelerator(cmd: KeyCommand): string | null {
     case "cycleBarPosition":
       return ACCELERATORS[ITEM.nextBar];
     case "toggleMonocle":
-      return ACCELERATORS[ITEM.zoomTile];
-    case "fontSize":
-      return ACCELERATORS[cmd.dir === 1 ? ITEM.bigger : ITEM.smaller];
-    case "fontSizeReset":
+      return ACCELERATORS[ITEM.maximizeTile];
+    case "zoom":
+      return ACCELERATORS[cmd.dir === 1 ? ITEM.zoomIn : ITEM.zoomOut];
+    case "zoomReset":
       return ACCELERATORS[ITEM.actualSize];
     case "openConnections":
       return ACCELERATORS[ITEM.connections];
@@ -328,7 +328,15 @@ const BAR_LABELS: Record<BarPosition, string> = {
   right: "Right",
 };
 
-/** The View menu: the view, the layout, the arrange commands, the focused tile, font size, bar. */
+/**
+ * The View menu: the view, the layout, the arrange commands, the focused tile, its zoom, the bar.
+ *
+ * "Maximize Tile" (⌘↩) is a checkbox: it maximizes the focused tile and, checked, restores it (it
+ * was "Zoom Tile" beside a plain Maximize Tile, the same toggle under a second name; in a window
+ * with one tile it changed nothing on screen, and "Zoom" now means the tile's zoom). Zoom In /
+ * Zoom Out / Actual Size act on the focused tile (lib/workspace/tile-zoom.ts); the terminal font's
+ * own size stays in Settings → Appearance.
+ */
 export function viewMenuSpec(platform: KeyPlatform): DesktopMenuUpdate {
   const radio = (
     id: string,
@@ -357,13 +365,13 @@ export function viewMenuSpec(platform: KeyPlatform): DesktopMenuUpdate {
       item(MDI_ITEM_IDS.tileVertically, MDI_LABELS.tileVertically),
       SEP,
       item(ITEM.minimizeTile, "Minimize Tile"),
-      item(ITEM.maximizeTile, "Maximize Tile"),
+      item(ITEM.maximizeTile, "Maximize Tile", { type: "checkbox" }),
       item(ITEM.restoreTile, "Restore Tile"),
-      item(ITEM.zoomTile, "Zoom Tile"),
       SEP,
-      item(ITEM.bigger, "Bigger"),
-      item(ITEM.smaller, "Smaller"),
+      item(ITEM.zoomIn, "Zoom In"),
+      item(ITEM.zoomOut, "Zoom Out"),
       item(ITEM.actualSize, "Actual Size"),
+      item(ITEM.zoomTogether, "Zoom All Tiles Together", { type: "checkbox" }),
       SEP,
       {
         label: "Switcher Bar",
@@ -411,6 +419,8 @@ export interface NativeMenuInput {
   maximizedId: string | null;
   /** Broadcast input is on. */
   broadcast: boolean;
+  /** View → "Zoom All Tiles Together" is on. */
+  zoomTogether?: boolean;
   /** Every tile, in the switcher bar's order (⌘1 is the first). */
   tiles: readonly MenuTile[];
 }
@@ -443,14 +453,16 @@ export function menuInput(
     focusedId: state.focusedId,
     maximizedId: maximizedId(state),
     broadcast,
+    zoomTogether: state.settings.zoomTogether,
     tiles,
   };
 }
 
 /**
  * Every stateful item's state for one window: the radio checks (view, layout, bar position), the
- * broadcast checkbox, and what is enabled (Restore Tile only with a tile maximized, the arrange
- * commands only free-form with a tile shown, the layouts only tiled, ...).
+ * checkboxes (broadcast, Maximize Tile on the focused tile maximized, Zoom All Tiles Together),
+ * and what is enabled (Restore Tile only with a tile maximized, the arrange commands only
+ * free-form with a tile shown, the layouts only tiled, the zoom commands with a tile focused...).
  */
 export function menuItemStates(
   input: NativeMenuInput,
@@ -466,10 +478,14 @@ export function menuItemStates(
     [ITEM.broadcast]: { checked: input.broadcast },
     [ITEM.minimizeTile]: { enabled: focused },
     [ITEM.maximizeTile]: {
-      enabled: focused && input.maximizedId !== input.focusedId,
+      checked: focused && input.maximizedId === input.focusedId,
+      enabled: focused,
     },
     [ITEM.restoreTile]: { enabled: input.maximizedId !== null },
-    [ITEM.zoomTile]: { enabled: focused },
+    [ITEM.zoomIn]: { enabled: focused },
+    [ITEM.zoomOut]: { enabled: focused },
+    [ITEM.actualSize]: { enabled: focused },
+    [ITEM.zoomTogether]: { checked: input.zoomTogether === true },
   };
   for (
     const id of [
@@ -578,7 +594,9 @@ export type MenuAction =
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   | { kind: "moveTile"; to: string }
   /** "Claude Code (chat)": a new agent tile. */
-  | { kind: "agentChat" };
+  | { kind: "agentChat" }
+  /** View → "Zoom All Tiles Together" on / off. */
+  | { kind: "zoomTogether" };
 
 const KEY_ITEMS: Record<string, KeyCommand> = {
   [ITEM.newTile]: { kind: "newTerminal" },
@@ -586,10 +604,10 @@ const KEY_ITEMS: Record<string, KeyCommand> = {
   [ITEM.connections]: { kind: "openConnections" },
   [ITEM.broadcast]: { kind: "toggleBroadcast" },
   [ITEM.nextLayout]: { kind: "cyclePattern" },
-  [ITEM.zoomTile]: { kind: "toggleMonocle" },
-  [ITEM.bigger]: { kind: "fontSize", dir: 1 },
-  [ITEM.smaller]: { kind: "fontSize", dir: -1 },
-  [ITEM.actualSize]: { kind: "fontSizeReset" },
+  [ITEM.maximizeTile]: { kind: "toggleMonocle" },
+  [ITEM.zoomIn]: { kind: "zoom", dir: 1 },
+  [ITEM.zoomOut]: { kind: "zoom", dir: -1 },
+  [ITEM.actualSize]: { kind: "zoomReset" },
   [ITEM.nextBar]: { kind: "cycleBarPosition" },
   [ITEM.nextTile]: { kind: "cycle", dir: 1 },
   [ITEM.previousTile]: { kind: "cycle", dir: -1 },
@@ -598,7 +616,6 @@ const KEY_ITEMS: Record<string, KeyCommand> = {
 
 const TILE_ITEMS: Record<string, TileControl> = {
   [ITEM.minimizeTile]: "minimize",
-  [ITEM.maximizeTile]: "maximize",
   [ITEM.restoreTile]: "restoreTile",
 };
 
@@ -618,6 +635,7 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.agentChat) return { kind: "agentChat" };
+  if (id === ITEM.zoomTogether) return { kind: "zoomTogether" };
   if (id === ITEM.ollama) return { kind: "ollama" };
   if (id.startsWith(MOVE_PREFIX) && id.length > MOVE_PREFIX.length) {
     return { kind: "moveTile", to: id.slice(MOVE_PREFIX.length) };

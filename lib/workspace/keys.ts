@@ -21,8 +21,10 @@ export type KeyCommand =
   | { kind: "cyclePattern" }
   | { kind: "cycleBarPosition" }
   | { kind: "toggleMonocle" }
-  | { kind: "fontSize"; dir: 1 | -1 }
-  | { kind: "fontSizeReset" }
+  /** Zoom the focused tile in or out (its own zoom, or the shared level: tile-zoom.ts). */
+  | { kind: "zoom"; dir: 1 | -1 }
+  /** The focused tile back to 100%. */
+  | { kind: "zoomReset" }
   | { kind: "openConnections" }
   | { kind: "toggleBroadcast" };
 
@@ -65,8 +67,11 @@ const DIGIT = /^Digit([1-9])$/;
  * - Mod+Shift+L cycle pattern, Mod+Shift+B cycle bar position
  * - Mod+Shift+O the SSH connection manager
  * - Mod+Shift+I broadcast input to the selected tiles (on / off)
- * - Mod+Enter toggle monocle
- * - Mod+= / Mod++ bigger font, Mod+- smaller, Mod+0 default size (numpad keys too)
+ * - Mod+Enter maximize / restore the focused tile (monocle tiled, MDI maximize free-form)
+ * - Mod+= / Mod++ zoom the focused tile in, Mod+- out, Mod+0 actual size (numpad keys too); the
+ *   terminal font's own size is Settings → Appearance's (lib/workspace/tile-zoom.ts). Off macOS
+ *   these are Ctrl+= / Ctrl+- / Ctrl+0, the keys Linux and Windows terminals zoom with; nothing
+ *   else of Ctrl is taken.
  */
 export function commandForKey(
   e: KeyLike,
@@ -74,17 +79,13 @@ export function commandForKey(
 ): KeyCommand | null {
   if (!hasMod(e, platform)) return null;
   const code = e.code;
-  // Mod++ is Shift+Equal on most layouts, so the font keys come before the Shift branch.
-  if (code === "Equal" || code === "NumpadAdd") {
-    return { kind: "fontSize", dir: 1 };
-  }
+  // Mod++ is Shift+Equal on most layouts, so the zoom keys come before the Shift branch.
+  if (code === "Equal" || code === "NumpadAdd") return { kind: "zoom", dir: 1 };
   if (!e.shiftKey) {
     if (code === "Minus" || code === "NumpadSubtract") {
-      return { kind: "fontSize", dir: -1 };
+      return { kind: "zoom", dir: -1 };
     }
-    if (code === "Digit0" || code === "Numpad0") {
-      return { kind: "fontSizeReset" };
-    }
+    if (code === "Digit0" || code === "Numpad0") return { kind: "zoomReset" };
   }
   if (e.shiftKey) {
     if (code === "KeyL") return { kind: "cyclePattern" };
@@ -194,8 +195,8 @@ export type RoutedKey =
 
 /**
  * Where a keydown goes, by the focused tile's type: over a web tile its browser keys come first
- * (so Mod+[ / Mod+] go back and forward there, and Mod+= zooms the page, not the terminals'
- * font), and every other workspace shortcut works as everywhere (Mod+T, Mod+W, Mod+1..9…).
+ * (so Mod+[ / Mod+] go back and forward there, and Mod+= zooms the page by its site's zoom), and
+ * every other workspace shortcut works as everywhere (Mod+T, Mod+W, Mod+1..9…).
  * `null`: not a shortcut (the terminal or the page has it).
  */
 export function routeKey(

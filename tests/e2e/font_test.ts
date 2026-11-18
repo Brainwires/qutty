@@ -1,6 +1,6 @@
-// The terminal font: the settings panel's typeface / size / line-height controls, the
-// Mod+= / Mod+- / Mod+0 shortcuts, applying the font to every terminal (a parked one included)
-// with the PTY resized to match, persistence and sanitising.
+// The terminal font: the settings panel's typeface / size / line-height controls, applying the
+// font to every terminal (a parked one included) with the PTY resized to match, persistence and
+// sanitising. (Mod+= / Mod+- / Mod+0 zoom the focused tile: tests/e2e/tile_zoom_test.ts.)
 
 import { assert, assertEquals, assertGreater, assertLess } from "@std/assert";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../../lib/workspace/fonts.ts";
 import { SETTINGS_STORAGE_KEY } from "../../lib/workspace/store.ts";
 import { type App, suite, type TerminalState, waitFor } from "./harness.ts";
+import { ptyAgrees, settledGrid } from "./grid_helpers.ts";
 
 const DEFAULT_STACK = fontStack(DEFAULT_FONT_SETTINGS);
 
@@ -57,43 +58,6 @@ async function waitForFont(
     `${id} at ${size}px${
       from ? ` refitted from ${from.cols}x${from.rows}` : ""
     }`,
-  );
-}
-
-/** Run the demo `size` command until the PTY agrees with xterm; returns xterm's state. */
-async function ptyAgrees(app: App, id: string): Promise<TerminalState> {
-  let s = (await app.terminal(id))!;
-  await waitFor(
-    async () => {
-      const out = await app.run(id, "size");
-      s = (await app.terminal(id))!;
-      const line = out.split("\n").filter((l) => /^\d+ \d+\s*$/.test(l)).at(
-        -1,
-      ) ?? "";
-      const m = /^(\d+) (\d+)/.exec(line);
-      return !!m && Number(m[1]) === s.rows && Number(m[2]) === s.cols;
-    },
-    5000,
-    `PTY size = xterm size in ${id}`,
-  );
-  return s;
-}
-
-/** Settle the tiles and let the debounced fit land (the grid stops changing). */
-async function settledGrid(app: App, id: string): Promise<TerminalState> {
-  await app.settle();
-  let prev = "";
-  return await waitFor(
-    async () => {
-      const s = (await app.terminal(id))!;
-      const key = `${s.cols}x${s.rows}`;
-      const same = key === prev;
-      prev = key;
-      if (!same) await new Promise((r) => setTimeout(r, 150));
-      return same ? s : null;
-    },
-    5000,
-    `${id} grid to settle`,
   );
 }
 
@@ -150,71 +114,6 @@ suite("font", (test) => {
     );
   });
 
-  test("shortcuts: Mod+= / Mod++ / Mod+- / Mod+0 from inside xterm, none typed into the shell", async (app) => {
-    const id = (await app.focusedId())!;
-    await settledGrid(app, id);
-    const base = await ptyAgrees(app, id);
-    await app.focusTerminalInput(id);
-    const lineBefore = await app.lastLine(id);
-    await app.shortcut("Equal");
-    await waitForFont(app, id, 14);
-    await app.shortcut("Equal", { shift: true });
-    await waitForFont(app, id, 15);
-    await app.shortcut("Equal");
-    await app.shortcut("Equal");
-    await app.shortcut("Equal");
-    const big = await waitForFont(app, id, 18, base);
-    assertLess(big.cols, base.cols);
-    assertEquals((await app.settings()).fontSize, 18);
-    await app.shortcut("Minus");
-    await waitForFont(app, id, 17);
-    await app.shortcut("Digit0");
-    const reset = await waitForFont(app, id, DEFAULT_FONT_SETTINGS.fontSize);
-    await waitFor(
-      async () => {
-        const s = (await app.terminal(id))!;
-        return s.cols === base.cols && s.rows === base.rows;
-      },
-      5000,
-      "the grid back at its default-size dimensions",
-    );
-    assertEquals(reset.fontSize, 13);
-    assertEquals(
-      await app.lastLine(id),
-      lineBefore,
-      "no = - + 0 reached the shell",
-    );
-    assert(await app.xtermHasFocus(id), "xterm keeps focus");
-    await ptyAgrees(app, id);
-  });
-
-  test("shortcuts: Mod+- stops at 9 and Mod+= at 32", async (app) => {
-    const id = (await app.focusedId())!;
-    await app.focusTerminalInput(id);
-    for (let i = 0; i < 6; i++) await app.shortcut("Minus");
-    await waitForFont(app, id, 9);
-    await app.shortcut("Minus");
-    assertEquals((await app.settings()).fontSize, 9);
-    await setFontSlider(app, "fontSize", 31);
-    await app.closeSettings();
-    await app.focusTerminalInput(id);
-    await app.shortcut("Equal");
-    await app.shortcut("Equal");
-    await waitForFont(app, id, 32);
-    assertEquals((await app.settings()).fontSize, 32);
-  });
-
-  test("Mod+0 resets a slider-set size", async (app) => {
-    const id = (await app.focusedId())!;
-    await setFontSlider(app, "fontSize", 25);
-    await waitForFont(app, id, 25);
-    await app.closeSettings();
-    await app.focusTerminalInput(id);
-    await app.shortcut("Digit0");
-    await waitForFont(app, id, 13);
-    assertEquals((await app.settings()).fontSize, 13);
-  });
-
   test("all terminals: visible, parked (monocle) and new ones get the font; the parked one refits on return", async (app) => {
     const [first, second] = await app.ensureTerminals(2);
     await app.setPatternViaSettings("monocle");
@@ -225,8 +124,8 @@ suite("font", (test) => {
       "parked",
     );
     const before = await settledGrid(app, second);
-    await app.focusTerminalInput(second);
-    for (let i = 0; i < 5; i++) await app.shortcut("Equal");
+    await setFontSlider(app, "fontSize", 18);
+    await app.closeSettings();
     const visibleAt18 = await waitForFont(app, second, 18, before);
     await ptyAgrees(app, second);
     // The parked terminal already has the new options.
@@ -275,8 +174,8 @@ suite("font", (test) => {
     const s = await ptyAgrees(app, first);
     assertEquals(s.fontSize, 22);
     // Its grid is what a fresh fit at 22px gives: shrinking the font back must grow it.
-    await app.focusTerminalInput(first);
-    await app.shortcut("Digit0");
+    await setFontSlider(app, "fontSize", 13);
+    await app.closeSettings();
     const back = await waitForFont(app, first, 13, s);
     assertGreater(back.cols, s.cols);
   });

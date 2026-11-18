@@ -26,6 +26,7 @@ import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
 import { type Row, sanitizeRows, savedRows } from "../agent/transcript.ts";
 import { sanitizeOrder } from "./tile-order.ts";
+import { sanitizeTileZoom } from "./tile-zoom.ts";
 import {
   type FreeformState,
   sanitizeFreeform,
@@ -196,9 +197,12 @@ function entryOf(v: unknown): TerminalEntry | undefined {
   }
   const num = (x: unknown, d: number) =>
     typeof x === "number" && Number.isFinite(x) ? x : d;
-  const { minimized: _m, ...entry } = v as unknown as TerminalEntry;
+  const { minimized: _m, zoom: _z, ...entry } = v as unknown as TerminalEntry;
+  const zoom = sanitizeTileZoom(v.zoom);
   return {
     ...clearSignals(entry),
+    // Its own zoom comes back with it (lib/workspace/tile-zoom.ts).
+    ...(zoom !== undefined ? { zoom } : {}),
     createdAt: num(v.createdAt, 0),
     lastUsedAt: num(v.lastUsedAt, 0),
     exited: v.exited === true,
@@ -309,6 +313,7 @@ export function planRestore(
         sandbox: _b,
         exitMessage: _m,
         chat: _c,
+        zoom: _z,
         ...rest
       } = entry;
       terminals.push({

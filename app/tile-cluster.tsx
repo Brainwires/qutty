@@ -79,6 +79,8 @@ import {
 import { isTintId } from "../lib/workspace/themes.ts";
 import { useWebTile, WebBody, type WebTileHooks } from "./web-tile.tsx";
 import { WebChrome, WebToolbar } from "./web-chrome.tsx";
+import { isActualSize } from "../lib/workspace/tile-zoom.ts";
+import { zoomLabel } from "../lib/web/zoom.ts";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 import { AgentBody, AgentHead, type AgentTileHooks } from "./agent-tile.tsx";
 import {
@@ -114,6 +116,13 @@ interface TileExtras {
   windowDrag?: WindowDrag;
   /** A right click on tile `id`'s header, at (`x`, `y`): its menu. */
   onHeadMenu?(id: string, x: number, y: number): void;
+  /**
+   * The zoom a terminal or agent tile shows (lib/workspace/tile-zoom.ts; absent: 100%). A web
+   * tile's page zoom is its own (the zoom pill in its address field).
+   */
+  zoomOf?(entry: TerminalEntry): number;
+  /** The zoom indicator was clicked: tile `id` back to 100%. */
+  onZoomReset?(id: string): void;
 }
 
 export interface TileClusterProps extends TileExtras {
@@ -189,6 +198,8 @@ export function TileCluster(props: TileClusterProps) {
           freeform={props.freeform}
           windowDrag={props.windowDrag}
           onHeadMenu={props.onHeadMenu}
+          zoomOf={props.zoomOf}
+          onZoomReset={props.onZoomReset}
           swapDrag={swap.drag}
           onSwapStart={props.onSwap || props.windowDrag
             ? swap.start
@@ -375,10 +386,16 @@ function TerminalTile(props: TerminalTileProps) {
     ? props.harnessOf?.(entry)
     : undefined;
   const harness = harnessView && props.harness;
+  // The tile's zoom: a terminal's font (the terminal manager), an agent tile's or a harness
+  // prompt's content (`--tile-zoom`, styles.css). A web tile's page zooms itself.
+  const zoom = web ? 1 : props.zoomOf?.(entry) ?? 1;
+  const zoomed = !isActualSize(zoom);
   // The harness's brand colour, for its cards (the theme's accent when it has none).
-  const tileStyle = harnessView?.spec.color
-    ? { ...style, "--harness": harnessView.spec.color }
-    : style;
+  const tileStyle = {
+    ...style,
+    ...(harnessView?.spec.color ? { "--harness": harnessView.spec.color } : {}),
+    ...(zoomed ? { "--tile-zoom": String(zoom) } : {}),
+  };
   // A web or agent tile's body is never scaled: it has no terminal to keep at one size. Nor is a
   // harness overlay's (its frame is not the plain body the scale maths measures).
   const full = web || agent || harnessView ? null : props.full;
@@ -427,6 +444,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-broadcast={broadcasting ? "true" : undefined}
       data-activity={props.activity}
       data-maximized={props.maximized ? "true" : undefined}
+      data-zoom={zoomed ? String(zoom) : undefined}
       onTransitionEnd={(e) => {
         // denext's TransitionEvent type has no `propertyName`; the native event does.
         const native = e as unknown as globalThis.TransitionEvent;
@@ -529,6 +547,23 @@ function TerminalTile(props: TerminalTileProps) {
               <span class="tile-rank" aria-label={`recency rank ${rank}`}>
                 {rank}
               </span>
+            )}
+            {zoomed && (
+              <button
+                type="button"
+                class="tile-zoom"
+                data-testid="tile-zoom"
+                data-keep-focus
+                aria-label={`Zoom ${zoomLabel(zoom)}: actual size`}
+                title="Zoom: click for actual size"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onZoomReset?.(id);
+                }}
+              >
+                {zoomLabel(zoom)}
+              </button>
             )}
             <WindowControls
               maximized={props.maximized}
