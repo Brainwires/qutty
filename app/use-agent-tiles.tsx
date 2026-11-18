@@ -3,10 +3,10 @@
 // the entry, the name as the title, a finished turn and new output as the tile's activity), the
 // hooks the tiles draw with (app/agent-tile.tsx: the terminal font and colours, links, "Open in
 // terminal", dictation, reading a reply aloud, pictures of web tiles), the + menu's "Claude Code
-// (chat)" with its folder question, and the lookups the hub badges, the companion and dictation
-// need.
+// (chat)" (and Codex, Ollama, Anthropic API) with its folder question, and the lookups the hub
+// badges, the companion and dictation need.
 
-import { useCallback, useMemo, useState } from "denext";
+import { useCallback, useEffect, useMemo, useState } from "denext";
 import type { ReactNode } from "denext";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
@@ -17,6 +17,7 @@ import type {
 } from "../lib/workspace/store.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
 import { themeById } from "../lib/workspace/themes.ts";
+import { agentDefaultName, type AgentKind } from "../lib/agent/adapter.ts";
 import { type AgentStore, type AgentSummary, useAgents } from "./use-agents.ts";
 import { AgentLaunchDialog, type AgentTileHooks } from "./agent-tile.tsx";
 
@@ -28,8 +29,12 @@ export interface AgentTilesView {
   hubIdOf(id: string): string | undefined;
   /** The agent tile whose session is hub tile `hubId`. */
   tileOfHub(hubId: string): string | undefined;
-  /** "Claude Code (chat)": ask for the folder, then open the tile. */
-  openLaunch(): void;
+  /** "Claude Code (chat)" (or another backend's): ask for the folder, then open the tile. */
+  openLaunch(agent?: AgentKind): void;
+  /** Whether an Anthropic API key is saved (the + menu offers "Anthropic API (chat)"). */
+  apiKey: boolean;
+  /** Ask again whether a key is saved (the + menu opened). */
+  refreshApiKey(): void;
   /** The folder question, while it is open. */
   dialog: ReactNode;
 }
@@ -71,19 +76,34 @@ export function useAgentTiles(o: {
     },
   });
 
-  const [asking, setAsking] = useState<{ cwd: string } | null>(null);
+  const [asking, setAsking] = useState<
+    { cwd: string; agent?: AgentKind } | null
+  >(null);
   const { manager, state } = o;
-  const openLaunch = useCallback(() => {
+  const openLaunch = useCallback((agent?: AgentKind) => {
+    const ask = (cwd: string) =>
+      setAsking({ cwd, ...(agent && agent !== "claude" ? { agent } : {}) });
     // The folder of the focused tile when it is known (shell marks, OSC 7, the process's), else
     // the home folder.
     const focused = state.terminals.find((t) => t.id === state.focusedId);
-    if (focused?.chat) return setAsking({ cwd: focused.chat.cwd });
-    if (!focused || focused.web || !manager) return setAsking({ cwd: "~" });
+    if (focused?.chat) return ask(focused.chat.cwd);
+    if (!focused || focused.web || !manager) return ask("~");
     void manager.cwd(focused.id).then(
-      (cwd) => setAsking({ cwd: cwd ?? "~" }),
-      () => setAsking({ cwd: "~" }),
+      (cwd) => ask(cwd ?? "~"),
+      () => ask("~"),
     );
   }, [manager, state.terminals, state.focusedId]);
+
+  const [apiKey, setApiKey] = useState(false);
+  const { backend } = o;
+  const refreshApiKey = useCallback(() => {
+    if (!backend) return;
+    void backend.companionKeyStatus().then(
+      (s) => setApiKey(s.anthropic),
+      () => setApiKey(false),
+    );
+  }, [backend]);
+  useEffect(refreshApiKey, [refreshApiKey]);
 
   const { fontFamily, fontFamilyCustom, fontSize, lineHeight, fontWeight } =
     state.settings;
@@ -122,15 +142,30 @@ export function useAgentTiles(o: {
         const session = store.get(id)?.snap?.transcript.sessionId ??
           t?.chat?.session;
         if (!t?.chat || !session) return;
-        openTile({
-          kind: "agent",
-          program: "claude",
-          name: "claude",
-          label: "Claude Code",
-          args: ["--resume", session],
-          cwd: store.get(id)?.snap?.spec.cwd ?? t.chat.cwd,
-          sandbox: false,
-        });
+        const cwd = store.get(id)?.snap?.spec.cwd ?? t.chat.cwd;
+        const agent = t.chat.agent ?? "claude";
+        // Only the CLIs have a terminal UI to resume in (Ollama and the API run in Qutty).
+        if (agent === "codex") {
+          openTile({
+            kind: "agent",
+            program: "codex",
+            name: "codex",
+            label: "Codex",
+            args: ["resume", session],
+            cwd,
+            sandbox: false,
+          });
+        } else if (agent === "claude") {
+          openTile({
+            kind: "agent",
+            program: "claude",
+            name: "claude",
+            label: "Claude Code",
+            args: ["--resume", session],
+            cwd,
+            sandbox: false,
+          });
+        }
       },
       rename: async (id, name) => {
         const got = await store.rename(id, name);
@@ -166,6 +201,7 @@ export function useAgentTiles(o: {
   const dialog = asking && (
     <AgentLaunchDialog
       initialCwd={asking.cwd}
+      {...(asking.agent ? { agent: asking.agent } : {})}
       onCancel={() => {
         setAsking(null);
         o.refocus();
@@ -176,12 +212,22 @@ export function useAgentTiles(o: {
           type: "add",
           id: o.nextId(),
           now: Date.now(),
-          chat: { cwd },
-          title: "claude",
+          chat: { cwd, ...(asking.agent ? { agent: asking.agent } : {}) },
+          title: agentDefaultName(asking.agent),
         });
       }}
     />
   );
 
-  return { store, summaries, hooks, hubIdOf, tileOfHub, openLaunch, dialog };
+  return {
+    store,
+    summaries,
+    hooks,
+    hubIdOf,
+    tileOfHub,
+    openLaunch,
+    apiKey,
+    refreshApiKey,
+    dialog,
+  };
 }

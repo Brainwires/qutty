@@ -72,6 +72,7 @@ export const ITEM = {
   findInPage: "qutty:web:find",
   devTools: "qutty:web:devtools",
   agentChat: "qutty:launch-agent-chat",
+  agentChatCodex: "qutty:launch-agent-chat:codex",
   ollama: "qutty:launch-ollama",
   nextLayout: "qutty:layout:next",
   minimizeTile: "qutty:tile:minimize",
@@ -242,7 +243,10 @@ export interface LaunchMenuInput {
   webPage: boolean;
   /** "Bookmarks…" and "History…" (web tiles can be shown: any engine). */
   webDialogs?: boolean;
-  /** "Claude Code (chat)" after the Claude Code entry: a new agent tile (app/agent-tile.tsx). */
+  /**
+   * "Claude Code (chat)" after the Claude Code entry, "Codex (chat)" after Codex's: a new agent
+   * tile (app/agent-tile.tsx).
+   */
   agentChat?: boolean;
 }
 
@@ -270,10 +274,12 @@ function launchItems(
     );
     for (const e of entries) {
       out.push(item(launchItemId(e.id), e.label));
-      if (
-        launch?.agentChat && e.kind === "agent" && e.agent?.name === "claude"
-      ) {
-        out.push(item(ITEM.agentChat, `${e.label} (chat)`));
+      if (launch?.agentChat && e.kind === "agent") {
+        if (e.agent?.name === "claude") {
+          out.push(item(ITEM.agentChat, `${e.label} (chat)`));
+        } else if (e.agent?.name === "codex") {
+          out.push(item(ITEM.agentChatCodex, `${e.label} (chat)`));
+        }
       }
     }
     if (section.id === "ollama" && launch?.ollama) {
@@ -607,8 +613,8 @@ export type MenuAction =
   | { kind: "ollama" }
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   | { kind: "moveTile"; to: string }
-  /** "Claude Code (chat)": a new agent tile. */
-  | { kind: "agentChat" }
+  /** "Claude Code (chat)" (`agent` absent) or "Codex (chat)": a new agent tile. */
+  | { kind: "agentChat"; agent?: "codex" }
   /** View → "Zoom All Tiles Together" on / off. */
   | { kind: "zoomTogether" }
   /** A browser command for the focused web tile (app/web-tile.tsx `runWebCommand`). */
@@ -651,6 +657,7 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.agentChat) return { kind: "agentChat" };
+  if (id === ITEM.agentChatCodex) return { kind: "agentChat", agent: "codex" };
   if (id === ITEM.zoomTogether) return { kind: "zoomTogether" };
   if (id === ITEM.findInPage) return { kind: "web", command: { kind: "find" } };
   if (id === ITEM.devTools) {

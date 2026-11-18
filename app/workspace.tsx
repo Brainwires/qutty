@@ -1090,7 +1090,7 @@ function WorkspaceView() {
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
-      openAgentChat: () => agentTiles.openLaunch(),
+      openAgentChat: (agent) => agentTiles.openLaunch(agent),
       webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
         const id = stateRef.current.focusedId;
@@ -1247,10 +1247,12 @@ function WorkspaceView() {
             }
             : {}),
           onAgentChat: agentTiles.openLaunch,
+          ...(agentTiles.apiKey ? { apiKeyChat: true } : {}),
         }}
         onLaunchOpen={() => {
           launcher.refresh();
           ollama.refresh();
+          agentTiles.refreshApiKey();
         }}
         onRefocus={() => {
           const id = stateRef.current.focusedId;

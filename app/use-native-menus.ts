@@ -96,7 +96,7 @@ export interface NativeMenuHandlers {
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   moveTile(to: string): void;
   /** "Claude Code (chat)": a new agent tile. */
-  openAgentChat(): void;
+  openAgentChat(agent?: "codex"): void;
   /** View → "Zoom All Tiles Together" on / off. */
   toggleZoomTogether(): void;
   /** A browser command for web tile `id` (Find in Page…, Developer Tools). */
@@ -326,7 +326,7 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         case "moveTile":
           return h.moveTile(action.to);
         case "agentChat":
-          return h.openAgentChat();
+          return h.openAgentChat(action.agent);
         case "zoomTogether":
           return h.toggleZoomTogether();
         case "web":

@@ -37,7 +37,7 @@ export type BrainEvent =
   /** More of the reply's text. */
   | { kind: "text"; delta: string }
   /** It called a tool (a hub tool: read_screen, write_tile, …). */
-  | { kind: "toolUse"; name: string; input: unknown }
+  | { kind: "toolUse"; name: string; input: unknown; id?: string }
   /** The turn is over: the whole reply, and whether it failed. */
   | { kind: "turnEnd"; text: string; isError: boolean }
   /** A line that was not an event (diagnostics; logged, never shown). */

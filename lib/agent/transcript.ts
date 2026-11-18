@@ -79,6 +79,8 @@ export interface Transcript {
   interrupted: boolean;
   /** What the session had cost when the last turn ended (Claude Code reports it cumulative). */
   costUsd?: number;
+  /** The models the backend offers, when it lists its own (Codex, Ollama). */
+  models?: { id: string; label: string }[];
   /** For row ids. */
   next: number;
 }
@@ -350,6 +352,8 @@ export function reduceTranscript(t: Transcript, e: AgentEvent): Transcript {
         asking: [],
       }, { type: "notice", id, text: e.reason, at: e.at });
     }
+    case "models":
+      return { ...t, models: e.models.slice(0, 100) };
     case "log":
       return t;
   }

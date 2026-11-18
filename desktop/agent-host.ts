@@ -1,8 +1,10 @@
 // The agent tiles in the hub extension (desktop/hub.ts): the sessions (lib/agent/sessions.ts) on
-// Claude Code (desktop/agent-claude.ts), and the page's requests, validated. Each session is a hub
-// tile of its own (its socket, name and status: the hub's `#agentTileOpen`), so its Claude Code is
-// a hub peer like any agent tile, and its permission questions come back through the hub's
-// `approve_tool` to the tile.
+// Claude Code (desktop/agent-claude.ts), Codex (desktop/agent-codex.ts) or a model Qutty calls
+// itself (desktop/agent-inference.ts: Ollama, Anthropic's API), and the page's requests,
+// validated. Each session is a hub tile of its own (its socket, name and status: the hub's
+// `#agentTileOpen`), so its Claude Code is a hub peer like any agent tile, and its permission
+// questions come back through the hub's `approve_tool` to the tile; Codex's and the in-process
+// tools' come through the adapter's `hooks.approve`.
 
 import {
   type AgentHubSide,
@@ -11,7 +13,9 @@ import {
   type AgentUpdate,
 } from "../lib/agent/sessions.ts";
 import {
+  AGENT_KINDS,
   type AgentAdapter,
+  type AgentKind,
   type AgentSessionSpec,
   PERMISSION_MODES,
   type PermissionMode,
@@ -19,6 +23,8 @@ import {
 import { isModelName, isSessionId } from "../lib/agent/claude-stream.ts";
 import { sanitizeRows } from "../lib/agent/transcript.ts";
 import { ClaudeAgentAdapter } from "./agent-claude.ts";
+import { CodexAgentAdapter } from "./agent-codex.ts";
+import { anthropicAgent, deferredOllamaAgent } from "./agent-inference.ts";
 import { type Issue, objectSchema, str } from "./schema.ts";
 
 /** What {@linkcode agentSessions} needs from the hub. */
@@ -27,6 +33,10 @@ export interface AgentSessionsOptions {
   hub: AgentHubSide;
   /** The flags that load the hub's MCP server and hooks into Claude Code. */
   hubArgs(): string[];
+  /** The Anthropic API key (the hub's keychain entry; `null`: none saved). */
+  anthropicKey?(): Promise<string | null>;
+  /** Qutty's version (Codex's client info). */
+  version?: string;
   /** Another backend (tests). */
   createAdapter?: (
     spec: AgentSessionSpec,
@@ -34,22 +44,43 @@ export interface AgentSessionsOptions {
   ) => AgentAdapter;
 }
 
-/** The agent tiles' sessions, on Claude Code unless told otherwise. */
+/** The adapter for a session: the backend its spec names (Claude Code when none). */
+export function createAgentAdapter(
+  spec: AgentSessionSpec,
+  tile: { id: string; env: Record<string, string> },
+  opts: Pick<AgentSessionsOptions, "hubArgs" | "anthropicKey" | "version">,
+): AgentAdapter {
+  const inference = {
+    anthropicKey: opts.anthropicKey ?? (() => Promise.resolve(null)),
+  };
+  switch (spec.agent ?? "claude") {
+    case "codex":
+      return new CodexAgentAdapter({
+        env: tile.env,
+        ...(opts.version ? { version: opts.version } : {}),
+      });
+    case "ollama":
+      return deferredOllamaAgent(spec, inference);
+    case "anthropic":
+      return anthropicAgent(spec, inference);
+    default:
+      return new ClaudeAgentAdapter({ env: tile.env, hubArgs: opts.hubArgs() });
+  }
+}
+
+/** The agent tiles' sessions, on the backend each one names unless told otherwise. */
 export function agentSessions(opts: AgentSessionsOptions): AgentSessions {
   return new AgentSessions({
     emit: opts.emit,
     hub: opts.hub,
     createAdapter: opts.createAdapter ??
-      ((_spec, tile) =>
-        new ClaudeAgentAdapter({
-          env: tile.env,
-          hubArgs: opts.hubArgs(),
-        })),
+      ((spec, tile) => createAgentAdapter(spec, tile, opts)),
   });
 }
 
 /** `agentStart`'s input. */
 export interface AgentStartInput {
+  agent?: AgentKind;
   cwd: string;
   model?: string;
   resumeId?: string;
@@ -86,7 +117,15 @@ export const agentStartInput = objectSchema<AgentStartInput>((v, issues) => {
   const resumeId = typeof v.resumeId === "string" && isSessionId(v.resumeId)
     ? v.resumeId
     : undefined;
+  const agent = AGENT_KINDS.find((k) => k === v.agent);
+  if (v.agent !== undefined && !agent) {
+    issues.push({
+      message: `agent is one of ${AGENT_KINDS.join(", ")}`,
+      path: ["agent"],
+    });
+  }
   return {
+    ...(agent && agent !== "claude" ? { agent } : {}),
     cwd: str(v, "cwd", issues, 4096),
     ...(model ? { model } : {}),
     ...(resumeId ? { resumeId } : {}),
@@ -120,6 +159,7 @@ export async function agentStartRequest(
   const info = await Deno.stat(cwd).catch(() => undefined);
   if (!info?.isDirectory) throw new Error(`no such folder: ${raw}`);
   return {
+    ...(input.agent ? { agent: input.agent } : {}),
     cwd: cwd.length > 1 ? cwd.replace(/\/+$/, "") : cwd,
     ...(input.model ? { model: input.model } : {}),
     ...(input.resumeId ? { resumeId: input.resumeId } : {}),
