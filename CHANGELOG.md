@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0 — Codex and API agent tiles, a Changes tab and presets, per-tile zoom, qutty.org
+
 - Agent tiles run Codex, a local Ollama model, or Anthropic's API, not only
   Claude Code. The `+` menu has "Codex (chat)" beside an installed Codex,
   "Ollama (chat)" in the Ollama section, and "Anthropic API (chat)" once an API

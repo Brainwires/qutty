@@ -551,6 +551,10 @@
       windows, companion rename and new icon, broadcast picker.
 - [x] v0.6.1: Denext 4.20 (web tile key releases, blur, CSP-safe evaluate), a
       GUI overlay around agent harnesses, agent tile prompt box and side rail.
+- [x] v0.7.0: Codex, Ollama and Anthropic API agent tiles, the Changes tab,
+      agent presets, permission mode in the header, avatars, per-tile zoom (Zoom
+      All Tiles Together), Maximize Tile, Find in Page and Developer Tools
+      menus, the qutty.org website.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip
