@@ -9,7 +9,11 @@
 // resumes its Claude Code session under its saved transcript (lib/workspace/session.ts).
 
 import { useEffect, useMemo, useRef, useState } from "denext";
-import type { AgentMessage, PermissionDecision } from "../lib/agent/adapter.ts";
+import {
+  agentDefaultName,
+  type AgentMessage,
+  type PermissionDecision,
+} from "../lib/agent/adapter.ts";
 import type { AgentSnapshot, AgentUpdate } from "../lib/agent/sessions.ts";
 import {
   reduceTranscript,
@@ -119,7 +123,7 @@ export class AgentStore {
   summaries(): AgentSummary[] {
     return [...this.#tiles].map(([id, s]) => ({
       id,
-      name: s.snap?.name ?? "claude",
+      name: s.snap?.name ?? agentDefaultName(s.snap?.spec.agent),
       group: this.#group(s),
       detail: this.#detail(s),
     }));
@@ -179,12 +183,13 @@ export class AgentStore {
     const rows = this.#restored.get(tileId);
     try {
       const snap = await this.#backend.agentStart({
+        ...(chat.agent ? { agent: chat.agent } : {}),
         cwd: chat.cwd,
         ...(chat.model ? { model: chat.model } : {}),
         ...(chat.session ? { resumeId: chat.session } : {}),
         ...(chat.mode ? { permissionMode: chat.mode } : {}),
         ...(chat.agentId ? { attach: chat.agentId } : {}),
-        ...(entry.title && entry.title !== "claude"
+        ...(entry.title && entry.title !== agentDefaultName(chat.agent)
           ? { name: entry.title }
           : {}),
         ...(rows ? { rows } : {}),

@@ -2,8 +2,9 @@
 // shared with the terminals and web tiles): a coding agent's chat drawn like a terminal.
 //
 // - The header (`AgentHead`): a status dot, the agent's name (its hub name; click to edit), the
-//   model picker (Claude Code's aliases, lib/agent/tile.ts), what it is doing, and a menu: Open in
-//   terminal (`claude --resume <session>` in a normal tile, in the same folder: the real TUI),
+//   model picker (the backend's models, lib/agent/tile.ts `agentModels`), what it is doing, and a
+//   menu: Open in terminal (`claude --resume <session>` or `codex resume <thread>` in a normal
+//   tile, in the same folder: the real TUI),
 //   New session, Close.
 // - The body (`AgentBody`): the transcript (lib/agent/transcript.ts rows) in the terminal's font
 //   and colours — the user's prompts after a `>`, the assistant's markdown, thinking (dim,
@@ -35,7 +36,11 @@ import {
   useRef,
   useState,
 } from "denext";
-import type { PermissionDecision } from "../lib/agent/adapter.ts";
+import {
+  type AgentKind,
+  agentLabel,
+  type PermissionDecision,
+} from "../lib/agent/adapter.ts";
 import {
   diffLines,
   displayItems,
@@ -47,8 +52,8 @@ import {
   type Transcript,
 } from "../lib/agent/transcript.ts";
 import {
-  AGENT_MODELS,
   agentGroup,
+  agentModels,
   groupText,
   modelLabel,
 } from "../lib/agent/tile.ts";
@@ -160,6 +165,10 @@ export function AgentHead(
   const anchor = useRef<HTMLSpanElement | null>(null);
   useDismiss(menu !== "none", anchor, () => setMenu("none"));
   const model = entry.chat?.model ?? state?.snap?.spec.model;
+  const agent = entry.chat?.agent ?? state?.snap?.spec.agent;
+  // Ollama and the API run in Qutty: no terminal UI to open the session in.
+  const hasTerminal = agent === undefined || agent === "claude" ||
+    agent === "codex";
   const status = t?.running && t.asking.length === 0
     ? `working ${formatDuration(elapsed).replace(/\.\ds$/, "s")}`
     : groupText(group);
@@ -209,7 +218,7 @@ export function AgentHead(
       </button>
       {menu === "model" && (
         <div class="menu agent-menu" role="menu" data-testid="agent-models">
-          {AGENT_MODELS.map((m) => (
+          {agentModels(agent, t?.models).map((m) => (
             <button
               type="button"
               role="menuitemradio"
@@ -239,8 +248,10 @@ export function AgentHead(
             role="menuitem"
             class="menu-item"
             data-testid="agent-open-terminal"
-            disabled={!t?.sessionId && !entry.chat?.session}
-            title="Open this session in Claude Code's own terminal UI"
+            disabled={!hasTerminal || (!t?.sessionId && !entry.chat?.session)}
+            title={`Open this session in ${
+              agentLabel(agent)
+            }'s own terminal UI`}
             onClick={() => {
               setMenu("none");
               hooks.openInTerminal(id);
@@ -1023,7 +1034,13 @@ function Prompt(
 
 /** "Claude Code (chat)": which folder the agent works in. */
 export function AgentLaunchDialog(
-  props: { initialCwd: string; onOpen(cwd: string): void; onCancel(): void },
+  props: {
+    initialCwd: string;
+    /** The backend (absent: Claude Code). */
+    agent?: AgentKind;
+    onOpen(cwd: string): void;
+    onCancel(): void;
+  },
 ) {
   const [cwd, setCwd] = useState(props.initialCwd);
   const ref = useRef<HTMLInputElement | null>(null);
@@ -1044,7 +1061,7 @@ export function AgentLaunchDialog(
           if (cwd.trim()) props.onOpen(cwd.trim());
         }}
       >
-        <div class="agent-launch-title">✻ Claude Code (chat)</div>
+        <div class="agent-launch-title">✻ {agentLabel(props.agent)} (chat)</div>
         <label class="agent-launch-label" for="agent-launch-cwd">
           Working folder
         </label>

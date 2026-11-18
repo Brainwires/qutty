@@ -12,7 +12,10 @@
  * the question reaches the session layer (lib/agent/sessions.ts), which shows it in the tile.
  *
  * Implementations: Claude Code in desktop/agent-claude.ts (its wire format in
- * lib/agent/claude-stream.ts), the scripted demo in lib/agent/demo.ts.
+ * lib/agent/claude-stream.ts), Codex in desktop/agent-codex.ts (`codex app-server`'s JSON-RPC in
+ * lib/agent/codex-app-server.ts), an in-process loop over Ollama or Anthropic's API in
+ * lib/agent/inference-agent.ts (its file and shell tools ask through `hooks.approve`), and the
+ * scripted demos in lib/agent/demo.ts and lib/agent/codex-demo.ts.
  *
  * Client-safe and pure (types and small helpers only).
  *
@@ -33,8 +36,42 @@ export const PERMISSION_MODES: readonly PermissionMode[] = [
   "bypassPermissions",
 ];
 
+/**
+ * Which backend a session runs on: Claude Code, Codex, or the in-process loop over a local Ollama
+ * model or Anthropic's API with the user's key. Absent means Claude Code.
+ */
+export type AgentKind = "claude" | "codex" | "ollama" | "anthropic";
+
+export const AGENT_KINDS: readonly AgentKind[] = [
+  "claude",
+  "codex",
+  "ollama",
+  "anthropic",
+];
+
+/** What the tile and the `+` menu call a backend. */
+export function agentLabel(kind: AgentKind | undefined): string {
+  switch (kind ?? "claude") {
+    case "codex":
+      return "Codex";
+    case "ollama":
+      return "Ollama";
+    case "anthropic":
+      return "Anthropic API";
+    default:
+      return "Claude Code";
+  }
+}
+
+/** A new tile's name (its hub name until renamed): `claude`, `codex`, `ollama`, `api`. */
+export function agentDefaultName(kind: AgentKind | undefined): string {
+  return kind === "anthropic" ? "api" : kind ?? "claude";
+}
+
 /** What a session starts with. */
 export interface AgentSessionSpec {
+  /** The backend (absent: Claude Code). */
+  agent?: AgentKind;
   /** The working folder (absolute). */
   cwd: string;
   /** A model alias or name (`opus`, `sonnet[1m]`); the user's default when absent. */
@@ -170,7 +207,9 @@ export type AgentEvent =
   /** A diagnostic line (logged, never shown). */
   | { kind: "log"; message: string; at: number }
   /** The agent's process ended. */
-  | { kind: "exit"; reason: string; at: number };
+  | { kind: "exit"; reason: string; at: number }
+  /** The models this backend offers (the header's picker; Codex and Ollama list their own). */
+  | { kind: "models"; models: { id: string; label: string }[]; at: number };
 
 /** Where an adapter sends its events. */
 export interface AgentSink {

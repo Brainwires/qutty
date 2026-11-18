@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Agent tiles run Codex, a local Ollama model, or Anthropic's API, not only
+  Claude Code. The `+` menu has "Codex (chat)" beside an installed Codex,
+  "Ollama (chat)" in the Ollama section, and "Anthropic API (chat)" once an API
+  key is saved (Settings → Companion).
+  - Codex runs as `codex app-server` (its JSON-RPC, with the user's own login):
+    its messages, reasoning, commands with their output (a plain read, listing
+    or search shows as Read, LS or Grep), file changes with their diff and MCP
+    calls are the same rows Claude Code's are. Codex's approvals are asked in
+    the tile (Allow / Allow always / Deny); the permission mode picks Codex's
+    approval policy and sandbox. The model picker lists Codex's own models, a
+    reopened tile resumes its thread, and Open in terminal runs
+    `codex resume <thread>`.
+  - Ollama and the API run Qutty's own agent loop (the companion's) with Read,
+    Write, Edit and Bash tools in the tile's folder. Reads go ahead; edits and
+    commands ask first, as the permission mode says (plan mode only reads). Stop
+    or Escape stops the model and a running command. The picker lists Ollama's
+    models, or the API's (opus, sonnet, haiku).
 - The app icon wears the companion's everyday face: the neutral face it has at
   rest in the app (arched brows, teal eyes, a small closed smile) instead of the
   excited one with the open mouth. The Dock, taskbar, tray and favicon icons

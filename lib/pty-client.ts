@@ -100,6 +100,8 @@ import type {
   PermissionMode,
 } from "./agent/adapter.ts";
 import { DemoAgentAdapter } from "./agent/demo.ts";
+import { DemoCodexAdapter } from "./agent/codex-demo.ts";
+import { agentDefaultName } from "./agent/adapter.ts";
 import {
   createDemoSession,
   createDesktopSession,
@@ -1613,14 +1615,19 @@ export function createDemoBackend(): PtyBackend {
     (globalThis as { __e2eCompanionTool?: unknown }).__e2eCompanionTool =
       hub.companion.tool;
   }
-  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts), each
-  // session a tile of the demo hub.
+  // Agent tiles: the real session layer on the scripted Claude Code (lib/agent/demo.ts) or the
+  // scripted Codex (lib/agent/codex-demo.ts: the real JSON-RPC client), each session a tile of
+  // the demo hub. The in-process backends (Ollama, the API) run the Claude Code script.
   const agentUpdates = fanout<AgentUpdate>();
   const agents = new AgentSessions({
     emit: agentUpdates.emit,
-    createAdapter: () => new DemoAgentAdapter(),
+    createAdapter: (spec) =>
+      spec.agent === "codex" ? new DemoCodexAdapter() : new DemoAgentAdapter(),
     hub: {
-      open: (id) => ({ env: {}, name: hub.add(id, "claude") }),
+      open: (id, info) => ({
+        env: {},
+        name: hub.add(id, agentDefaultName(info.agent)),
+      }),
       close: (id) => hub.remove(id),
       setStatus: (id, status, note) => hub.setStatus(id, status, note),
       rename: (id, name) => hub.rename(id, name),

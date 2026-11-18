@@ -15,10 +15,17 @@ import { tileSel } from "./ssh_helpers.ts";
 import { linkCalls } from "./link_helpers.ts";
 import { withPages } from "./web_helpers.ts";
 
-/** Open "Claude Code (chat)" from the + menu in `cwd`; the new tile's id, once focused. */
-async function openAgent(app: App, cwd = "~/project"): Promise<string> {
+/**
+ * Open "Claude Code (chat)" (or `item`, another backend's) from the + menu in `cwd`; the new
+ * tile's id, once focused.
+ */
+async function openAgent(
+  app: App,
+  cwd = "~/project",
+  item = "launch-agent-chat",
+): Promise<string> {
   await app.click("[data-testid=bar-new-menu]");
-  await app.click("[data-testid=launch-agent-chat]");
+  await app.click(`[data-testid=${item}]`);
   await waitFor(
     () => app.exists("[data-testid=agent-launch-cwd]"),
     3000,
@@ -80,6 +87,31 @@ function rowKinds(app: App, id: string): Promise<string[]> {
     ), tileSel(id));
 }
 
+/** Agent tile `id`'s menu → Open in terminal: the new terminal tile (not an agent tile). */
+async function openInTerminal(app: App, id: string): Promise<string> {
+  const before = (await app.tiles()).map((t) => t.id);
+  await app.click(`${tileSel(id)} [data-testid=agent-menu]`);
+  await app.click("[data-testid=agent-open-terminal]");
+  const term = await waitFor(
+    async () => {
+      const now = (await app.tiles()).map((t) => t.id);
+      return now.find((t) => !before.includes(t)) ?? null;
+    },
+    3000,
+    "the terminal tile",
+  );
+  assert(!(await app.exists(`${tileSel(term)}[data-agent-tile=true]`)));
+  return term;
+}
+
+/** The `⎿` summary of agent tile `id`'s Edit row. */
+function editSummary(app: App, id: string): Promise<string> {
+  return app.eval((s: string) =>
+    document.querySelector(
+      `${s} [data-testid=agent-tool][data-tool=Edit] [data-testid=agent-tool-summary]`,
+    )?.textContent ?? "", tileSel(id));
+}
+
 /** Wait for agent tile `id`'s open permission question; its buttons are there. */
 function waitForQuestion(app: App, id: string): Promise<unknown> {
   return waitFor(
@@ -131,6 +163,40 @@ async function panelGroups(app: App): Promise<Record<string, string[]>> {
 }
 
 suite("agent tile", (test) => {
+  test("+ menu → Codex (chat): its JSON-RPC session streams rows, asks, applies the change", async (app) => {
+    const id = await openAgent(app, "~/project", "launch-agent-chat-codex");
+    assertEquals(
+      await app.attr(`${tileSel(id)} [data-testid=agent-name]`, "value"),
+      "codex",
+    );
+    await prompt(app, id, "change the greeting in notes.md");
+    await waitForQuestion(app, id);
+    await app.click(`${tileSel(id)} [data-testid=agent-allow]`);
+    assertEquals(await waitForFooter(app, id), "done");
+    const kinds = await rowKinds(app, id);
+    assertEquals(kinds.slice(0, 3), ["user", "thinking", "text"]);
+    assert(
+      kinds.includes("tool:Read") && kinds.includes("tool:Edit") &&
+        kinds.includes("tool:Bash"),
+      `${kinds}`,
+    );
+    const sum = await editSummary(app, id);
+    assert(sum.includes("Applied 1-line change"), sum);
+    // The model picker lists Codex's own models (its `model/list`), not Claude Code's aliases.
+    await app.click(`${tileSel(id)} [data-testid=agent-model]`);
+    const models = await app.eval(() =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          "[data-testid=agent-models] [data-model]",
+        ),
+      ].map((b) => b.dataset.model)
+    );
+    assertEquals(models, ["", "gpt-demo", "gpt-demo-mini"]);
+    await app.press("Escape");
+    // Open in terminal: `codex resume <thread>` in a terminal tile.
+    await openInTerminal(app, id);
+  });
+
   test("+ menu → a chat tile; a prompt streams rows; Allow applies the edit", async (app) => {
     const id = await openAgent(app);
     assertEquals(
@@ -164,10 +230,7 @@ suite("agent tile", (test) => {
       "allow",
     );
     // The edit's ⎿ summary, and its diff once expanded.
-    const sum = await app.eval((s: string) =>
-      document.querySelector(
-        `${s} [data-testid=agent-tool][data-tool=Edit] [data-testid=agent-tool-summary]`,
-      )?.textContent ?? "", tileSel(id));
+    const sum = await editSummary(app, id);
     assert(sum.includes("Applied 1-line change"), sum);
     await app.click(
       `${
@@ -395,18 +458,7 @@ suite("agent tile", (test) => {
     const id = await openAgent(app);
     await prompt(app, id, "hello");
     await waitForFooter(app, id);
-    const before = (await app.tiles()).map((t) => t.id);
-    await app.click(`${tileSel(id)} [data-testid=agent-menu]`);
-    await app.click("[data-testid=agent-open-terminal]");
-    const term = await waitFor(
-      async () => {
-        const now = (await app.tiles()).map((t) => t.id);
-        return now.find((t) => !before.includes(t)) ?? null;
-      },
-      3000,
-      "the terminal tile",
-    );
-    assert(!(await app.exists(`${tileSel(term)}[data-agent-tile=true]`)));
+    await openInTerminal(app, id);
     // Closing the agent tile takes its hub tile (badge lookups and the panel) with it.
     await app.click(`${tileSel(id)} [data-testid=agent-menu]`);
     await app.click("[data-testid=agent-close]");

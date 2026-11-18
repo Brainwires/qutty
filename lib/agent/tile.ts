@@ -8,17 +8,27 @@
  * @module
  */
 
-import { PERMISSION_MODES, type PermissionMode } from "./adapter.ts";
+import {
+  AGENT_KINDS,
+  type AgentKind,
+  PERMISSION_MODES,
+  type PermissionMode,
+} from "./adapter.ts";
 import { isModelName, isSessionId } from "./claude-stream.ts";
 import type { Transcript } from "./transcript.ts";
 
 /** An agent tile's entry data (lib/workspace/store.ts `TerminalEntry.chat`). */
 export interface AgentChat {
+  /** The backend (absent: Claude Code). */
+  agent?: AgentKind;
   /** Its working folder (`~` until the backend says where). */
   cwd: string;
   /** The model alias picked in the header (absent: the user's default). */
   model?: string;
-  /** Claude Code's session id, once the first turn reported it (`--resume` on reopen). */
+  /**
+   * The agent's session id, once the first turn reported it (Claude Code's `--resume`, Codex's
+   * thread, on reopen).
+   */
   session?: string;
   /** The hub session it had (`agent-3`): a page that comes back attaches to it. */
   agentId?: string;
@@ -36,7 +46,9 @@ export function sanitizeChat(raw: unknown): AgentChat | undefined {
     return undefined;
   }
   const mode = PERMISSION_MODES.find((m) => m === r.mode);
+  const agent = AGENT_KINDS.find((k) => k === r.agent);
   return {
+    ...(agent && agent !== "claude" ? { agent } : {}),
     cwd: r.cwd,
     ...(typeof r.model === "string" && isModelName(r.model)
       ? { model: r.model }
@@ -65,7 +77,7 @@ export interface AgentModel {
  * The picker's models: Claude Code's aliases (`claude --help`: "an alias for the latest model
  * (e.g. 'fable', 'opus', or 'sonnet') or a model's full name"), with the 1M-context variants.
  */
-export const AGENT_MODELS: readonly AgentModel[] = [
+const AGENT_MODELS: readonly AgentModel[] = [
   { id: "", label: "default" },
   { id: "fable", label: "fable" },
   { id: "opus", label: "opus" },
@@ -74,6 +86,34 @@ export const AGENT_MODELS: readonly AgentModel[] = [
   { id: "sonnet[1m]", label: "sonnet 1M" },
   { id: "haiku", label: "haiku" },
 ];
+
+/** Anthropic's API through Qutty's own loop: the companion's aliases. */
+const API_MODELS: readonly AgentModel[] = [
+  { id: "", label: "default" },
+  { id: "opus", label: "opus" },
+  { id: "sonnet", label: "sonnet" },
+  { id: "haiku", label: "haiku" },
+];
+
+/**
+ * The picker's models for a backend: Claude Code's aliases, the API's, or what the backend listed
+ * (Codex's `model/list`, Ollama's models; until it has, only the default).
+ */
+export function agentModels(
+  agent: AgentKind | undefined,
+  listed?: readonly AgentModel[],
+): readonly AgentModel[] {
+  switch (agent ?? "claude") {
+    case "claude":
+      return AGENT_MODELS;
+    case "anthropic":
+      return API_MODELS;
+    default:
+      return listed && listed.length > 0
+        ? listed
+        : [{ id: "", label: "default" }];
+  }
+}
 
 /** The header's short name for `model` (an alias's label, else the name without `claude-`). */
 export function modelLabel(model: string | undefined): string {

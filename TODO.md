@@ -469,9 +469,18 @@
     session, restore with `--resume` under a saved copy of the rows, the Agents
     panel (Needs you / To review / Working), dictation, `read_screen` /
     `write_tile` on an agent tile.
-  - [ ] A Codex adapter (`codex app-server`, or `codex exec --json`).
-  - [ ] An Ollama / API-key adapter through `lib/companion/inference-brain.ts`
-        (the adapter's `hooks.approve` is there for in-process tools).
+  - [x] A Codex adapter: `codex app-server` (JSON-RPC: approvals, streaming,
+        `model/list`, `thread/resume`), lib/agent/codex-app-server.ts and
+        desktop/agent-codex.ts; the demo has a scripted server
+        (lib/agent/codex-demo.ts).
+  - [x] An Ollama / API-key adapter through `lib/companion/inference-brain.ts`:
+        lib/agent/inference-agent.ts (Read / Write / Edit / Bash, asked through
+        `hooks.approve`), desktop/agent-inference.ts.
+  - [ ] Codex: a turn's live command output (`outputDelta`) in the running row,
+        `turn/steer` for a message typed while it works (today it waits in the
+        queue), the reasoning effort in the header.
+  - [ ] Ollama / API agent: streamed replies (the loop calls the provider
+        unstreamed), images for the API, a Grep / Glob tool of its own.
   - [ ] A Changes tab: the session's edits as one diff to review (accept,
         revert, open in the editor).
   - [ ] Avatars for agents.

@@ -20,6 +20,7 @@ import {
   moveIndex,
 } from "../lib/launcher.ts";
 import { isTintId } from "../lib/workspace/themes.ts";
+import { type AgentKind, agentLabel } from "../lib/agent/adapter.ts";
 
 export interface LaunchMenuProps {
   open: boolean;
@@ -35,8 +36,14 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** "Web page": a new web tile (absent where web tiles can't show any site). */
   onWebPage?(): void;
-  /** "Claude Code (chat)" beside an installed Claude Code: a new agent tile (app/agent-tile.tsx). */
-  onAgentChat?(): void;
+  /**
+   * "Claude Code (chat)" beside an installed Claude Code (and "Codex (chat)" beside Codex,
+   * "Ollama (chat)" in the Ollama section, "Anthropic API (chat)" with a saved key): a new agent
+   * tile (app/agent-tile.tsx) on that backend.
+   */
+  onAgentChat?(agent: AgentKind): void;
+  /** An Anthropic API key is saved: offer "Anthropic API (chat)". */
+  apiKeyChat?: boolean;
   /** "Bookmarks…": the bookmark manager (app/bookmark-manager.tsx). */
   onBookmarks?(): void;
   /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
@@ -51,6 +58,28 @@ export interface LaunchMenuProps {
 }
 
 const ITEM = "[role=menuitem],[role=menuitemcheckbox]";
+
+/** A "<backend> (chat)" item: a new agent tile on it. */
+function ChatItem(
+  props: { agent: AgentKind; onOpen(agent: AgentKind): void },
+) {
+  const label = agentLabel(props.agent);
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item launch-item"
+      data-testid={props.agent === "claude"
+        ? "launch-agent-chat"
+        : `launch-agent-chat-${props.agent}`}
+      title={`${label} in a chat tile: streamed transcript, tool calls, permissions`}
+      onClick={() => props.onOpen(props.agent)}
+    >
+      <LaunchIcon kind="chat" />
+      <span class="menu-label">{label} (chat)</span>
+    </button>
+  );
+}
 
 export function LaunchMenu(props: LaunchMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -182,19 +211,14 @@ export function LaunchMenu(props: LaunchMenuProps) {
               {section.entries.map((entry) => (
                 <Fragment key={entry.id}>
                   {item(entry)}
-                  {entry.kind === "agent" && entry.agent.name === "claude" &&
+                  {entry.kind === "agent" &&
+                    (entry.agent.name === "claude" ||
+                      entry.agent.name === "codex") &&
                     props.onAgentChat && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="menu-item launch-item"
-                      data-testid="launch-agent-chat"
-                      title="Claude Code in a chat tile: streamed transcript, tool calls, permissions"
-                      onClick={props.onAgentChat}
-                    >
-                      <LaunchIcon kind="chat" />
-                      <span class="menu-label">{entry.label} (chat)</span>
-                    </button>
+                    <ChatItem
+                      agent={entry.agent.name}
+                      onOpen={props.onAgentChat}
+                    />
                   )}
                 </Fragment>
               ))}
@@ -222,8 +246,14 @@ export function LaunchMenu(props: LaunchMenuProps) {
                   )}
                 </button>
               )}
+              {section.id === "ollama" && props.ollama && props.onAgentChat && (
+                <ChatItem agent="ollama" onOpen={props.onAgentChat} />
+              )}
             </div>
           ))}
+          {props.apiKeyChat && props.onAgentChat && (
+            <ChatItem agent="anthropic" onOpen={props.onAgentChat} />
+          )}
           <div class="launch-sep" role="separator" />
           {props.sandbox && (
             <button

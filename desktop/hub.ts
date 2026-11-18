@@ -161,7 +161,12 @@ import type {
   AgentStartRequest,
   AgentUpdate,
 } from "../lib/agent/sessions.ts";
-import type { AgentAdapter, AgentSessionSpec } from "../lib/agent/adapter.ts";
+import {
+  type AgentAdapter,
+  agentDefaultName,
+  type AgentKind,
+  type AgentSessionSpec,
+} from "../lib/agent/adapter.ts";
 import {
   agentSessions,
   type AgentStartInput,
@@ -419,6 +424,7 @@ export class HubService {
     this.agents = agentSessions({
       emit: (update: AgentUpdate) => this.#emit("agent", update),
       hubArgs: () => hubArgsFor("claude", this.paths, this.#installed),
+      anthropicKey: () => this.keys.get("anthropic"),
       ...(opts.createAgent ? { createAdapter: opts.createAgent } : {}),
       hub: {
         open: (id, info) => this.#agentTileOpen(id, info),
@@ -591,7 +597,7 @@ export class HubService {
    */
   #agentTileOpen(
     id: string,
-    info: { cwd: string; name?: string },
+    info: { cwd: string; name?: string; agent?: AgentKind },
   ): { env: Record<string, string>; name: string } {
     const path = this.socketPath(id);
     const identity: HubIdentity = { role: "tile", tileId: id };
@@ -601,7 +607,11 @@ export class HubService {
         void this.#serve(conn, identity);
       }),
     );
-    const tile = this.core.addTile({ id, cwd: info.cwd, harness: "claude" });
+    const tile = this.core.addTile({
+      id,
+      cwd: info.cwd,
+      harness: agentDefaultName(info.agent),
+    });
     let name = tile.name;
     if (info.name && info.name !== name) {
       try {

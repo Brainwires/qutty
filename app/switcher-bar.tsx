@@ -63,6 +63,7 @@ export interface SwitcherBarProps {
     | "ollama"
     | "onWebPage"
     | "onAgentChat"
+    | "apiKeyChat"
     | "onBookmarks"
     | "onHistory"
   >;
@@ -356,12 +357,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
             : {})}
           {...(props.launch.onAgentChat
             ? {
-              onAgentChat: () => {
+              onAgentChat: (agent) => {
                 setMenu("none");
-                props.launch.onAgentChat?.();
+                props.launch.onAgentChat?.(agent);
               },
             }
             : {})}
+          {...(props.launch.apiKeyChat ? { apiKeyChat: true } : {})}
           {...(props.launch.onBookmarks
             ? {
               onBookmarks: () => {
