@@ -6,6 +6,11 @@
   rest in the app (arched brows, teal eyes, a small closed smile) instead of the
   excited one with the open mouth. The Dock, taskbar, tray and favicon icons
   follow.
+- A website, qutty.org, in `site/`: a Denext app, static-exported, with the
+  features, downloads for every platform (the hero's button picks the file for
+  your Mac or Linux machine), the changelog, and screenshots taken from the
+  app's demo build in headless Chromium. CI builds it; `deno task deploy` in
+  `site/` publishes it.
 
 ## 0.6.1 — Denext 4.20, a GUI around agent harnesses, a roomier agent tile
 
