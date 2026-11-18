@@ -588,6 +588,7 @@ function PageContextMenu(props: { view: WebTileView }) {
   item("reload", "Reload", view.reload);
   sep();
   item("bookmark", "Bookmark this page…", () => view.setStarOpen(true));
+  if (view.can.find) item("find", "Find in Page…", view.openFind);
   if (view.can.print) item("print", "Print…", view.print);
   if (view.can.devTools) {
     sep();

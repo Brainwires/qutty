@@ -18,6 +18,7 @@ import { CODEX_HOOK_EVENTS } from "../lib/hub/hooks.ts";
 import { codexHooksListArgv } from "../desktop/codex-trust.ts";
 import { fixture } from "./socket_helpers.ts";
 import type { IntegrationStatus } from "../lib/hub/protocol.ts";
+import type { ConfigFs } from "../lib/hub/integration.ts";
 
 const paths = hubPaths("/Users/me");
 
@@ -213,6 +214,76 @@ Deno.test({
       row = codexRow(await f.hub.install("codex"));
       assertEquals([row.installed, row.trust, calls], [true, undefined, 3]);
       assert(!("warning" in row));
+    } finally {
+      await f.dispose();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "hub: the start's integration check, overtaken by an Install, does not drop the verdict",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // The config files in memory. The first read of Codex's config (the hub's own check at its
+    // start) is held until the Install below has run: it saw the folder before the Install, and
+    // used to clear the verdict the Install's check had just cached (CI saw Codex asked twice).
+    const files = new Map<string, string>();
+    let held: (() => void) | undefined;
+    let reached: () => void = () => {};
+    const reachedHold = new Promise<void>((r) => (reached = r));
+    let first = true;
+    const fs: ConfigFs = {
+      async read(path) {
+        const text = files.get(path);
+        if (first && path.endsWith("/.codex/config.toml")) {
+          first = false;
+          const release = new Promise<void>((r) => (held = r));
+          reached();
+          await release;
+        }
+        return text;
+      },
+      write(path, text) {
+        files.set(path, text);
+        return Promise.resolve();
+      },
+      remove(path) {
+        files.delete(path);
+        return Promise.resolve();
+      },
+      mode: (path) => Promise.resolve(files.has(path) ? 0o600 : undefined),
+      realPath: (path) => Promise.resolve(path),
+    };
+    let calls = 0;
+    let answer: ListedCodexHook[] | undefined;
+    const f = await fixture({
+      fs,
+      codexHooks: () => {
+        calls++;
+        return Promise.resolve(answer);
+      },
+    });
+    try {
+      await reachedHold;
+      const p = hubPaths(f.home);
+      answer = CODEX_HOOK_EVENTS.map((e) => ({
+        key: "k",
+        eventName: e[0].toLowerCase() + e.slice(1),
+        command: hookCommand(p, "codex"),
+        trustStatus: "untrusted",
+        currentHash: codexHookHash(p, e),
+      }));
+      const codexRow = (rows: IntegrationStatus[]) =>
+        rows.find((r) => r.target === "codex")!;
+      let row = codexRow(await f.hub.install("codex"));
+      assertEquals([row.installed, row.trust, calls], [true, "untrusted", 1]);
+      // The start's check finishes now, with what it read before the Install.
+      held!();
+      await f.hub.refreshIntegration();
+      row = codexRow(await f.hub.integration());
+      assertEquals([row.trust, calls], ["untrusted", 1], "still cached");
     } finally {
       await f.dispose();
     }

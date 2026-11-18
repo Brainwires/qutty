@@ -11,6 +11,22 @@
   your Mac or Linux machine), the changelog, and screenshots taken from the
   app's demo build in headless Chromium. CI builds it; `deno task deploy` in
   `site/` publishes it.
+- Web tiles: Find in Page… in a page's right-click menu, and Find in Page… and
+  Developer Tools in the View menu (for the focused web tile; their keys stay ⌘F
+  and ⌥⌘I). An agent's `read_screen` of a page the window cannot look inside
+  (the browser demo's iframe engine) answers with the page's title and address
+  and why there is no text, instead of an error.
+- The harness frame goes as soon as the harness quits back to its shell, also in
+  a tile that is not focused and in a shell without Qutty's prompt marks: the
+  app notices the terminal's foreground program change with the shell's prompt.
+- Fixed: after a focus change the switcher bar sometimes left the focused chip
+  scrolled out of view on the left; it now scrolls back to it whenever the strip
+  settles until the chip shows (a scroll of yours stops that).
+- Fixed: quitting with "Keep Shells Running" right after moving a tile to
+  another window lost that tile at the next launch (its shell kept running with
+  no tile).
+- Fixed: the Codex hooks' trust check could run twice after an Install, when the
+  hub's own check at its start was still reading the config files.
 
 ## 0.6.1 — Denext 4.20, a GUI around agent harnesses, a roomier agent tile
 

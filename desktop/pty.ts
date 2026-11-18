@@ -126,6 +126,11 @@ export interface PtyDataEvent {
   id: string;
   seq: number;
   data: string;
+  /**
+   * Set when the terminal's foreground process group changed since its last `data` event (a
+   * program started or quit back to its shell): the new group's id. The page reads `info` then.
+   */
+  fg?: number;
 }
 
 /** The `exit` event. `signal` is the terminating signal number, or `null`. */
@@ -452,6 +457,8 @@ interface Term {
   writeChain: Promise<void>;
   finalized: boolean;
   killTimer?: ReturnType<typeof setTimeout>;
+  /** The foreground process group at the last flush (`undefined`: not known yet). */
+  fg?: number;
 }
 
 /** How the host reports events (the extension passes `ctx.emit`). */
@@ -589,6 +596,12 @@ export interface PtyHostOptions {
   tapped?: boolean;
   /** `Deno.openPty` (default: the runtime's, looked up at each spawn): a fake one in tests. */
   openPty?: OpenPty;
+  /**
+   * The foreground process group of the terminal whose program is `pid` ({@linkcode
+   * foregroundGroup}; a fake in tests). With it, each `data` event that follows a change of the
+   * group says so (`fg`). Without it (the hidden helper PTYs) nothing is looked up.
+   */
+  foreground?: (pid: number) => number | undefined;
 }
 
 /** Every live PTY, the coalescing, and the I/O loops. */
@@ -598,11 +611,13 @@ export class PtyHost {
   #nextId = 0;
   readonly #tapped: boolean;
   readonly #openPty: OpenPty | undefined;
+  readonly #foreground: ((pid: number) => number | undefined) | undefined;
 
   constructor(emit: PtyEmit, opts: PtyHostOptions = {}) {
     this.#emit = emit;
     this.#tapped = opts.tapped === true;
     this.#openPty = opts.openPty;
+    this.#foreground = opts.foreground;
   }
 
   #taps(): PtyTaps | undefined {
@@ -988,7 +1003,23 @@ export class PtyHost {
     t.pending = [];
     const taps = this.#taps();
     if (taps?.data) tap("data", () => taps.data!(t.id, data));
-    this.#safeEmit("data", { id: t.id, seq: ++t.seq, data });
+    // A program that quits back to its shell is followed by the shell's prompt: output that
+    // finds another foreground group tells the page at once (a harness tile's overlay goes),
+    // with or without the shell's OSC 133 marks. One cheap OS query per flush.
+    let fg: number | undefined;
+    if (this.#foreground && !t.finalized) {
+      const now = this.#foreground(t.pid);
+      if (now !== undefined && now !== t.fg) {
+        if (t.fg !== undefined) fg = now;
+        t.fg = now;
+      }
+    }
+    this.#safeEmit("data", {
+      id: t.id,
+      seq: ++t.seq,
+      data,
+      ...(fg !== undefined ? { fg } : {}),
+    });
   }
 
   /** The program ended and its output is read: the last output, then the `exit`. */
@@ -1043,15 +1074,38 @@ async function foregroundOf(
       const fg = bsdInfo(shell.tpgid);
       return fg ? { pid: shell.tpgid, process: fg.name } : undefined;
     }
-    // `pid (comm) state ppid pgrp session tty_nr tpgid …`; comm may hold spaces and parens.
-    const stat = await Deno.readTextFile(`/proc/${pid}/stat`);
-    const tpgid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[5]);
+    const tpgid = statTpgid(await Deno.readTextFile(`/proc/${pid}/stat`));
     if (!Number.isInteger(tpgid) || tpgid <= 0) return undefined;
     const comm = (await Deno.readTextFile(`/proc/${tpgid}/comm`)).trim();
     return { pid: tpgid, process: comm };
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The foreground process group of the terminal whose program is `pid`, or `undefined` (none yet,
+ * the program is gone, or the OS will not say). Synchronous and cheap: one `proc_pidinfo` on
+ * macOS, one read of `/proc/<pid>/stat` on Linux. The PTY extension's host checks it as output
+ * flushes ({@linkcode PtyHostOptions.foreground}).
+ */
+export function foregroundGroup(pid: number): number | undefined {
+  try {
+    const tpgid = IS_DARWIN
+      ? bsdInfo(pid)?.tpgid
+      : statTpgid(Deno.readTextFileSync(`/proc/${pid}/stat`));
+    return tpgid !== undefined && Number.isInteger(tpgid) && tpgid > 0
+      ? tpgid
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The `tpgid` field of a `/proc/<pid>/stat` line (`pid (comm) state ppid pgrp session tty tpgid`). */
+function statTpgid(stat: string): number {
+  // comm may hold spaces and parens: the fields after it start past the last ")".
+  return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[5]);
 }
 
 /** macOS `proc_pidinfo(PROC_PIDTBSDINFO)`: a process's name and its terminal's foreground group. */
@@ -1119,7 +1173,8 @@ export function terminalSessions(): TerminalSessions {
   if (!s) {
     s = g[SESSIONS] = new TerminalSessions({
       workspaces,
-      host: (emit) => new PtyHost(emit, { tapped: true }),
+      host: (emit) =>
+        new PtyHost(emit, { tapped: true, foreground: foregroundGroup }),
     });
     const host = s.host;
     globalThis.addEventListener("unload", () => host.killAllNow());

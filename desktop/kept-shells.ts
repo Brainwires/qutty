@@ -34,6 +34,8 @@ import {
   shutdownDaemon,
 } from "./ptyd-client.ts";
 import { unlinkPath } from "./hub-socket.ts";
+import { TileMover } from "./tile-move.ts";
+import { withArrivals } from "../lib/workspace/session.ts";
 import {
   cutToLine,
   historyPrelude,
@@ -206,7 +208,12 @@ export class ShellKeeper implements QuitKeeper {
       workspaces: d.workspaces.keptWorkspaces(new Set(ids)).map((w) => ({
         id: w.id,
         name: w.name,
-        snapshot: w.snapshot,
+        // A tile moved here that the window's page has not saved yet (a quit right after the
+        // move) is only a pending arrival: it joins the snapshot, as a page joining would take it.
+        snapshot: withArrivals(
+          w.snapshot,
+          TileMover.pendingTiles(d.workspaces.arrivals(w.id)),
+        ),
         terms: w.ptys.flatMap((p) => terms.get(p) ?? []),
       })),
     };

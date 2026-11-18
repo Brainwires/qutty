@@ -34,6 +34,7 @@ import {
   commandForKey,
   type KeyCommand,
   type KeyPlatform,
+  type WebKeyCommand,
 } from "../lib/workspace/keys.ts";
 import {
   appMenu,
@@ -96,6 +97,8 @@ export interface NativeMenuHandlers {
   moveTile(to: string): void;
   /** "Claude Code (chat)": a new agent tile. */
   openAgentChat(): void;
+  /** A browser command for web tile `id` (Find in Page…, Developer Tools). */
+  webCommand(id: string, cmd: WebKeyCommand): void;
   /** The window took the focus (the `+` menu's entries are read again). */
   onFocus(): void;
 }
@@ -322,6 +325,9 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.moveTile(action.to);
         case "agentChat":
           return h.openAgentChat();
+        case "web":
+          if (focused) h.webCommand(focused, action.command);
+          return;
       }
     });
   }, [windowId, guard]);

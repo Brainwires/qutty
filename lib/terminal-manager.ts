@@ -140,6 +140,12 @@ export interface TerminalManagerEvents {
    * `TITLE_THROTTLE_MS` per terminal, with the latest title.
    */
   onTitle?(id: string, title: string): void;
+  /**
+   * The foreground process of terminal `id` changed (a program started, or quit back to its
+   * shell), as the backend saw with its output; `info` says what runs now. Where the backend
+   * can tell (`PtyBackend.onForeground`).
+   */
+  onForeground?(id: string): void;
   /** Which modifier opens links: ⌘ on macOS, Ctrl elsewhere (default `mac`). */
   platform?: "mac" | "other";
   /**
@@ -771,6 +777,10 @@ export class TerminalManager {
         this.#events.onActivity(m.id);
       }
     }));
+    const fg = this.#backend.onForeground?.(ptyId, () => {
+      if (!m.disposed && m.ptyId === ptyId) this.#events.onForeground?.(m.id);
+    });
+    if (fg) m.unsubs.push(fg);
     m.unsubs.push(this.#backend.onExit(ptyId, (exit) => {
       if (m.disposed || m.ptyId !== ptyId) return;
       m.exited = true;

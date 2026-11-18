@@ -183,8 +183,15 @@
   - Done: session ids in the registry (`session_id` from the hooks; a
     `SessionStart` replaces it), in `whoami` / `list_peers`; Hermes
     (`hermes-agent`) and OpenClaw (`openclaw-bundle-mcp`) MCP client names.
-  - Open: `qutty-hook` starts bash + nc per call (~0.2 s); a tiny relay could
-    cut it.
+  - Not doing: a faster relay for `qutty-hook`. Measured 2026-11-18 on the
+    M-series Mac (bash 3.2, BSD nc, against a unix-socket stand-in for the hub):
+    ~16 ms per call, ~5 ms of it the `nc -h` probe; not the ~0.2 s noted before.
+    A compiled relay would save ~14 ms per hook call (hooks run per tool use,
+    next to seconds of model time) but means another signed binary per
+    architecture in the bundle, plus static Linux builds for the sandbox
+    container, where the same script runs. The app's own executable in a light
+    mode starts a JS runtime (a bare `deno eval` alone is ~18 ms here), so it is
+    no faster than bash.
 
 - [x] **Sandboxed shells (Docker)**, as one shared container per window
       (Settings → Sandbox; `desktop/sandbox.ts`, `lib/sandbox/`).
@@ -443,11 +450,23 @@
         a fake of Denext's views and the self-test covers create / load / title
         / evaluate / capture; a pass by hand over menus, drags and the cycle is
         still due.
-  - [ ] Native engine, open: the hub's `read_screen` answers nothing for a web
-        tile (the page's title, URL and visible text through `evaluate`); a
-        page-initiated download or permission has no Qutty UI beyond the OS save
-        panel; no zoom, find-in-page or DevTools controls (Denext has `setZoom`,
-        `find`, `openDevTools`).
+  - Done: `read_screen` of a web tile is its page as `read_page` reads it
+    (title, URL, visible text, numbered elements, through `evaluate`); where the
+    window cannot look inside the page (the iframe engine, a closed window) it
+    answers with the title and URL the hub knows and a `note` saying why. Find
+    in page (⌘F, the find bar, ⌘G / ⌘⇧G) and the developer tools (⌥⌘I, the page
+    menu's Inspect) were there already; the page menu now has Find in Page…, and
+    the View menu has Find in Page… and Developer Tools for the focused web tile
+    (no accelerators: the keys are the page's, and a window accelerator would
+    take Ctrl+F from terminals on Linux). Zoom is being reworked separately.
+  - [ ] Needs Denext: Qutty UI for a page-initiated download (progress, done →
+        Reveal in Finder) and for a permission request (Allow / Deny bar in the
+        tile). Denext 4.20's web view only has policies
+        (`downloads: "deny" |
+        "ask" | "browser"`,
+        `permissions: "deny" | "ask"`) and fires no download or permission
+        events, so a tile cannot show either; today a download opens the OS save
+        panel (`"ask"`) and prompts are refused (`"deny"`).
   - [ ] `[::1]` pages open in the default browser with the iframe engine: a CSP
         host-source has no IPv6 literal, so the page's `frame-src` cannot allow
         them (the native engine is not bound by the page's CSP and shows them).
@@ -514,9 +533,27 @@
       windows, companion rename and new icon, broadcast picker.
 - [x] v0.6.1: Denext 4.20 (web tile key releases, blur, CSP-safe evaluate), a
       GUI overlay around agent harnesses, agent tile prompt box and side rail.
-- [ ] Switcher bar: after a focus change the chip strip's smooth scroll often
-      doesn't run, so the focused chip (first in the strip) can stay scrolled
-      out of view on the left (seen while hardening the e2e chip clicks, #43).
+- [x] Switcher bar: after a focus change the chip strip's smooth scroll often
+      didn't run to the end, so the focused chip (first in the strip) could stay
+      scrolled out of view on the left (seen while hardening the e2e chip
+      clicks, #43). A smooth scroll that stops short fires no event at all. The
+      bar now aims at an absolute place and aims again when the strip settles
+      (scrollend, a glide's end, a resize) or stands still for 8 frames (a frame
+      watch, only while the reveal is pending), until the chip is in view; a
+      wheel, a press in the strip or a scroll away from the aim (a script's
+      `scrollIntoView`) drops it (`chipScrollTarget`, lib/workspace/bar.ts; e2e
+      "chips: the focused chip comes into view…").
+- [x] A harness tile's frame noticed the harness quitting late when the tile was
+      not focused and its shell had no OSC 133 marks. The PTY extension now
+      checks the terminal's foreground process group as output flushes and flags
+      a change on the `data` event (`fg`); the page reads `info` then
+      (desktop/pty.ts `foregroundGroup`, `PtyBackend.onForeground`).
+- [x] A quit with "Keep Shells Running" right after a tile moved to another
+      window dropped the tile from the kept record (it was still a pending
+      arrival there); the record now takes pending arrivals into the snapshot.
+- [x] Flaky `tests/codex_trust_test.ts` (Codex asked twice): the hub's start-up
+      integration check, overtaken by an Install, cleared the verdict the
+      Install had just cached. An overtaken check no longer touches it.
 - [x] Flaky test: with Reduce Motion forced on (`E2E_REDUCED_MOTION=1`), "bar
       overflow: +N appears…" in tests/e2e/bar_test.ts failed about half the
       time. Not a test timing issue but two bar bugs: the focused chip was

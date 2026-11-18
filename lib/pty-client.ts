@@ -254,6 +254,12 @@ export interface PtyBackend {
   onData(id: string, cb: (data: string) => void): () => void;
   /** Called once when terminal `id` ends (immediately if it already has). */
   onExit(id: string, cb: (exit: PtyExit) => void): () => void;
+  /**
+   * Terminal `id`'s foreground process changed (a program started, or quit back to its shell),
+   * as its output showed: `info` says what runs now. Only where the backend can tell (the
+   * desktop app); absent elsewhere.
+   */
+  onForeground?(id: string, cb: () => void): () => void;
 
   // --- SSH (desktop/ssh.ts) ------------------------------------------------------------------
 
@@ -435,6 +441,22 @@ export class PtyEvents {
     { chunks: string[]; size: number; timer: ReturnType<typeof setTimeout> }
   >();
   #exited = new Map<string, PtyExit>();
+  #fg = new Map<string, Set<() => void>>();
+
+  /** Terminal `id`'s foreground process changed (nothing is kept for later subscribers). */
+  emitForeground(id: string): void {
+    for (const cb of [...(this.#fg.get(id) ?? [])]) cb();
+  }
+
+  onForeground(id: string, cb: () => void): () => void {
+    let subs = this.#fg.get(id);
+    if (!subs) this.#fg.set(id, subs = new Set());
+    subs.add(cb);
+    return () => {
+      subs.delete(cb);
+      if (subs.size === 0 && this.#fg.get(id) === subs) this.#fg.delete(id);
+    };
+  }
 
   emitData(id: string, data: string): void {
     const subs = this.#data.get(id);
@@ -642,10 +664,12 @@ export function createDesktopBackend(
     // Each terminal's events reach the window showing its workspace only, as `{ id, data }`
     // (denext's owned resources, desktop/terminal-sessions.ts).
     onDesktopEvent<PtyEventOf<PtyDataEvent>>("pty", "data", (e) => {
-      const { seq, data } = e.data;
+      const { seq, data, fg } = e.data;
       if (seq <= (lastSeq.get(e.id) ?? 0)) return;
       lastSeq.set(e.id, seq);
       events.emitData(e.id, data);
+      // After the output, so `info` is read once the terminal shows what changed.
+      if (fg !== undefined) events.emitForeground(e.id);
     });
     onDesktopEvent<PtyEventOf<PtyExitEvent>>("pty", "exit", (e) => {
       // `lastSeq` is kept after the exit: a replay of the stream re-sends the dead terminal's
@@ -729,6 +753,10 @@ export function createDesktopBackend(
     onExit: (id, cb) => {
       listen();
       return events.onExit(id, cb);
+    },
+    onForeground: (id, cb) => {
+      listen();
+      return events.onForeground(id, cb);
     },
     async sshHosts() {
       return await ssh.sshHosts({});

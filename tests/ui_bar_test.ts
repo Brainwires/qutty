@@ -1,6 +1,11 @@
 import { assertEquals } from "@std/assert";
 import { computeLayout, DEFAULT_LAYOUT_OPTIONS } from "../lib/layout/mod.ts";
-import { barChips, splitChips, visibleIdSet } from "../lib/workspace/bar.ts";
+import {
+  barChips,
+  chipScrollTarget,
+  splitChips,
+  visibleIdSet,
+} from "../lib/workspace/bar.ts";
 import {
   initialState,
   reduce,
@@ -108,4 +113,23 @@ Deno.test("chips skip ids the store no longer knows and an empty workspace has n
     "b",
     "a",
   ]);
+});
+
+Deno.test("chip strip: where to scroll to show the focused chip, as an absolute place", () => {
+  const strip = { scroll: 300, size: 400, content: 1600 };
+  // In view (half a pixel of slack): stay.
+  assertEquals(chipScrollTarget({ start: 300, end: 420 }, strip), null);
+  assertEquals(chipScrollTarget({ start: 580, end: 700.4 }, strip), null);
+  // The focused chip moved first in MRU order, scrolled out on the left: back to its start.
+  assertEquals(chipScrollTarget({ start: 0, end: 120 }, strip), 0);
+  // Out on the right: its end at the strip's end.
+  assertEquals(chipScrollTarget({ start: 900, end: 1020 }, strip), 620);
+  // Asked again mid-scroll (the strip half way there): the same place, not a second step.
+  assertEquals(
+    chipScrollTarget({ start: 0, end: 120 }, { ...strip, scroll: 150 }),
+    0,
+  );
+  // A chip wider than the strip shows its start; targets stay inside the strip's range.
+  assertEquals(chipScrollTarget({ start: 900, end: 1500 }, strip), 900);
+  assertEquals(chipScrollTarget({ start: 1500, end: 1700 }, strip), 1200);
 });
