@@ -1,0 +1,42 @@
+{
+  "tasks": {
+    "dev": "deno run -A jsr:@denext/denext@^4.20.0/cli dev .",
+    "build": "deno run -A jsr:@denext/denext@^4.20.0/cli build .",
+    "start": "deno run -A jsr:@denext/denext@^4.20.0/cli start .",
+    "export": "deno run -A jsr:@denext/denext@^4.20.0/cli export .",
+    "seo": "deno run -A scripts/seo.ts",
+    "og": "deno run -A scripts/gen-og.tsx",
+    "site": "deno task export && deno task seo",
+    "check": "deno check app/ components/ lib/ scripts/seo.ts scripts/gen-og.tsx",
+    "screenshots": "deno run -A --config ../deno.json scripts/screenshots.ts",
+    "deploy": "sh scripts/deploy.sh"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "denext",
+    "lib": ["deno.window", "deno.unstable", "dom", "dom.iterable", "dom.asynciterable"]
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "exclude": ["out/"]
+  },
+  "lint": {
+    "plugins": ["jsr:@denext/denext@^4.20.0/lint-plugin"],
+    "exclude": ["out/"]
+  },
+  "exclude": ["out/", ".denext/"],
+  "imports": {
+    "deno-dom": "jsr:@b-fuze/deno-dom@^0.1.49",
+    "@std/encoding": "jsr:@std/encoding@^1.0.0",
+    "denext": "jsr:@denext/denext@^4.20.0",
+    "denext/jsx-runtime": "jsr:@denext/denext@^4.20.0/jsx-runtime",
+    "denext/jsx-dev-runtime": "jsr:@denext/denext@^4.20.0/jsx-dev-runtime",
+    "denext/server": "jsr:@denext/denext@^4.20.0/server",
+    "denext/client": "jsr:@denext/denext@^4.20.0/client",
+    "denext/markdown": "jsr:@denext/denext@^4.20.0/markdown"
+  },
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": ["jsr:@denext/denext"]
+  }
+}

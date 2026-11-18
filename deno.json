@@ -87,7 +87,8 @@
       "jsr:@denext/denext@^4.20.0/lint-plugin"
     ],
     "exclude": [
-      "vendor/"
+      "vendor/",
+      "site/"
     ]
   },
   "exclude": [
@@ -101,7 +102,8 @@
   },
   "fmt": {
     "exclude": [
-      "vendor/"
+      "vendor/",
+      "site/"
     ]
   },
   "minimumDependencyAge": {

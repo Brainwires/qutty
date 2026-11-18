@@ -37,7 +37,7 @@ jobs:
           jobs: >-
             checks=macos-arm64@macos-15 test_arm64=macos-arm64@macos-15
             test_x86_64=macos-x64@macos-15-intel test_linux=linux-x64@ubuntu-24.04
-            e2e=macos-arm64@macos-15
+            e2e=macos-arm64@macos-15 site=linux-x64@ubuntu-24.04
           vars: ${{ toJSON(vars) }}
 
   checks:
@@ -108,3 +108,39 @@ jobs:
           name: e2e-screenshots
           path: tests/e2e/__screenshots__/
           if-no-files-found: ignore
+
+  # qutty.org (site/): its own Denext app, checked and built here so it can't rot. Deploying is
+  # by hand (site/README.md, `deno task deploy`), never from CI.
+  site:
+    name: Website (qutty.org)
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').site || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      - run: deno fmt --check
+      - run: deno lint
+      - run: deno task check
+      # The download links come from the latest GitHub release (the token lifts the API's rate
+      # limit; without an answer the build falls back to deno.json's version).
+      - run: deno task export
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: deno task seo
+      - name: The export has every page, its Markdown twin and the SEO files
+        run: |
+          for f in index.html features/index.html download/index.html changelog/index.html \
+            404.html index.md features.md download.md changelog.md \
+            sitemap.xml robots.txt llms.txt og.png; do
+            test -s "out/$f" || { echo "missing out/$f"; exit 1; }
+          done
+          grep -q 'rel="canonical" href="https://qutty.org/download"' out/download/index.html
+          grep -q '"@type":"SoftwareApplication"' out/index.html
