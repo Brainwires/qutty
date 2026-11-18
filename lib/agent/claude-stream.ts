@@ -95,6 +95,12 @@ export function claudeAgentFlags(cfg: ClaudeAgentConfig): string[] {
     ...(spec.permissionMode && spec.permissionMode !== "default"
       ? ["--permission-mode", spec.permissionMode]
       : []),
+    ...(spec.systemPrompt?.trim()
+      ? ["--append-system-prompt", spec.systemPrompt]
+      : []),
+    ...(spec.allowedTools?.length
+      ? ["--allowedTools", spec.allowedTools.join(",")]
+      : []),
   ];
 }
 
@@ -160,6 +166,8 @@ const num = (v: unknown): number | undefined =>
 
 /** The most text of one tool result kept (characters). */
 const MAX_RESULT_TEXT = 64 * 1024;
+/** The largest file an edit's `originalFile` is kept for (characters; bigger: not kept). */
+const MAX_ORIGINAL = 512 * 1024;
 
 const clip = (s: string, max = MAX_RESULT_TEXT) =>
   s.length > max
@@ -205,6 +213,10 @@ export function toolDetail(raw: unknown): ToolDetail | undefined {
   if (isObj(raw.file) && num(raw.file.numLines) !== undefined) {
     d.readLines = num(raw.file.numLines);
   }
+  // The file before an edit or a write (`null`, or no `originalFile`, on a write that created it).
+  if (typeof raw.originalFile === "string") {
+    if (raw.originalFile.length <= MAX_ORIGINAL) d.original = raw.originalFile;
+  } else if (raw.type === "create") d.original = null;
   return Object.keys(d).length > 0 ? d : undefined;
 }
 

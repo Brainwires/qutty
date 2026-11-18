@@ -35,8 +35,13 @@ export interface LaunchMenuProps {
   onConnections(): void;
   /** "Web page": a new web tile (absent where web tiles can't show any site). */
   onWebPage?(): void;
-  /** "Claude Code (chat)" beside an installed Claude Code: a new agent tile (app/agent-tile.tsx). */
-  onAgentChat?(): void;
+  /**
+   * "Claude Code (chat)" beside an installed Claude Code: a new agent tile (app/agent-tile.tsx);
+   * with a preset's id, one of the presets listed under it.
+   */
+  onAgentChat?(presetId?: string): void;
+  /** Settings → Agents → Presets: each a "<name> (chat)" item under "Claude Code (chat)". */
+  agentPresets?: readonly { id: string; name: string }[];
   /** "Bookmarks…": the bookmark manager (app/bookmark-manager.tsx). */
   onBookmarks?(): void;
   /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
@@ -190,11 +195,31 @@ export function LaunchMenu(props: LaunchMenuProps) {
                       class="menu-item launch-item"
                       data-testid="launch-agent-chat"
                       title="Claude Code in a chat tile: streamed transcript, tool calls, permissions"
-                      onClick={props.onAgentChat}
+                      onClick={() => props.onAgentChat?.()}
                     >
                       <LaunchIcon kind="chat" />
                       <span class="menu-label">{entry.label} (chat)</span>
                     </button>
+                  )}
+                  {entry.kind === "agent" && entry.agent.name === "claude" &&
+                    props.onAgentChat && (
+                    <>
+                      {(props.agentPresets ?? []).map((p) => (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="menu-item launch-item launch-preset"
+                          data-testid="launch-agent-preset"
+                          data-id={p.id}
+                          key={`preset-${p.id}`}
+                          title={`A chat tile with the "${p.name}" preset (Settings → Agents)`}
+                          onClick={() => props.onAgentChat?.(p.id)}
+                        >
+                          <LaunchIcon kind="chat" />
+                          <span class="menu-label">{p.name} (chat)</span>
+                        </button>
+                      ))}
+                    </>
                   )}
                 </Fragment>
               ))}

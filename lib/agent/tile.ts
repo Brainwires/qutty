@@ -11,6 +11,8 @@
 import { PERMISSION_MODES, type PermissionMode } from "./adapter.ts";
 import { isModelName, isSessionId } from "./claude-stream.ts";
 import type { Transcript } from "./transcript.ts";
+import type { AgentHarness } from "./avatar.ts";
+import { cleanSystemPrompt, cleanTools, MAX_PRESET_NAME } from "./presets.ts";
 
 /** An agent tile's entry data (lib/workspace/store.ts `TerminalEntry.chat`). */
 export interface AgentChat {
@@ -26,6 +28,12 @@ export interface AgentChat {
   mode?: PermissionMode;
   /** Turns finished (each one saves the workspace: its transcript changed). */
   turns?: number;
+  /** The preset it was opened with (its name; lib/agent/presets.ts). */
+  preset?: string;
+  /** The preset's system prompt (copied, so a restart runs the same). */
+  systemPrompt?: string;
+  /** The preset's tools allowed without asking. */
+  allowedTools?: string[];
 }
 
 /** A stored / untrusted `chat`, or `undefined`. */
@@ -36,6 +44,11 @@ export function sanitizeChat(raw: unknown): AgentChat | undefined {
     return undefined;
   }
   const mode = PERMISSION_MODES.find((m) => m === r.mode);
+  const systemPrompt = cleanSystemPrompt(r.systemPrompt);
+  const allowedTools = cleanTools(r.allowedTools);
+  const preset = typeof r.preset === "string"
+    ? r.preset.trim().slice(0, MAX_PRESET_NAME)
+    : "";
   return {
     cwd: r.cwd,
     ...(typeof r.model === "string" && isModelName(r.model)
@@ -51,7 +64,34 @@ export function sanitizeChat(raw: unknown): AgentChat | undefined {
     ...(typeof r.turns === "number" && Number.isFinite(r.turns)
       ? { turns: r.turns }
       : {}),
+    ...(preset ? { preset } : {}),
+    ...(systemPrompt ? { systemPrompt } : {}),
+    ...(allowedTools ? { allowedTools } : {}),
   };
+}
+
+/** The header's names for the permission modes. */
+export const MODE_LABELS: Readonly<Record<PermissionMode, string>> = {
+  default: "ask",
+  acceptEdits: "accept edits",
+  plan: "plan",
+  bypassPermissions: "bypass",
+};
+
+/** What each permission mode does, in a few words (the mode menu's hints). */
+export const MODE_HINTS: Readonly<Record<PermissionMode, string>> = {
+  default: "Asks before edits and commands",
+  acceptEdits: "Edits files without asking; asks before commands",
+  plan: "Looks and plans only: no edits, no commands",
+  bypassPermissions: "Runs everything without asking",
+};
+
+/**
+ * The harness an agent tile runs on (its avatar's colour). Every agent tile is Claude Code for
+ * now; another adapter names its own here.
+ */
+export function agentHarness(_chat?: AgentChat): AgentHarness {
+  return "claude";
 }
 
 /** A model the header's picker offers. */

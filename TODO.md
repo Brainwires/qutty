@@ -472,16 +472,21 @@
   - [ ] A Codex adapter (`codex app-server`, or `codex exec --json`).
   - [ ] An Ollama / API-key adapter through `lib/companion/inference-brain.ts`
         (the adapter's `hooks.approve` is there for in-process tools).
-  - [ ] A Changes tab: the session's edits as one diff to review (accept,
-        revert, open in the editor).
-  - [ ] Avatars for agents.
-  - [ ] Per-agent roles / presets (system prompt, model, permission mode,
-        allowed tools), picked in the `+` menu.
-  - [ ] The permission mode in the header (default / accept edits / plan); the
-        session layer already restarts with another mode.
-  - [ ] Interleave a permission question with its tool row (it shows after the
-        row today), and a resumed session's history from Claude Code's own
-        transcript file instead of only the saved copy.
+  - [x] A Changes tab: the session's edits as one diff to review (accept,
+        revert, open in the editor). From the tool rows
+        (`lib/agent/changes.ts`); revert restores the original when the file is
+        as the agent left it, else undoes edit by edit, only inside the
+        session's folder.
+    - Open: reviewed / accepted marks live in the page (lost on reload); a
+      `git diff` view of changes made outside tool calls (Bash) is not shown.
+  - [x] Avatars for agents (`lib/agent/avatar.ts`; every agent tile is Claude
+        for now: `agentHarness` is where another adapter names its own).
+  - [x] Per-agent roles / presets (system prompt, model, permission mode,
+        allowed tools), picked in the `+` menu; edited in Settings → Agents.
+  - [x] The permission mode in the header (ask / accept edits / plan / bypass).
+  - [x] Interleave a permission question with its tool row, and a resumed
+        session's history from Claude Code's own transcript file instead of only
+        the saved copy.
   - Not doing: embedding t3code (sidecar, worker mode, PTY adapter). The agent
     tile replaces it (decided 2026-11-17).
 

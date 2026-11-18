@@ -188,6 +188,7 @@ export function withBackendSpy(
       backend.agentAnswer(id, requestId, decision),
     agentRestart: (id, patch) => backend.agentRestart(id, patch),
     agentRename: (id, name) => backend.agentRename(id, name),
+    agentRevert: (id, files) => backend.agentRevert(id, files),
     agentStop: (id) => backend.agentStop(id),
     onAgent: (cb) => backend.onAgent(cb),
   };

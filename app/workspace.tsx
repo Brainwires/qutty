@@ -646,6 +646,11 @@ function WorkspaceView() {
     (url: string) => linksRef.current.openLink(url),
     [],
   );
+  // The Changes tab's "Open": the editor Settings → Links picks, at the first changed line.
+  const openInEditor = useCallback(
+    (path: string, line?: number) => linksRef.current.openInEditor(path, line),
+    [],
+  );
   const agentTiles = useAgentTiles({
     backend: ready ? managerRef.current?.backend ?? null : null,
     manager: ready ? managerRef.current : null,
@@ -660,6 +665,7 @@ function WorkspaceView() {
     ...(companionShown ? { dictation } : {}),
     speech,
     ...(capture ? { capture } : {}),
+    openInEditor,
   });
   agentsRef.current = agentTiles;
 
@@ -1235,6 +1241,7 @@ function WorkspaceView() {
             }
             : {}),
           onAgentChat: agentTiles.openLaunch,
+          agentPresets: state.settings.agentPresets,
         }}
         onLaunchOpen={() => {
           launcher.refresh();
@@ -1444,6 +1451,8 @@ function WorkspaceView() {
           {...(ollama.loaded ? { ollama } : {})}
           onOllama={(patch) => run({ type: "setOllama", patch })}
           onLinks={(patch) => run({ type: "setLinks", patch })}
+          onAgentPresets={(presets) =>
+            run({ type: "setAgentPresets", presets })}
           onMonitor={(patch) => run({ type: "setMonitor", patch })}
           {...(windowClose.guarded
             ? {

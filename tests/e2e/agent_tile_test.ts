@@ -5,7 +5,10 @@
 // row (the diff), interrupting, queueing while it works, the Agents panel's groups (Needs you,
 // Working, To review), the model picker, renaming, the tile coming back on its session when
 // the window does, the prompt box (its size, ↑/↓ history, the history menu, saved prompts), the
-// side rail (top, latest, maximize, read aloud), and a reply's link following Settings → Links.
+// side rail (top, latest, maximize, read aloud), a reply's link following Settings → Links, the
+// permission mode in the header (and a question drawn under its tool call), the Changes tab
+// (Open in editor, Revert asked first, Accept), presets from Settings in the + menu, avatars, and
+// a resumed session's history read from the demo's "Claude Code transcript file".
 //
 // E2E_SCREENSHOTS=<dir> saves a picture of a finished turn there.
 
@@ -638,5 +641,318 @@ suite("agent tile", (test) => {
       assertEquals(await linkCalls(app), [{ kind: "url", url }]);
       assertEquals((await app.tiles()).length, count, "no new web tile");
     });
+  });
+
+  test("the permission mode in the header: plan only looks; bypass asks to confirm; a question sits under its tool call", async (app) => {
+    const id = await openAgent(app);
+    const mode = `${tileSel(id)} [data-testid=agent-mode]`;
+    assertEquals(await app.attr(mode, "data-mode"), "default");
+    // A question is drawn inside the tool call it is about.
+    await prompt(app, id, "change the greeting");
+    await waitForQuestion(app, id);
+    assert(
+      await app.exists(
+        `${
+          tileSel(id)
+        } [data-testid=agent-tool][data-tool=Edit] [data-testid=agent-permission][data-inline=true]`,
+      ),
+      "the question under its Edit row",
+    );
+    assert(
+      !(await rowKinds(app, id)).includes("permission"),
+      "no question row of its own",
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-allow]`);
+    assertEquals(await waitForFooter(app, id), "done");
+    // Plan: the session restarts (resumed) and only looks.
+    await app.click(mode);
+    await app.click(`[data-testid=agent-modes] [data-mode=plan]`);
+    await waitFor(
+      async () => (await app.attr(mode, "data-mode")) === "plan",
+      3000,
+      "plan mode",
+    );
+    await prompt(app, id, "change the greeting again");
+    assertEquals(await waitForFooter(app, id, 2), "done");
+    assertEquals(
+      await app.count(
+        `${tileSel(id)} [data-testid=agent-tool][data-tool=Edit]`,
+      ),
+      1,
+      "no second edit in plan mode",
+    );
+    // Bypass asks first; Escape leaves the mode alone.
+    await app.click(mode);
+    await app.click(`[data-testid=agent-modes] [data-mode=bypassPermissions]`);
+    assert(await app.exists("[data-testid=agent-bypass-confirm]"));
+    assertEquals(await app.attr(mode, "data-mode"), "plan");
+    await app.click("[data-testid=agent-bypass-yes]");
+    await waitFor(
+      async () => (await app.attr(mode, "data-mode")) === "bypassPermissions",
+      3000,
+      "bypass mode",
+    );
+    // Bypass: the edit runs without a question.
+    await prompt(app, id, "edit once more");
+    assertEquals(await waitForFooter(app, id, 3), "done");
+    assertEquals(
+      await app.count(`${tileSel(id)} [data-testid=agent-permission]`),
+      1,
+    );
+  });
+
+  test("the Changes tab: one diff per file; Open in editor, Revert (asked first), Accept", async (app) => {
+    const id = await openAgent(app);
+    // Accept edits: no questions this time.
+    await app.click(`${tileSel(id)} [data-testid=agent-mode]`);
+    await app.click(`[data-testid=agent-modes] [data-mode=acceptEdits]`);
+    await waitFor(
+      async () =>
+        (await app.attr(
+          `${tileSel(id)} [data-testid=agent-mode]`,
+          "data-mode",
+        )) ===
+          "acceptEdits",
+      3000,
+      "accept edits",
+    );
+    assert(!(await app.exists(`${tileSel(id)} [data-testid=agent-tabs]`)));
+    await prompt(app, id, "edit and write a summary");
+    assertEquals(await waitForFooter(app, id), "done");
+    assertEquals(
+      await app.count(`${tileSel(id)} [data-testid=agent-permission]`),
+      0,
+    );
+    const changesTab = `${tileSel(id)} [data-testid=agent-tab-changes]`;
+    await waitFor(() => app.exists(changesTab), 3000, "the Changes tab");
+    assertEquals(await app.attr(changesTab, "data-count"), "2");
+    await app.click(changesTab);
+    const files = () =>
+      app.eval((s: string) =>
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            `${s} [data-testid=agent-change-file]`,
+          ),
+        ].map((f) => f.dataset.path), tileSel(id));
+    assertEquals(await files(), [
+      "/Users/demo/project/notes.md",
+      "/Users/demo/project/summary.md",
+    ]);
+    const fileSel = (path: string) =>
+      `${tileSel(id)} [data-testid=agent-change-file][data-path="${path}"]`;
+    const notes = fileSel("/Users/demo/project/notes.md");
+    const summary = fileSel("/Users/demo/project/summary.md");
+    const diff = await app.eval(
+      (s: string) =>
+        [...document.querySelectorAll(`${s} .diff-line`)].map((l) =>
+          l.className.split(" ")[1]
+        ).join(" "),
+      notes,
+    );
+    assertEquals(diff, "diff-hunk diff-del diff-add diff-ctx");
+    // Open: the editor Settings → Links picks (the demo's VS Code), at the first changed line.
+    await app.click(`${notes} [data-testid=agent-change-open]`);
+    await waitFor(
+      async () => (await linkCalls(app)).some((c) => c.kind === "edit"),
+      3000,
+      "the editor",
+    );
+    const edit = (await linkCalls(app)).find((c) => c.kind === "edit");
+    assertEquals([edit.file, edit.line], ["/Users/demo/project/notes.md", 1]);
+    // Revert asks first; Cancel leaves everything as it was.
+    await app.click(`${summary} [data-testid=agent-change-revert]`);
+    assert(
+      await app.exists(`${tileSel(id)} [data-testid=agent-revert-confirm]`),
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-revert-no]`);
+    assert(
+      !(await app.exists(`${tileSel(id)} [data-testid=agent-revert-confirm]`)),
+    );
+    assertEquals((await files()).length, 2);
+    // Revert: the new file goes; the list and the transcript say so.
+    await app.click(`${summary} [data-testid=agent-change-revert]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-revert-yes]`);
+    await waitFor(
+      async () => (await files()).length === 1,
+      3000,
+      "summary.md reverted",
+    );
+    assertEquals(await app.attr(changesTab, "data-count"), "1");
+    // Accept: the last file leaves the list.
+    await app.click(`${notes} [data-testid=agent-change-accept]`);
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=agent-changes-empty]`),
+      3000,
+      "nothing left to review",
+    );
+    await app.click(`${tileSel(id)} [data-testid=agent-tab-log]`);
+    const notices = await app.eval(
+      (s: string) =>
+        [...document.querySelectorAll(`${s} .agent-notice`)].map((n) =>
+          n.textContent
+        ),
+      tileSel(id),
+    );
+    assert(
+      notices.some((n) => n?.includes("Reverted summary.md")),
+      `${notices}`,
+    );
+    // A second turn flips the greeting back and writes the summary again: new changes, listed
+    // after what was accepted and reverted.
+    await prompt(app, id, "write the summary again");
+    assertEquals(await waitForFooter(app, id, 2), "done");
+    await app.click(changesTab);
+    await waitFor(
+      async () => (await files()).includes("/Users/demo/project/summary.md"),
+      3000,
+      "the new change",
+    );
+    // Revert all: everything this session changed since what was accepted.
+    await app.click(`${tileSel(id)} [data-testid=agent-revert-all]`);
+    await app.click(`${tileSel(id)} [data-testid=agent-revert-yes]`);
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=agent-changes-empty]`),
+      3000,
+      "all reverted",
+    );
+  });
+
+  test("presets: made in Settings, picked in the + menu, the tile starts with them; avatars", async (app) => {
+    await app.openSettings("agents");
+    await app.click("[data-testid=agent-preset-add]");
+    await waitFor(
+      () => app.exists("[data-testid=agent-preset-editor]"),
+      3000,
+      "the preset editor",
+    );
+    await app.eval(() => {
+      const set = (sel: string, v: string) => {
+        const el = document.querySelector<HTMLInputElement>(sel)!;
+        el.focus();
+        el.value = v;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.blur();
+      };
+      set("[data-testid=agent-preset-name]", "Reviewer");
+      set("[data-testid=agent-preset-tools]", "Read, Grep, Bash(git diff:*)");
+      set("[data-testid=agent-preset-prompt]", "Review only; never edit.");
+    });
+    await app.choose("[data-testid=agent-preset-mode]", "plan");
+    await waitFor(
+      async () => {
+        const p = (await app.settings()).agentPresets?.[0];
+        return p?.name === "Reviewer" && p.mode === "plan" &&
+          p.allowedTools?.length === 3 && !!p.systemPrompt;
+      },
+      3000,
+      "the preset saved",
+    );
+    await app.closeSettings();
+    // The + menu lists it under "Claude Code (chat)"; the folder question has it picked.
+    await app.click("[data-testid=bar-new-menu]");
+    await app.click("[data-testid=launch-agent-preset][data-id=p1]");
+    await waitFor(
+      () => app.exists("[data-testid=agent-launch-preset]"),
+      3000,
+      "the folder question",
+    );
+    assertEquals(
+      await app.eval(() =>
+        document.querySelector<HTMLSelectElement>(
+          "[data-testid=agent-launch-preset]",
+        )!.value
+      ),
+      "p1",
+    );
+    await app.click("[data-testid=agent-launch-open]");
+    const id = await waitFor(
+      () =>
+        app.eval(() =>
+          document.querySelector<HTMLElement>(
+            "[data-testid=tile][data-agent-tile=true][data-focused=true]",
+          )?.dataset.id ?? null
+        ),
+      5000,
+      "the preset's tile",
+    );
+    await waitFor(
+      async () =>
+        (await app.attr(
+          `${tileSel(id)} [data-testid=agent-mode]`,
+          "data-mode",
+        )) ===
+          "plan",
+      3000,
+      "the preset's mode",
+    );
+    // Plan mode: it only looks.
+    await prompt(app, id, "change the greeting");
+    assertEquals(await waitForFooter(app, id), "done");
+    assertEquals(
+      await app.count(
+        `${tileSel(id)} [data-testid=agent-tool][data-tool=Edit]`,
+      ),
+      0,
+    );
+    // Avatars: in the header and the Agents panel, Claude's colour.
+    assertEquals(
+      await app.attr(`${tileSel(id)} [data-testid=agent-avatar]`, "data-color"),
+      "#d97757",
+    );
+    await app.click("[data-testid=bar-agents]");
+    assert(
+      await app.exists(
+        `[data-testid=agents-item][data-id="${id}"] [data-testid=agent-avatar]`,
+      ),
+    );
+    await app.press("Escape");
+  });
+
+  test("a resumed session's history comes from Claude Code's transcript file", async (app) => {
+    const id = await openAgent(app);
+    await prompt(app, id, "hello there");
+    assertEquals(await waitForFooter(app, id), "done");
+    // The session ends as when the app quits (its tile stays, with its Claude Code session id).
+    await app.eval(() => {
+      const agents = (globalThis as unknown as {
+        __e2eAgents: { ids(): string[]; stop(id: string): void };
+      }).__e2eAgents;
+      for (const a of agents.ids()) agents.stop(a);
+    });
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=agent-failed]`),
+      3000,
+      "the session ended",
+    );
+    // The window goes (its workspace saved, as when it hides) and comes back: the tile resumes,
+    // its rows read from the transcript file.
+    await app.eval(() => {
+      globalThis.dispatchEvent(new Event("pagehide"));
+      (globalThis as { __e2eRemount?: () => void }).__e2eRemount!();
+    });
+    await waitFor(
+      () => app.exists(`${tileSel(id)} [data-testid=agent-footer]`),
+      5000,
+      "the history back",
+    );
+    const users = await app.eval(
+      (s: string) =>
+        [...document.querySelectorAll(`${s} .agent-user-text`)].map((e) =>
+          e.textContent
+        ),
+      tileSel(id),
+    );
+    assertEquals(users, ["hello there"]);
+    const text = await app.eval(
+      (s: string) =>
+        document.querySelector(`${s} [data-testid=agent-log]`)?.textContent ??
+          "",
+      tileSel(id),
+    );
+    assert(text.includes("Hello! I am the demo agent."), text);
+    assert(text.includes("Resumed session"), text);
+    // It goes on from there.
+    await prompt(app, id, "hello again");
+    assertEquals(await waitForFooter(app, id, 2), "done");
   });
 });
