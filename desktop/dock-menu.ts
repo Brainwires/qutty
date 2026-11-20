@@ -1,7 +1,7 @@
 // The macOS Dock menu (a right click on Qutty's Dock icon), like iTerm2's: the open workspace
 // windows (the frontmost one checked; a click brings it forward), New Window, New Terminal,
-// "Claude Code (chat)" when Claude Code is installed, and Reopen Closed Window ▸ with the
-// detached workspaces that still run terminals. macOS adds Options, Show All Windows, Hide and
+// "Claude Code (chat)" when Claude Code is installed, "Codex (chat)" when Codex is, and Reopen
+// Closed Window ▸ with the detached workspaces that still run terminals. macOS adds Options, Show All Windows, Hide and
 // Quit below it.
 //
 // It is the app process's (desktop.ts installs it), not a page's: Denext's page-side Dock menu
@@ -12,11 +12,11 @@
 // reload. Denext's own Dock-menu clicks only go to pages for ids a page set, so the two never
 // meet. Where there is no `Deno.dock.setMenu` (Linux, Windows, an older runtime) nothing is set.
 //
-// What a window does (New Terminal, the agent chat) goes to the frontmost window's page as a
+// What a window does (New Terminal, the agent chats) goes to the frontmost window's page as a
 // command it pulls (`session` extension: the `dockCommand` signal and `takeDockCommands`), so a
 // page that is still loading (a window the Dock menu just opened) gets it once it is up, and a
 // reload never runs it twice. With no window open, New Terminal opens a new window (its first
-// terminal is the new terminal) and the agent chat opens one and waits there.
+// terminal is the new terminal) and an agent chat opens one and waits there.
 //
 // The menu follows the workspaces (desktop/workspace-host.ts `onChanged`) and the focus (the
 // `session` extension's `focus`, {@linkcode DockMenu.refresh}). The pure parts (`dockMenu`,
@@ -27,7 +27,7 @@ import type { WorkspaceInfo, WorkspaceRegistry } from "./workspace-host.ts";
 import { terminals } from "./tray.ts";
 
 /** What a Dock menu item asks the frontmost window's page to do. */
-export type DockCommand = "newTerminal" | "agentChat";
+export type DockCommand = "newTerminal" | "agentChat" | "codexChat";
 
 /** A Dock menu entry before it goes to the runtime. */
 export type DockMenuEntry =
@@ -45,6 +45,7 @@ export type DockNativeItem =
 export const DOCK_NEW_WINDOW = "qutty:dock:new-window";
 export const DOCK_NEW_TERMINAL = "qutty:dock:new-terminal";
 export const DOCK_AGENT_CHAT = "qutty:dock:agent-chat";
+export const DOCK_CODEX_CHAT = "qutty:dock:codex-chat";
 const DOCK_WINDOW = "qutty:dock:window:";
 const DOCK_REOPEN = "qutty:dock:reopen:";
 
@@ -59,6 +60,8 @@ export interface DockMenuInput {
   active?: string;
   /** "Claude Code (chat)": Claude Code is installed. */
   agentChat: boolean;
+  /** "Codex (chat)": Codex is installed (as the `+` menu offers it). */
+  codexChat?: boolean;
 }
 
 /** Workspace names in a stable order: "Workspace 2" before "Workspace 10". */
@@ -68,8 +71,8 @@ const byName = (a: WorkspaceInfo, b: WorkspaceInfo) =>
 
 /**
  * The Dock menu: one line per open workspace window (sorted by name, so focusing one does not
- * reorder them; the active one checked), New Window, New Terminal, "Claude Code (chat)", then
- * Reopen Closed Window ▸ with the detached workspaces that run terminals, newest first.
+ * reorder them; the active one checked), New Window, New Terminal, "Claude Code (chat)",
+ * "Codex (chat)", then Reopen Closed Window ▸ with the detached workspaces that run terminals, newest first.
  */
 export function dockMenu(input: DockMenuInput): DockMenuEntry[] {
   const open = input.workspaces.filter((w) => w.state === "attached")
@@ -95,6 +98,9 @@ export function dockMenu(input: DockMenuInput): DockMenuEntry[] {
     ...(input.agentChat
       ? [{ id: DOCK_AGENT_CHAT, label: "Claude Code (chat)" }]
       : []),
+    ...(input.codexChat
+      ? [{ id: DOCK_CODEX_CHAT, label: "Codex (chat)" }]
+      : []),
     ...(closed.length > 0
       ? [
         "separator" as const,
@@ -117,6 +123,7 @@ export function dockMenuAction(id: string): DockMenuAction | undefined {
     return { kind: "command", command: "newTerminal" };
   }
   if (id === DOCK_AGENT_CHAT) return { kind: "command", command: "agentChat" };
+  if (id === DOCK_CODEX_CHAT) return { kind: "command", command: "codexChat" };
   for (const prefix of [DOCK_WINDOW, DOCK_REOPEN]) {
     if (id.startsWith(prefix) && id.length > prefix.length) {
       return { kind: "workspace", id: id.slice(prefix.length) };
@@ -231,13 +238,15 @@ export interface DockMenuDeps {
   commands: Pick<DockCommandQueue, "push">;
   /** Whether Claude Code is installed (asked at install and on a refresh, at most once a minute). */
   agentChat?: () => Promise<boolean>;
+  /** Whether Codex is installed (asked with the Claude Code probe). */
+  codexChat?: () => Promise<boolean>;
   /** The clock (tests). */
   now?: () => number;
 }
 
 /** How long a burst of changes is coalesced into one menu update. */
 const MENU_DEBOUNCE_MS = 100;
-/** How long the Claude Code probe's answer is kept. */
+/** How long the Claude Code and Codex probes' answers are kept. */
 const AGENT_PROBE_MS = 60_000;
 
 /** The Dock menu for the app's life (see the module docs). */
@@ -245,6 +254,7 @@ export class DockMenu {
   #deps: DockMenuDeps | undefined;
   #menu = "";
   #agentChat = false;
+  #codexChat = false;
   #probedAt: number | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #off: (() => void)[] = [];
@@ -308,6 +318,7 @@ export class DockMenu {
       workspaces: deps.registry.list(),
       ...(active !== undefined ? { active } : {}),
       agentChat: this.#agentChat,
+      codexChat: this.#codexChat,
     }));
     const json = JSON.stringify(menu);
     if (json === this.#menu) return;
@@ -319,20 +330,25 @@ export class DockMenu {
     }
   }
 
-  /** Ask again whether Claude Code is installed (at most once a minute). */
+  /** Ask again whether Claude Code and Codex are installed (at most once a minute). */
   #probe(): void {
     const deps = this.#deps;
-    if (!deps?.agentChat) return;
+    if (!deps?.agentChat && !deps?.codexChat) return;
     const now = (deps.now ?? Date.now)();
     if (this.#probedAt !== undefined && now - this.#probedAt < AGENT_PROBE_MS) {
       return;
     }
     this.#probedAt = now;
-    deps.agentChat().then((found) => {
+    deps.agentChat?.().then((found) => {
       if (this.#deps !== deps || found === this.#agentChat) return;
       this.#agentChat = found;
       this.#apply();
     }, (err) => console.warn("dock menu: could not look for Claude Code", err));
+    deps.codexChat?.().then((found) => {
+      if (this.#deps !== deps || found === this.#codexChat) return;
+      this.#codexChat = found;
+      this.#apply();
+    }, (err) => console.warn("dock menu: could not look for Codex", err));
   }
 
   /** A Dock menu item was chosen. */

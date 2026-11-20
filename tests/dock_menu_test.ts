@@ -9,6 +9,7 @@
 import { assertEquals } from "@std/assert";
 import {
   DOCK_AGENT_CHAT,
+  DOCK_CODEX_CHAT,
   DOCK_COMMAND_TTL_MS,
   DOCK_MAX_REOPEN,
   DOCK_NEW_TERMINAL,
@@ -71,6 +72,7 @@ Deno.test("dock menu: the open windows by name (the active one checked), the new
     ],
     active: "10",
     agentChat: true,
+    codexChat: true,
   });
   assertEquals(labels(menu), [
     "Workspace 2",
@@ -79,6 +81,7 @@ Deno.test("dock menu: the open windows by name (the active one checked), the new
     "New Window",
     "New Terminal",
     "Claude Code (chat)",
+    "Codex (chat)",
     "-",
     {
       "Reopen Closed Window ▸": [
@@ -89,7 +92,7 @@ Deno.test("dock menu: the open windows by name (the active one checked), the new
   ]);
   const id = (i: number) => (menu[i] as { id: string }).id;
   assertEquals(dockMenuAction(id(0)), { kind: "workspace", id: "2" });
-  const reopen = menu[7] as { children: { id: string }[] };
+  const reopen = menu[8] as { children: { id: string }[] };
   assertEquals(dockMenuAction(reopen.children[1].id), {
     kind: "workspace",
     id: "3",
@@ -102,6 +105,13 @@ Deno.test("dock menu: no window, no Claude Code, nothing to reopen: only the new
       dockMenu({ workspaces: [ws("1", "detached", 0)], agentChat: false }),
     ),
     ["New Window", "New Terminal"],
+  );
+});
+
+Deno.test("dock menu: Codex (chat) without Claude Code", () => {
+  assertEquals(
+    labels(dockMenu({ workspaces: [], agentChat: false, codexChat: true })),
+    ["New Window", "New Terminal", "Codex (chat)"],
   );
 });
 
@@ -124,6 +134,10 @@ Deno.test("dock menu: item ids back to actions", () => {
   assertEquals(dockMenuAction(DOCK_AGENT_CHAT), {
     kind: "command",
     command: "agentChat",
+  });
+  assertEquals(dockMenuAction(DOCK_CODEX_CHAT), {
+    kind: "command",
+    command: "codexChat",
   });
   assertEquals(dockMenuAction("qutty:dock:window:"), undefined);
   assertEquals(dockMenuAction("qutty:dock:reopen:"), undefined);
@@ -211,7 +225,7 @@ function nativeLabels(menu: DockNativeItem[] | null | undefined): string[] {
 const settle = () => new Promise((r) => setTimeout(r, 150));
 
 /** DockMenu over a fake dock and a real registry, recording what it asked for. */
-function setUp(opts: { agentChat?: boolean } = {}) {
+function setUp(opts: { agentChat?: boolean; codexChat?: boolean } = {}) {
   const reg = new WorkspaceRegistry();
   const fake = fakeDock();
   const calls: string[] = [];
@@ -230,6 +244,9 @@ function setUp(opts: { agentChat?: boolean } = {}) {
     commands: { push: (w, c) => void pushed.push([w, c]) },
     ...(opts.agentChat !== undefined
       ? { agentChat: () => Promise.resolve(opts.agentChat!) }
+      : {}),
+    ...(opts.codexChat !== undefined
+      ? { codexChat: () => Promise.resolve(opts.codexChat!) }
       : {}),
   });
   return { reg, fake, calls, pushed, menu };
@@ -272,6 +289,21 @@ Deno.test("DockMenu: set at install, follows the windows and the focus, cleared 
   assertEquals(fake.listeners.size, 0);
 });
 
+Deno.test("DockMenu: Codex (chat) once the Codex probe finds it", async () => {
+  const { fake, menu } = setUp({ agentChat: false, codexChat: true });
+  try {
+    assertEquals(nativeLabels(fake.menus[0]), ["New Window", "New Terminal"]);
+    await settle(); // the probes answered
+    assertEquals(nativeLabels(fake.menus.at(-1)), [
+      "New Window",
+      "New Terminal",
+      "Codex (chat)",
+    ]);
+  } finally {
+    menu.uninstall();
+  }
+});
+
 Deno.test("DockMenu: a window's line brings it forward; New Window opens one", () => {
   const { reg, fake, calls, menu } = setUp();
   try {
@@ -294,8 +326,13 @@ Deno.test("DockMenu: New Terminal and the chat go to the frontmost window's page
     reg.focused("main");
     fake.click(DOCK_NEW_TERMINAL);
     fake.click(DOCK_AGENT_CHAT);
-    assertEquals(calls, ["show a", "show a"]);
-    assertEquals(pushed, [["main", "newTerminal"], ["main", "agentChat"]]);
+    fake.click(DOCK_CODEX_CHAT);
+    assertEquals(calls, ["show a", "show a", "show a"]);
+    assertEquals(pushed, [
+      ["main", "newTerminal"],
+      ["main", "agentChat"],
+      ["main", "codexChat"],
+    ]);
   } finally {
     menu.uninstall();
   }
@@ -348,9 +385,10 @@ Deno.test("page: the Dock menu's commands run in order, none while a dialog is u
   const handlers = {
     newTerminal: () => void ran.push("terminal"),
     agentChat: () => void ran.push("chat"),
+    codexChat: () => void ran.push("codex"),
   };
-  runDockCommands(["newTerminal", "agentChat"], handlers, false);
-  assertEquals(ran, ["terminal", "chat"]);
+  runDockCommands(["newTerminal", "agentChat", "codexChat"], handlers, false);
+  assertEquals(ran, ["terminal", "chat", "codex"]);
   runDockCommands(["newTerminal"], handlers, true);
-  assertEquals(ran, ["terminal", "chat"]);
+  assertEquals(ran, ["terminal", "chat", "codex"]);
 });

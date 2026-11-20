@@ -26,7 +26,7 @@
 // mode back to a regular app (the `session` extension's `followWindows`).
 //
 // The Dock menu (desktop/dock-menu.ts, macOS): the open workspace windows, New Window, New
-// Terminal, "Claude Code (chat)" and Reopen Closed Window ▸, set here so it works with no window
+// Terminal, "Claude Code (chat)", "Codex (chat)" and Reopen Closed Window ▸, set here so it works with no window
 // open and outlives page reloads.
 import config from "./.deno-desktop/config.json" with { type: "json" };
 import { resolveDesktopCapabilities, runDesktop } from "denext/desktop";
@@ -76,6 +76,7 @@ if (!app.sidecarChild) {
       newWindow: () => trayMode.newWindow(),
       commands: dockCommands,
       agentChat: async () => (await resolveProgram("claude")) !== undefined,
+      codexChat: async () => (await resolveProgram("codex")) !== undefined,
     });
   }
 

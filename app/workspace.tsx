@@ -1114,6 +1114,7 @@ function WorkspaceView() {
     handlers: {
       newTerminal: () => runCommand({ kind: "newTerminal" }),
       agentChat: () => agentTiles.openLaunch(),
+      codexChat: () => agentTiles.openLaunch("codex"),
     },
     modalOpen,
   });

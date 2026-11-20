@@ -8,10 +8,10 @@
 - A Dock menu on macOS, like iTerm2's: right-click Qutty's Dock icon for the
   open workspace windows (the frontmost one checked; choose one to bring it
   forward), New Window, New Terminal (in the frontmost window, or a new window
-  when none is open), "Claude Code (chat)" when Claude Code is installed, and
-  Reopen Closed Window with the workspaces whose terminals still run. It follows
-  the windows as they open, close and take the focus, and works with no window
-  open.
+  when none is open), "Claude Code (chat)" when Claude Code is installed, "Codex
+  (chat)" when Codex is, and Reopen Closed Window with the workspaces whose
+  terminals still run. It follows the windows as they open, close and take the
+  focus, and works with no window open.
 
 ## 0.7.0 — Codex and API agent tiles, a Changes tab and presets, per-tile zoom, qutty.org
 
