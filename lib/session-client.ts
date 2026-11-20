@@ -11,6 +11,7 @@
 import type { desktopExtension, onDesktopEvent } from "denext/desktop/client";
 import type sessionExtension from "../desktop/session.ts";
 import type {
+  DockCommand,
   DragHover,
   MoveRequestEvent,
   MoveResult,
@@ -30,6 +31,7 @@ import {
 } from "./workspace/windows.ts";
 
 export type {
+  DockCommand,
   DragHover,
   DragOver,
   MoveRequest,
@@ -127,6 +129,19 @@ export interface SessionBackend {
   /** Change it; resolves to the setting now. */
   setKeepShells(on: boolean): Promise<boolean>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
+  /** The Dock menu's commands for this window (absent: no Dock menu, the demo). */
+  readonly dockCommands?: DockCommands;
+}
+
+/**
+ * The Dock menu's commands for this window (desktop/dock-menu.ts): they wait in the app's
+ * process until the page takes them, each once.
+ */
+export interface DockCommands {
+  /** The waiting commands, oldest first. */
+  take(): Promise<DockCommand[]>;
+  /** Commands are waiting (take them). */
+  onWaiting(cb: () => void): () => void;
 }
 
 /** The window calls the desktop session uses (`denext/desktop/window`), injectable for tests. */
@@ -242,6 +257,11 @@ export function createDesktopSession(deps: {
         "changed",
         (e) => cb(e.workspaces),
       ),
+    dockCommands: {
+      take: () => ext.takeDockCommands({}),
+      onWaiting: (cb) =>
+        deps.onDesktopEvent("session", "dockCommand", () => cb()),
+    },
   };
 }
 

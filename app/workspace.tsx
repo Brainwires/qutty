@@ -99,6 +99,7 @@ import { CloseWindowDialog } from "./close-window-dialog.tsx";
 import type { WindowClose } from "../lib/workspace/windows.ts";
 import { useFreeformView } from "./use-freeform-view.ts";
 import { useNativeMenus } from "./use-native-menus.ts";
+import { useDockCommands } from "./use-dock-commands.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -1105,6 +1106,16 @@ function WorkspaceView() {
       onFocus: launcher.refresh,
       toggleZoomTogether: tileZoom.toggleTogether,
     },
+  });
+  useDockCommands({
+    source: ready
+      ? managerRef.current?.backend.session.dockCommands
+      : undefined,
+    handlers: {
+      newTerminal: () => runCommand({ kind: "newTerminal" }),
+      agentChat: () => agentTiles.openLaunch(),
+    },
+    modalOpen,
   });
   const visibleIds = useMemo(
     () => visibleIdSet({ tiles: view.tiles }),
