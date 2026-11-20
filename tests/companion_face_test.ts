@@ -52,7 +52,6 @@ import {
   companionName,
   DEFAULT_COMPANION,
   DEFAULT_COMPANION_NAME,
-  effectiveMode,
   sanitizeCompanion,
 } from "../lib/companion/settings.ts";
 import { initialState, reduce } from "../lib/workspace/store.ts";
@@ -471,11 +470,12 @@ Deno.test("settings: the companion's name: trimmed, capped, Companion when empty
   assertEquals(sanitizeCompanion(older).name, "Companion");
 });
 
-Deno.test("settings: the companion's fields sanitise; floating is drawn in the window; the store reduces them", () => {
+Deno.test("settings: the companion's fields sanitise; the store reduces them", () => {
   assertEquals(DEFAULT_COMPANION, {
     name: "Companion",
     mode: "window",
     corner: "bottom-right",
+    floatAllSpaces: true,
     brain: true,
     engine: "claude",
     model: "",
@@ -497,6 +497,7 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
       name: "Companion",
       mode: "off",
       corner: "top-left",
+      floatAllSpaces: true,
       brain: false,
       engine: "ollama",
       model: "haiku",
@@ -532,8 +533,6 @@ Deno.test("settings: the companion's fields sanitise; floating is drawn in the w
     }),
     DEFAULT_COMPANION,
   );
-  assertEquals(effectiveMode("floating"), "window");
-  assertEquals(effectiveMode("off"), "off");
 
   let s = initialState();
   assertEquals(s.settings.companion, DEFAULT_COMPANION);
