@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.1 — Denext 4.20.1, a Dock menu, a floating companion
+
 - Denext 4.20.1 (runtime 3.0.0-denext.27): fixes and security updates, among
   them a child web view no longer fights the window over the cursor and CEF
   security fixes.
