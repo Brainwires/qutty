@@ -1,6 +1,5 @@
-// The not-found page's content: app/not-found.tsx (served by `deno task start`) and
-// app/404/page.tsx (exported, then copied to out/404.html by scripts/seo.ts, since Denext's
-// static export writes no file for app/not-found.tsx).
+// The not-found page's content: app/not-found.tsx, served by `deno task start` and exported to
+// out/404.html by Denext's static export.
 
 import { Link } from "denext";
 import { Tile } from "./ui.tsx";
