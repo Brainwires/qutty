@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Denext 4.20.1 (runtime 3.0.0-denext.27): fixes and security updates, among
+  them a child web view no longer fights the window over the cursor and CEF
+  security fixes.
+
 ## 0.7.0 — Codex and API agent tiles, a Changes tab and presets, per-tile zoom, qutty.org
 
 - Agent tiles run Codex, a local Ollama model, or Anthropic's API, not only

@@ -6,7 +6,7 @@
 // -------------------------------------------
 // Every PTY (a tile's shell, and the hidden ones desktop/ssh.ts, sandbox.ts, voice.ts, ollama.ts,
 // links.ts, shell-agent.ts and companion-brain.ts run their helpers in) is opened by denext's Deno
-// runtime (`Deno.openPty`, runtime 3.0.0-denext.12 and later; Denext 4.20 pins 3.0.0-denext.25):
+// runtime (`Deno.openPty`, runtime 3.0.0-denext.12 and later; Denext 4.20.1 pins 3.0.0-denext.27):
 // the program, its arguments, its environment (`clearEnv`, so a parent terminal's variables are
 // really gone), its folder and its size; `readable` / `writable` streams for the master, `resize`,
 // `kill(signal)` and the exit `status`. It is the same runtime API Denext's own `pty` capability
