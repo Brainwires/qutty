@@ -84,6 +84,10 @@ import type {
   SayEvent,
 } from "./companion/protocol.ts";
 import type { BrainEngine } from "./companion/settings.ts";
+import type {
+  CompanionWindowRequest,
+  CompanionWindowState,
+} from "./companion/floating.ts";
 import type { CompanionKeyService } from "./companion/keys.ts";
 import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
@@ -376,6 +380,24 @@ export interface PtyBackend {
   onHubControl(
     cb: (request: { requestId: string; command: ControlCommand }) => void,
   ): () => void;
+  /**
+   * Settings → Companion → Floating: open the floating companion's window (one for the app;
+   * asking again is a no-op) or close it (desktop/companion-window.ts). The demo has none.
+   */
+  companionWindow(
+    request: CompanionWindowRequest,
+  ): Promise<CompanionWindowState>;
+  /** Whether the floating companion's window is open and showing the companion. */
+  companionWindowState(): Promise<CompanionWindowState>;
+  /** The floating window opened, showed the companion or closed. */
+  onCompanionWindow(cb: (state: CompanionWindowState) => void): () => void;
+  /**
+   * The floating companion's page loaded (called from that page): the companion's bubbles and
+   * questions go to it from now. `false` from any other window.
+   */
+  companionWindowReady(): Promise<boolean>;
+  /** The floating companion gives the keyboard back to the workspace window used last. */
+  companionRefocus(): Promise<void>;
 
   // --- Agent tiles (lib/agent/sessions.ts, in the hub) ----------------------------------------
 
@@ -890,6 +912,20 @@ export function createDesktopBackend(
     onHubControl: (cb) => {
       listenCompanion();
       return controls.on(cb);
+    },
+    async companionWindow(request) {
+      return await hub.companionWindow(request);
+    },
+    async companionWindowState() {
+      return await hub.companionWindowState({});
+    },
+    onCompanionWindow: (cb) =>
+      onDesktopEvent<CompanionWindowState>("hub", "companionWindow", cb),
+    async companionWindowReady() {
+      return await hub.companionWindowReady({});
+    },
+    async companionRefocus() {
+      await hub.companionRefocus({});
     },
     async agentStart(req) {
       return await hub.agentStart(req) as AgentSnapshot;
@@ -1618,6 +1654,13 @@ class DemoShell {
 }
 
 /** A new demo backend (the app uses the {@linkcode demoBackend} singleton; tests want fresh ones). */
+/** The demo's floating companion window: none. */
+const DEMO_NO_WINDOW: CompanionWindowState = {
+  open: false,
+  ready: false,
+  error: "Floating needs the desktop app.",
+};
+
 export function createDemoBackend(): PtyBackend {
   const events = new PtyEvents();
   const shells = new Map<string, DemoShell>();
@@ -1892,6 +1935,12 @@ export function createDemoBackend(): PtyBackend {
     onCompanion: (cb) => hubCompanion.on(cb),
     onHubSay: (cb) => hubSays.on(cb),
     onHubControl: (cb) => hubControls.on(cb),
+    // A browser page cannot open a window of its own: Floating is grayed out there.
+    companionWindow: () => Promise.resolve(DEMO_NO_WINDOW),
+    companionWindowState: () => Promise.resolve(DEMO_NO_WINDOW),
+    onCompanionWindow: () => () => {},
+    companionWindowReady: () => Promise.resolve(false),
+    companionRefocus: () => Promise.resolve(),
     agentStart: (req) =>
       attempt(() => {
         // A resumed session's history from its "transcript file", as the desktop reads Claude

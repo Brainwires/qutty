@@ -167,7 +167,27 @@
   - Done: dragging the companion (snaps to the nearest corner, which is the
     Corner setting) and the mic level driving its listening pulse (`level`
     events from desktop/voice.ts, ~20 Hz while capturing).
-  - Next: a floating window (Denext multi-window).
+  - Done: a floating window (Settings → Companion → Floating;
+    desktop/companion-window.ts, app/companion/floating-companion.tsx, the
+    `/companion` route). One transparent, frameless, non-activating window for
+    the app, on top, off the taskbar, clicks let through outside the companion
+    (a hit region, else forwarded click-through), dragged by the companion and
+    reopened where it was dropped, on every Space unless turned off. Once its
+    page is ready every `ask` and `say` goes to it (a detached workspace's
+    questions too) and the workspace windows draw no companion; `companion` goes
+    to every window. Its chat box takes the keyboard (`focusWindow`), and
+    closing the chat hands it back to the last-used workspace window. With every
+    workspace window closed it stays (the app lives in the tray while terminals
+    run); tray mode, the Dock's reopen and tile moves ignore it. Floating is
+    grayed out with the reason where the system can't float it (no transparent
+    window, no click-through, Wayland without layer-shell, the browser demo),
+    and the companion stays in the window there.
+  - Floating, open: never hand-checked in a real window yet (the logic is unit
+    tested, the page in the demo e2e). The hot face and the reactions to
+    finished jobs are not shown while floating (they follow a window's tiles),
+    and push-to-talk from a workspace window sends without the review box and
+    without the floating face listening. Typing into the floating chat box on
+    Linux (a layer-shell surface made with `focusable: false`) is untried.
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP
@@ -360,6 +380,20 @@
     "After 4.16").
   - Later: `defaultWidth` / `defaultHeight` for a new workspace's window, and
     the replay's `dropped` / `truncated` (Denext 4.15 has both).
+  - Done: the macOS Dock menu, like iTerm2's (desktop/dock-menu.ts): the open
+    workspace windows (the frontmost checked; a click brings it forward), New
+    Window, New Terminal (in the frontmost window, else a new one), "Claude Code
+    (chat)" when Claude Code is installed, and Reopen Closed Window ▸ (the
+    detached workspaces with running terminals). The app process sets it on
+    `Deno.dock` directly, so it works with no window open and outlives page
+    reloads; a window's commands wait for its page (`session` extension,
+    `takeDockCommands`). Not tried in a real window yet.
+  - Needs Denext: a backend Dock menu (`DesktopRuntime.setDockMenu` /
+    `onDockMenuItem`). `setQuickActions` / `onQuickAction` from a page take
+    titles only (no separators, checks or submenus), and a click goes to every
+    open window's page and to none with no window open, so Qutty goes around
+    them to the runtime's `Deno.dock`. Open: SSH connections in the Dock menu
+    (the host list and the connect live in the page).
 
 - [x] **Switch to Denext's PTY capability** once it lands (being added to Denext
       alongside multi-window support and Deno Node-compat fixes for node-pty).
@@ -555,6 +589,9 @@
       agent presets, permission mode in the header, avatars, per-tile zoom (Zoom
       All Tiles Together), Maximize Tile, Find in Page and Developer Tools
       menus, the qutty.org website.
+- [x] v0.7.1: Denext 4.20.1 (web view cursor and CEF security fixes), the Dock
+      menu (New Window, New Terminal, agent chats, open windows, Reopen Closed
+      Window), the floating companion window.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

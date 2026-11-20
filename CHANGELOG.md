@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 0.7.1 — Denext 4.20.1, a Dock menu, a floating companion
+
+- Denext 4.20.1 (runtime 3.0.0-denext.27): fixes and security updates, among
+  them a child web view no longer fights the window over the cursor and CEF
+  security fixes.
+- A Dock menu on macOS, like iTerm2's: right-click Qutty's Dock icon for the
+  open workspace windows (the frontmost one checked; choose one to bring it
+  forward), New Window, New Terminal (in the frontmost window, or a new window
+  when none is open), "Claude Code (chat)" when Claude Code is installed, "Codex
+  (chat)" when Codex is, and Reopen Closed Window with the workspaces whose
+  terminals still run. It follows the windows as they open, close and take the
+  focus, and works with no window open.
+- The companion can float. Settings → Companion → Floating puts it in a
+  transparent window of its own, above the other windows: the face, the speech
+  bubble, the chat box, the questions' buttons and the mic, Summarize and Stop
+  buttons, with clicks passing through everywhere around them. Drag the
+  companion to move it; it opens there next time. One floating companion serves
+  every workspace window: agents' questions and `qutty-hook say` from any of
+  them show in its bubble, and the windows draw no companion of their own. It
+  never takes the keyboard from a terminal, except while its chat box is open;
+  closing the chat gives the keyboard back. "On every Space" (on by default)
+  keeps it on every virtual desktop. With every window closed it stays while
+  Qutty lives in the menu bar or tray, so questions still reach you. Switching
+  between In window, Floating and Off takes effect at once. Where the system
+  can't float a window (no transparency or click-through, Wayland without
+  layer-shell) Floating is grayed out with the reason and the companion stays in
+  the window.
+
 ## 0.7.0 — Codex and API agent tiles, a Changes tab and presets, per-tile zoom, qutty.org
 
 - Agent tiles run Codex, a local Ollama model, or Anthropic's API, not only

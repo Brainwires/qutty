@@ -1,6 +1,8 @@
 // Settings → Companion: its name (in the chat box, its labels, its brain's system prompt and the
-// voice summary's address), where the companion is drawn (in the window; floating comes with
-// Denext multi-window; or off, when `ask_user` questions use the ask dialog instead), its corner,
+// voice summary's address), where the companion is drawn (in the window; floating, in a
+// transparent window of its own on top of the others, grayed out with the reason where the system
+// cannot float it, with whether that window shows on every Space; or off, when `ask_user`
+// questions use the ask dialog instead), its corner in the window,
 // whether it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at
 // night, celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its
 // brain may run, which brain (headless Claude Code with its model, a local Ollama model that can
@@ -34,13 +36,34 @@ import { detectPlatform } from "../../lib/workspace/keys.ts";
 import { ReactionSettings } from "./reaction-settings.tsx";
 import { ApiKeyField } from "./api-key-field.tsx";
 import { SettingsGroup, SettingsLink } from "../settings-ui.tsx";
+import type { FloatingSupport } from "../../lib/companion/floating.ts";
 
 export interface CompanionSettingsProps {
   settings: CompanionSettings;
   backend: PtyBackend | null;
   /** The Ollama helper's status (its pulled models), when Ollama is installed. */
   ollama?: OllamaStatus;
+  /** Whether the companion can float here, and why not (absent: not known yet). */
+  floating?: FloatingSupport;
   onChange(patch: Partial<CompanionSettings>): void;
+}
+
+/** What Settings says of where the companion is, for `mode`. */
+function modeHint(
+  settings: CompanionSettings,
+  floating: FloatingSupport | undefined,
+): string {
+  const name = settings.name;
+  if (settings.mode === "off") {
+    return "Off: agents' questions open a card instead, and the brain does not run.";
+  }
+  if (settings.mode === "floating" && floating?.ok) {
+    return `${name} floats in a window of its own, above the others, wherever you put it (drag ${name}): the questions and messages of every workspace, and a chat with its brain (click ${name}). Clicks pass through around it.`;
+  }
+  const fallback = settings.mode === "floating" && floating && !floating.ok
+    ? `${floating.reason} `
+    : "";
+  return `${fallback}${name} sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click ${name}).`;
 }
 
 const ENGINE_LABEL: Record<BrainEngine, string> = {
@@ -120,6 +143,10 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
   const { settings, onChange } = props;
   const { status, activity } = useCompanionInfo(props.backend);
   const shown = settings.mode !== "off";
+  const floats = settings.mode === "floating" && props.floating?.ok === true;
+  const floatOff = props.floating && !props.floating.ok
+    ? props.floating.reason
+    : undefined;
   return (
     <div class="companion-settings" data-testid="companion-settings">
       <SettingsGroup title="Companion" testid="companion-section">
@@ -135,20 +162,17 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
                 class={m === settings.mode ? "is-active" : ""}
                 data-testid="setting-companion-mode"
                 data-value={m}
-                disabled={m === "floating"}
-                title={m === "floating"
-                  ? "Later: a window of its own, once Denext has multi-window"
-                  : undefined}
+                disabled={m === "floating" && floatOff !== undefined &&
+                  settings.mode !== "floating"}
+                title={m === "floating" ? floatOff : undefined}
                 onClick={() => onChange({ mode: m })}
               >
                 {MODE_LABEL[m]}
               </button>
             ))}
           </div>
-          <span class="field-hint">
-            {shown
-              ? `${settings.name} sits in a corner of the window: agents' questions, qutty-hook say, and a chat with its brain (click ${settings.name}).`
-              : "Off: agents' questions open a card instead, and the brain does not run."}
+          <span class="field-hint" data-testid="companion-mode-hint">
+            {modeHint(settings, props.floating)}
           </span>
         </div>
         <NameField
@@ -161,7 +185,7 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
             class="field-select"
             data-testid="setting-companion-corner"
             value={settings.corner}
-            disabled={!shown}
+            disabled={!shown || floats}
             onChange={(e) =>
               onChange({
                 corner: (e.target as HTMLSelectElement)
@@ -172,6 +196,21 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
               <option value={c} key={c}>{c.replace("-", " ")}</option>
             ))}
           </select>
+        </label>
+        <label class="field field-check">
+          <input
+            type="checkbox"
+            data-testid="setting-companion-all-spaces"
+            checked={settings.floatAllSpaces}
+            disabled={!floats}
+            onChange={(e) =>
+              onChange({
+                floatAllSpaces: (e.target as HTMLInputElement).checked,
+              })}
+          />
+          <span class="field-label">
+            Floating: on every Space (every virtual desktop)
+          </span>
         </label>
         <label class="field field-check">
           <input

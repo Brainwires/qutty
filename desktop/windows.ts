@@ -6,6 +6,7 @@
 import type { DesktopOpenWindowOptions, DesktopWindows } from "denext/desktop";
 import type { WorkspaceRegistry } from "./workspace-host.ts";
 import { newWorkspaceId, workspaceWindow } from "../lib/workspace/windows.ts";
+import { isCompanionWindow } from "./companion-window.ts";
 
 /**
  * `runDesktop({ onDockReopen })`: the window a click on the Dock icon opens when no window is
@@ -13,12 +14,16 @@ import { newWorkspaceId, workspaceWindow } from "../lib/workspace/windows.ts";
  * fresh workspace opens. Denext's own default would reopen the last closed key, which may be a
  * workspace that had no terminal left (dropped) rather than the last one still running. A hidden
  * or minimized workspace window still open gets nothing new: the click only activates the app.
+ * The floating companion's window (desktop/companion-window.ts) is not one: with only it showing,
+ * the click opens a workspace.
  */
 export function dockReopenWindow(
   registry: Pick<WorkspaceRegistry, "lastDetached">,
   windows: Pick<DesktopWindows, "list">,
 ): DesktopOpenWindowOptions | undefined {
-  if (windows.list().some((w) => w.kind !== "panel")) return undefined;
+  if (
+    windows.list().some((w) => w.kind !== "panel" && !isCompanionWindow(w.id))
+  ) return undefined;
   const last = registry.lastDetached();
   return last ? workspaceWindow(last) : workspaceWindow(newWorkspaceId(), true);
 }
@@ -66,6 +71,19 @@ export function closeAppWindow(id: string): void {
     shared[WINDOWS_KEY]?.get(id)?.close();
   } catch (err) {
     console.error(`window ${id}: could not close it`, err);
+  }
+}
+
+/**
+ * Bring window `id` to the front with the keyboard (`DesktopWindowRef.focus`): the floating
+ * companion hands the keyboard back to the workspace window used last. Nothing happens when it is
+ * gone, or before desktop.ts shared the runtime's windows.
+ */
+export function focusAppWindow(id: string): void {
+  try {
+    shared[WINDOWS_KEY]?.get(id)?.focus();
+  } catch (err) {
+    console.error(`window ${id}: could not focus it`, err);
   }
 }
 

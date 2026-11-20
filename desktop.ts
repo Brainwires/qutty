@@ -24,6 +24,10 @@
 // Dock's reopen (`onDockReopen`); on Linux and Windows the single-instance lock hands the launch to
 // this one (`onSecondInstance`). Both open the same window, and the window's opening takes tray
 // mode back to a regular app (the `session` extension's `followWindows`).
+//
+// The Dock menu (desktop/dock-menu.ts, macOS): the open workspace windows, New Window, New
+// Terminal, "Claude Code (chat)", "Codex (chat)" and Reopen Closed Window ▸, set here so it works with no window
+// open and outlives page reloads.
 import config from "./.deno-desktop/config.json" with { type: "json" };
 import { resolveDesktopCapabilities, runDesktop } from "denext/desktop";
 import { workspaces } from "./desktop/workspace-host.ts";
@@ -33,6 +37,12 @@ import {
   shareRuntimeWindows,
 } from "./desktop/windows.ts";
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
+import {
+  dockCommands,
+  dockMenuController,
+  runtimeDock,
+} from "./desktop/dock-menu.ts";
+import { resolveProgram } from "./desktop/pty.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 import { moveSelfTest } from "./desktop/move-selftest.ts";
 import { webviewSelfTest } from "./desktop/webview-selftest.ts";
@@ -56,6 +66,19 @@ if (!app.sidecarChild) {
   shareRuntimeWindows(app.windows);
   trayMode.install(app, workspaces);
   installNativeMenus(app);
+  // The Dock menu (macOS; desktop/dock-menu.ts): nothing where the runtime has none.
+  const dock = runtimeDock();
+  if (dock) {
+    dockMenuController.install({
+      dock,
+      registry: workspaces,
+      showWorkspace: (id) => trayMode.showWorkspace(id),
+      newWindow: () => trayMode.newWindow(),
+      commands: dockCommands,
+      agentChat: async () => (await resolveProgram("claude")) !== undefined,
+      codexChat: async () => (await resolveProgram("codex")) !== undefined,
+    });
+  }
 
   if (Deno.env.get("QUTTY_PTY_SELFTEST") === "detach") {
     detachSelfTest(app).then(() => Deno.exit(0), (e) => {

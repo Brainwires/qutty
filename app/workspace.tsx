@@ -6,8 +6,9 @@
 // hub's tiles (the agent badges) in `useHub`; the GUI around a terminal that runs a coding-agent
 // harness in app/harness-overlay.tsx (`harnessOf`, lib/workspace/harness.ts); the companion (`CompanionFace`, in a corner of the
 // tile area: `ask_user` questions, `qutty-hook say`, the chat with its brain) in
-// `CompanionOverlay`, its settings and commands in `useCompanion`. With the companion Off,
-// `AskDialog` asks instead. Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the
+// `CompanionOverlay`, its settings and commands in `useCompanion`. With the companion Floating
+// (`useFloatingCompanion`) it lives in a window of its own once that window shows it, and this
+// window draws none. With the companion Off, `AskDialog` asks instead. Broadcast input (cluster ssh) is `useBroadcast` plus its banner and the
 // tiles' checkboxes; an SSH tile's port forwards open in `ForwardsDialog`.
 //
 // Detachable sessions: the window shows a workspace (`useSession`): on boot it is rebuilt from the
@@ -99,6 +100,7 @@ import { CloseWindowDialog } from "./close-window-dialog.tsx";
 import type { WindowClose } from "../lib/workspace/windows.ts";
 import { useFreeformView } from "./use-freeform-view.ts";
 import { useNativeMenus } from "./use-native-menus.ts";
+import { useDockCommands } from "./use-dock-commands.ts";
 import { WorkspacesMenu } from "./workspaces-menu.tsx";
 import { TileCluster } from "./tile-cluster.tsx";
 import { SwitcherBar } from "./switcher-bar.tsx";
@@ -132,7 +134,8 @@ import { useReactions } from "./use-reactions.ts";
 import { HOT_LINE, maySayHot, thresholds } from "../lib/sysstats.ts";
 import { anyAlertOn } from "../lib/voice/alerts.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
-import { effectiveMode } from "../lib/companion/settings.ts";
+import { companionPlace } from "../lib/companion/settings.ts";
+import { useFloatingCompanion } from "./use-floating-companion.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
@@ -570,13 +573,29 @@ function WorkspaceView() {
   });
   const broadcastRef = useRef(broadcast);
   broadcastRef.current = broadcast;
-  const companionShown =
-    effectiveMode(state.settings.companion.mode) === "window";
+  // Where the companion is: this window's corner, the floating window, or nowhere.
+  const floating = useFloatingCompanion({
+    backend: ready ? managerRef.current?.backend ?? null : null,
+    active: ready,
+    desktop,
+    mode: state.settings.companion.mode,
+    allSpaces: state.settings.companion.floatAllSpaces,
+  });
+  const companionPlaced = companionPlace(state.settings.companion.mode, {
+    supported: floating.support?.ok === true,
+    showing: floating.showing,
+  });
+  const companionShown = companionPlaced === "window";
+  const companionOnHere = companionPlaced !== "off";
   const voice = useVoice({
     backend: managerRef.current?.backend,
     settings: state.settings.voice,
     platform,
-    enabled: companionShown,
+    // The talk keys work here with the companion floating too; its review box and the spoken
+    // answers are the floating window's then.
+    enabled: companionOnHere,
+    review: companionShown,
+    answers: companionPlaced !== "floating",
     companionName: state.settings.companion.name,
     // A dictation goes to the focused tile: its terminal, or a web tile's page (which answers
     // once the page took the text, or did not).
@@ -669,7 +688,7 @@ function WorkspaceView() {
     openUrl: openAgentUrl,
     closeTile: closeTerminal,
     refocus,
-    ...(companionShown ? { dictation } : {}),
+    ...(companionOnHere ? { dictation } : {}),
     speech,
     ...(capture ? { capture } : {}),
     openInEditor,
@@ -679,7 +698,7 @@ function WorkspaceView() {
   // The lite system monitor: the bar meter, and the companion's hot face (with Lively on).
   const monitor = state.settings.monitor;
   const hotWanted = monitor.hotCompanion && state.settings.companion.lively &&
-    effectiveMode(state.settings.companion.mode) === "window";
+    companionShown;
   const sys = useSysStats({
     backend: managerRef.current?.backend ?? null,
     active: monitor.meter || hotWanted,
@@ -1106,6 +1125,17 @@ function WorkspaceView() {
       toggleZoomTogether: tileZoom.toggleTogether,
     },
   });
+  useDockCommands({
+    source: ready
+      ? managerRef.current?.backend.session.dockCommands
+      : undefined,
+    handlers: {
+      newTerminal: () => runCommand({ kind: "newTerminal" }),
+      agentChat: () => agentTiles.openLaunch(),
+      codexChat: () => agentTiles.openLaunch("codex"),
+    },
+    modalOpen,
+  });
   const visibleIds = useMemo(
     () => visibleIdSet({ tiles: view.tiles }),
     [view.tiles],
@@ -1166,10 +1196,10 @@ function WorkspaceView() {
       setOverlay: (id, on) => dispatch({ type: "setGuiOverlay", id, on }),
       openSettings: () => openSettings("tiles", "setting-harness-overlay"),
       close: (id) => closeRef.current(id),
-      ...(companionShown ? { dictation } : {}),
+      ...(companionOnHere ? { dictation } : {}),
       speech,
     };
-  }, [ready, companionShown, dictation, speech, openSettings]);
+  }, [ready, companionOnHere, dictation, speech, openSettings]);
   /**
    * A right click on tile `id`'s header: "GUI overlay" (on a terminal running a harness), then the
    * windows it can move to.
@@ -1462,6 +1492,7 @@ function WorkspaceView() {
           launchSections={launcher.sections}
           onPlusOpens={(plusOpens) => run({ type: "setPlusOpens", plusOpens })}
           onCompanion={(patch) => run({ type: "setCompanion", patch })}
+          {...(floating.support ? { floating: floating.support } : {})}
           onVoice={(patch) => run({ type: "setVoice", patch })}
           voice={manager ? voice : null}
           onSandbox={(patch) => run({ type: "setSandbox", patch })}
@@ -1525,7 +1556,7 @@ function WorkspaceView() {
           onAnswer={windowClose.answer}
         />
       )}
-      {manager && effectiveMode(settings.companion.mode) === "off" && (
+      {manager && companionPlaced === "off" && (
         <AskDialog backend={manager.backend} onDone={refocus} />
       )}
       {manager && ssh.dialog && (

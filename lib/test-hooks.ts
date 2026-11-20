@@ -20,7 +20,11 @@ import type {
   TerminalManager,
 } from "./terminal-manager.ts";
 import type { LinkHoverState } from "./terminal-links.ts";
-import type { CloseGuard, SessionBackend } from "./session-client.ts";
+import type {
+  CloseGuard,
+  DockCommand,
+  SessionBackend,
+} from "./session-client.ts";
 
 /** One `resize` call the backend received. */
 interface PtyResize {
@@ -39,6 +43,10 @@ export interface BackendSpy {
   windowCalls: string[];
   /** The page's close guards (the session's `guardClose`, held here instead of by Denext). */
   closeGuards: Set<CloseGuard>;
+  /** Dock menu commands the e2e suite sent (`window.__e2e.dockCommand`), not taken yet. */
+  dockQueue: DockCommand[];
+  /** The page's `dockCommands.onWaiting` subscribers. */
+  dockWaiting: Set<() => void>;
 }
 
 /** An empty spy. */
@@ -49,11 +57,16 @@ export function newBackendSpy(): BackendSpy {
     links: [],
     windowCalls: [],
     closeGuards: new Set(),
+    dockQueue: [],
+    dockWaiting: new Set(),
   };
 }
 
 /** What the e2e suite reads from `window.__e2e`. */
-interface E2eHooks extends Omit<BackendSpy, "closeGuards"> {
+interface E2eHooks
+  extends Omit<BackendSpy, "closeGuards" | "dockQueue" | "dockWaiting"> {
+  /** A Dock menu item meant for this window was chosen (the app process queued `command`). */
+  dockCommand(command: DockCommand): void;
   terminal(id: string): TerminalDebugState | null;
   linkState(id: string): LinkHoverState | null;
   /** Move the app's clock ({@linkcode clockNow}) to `ms`, or back (`null`). */
@@ -86,6 +99,20 @@ function withSessionSpy(
     guardClose: (handler) => {
       spy.closeGuards.add(handler);
       return Promise.resolve(() => void spy.closeGuards.delete(handler));
+    },
+    dockCommands: {
+      take: async () => [
+        ...spy.dockQueue.splice(0),
+        ...(await session.dockCommands?.take() ?? []),
+      ],
+      onWaiting: (cb) => {
+        spy.dockWaiting.add(cb);
+        const off = session.dockCommands?.onWaiting(cb);
+        return () => {
+          spy.dockWaiting.delete(cb);
+          off?.();
+        };
+      },
     },
   };
 }
@@ -184,6 +211,11 @@ export function withBackendSpy(
     onCompanion: (cb) => backend.onCompanion(cb),
     onHubSay: (cb) => backend.onHubSay(cb),
     onHubControl: (cb) => backend.onHubControl(cb),
+    companionWindow: (request) => backend.companionWindow(request),
+    companionWindowState: () => backend.companionWindowState(),
+    onCompanionWindow: (cb) => backend.onCompanionWindow(cb),
+    companionWindowReady: () => backend.companionWindowReady(),
+    companionRefocus: () => backend.companionRefocus(),
     agentStart: (req) => backend.agentStart(req),
     agentSend: (id, message) => backend.agentSend(id, message),
     agentInterrupt: (id) => backend.agentInterrupt(id),
@@ -209,6 +241,10 @@ export function installE2eHooks(
     resizes: spy.resizes,
     links: spy.links,
     windowCalls: spy.windowCalls,
+    dockCommand(command) {
+      spy.dockQueue.push(command);
+      for (const cb of [...spy.dockWaiting]) cb();
+    },
     setClock,
     async requestClose(reason) {
       let close = true;

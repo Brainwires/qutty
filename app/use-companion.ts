@@ -13,8 +13,8 @@ import type { TerminalProfile } from "../lib/ssh-ui.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import {
   brainChoice,
+  companionOn,
   type CompanionSettings,
-  effectiveMode,
 } from "../lib/companion/settings.ts";
 
 /** How long a spawned tile may take to get its PTY. */
@@ -67,7 +67,7 @@ export function useCompanion(opts: UseCompanionOptions): void {
   // The brain runs only while the companion is shown and its brain is on.
   const { brain, mode, name } = opts.settings;
   const { engine, model } = brainChoice(opts.settings);
-  const enabled = brain && effectiveMode(mode) !== "off";
+  const enabled = brain && companionOn(mode);
   useEffect(() => {
     if (!backend) return;
     void backend.companionConfigure(enabled, model, engine, name).catch(

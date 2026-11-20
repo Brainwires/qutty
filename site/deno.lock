@@ -3,19 +3,22 @@
   "specifiers": {
     "jsr:@b-fuze/deno-dom@~0.1.49": "0.1.56",
     "jsr:@denext/avif@0.2": "0.2.0",
-    "jsr:@denext/denext@^4.20.0": "4.20.0",
-    "jsr:@denext/docs-corpus@4.20.0": "4.20.0",
+    "jsr:@denext/denext@^4.20.1": "4.20.1",
+    "jsr:@denext/docs-corpus@4.20.1": "4.20.1",
     "jsr:@denext/lightningcss@^1.0.0-rc.72": "1.0.0-rc.72.1",
     "jsr:@denext/og@~0.1.2": "0.1.2",
     "jsr:@denext/photon@~0.3.6": "0.3.6",
     "jsr:@denext/swc@76": "76.0.1",
+    "jsr:@denosaurs/plug@1.1.0": "1.1.0",
     "jsr:@luca/esbuild-deno-loader@0.11": "0.11.1",
     "jsr:@std/bytes@^1.0.2": "1.0.6",
     "jsr:@std/encoding@1": "1.0.11",
     "jsr:@std/encoding@^1.0.5": "1.0.11",
+    "jsr:@std/fmt@1": "1.0.10",
     "jsr:@std/fs@1": "1.0.24",
     "jsr:@std/http@1": "1.1.4",
     "jsr:@std/internal@^1.0.14": "1.0.14",
+    "jsr:@std/json@^1.1.0": "1.1.0",
     "jsr:@std/jsonc@1": "1.0.3",
     "jsr:@std/media-types@1": "1.1.0",
     "jsr:@std/path@1": "1.1.6",
@@ -29,13 +32,16 @@
   },
   "jsr": {
     "@b-fuze/deno-dom@0.1.56": {
-      "integrity": "8030e2dc1d8750f1682b53462ab893d9c3470f2287feecbe22f44a88c54ab148"
+      "integrity": "8030e2dc1d8750f1682b53462ab893d9c3470f2287feecbe22f44a88c54ab148",
+      "dependencies": [
+        "jsr:@denosaurs/plug"
+      ]
     },
     "@denext/avif@0.2.0": {
       "integrity": "862466c78ba3bf4c60a24b45fc8c9bfdd9153f6deff0e0846f3eddb56e5661ee"
     },
-    "@denext/denext@4.20.0": {
-      "integrity": "f8c8febbc2444b52acdcee9f39690ed171c35816faa99a6f54a5b084b1db733c",
+    "@denext/denext@4.20.1": {
+      "integrity": "184b01033a6c062004aa40a4f8daa2f1fc904be7013ad3d2a9c68e930e35d739",
       "dependencies": [
         "jsr:@denext/avif",
         "jsr:@denext/docs-corpus",
@@ -57,8 +63,8 @@
         "npm:ws"
       ]
     },
-    "@denext/docs-corpus@4.20.0": {
-      "integrity": "1bda0cb1d678f6911767e9a501eef9afa4a428937fbfc298628bb66b58e9e588"
+    "@denext/docs-corpus@4.20.1": {
+      "integrity": "9e256933b9b096538b4c0cf63bda0bf057e503bfde57e456dd536c5c2ba0c6ca"
     },
     "@denext/lightningcss@1.0.0-rc.72.1": {
       "integrity": "3c719d7987f85f8c35e129cddbc715ad5ca159c209ea9f2e739dea9a33beafb8"
@@ -71,6 +77,15 @@
     },
     "@denext/swc@76.0.1": {
       "integrity": "e83d22ae5ddbf75914c41664c597b95f1db6b03a1c22cf47f787a5b1def615ea"
+    },
+    "@denosaurs/plug@1.1.0": {
+      "integrity": "eb2f0b7546c7bca2000d8b0282c54d50d91cf6d75cb26a80df25a6de8c4bc044",
+      "dependencies": [
+        "jsr:@std/encoding@1",
+        "jsr:@std/fmt",
+        "jsr:@std/fs",
+        "jsr:@std/path@1"
+      ]
     },
     "@luca/esbuild-deno-loader@0.11.1": {
       "integrity": "dc020d16d75b591f679f6b9288b10f38bdb4f24345edb2f5732affa1d9885267",
@@ -86,6 +101,9 @@
     "@std/encoding@1.0.11": {
       "integrity": "e7cef2f0b3153bccc17431e7c864a1de03a4b6d9647389c43e08aaa775d37385"
     },
+    "@std/fmt@1.0.10": {
+      "integrity": "90dfba288802ac6de82fb31d0917eb9e4450b9925b954d5e51fc29ac07419db5"
+    },
     "@std/fs@1.0.24": {
       "integrity": "f3061b45b81673a2bece689da041df32d174be064c89eb6397fb5718d3fb7877",
       "dependencies": [
@@ -99,8 +117,14 @@
     "@std/internal@1.0.14": {
       "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
     },
+    "@std/json@1.1.0": {
+      "integrity": "93330d3ed4054d6b1ffe54b075432c80a5f671be77277b978931e018014cb1cc"
+    },
     "@std/jsonc@1.0.3": {
-      "integrity": "9a4bb168c6b64e8e89944e45f96390a6e6e6865f59f02f0a70b24653911f2d64"
+      "integrity": "9a4bb168c6b64e8e89944e45f96390a6e6e6865f59f02f0a70b24653911f2d64",
+      "dependencies": [
+        "jsr:@std/json"
+      ]
     },
     "@std/media-types@1.1.0": {
       "integrity": "c9d093f0c05c3512932b330e3cc1fe1d627b301db33a4c2c2185c02471d6eaa4"
@@ -1444,7 +1468,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@b-fuze/deno-dom@~0.1.49",
-      "jsr:@denext/denext@^4.20.0",
+      "jsr:@denext/denext@^4.20.1",
       "jsr:@std/encoding@1"
     ]
   }

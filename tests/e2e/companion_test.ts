@@ -569,13 +569,13 @@ suite("companion", (test) => {
       "moved",
     );
     assertEquals((await app.settings()).companion.corner, "top-left");
-    // Floating is listed for later, and not available yet.
+    // Floating needs the desktop app: grayed out here, with the reason.
+    const floatingButton =
+      '[data-testid=setting-companion-mode][data-value="floating"]';
+    assertEquals(await app.attr(floatingButton, "disabled"), "");
     assertEquals(
-      await app.attr(
-        '[data-testid=setting-companion-mode][data-value="floating"]',
-        "disabled",
-      ),
-      "",
+      await app.attr(floatingButton, "title"),
+      "Floating needs the desktop app.",
     );
 
     await app.click("[data-testid=setting-companion-brain]");
@@ -642,6 +642,7 @@ suite("companion", (test) => {
       name: "Companion",
       mode: "off",
       corner: "top-left",
+      floatAllSpaces: true,
       brain: false,
       engine: "claude",
       model: "",

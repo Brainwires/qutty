@@ -10,7 +10,7 @@ the header's page links (`components/site-nav.tsx`) and the hero's download butt
 deno task dev           # http://localhost:3000
 deno task site          # export + seo: the deployable out/
 deno task export        # out/: one HTML file per page (+ the client bundles)
-deno task seo           # post-export: canonical/OG tags, Markdown twins, sitemap, robots, llms.txt, 404.html
+deno task seo           # post-export: canonical/OG tags, Markdown twins, sitemap, robots, llms.txt
 deno task og            # redraw public/og.png (1200x630; committed)
 deno task screenshots   # retake public/screenshots/*.webp from the app (headless Chromium)
 deno task check         # type-check (CI also runs deno fmt --check and deno lint here)
@@ -27,8 +27,9 @@ it instead.
   download button), screenshots, highlights.
 - `/features`, `/download`, `/changelog`: the changelog is the repo's `CHANGELOG.md`, rendered at
   build time with `denext/markdown` (`lib/changelog.ts`), one anchor per version (`#v0-6-1`).
-- `/404` (`app/404/page.tsx`): moved to `out/404.html` by `scripts/seo.ts`. Denext's static export
-  writes no file for `app/not-found.tsx`, which still serves the same page under `deno task start`.
+- Not found (`app/not-found.tsx`): Denext's static export writes it to `out/404.html`;
+  `deno task
+  start` serves the same page for an unknown address.
 
 ## Downloads
 

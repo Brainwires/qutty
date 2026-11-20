@@ -1,6 +1,6 @@
 /**
  * The native web tile engine: Denext's embedded web view (`createWebView` + `attachWebView`,
- * `denext/desktop/window`; runtime 3.0.0-denext.25, WKWebView / CEF on macOS) behind the web
+ * `denext/desktop/window`; runtime 3.0.0-denext.27, WKWebView / CEF on macOS) behind the web
  * tile's {@linkcode WebEngine} interface (lib/web/engine.ts). It shows any http(s) site, never
  * the app's own origin (Denext refuses that too).
  *

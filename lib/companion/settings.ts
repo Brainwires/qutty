@@ -1,6 +1,7 @@
 /**
  * Settings → Companion, as persisted with the workspace settings (lib/workspace/store.ts): its name
- * (default "Companion"), where it is drawn, which corner, whether its brain may run, which brain
+ * (default "Companion"), where it is drawn (in the window, in a floating window of its own, or off),
+ * which corner, whether the floating window shows on every Space, whether its brain may run, which brain
  * (Claude Code, a local Ollama model, or Anthropic's API with the user's key) and its model,
  * whether the companion is lively (idle expressions, eyes that follow the pointer:
  * lib/companion/face-life.ts), and its reactions (sleepy at night: lib/companion/sleepy.ts;
@@ -74,9 +75,15 @@ export interface CompanionSettings {
    * prompt, and the voice summary's address ("hey <name>, summarize the window").
    */
   name: string;
-  /** In the window, floating (not available yet: Denext multi-window), or off. */
+  /**
+   * In the window, floating (a transparent window of its own, app/companion/floating-companion.tsx:
+   * drawn in the window where the system cannot float it, {@linkcode companionPlace}), or off.
+   */
   mode: CompanionMode;
+  /** The corner of the tile area it sits in (in the window). */
   corner: CompanionCorner;
+  /** Floating: the companion's window shows on every Space / virtual desktop. */
+  floatAllSpaces: boolean;
   /**
    * Whether the brain (headless Claude Code) may run; the companion still shows messages without
    * it.
@@ -117,6 +124,7 @@ export const DEFAULT_COMPANION: CompanionSettings = {
   name: DEFAULT_COMPANION_NAME,
   mode: "window",
   corner: "bottom-right",
+  floatAllSpaces: true,
   brain: true,
   engine: "claude",
   model: "",
@@ -133,6 +141,7 @@ export const DEFAULT_COMPANION: CompanionSettings = {
 };
 
 const FLAGS = [
+  "floatAllSpaces",
   "brain",
   "lively",
   "nightSleepy",
@@ -144,7 +153,7 @@ const FLAGS = [
 
 /**
  * `raw` (from storage, or a patch) onto `base`, each field checked. `floating` is kept as
- * chosen but drawn as `window` until floating windows exist ({@linkcode effectiveMode}).
+ * chosen even where it cannot float: it is drawn in the window there ({@linkcode companionPlace}).
  */
 export function sanitizeCompanion(
   raw: unknown,
@@ -192,7 +201,33 @@ export function brainChoice(
     : { engine: s.engine, model: s.model };
 }
 
-/** How the companion is drawn today: floating falls back to the window. */
-export function effectiveMode(mode: CompanionMode): "window" | "off" {
-  return mode === "off" ? "off" : "window";
+/** Whether the companion is on at all (in the window or floating): its brain may run. */
+export function companionOn(mode: CompanionMode): boolean {
+  return mode !== "off";
+}
+
+/**
+ * Whether a workspace window should ask for the floating companion's window: Floating is chosen
+ * and this system can float it (lib/companion/floating.ts `floatingSupport`).
+ */
+export function wantsFloatingWindow(
+  mode: CompanionMode,
+  supported: boolean,
+): boolean {
+  return mode === "floating" && supported;
+}
+
+/**
+ * Where a workspace window's companion is drawn: `off`; `floating` once the floating window shows
+ * it (the window then draws none of its own); else `window`, which is also Floating's fallback
+ * where the system cannot float it, or while its window is opening or failed to open.
+ */
+export function companionPlace(
+  mode: CompanionMode,
+  floating: { readonly supported: boolean; readonly showing: boolean },
+): "window" | "floating" | "off" {
+  if (mode === "off") return "off";
+  return wantsFloatingWindow(mode, floating.supported) && floating.showing
+    ? "floating"
+    : "window";
 }

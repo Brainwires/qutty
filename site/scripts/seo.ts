@@ -12,8 +12,8 @@
 //      `Accept: text/markdown` (served by nginx, see deploy/nginx-markdown.conf). This is
 //      Cloudflare "markdown for agents" convention, provided from our own origin.
 //   3. Collects URLs for sitemap.xml, and writes robots.txt and llms.txt.
-//   4. Moves the exported not-found page (out/404/index.html) to out/404.html, where static
-//      hosts look for it: Denext's static export writes no file for app/not-found.tsx.
+// It leaves out/404.html alone (Denext's export writes it from app/not-found.tsx): no canonical
+// URL, no Markdown twin, not in the sitemap.
 
 import { DOMParser, type Element, type Node } from "deno-dom";
 
@@ -370,7 +370,7 @@ async function processPage(fileAbs: string): Promise<PageInfo | null> {
   return { url, title, description };
 }
 
-// ---------- sitemap, robots, llms.txt, 404 ----------
+// ---------- sitemap, robots, llms.txt ----------
 
 function serializeSitemap(pages: PageInfo[]): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -429,25 +429,9 @@ ${listed.join("\n")}
 `;
 }
 
-/**
- * out/404/index.html → out/404.html, where static hosts look for it (Denext's static export
- * writes no file for app/not-found.tsx). Its directory goes: /404 is not a page.
- */
-async function moveNotFound(): Promise<void> {
-  const dir = `${OUT}/404`;
-  try {
-    await Deno.rename(`${dir}/index.html`, `${OUT}/404.html`);
-  } catch (e) {
-    if (e instanceof Deno.errors.NotFound) return; // moved by an earlier run
-    throw e;
-  }
-  await Deno.remove(dir, { recursive: true });
-}
-
 // ---------- run ----------
 
 if (import.meta.main) {
-  await moveNotFound();
   const pages: PageInfo[] = [];
   for await (const file of walkHtml(OUT)) {
     if (file === `${OUT}/404.html`) continue; // no canonical URL, no Markdown twin, not listed
@@ -459,6 +443,6 @@ if (import.meta.main) {
   await Deno.writeTextFile(`${OUT}/llms.txt`, serializeLlms(pages));
 
   console.log(
-    `seo: ${pages.length} pages: canonical + OG injected, Markdown twins, sitemap.xml, robots.txt, llms.txt, 404.html`,
+    `seo: ${pages.length} pages: canonical + OG injected, Markdown twins, sitemap.xml, robots.txt, llms.txt`,
   );
 }

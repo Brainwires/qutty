@@ -33,6 +33,12 @@
 // Lively (app/companion/use-companion-life.ts): with nothing on screen, the companion makes small
 // faces now and then, its eyes follow the pointer, and it gets excited when the pointer comes near.
 //
+// Floating (Settings → Companion → Floating, app/companion/floating-companion.tsx): the same
+// overlay fills a transparent window of its own (`floating`). Dragging the companion moves that
+// window (`mover`), and the window, which never takes the keyboard by itself, takes it for the
+// chat box and the review box only (`takeKeyboard`: when the chat opens, and on a press in either
+// box's line).
+//
 // Reactions (Settings → Companion → Reactions): a hop of joy or a sad face when a long job
 // finishes (app/companion/use-companion-reaction.ts), and sleepy at night
 // (app/companion/use-companion-sleep.ts). Which face shows when several want the companion is one
@@ -84,7 +90,7 @@ import {
   talkStep,
 } from "../../lib/companion/lip-sync.ts";
 import { useCompanionLife } from "./use-companion-life.ts";
-import { useCompanionDrag } from "./use-companion-drag.ts";
+import { useCompanionDrag, type WindowMover } from "./use-companion-drag.ts";
 import { mayLiven } from "../../lib/companion/face-life.ts";
 import { mayShowHot } from "../../lib/sysstats.ts";
 import {
@@ -140,6 +146,12 @@ export interface CompanionOverlayProps {
   onReactionShown?(reaction: Reaction): void;
   /** Open Settings → Companion at the brain switch (the chat box's link while the brain is off). */
   onOpenSettings?(): void;
+  /** Drawn in the floating companion's own window (app/companion/floating-companion.tsx). */
+  floating?: boolean;
+  /** Floating: a drag moves the window. */
+  mover?: WindowMover;
+  /** Floating: the window takes the keyboard (the chat box opened, or was pressed). */
+  takeKeyboard?(): void;
 }
 
 /** What the voice note says in each phase (the error and notes bring their own text). */
@@ -278,7 +290,9 @@ interface Review {
 }
 
 /** A transcript under review: Send, Edit (the line becomes editable), Cancel. */
-function ReviewBox(props: { review: Review; name: string }) {
+function ReviewBox(
+  props: { review: Review; name: string; takeKeyboard?: () => void },
+) {
   const { review } = props;
   const [draft, setDraft] = useState(review.transcript);
   const [editing, setEditing] = useState(false);
@@ -314,6 +328,7 @@ function ReviewBox(props: { review: Review; name: string }) {
         data-testid="voice-review-text"
         aria-label="What you said"
         readOnly={!editing}
+        onPointerDown={() => props.takeKeyboard?.()}
         value={draft}
         maxLength={4000}
         spellcheck={false}
@@ -357,6 +372,8 @@ function ChatBox(props: {
   onClose(): void;
   /** Settings → Companion, offered while the brain is off. */
   onSettings?(): void;
+  /** Floating: the window takes the keyboard for the line. */
+  takeKeyboard?(): void;
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -385,6 +402,7 @@ function ChatBox(props: {
           ? "My brain is off (Settings → Companion)"
           : `Ask ${props.name}…`}
         disabled={off}
+        onPointerDown={() => props.takeKeyboard?.()}
         value={draft}
         maxLength={4000}
         spellcheck={false}
@@ -476,6 +494,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     target: pokeRef,
     overlay: overlayRef,
     onDrop: (corner) => props.onCorner?.(corner),
+    ...(props.mover ? { mover: props.mover } : {}),
   });
   const feed = useCompanionFeed(backend, dispatch, closedRef.current);
   useTimedMoves(model.avatar, dispatch);
@@ -508,6 +527,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   const poke = () => {
     if (drag.consumeClick()) return;
     if (!props.reducedMotion) squash(squashRef.current);
+    if (!chatOpen) props.takeKeyboard?.();
     setChatOpen((open) => !open);
   };
   const closeChat = () => {
@@ -643,6 +663,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       class="companion-overlay"
       data-testid="companion-overlay"
       data-corner={props.corner}
+      data-floating={props.floating ? "true" : undefined}
       data-dragging={drag.dragging ? "true" : undefined}
       data-companion-state={model.avatar.state}
       data-brain={status ? (status.enabled ? status.state : "off") : ""}
@@ -663,13 +684,25 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
         )}
       </div>
       {review
-        ? <ReviewBox key={review.transcript} review={review} name={name} />
+        ? (
+          <ReviewBox
+            key={review.transcript}
+            review={review}
+            name={name}
+            {...(props.takeKeyboard
+              ? { takeKeyboard: props.takeKeyboard }
+              : {})}
+          />
+        )
         : chatOpen && (
           <ChatBox
             name={name}
             brain={props.brain}
             {...(props.onOpenSettings
               ? { onSettings: props.onOpenSettings }
+              : {})}
+            {...(props.takeKeyboard
+              ? { takeKeyboard: props.takeKeyboard }
               : {})}
             onSend={(text) => {
               voice?.stopSpeaking();

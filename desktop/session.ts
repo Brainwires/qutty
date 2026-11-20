@@ -23,8 +23,13 @@
 // its snapshot, and a save names the arrivals it shows and drops the tiles that moved away.
 // `requestTileMove` / `tileMoveTargets` are for a native Window-menu "Move Tile to".
 //
+// The Dock menu's commands for a window's page (desktop/dock-menu.ts: New Terminal, the agent
+// chat) wait here: `dockCommand` tells the page, which takes them (`takeDockCommands`). A window
+// taking the focus refreshes the Dock menu (its check mark).
+//
 // Events: `changed` (the workspace list, to every window); `tileArrived`, `tileLeft`,
-// `dragHover`, `moveRequest` (one-shot, to one window: desktop/tile-move.ts).
+// `dragHover`, `moveRequest` (one-shot, to one window: desktop/tile-move.ts); `dockCommand`
+// (one-shot, to one window).
 
 import {
   defineDesktopExtension,
@@ -41,7 +46,15 @@ import {
 import { terminalSessions } from "./pty.ts";
 import { type QuitKeeper, shellKeeper } from "./kept-shells.ts";
 import { type TrayMode, trayMode } from "./tray.ts";
+import {
+  type DockCommand,
+  type DockCommandQueue,
+  dockCommands,
+  type DockMenu,
+  dockMenuController,
+} from "./dock-menu.ts";
 import { appWindowBounds, closeAppWindow } from "./windows.ts";
+import { isCompanionWindow } from "./companion-window.ts";
 import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
 import {
@@ -61,6 +74,7 @@ import {
 } from "./tile-move.ts";
 
 export type {
+  DockCommand,
   DragHover,
   MoveResult,
   MoveTarget,
@@ -133,9 +147,17 @@ const windowOf = (ctx: { windowId?: string }) => ctx.windowId ?? "main";
 /** How long the `changed` event waits to coalesce a burst of changes. */
 const CHANGED_DEBOUNCE_MS = 100;
 
-/** Whether a window still shows the app (the tray panel does not count). */
+/**
+ * Whether a window of the app's own is open: the tray panel and the floating companion's window
+ * (desktop/companion-window.ts) do not count.
+ */
+function isAppWindow(w: { id: string; kind: string }): boolean {
+  return w.kind !== "panel" && !isCompanionWindow(w.id);
+}
+
+/** Whether a window still shows the app ({@linkcode isAppWindow}). */
 function hasAppWindow(host: Pick<DesktopExtensionHost, "windows">): boolean {
-  return host.windows().some((w) => w.kind !== "panel");
+  return host.windows().some(isAppWindow);
 }
 
 /**
@@ -154,7 +176,7 @@ export function followWindows(
   mode: Pick<TrayMode, "windowOpened" | "lastWindowClosed"> = trayMode,
 ): () => void {
   const offOpened = host.onWindowOpened((info) => {
-    if (info.kind !== "panel") mode.windowOpened();
+    if (isAppWindow(info)) mode.windowOpened();
   });
   const offClosed = host.onWindowClosed((info) => {
     if (info.appQuitting) return;
@@ -441,6 +463,33 @@ export function moveTileFrom(
   return requireMover().move(windowId, request);
 }
 
+/**
+ * Tell a window's page it has Dock menu commands waiting (`dockCommand`, one-shot), and drop a
+ * closed window's. Returns the unsubscribe.
+ */
+export function relayDockCommands(
+  host: Pick<DesktopExtensionHost, "emit" | "onWindowClosed">,
+  queue: Pick<DockCommandQueue, "setSignal" | "drop"> = dockCommands,
+): () => void {
+  queue.setSignal((window) =>
+    host.emit("dockCommand", { at: Date.now() }, { window, retain: false })
+  );
+  const off = host.onWindowClosed((info) => queue.drop(info.id));
+  return () => {
+    queue.setSignal(() => {});
+    off();
+  };
+}
+
+/** Window `windowId` took the focus: the registry, then the Dock menu's check mark. */
+export function windowFocused(
+  windowId: string,
+  menu: Pick<DockMenu, "refresh"> = dockMenuController,
+): void {
+  workspaces.focused(windowId);
+  menu.refresh();
+}
+
 export default defineDesktopExtension({
   name: "session",
   events: [
@@ -449,9 +498,11 @@ export default defineDesktopExtension({
     "tileLeft",
     "dragHover",
     "moveRequest",
+    "dockCommand",
   ],
   setup: (host) => {
     mover = createTileMover(host);
+    relayDockCommands(host);
     pageEmit = (event, data, options) => host.emit(event, data, options);
     let timer: ReturnType<typeof setTimeout> | undefined;
     workspaces.onChanged(() => {
@@ -575,7 +626,13 @@ export default defineDesktopExtension({
     /** The calling window took the focus (the companion talks to the active window). */
     focus: {
       input: emptyInput,
-      handler: (_args: unknown, ctx): void => workspaces.focused(windowOf(ctx)),
+      handler: (_args: unknown, ctx): void => windowFocused(windowOf(ctx)),
+    },
+    /** The Dock menu's commands waiting for the calling window's page, each once. */
+    takeDockCommands: {
+      input: emptyInput,
+      handler: (_args: unknown, ctx): DockCommand[] =>
+        dockCommands.take(windowOf(ctx)),
     },
     /**
      * End the calling window's workspace once the page has closed the window (`close: true`: close
