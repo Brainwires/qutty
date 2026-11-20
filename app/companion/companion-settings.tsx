@@ -34,6 +34,7 @@ import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
 import { detectPlatform } from "../../lib/workspace/keys.ts";
 import { ReactionSettings } from "./reaction-settings.tsx";
+import { MessageSettings } from "./message-settings.tsx";
 import { ApiKeyField } from "./api-key-field.tsx";
 import { SettingsGroup, SettingsLink } from "../settings-ui.tsx";
 import type { FloatingSupport } from "../../lib/companion/floating.ts";
@@ -45,6 +46,9 @@ export interface CompanionSettingsProps {
   ollama?: OllamaStatus;
   /** Whether the companion can float here, and why not (absent: not known yet). */
   floating?: FloatingSupport;
+  /** Settings → Voice → Voice mode, offered here too. */
+  voiceMode?: boolean;
+  onVoiceMode?(on: boolean): void;
   onChange(patch: Partial<CompanionSettings>): void;
 }
 
@@ -230,6 +234,19 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
         <ReactionSettings
           settings={settings}
           shown={shown}
+          onChange={onChange}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Messages">
+        <MessageSettings
+          settings={settings}
+          shown={shown}
+          {...(props.onVoiceMode
+            ? {
+              voiceMode: props.voiceMode === true,
+              onVoiceMode: props.onVoiceMode,
+            }
+            : {})}
           onChange={onChange}
         />
       </SettingsGroup>

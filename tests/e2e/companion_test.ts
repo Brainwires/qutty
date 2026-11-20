@@ -656,6 +656,9 @@ suite("companion", (test) => {
       reactMinS: 20,
       reactAnyCommand: false,
       reactBubble: true,
+      quoteOfDay: true,
+      encourage: false,
+      encourageEvery: "sometimes",
     });
     assertEquals(await app.exists(OVERLAY), false);
   });

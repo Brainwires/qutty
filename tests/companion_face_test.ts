@@ -441,6 +441,9 @@ const REACTION_DEFAULTS = {
   reactMinS: 20,
   reactAnyCommand: false,
   reactBubble: true,
+  quoteOfDay: true,
+  encourage: false,
+  encourageEvery: "sometimes" as const,
 };
 
 Deno.test("settings: the companion's name: trimmed, capped, Companion when empty or not a string", () => {

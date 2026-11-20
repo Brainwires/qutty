@@ -44,6 +44,14 @@
 // (app/companion/use-companion-sleep.ts). Which face shows when several want the companion is one
 // pure function, lib/companion/face-priority.ts: a question > a message > thinking / voice > a
 // reaction > hot > excited > sleepy > the idle life.
+//
+// Its own lines (Settings → Companion, app/companion/use-companion-ambient.ts): the quote of the
+// day at startup and on a new day's first interaction, and now and then an encouraging line (off by
+// default), both in the bubble like any message, where `ambient` says this overlay is the place.
+//
+// Voice mode (Settings → Voice / Companion, app/companion/use-bubble-speech.ts): what the bubble
+// shows is said aloud too, where `speakBubbles` says this is the window that speaks; the speaker
+// button beside the mic turns it on and off (`voiceMode`).
 
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
@@ -101,6 +109,9 @@ import {
 import type { Reaction } from "../../lib/companion/reactions.ts";
 import { useCompanionSleep } from "./use-companion-sleep.ts";
 import { useCompanionReaction } from "./use-companion-reaction.ts";
+import { useCompanionAmbient } from "./use-companion-ambient.ts";
+import { useBubbleSpeech } from "./use-bubble-speech.ts";
+import type { EncourageFrequency } from "../../lib/companion/settings.ts";
 
 export interface CompanionOverlayProps {
   backend: PtyBackend;
@@ -152,6 +163,25 @@ export interface CompanionOverlayProps {
   mover?: WindowMover;
   /** Floating: the window takes the keyboard (the chat box opened, or was pressed). */
   takeKeyboard?(): void;
+  /**
+   * Settings → Companion: the quote of the day and encouragement, said here (absent: this is not
+   * the place for them, or the companion is off).
+   */
+  ambient?: {
+    readonly quoteOfDay: boolean;
+    readonly encourage: boolean;
+    readonly every: EncourageFrequency;
+  };
+  /** Voice mode, and this is the window that speaks: the bubble is said aloud too. */
+  speakBubbles?: boolean;
+  /** Voice mode's speaker button beside the mic (absent: no button). */
+  voiceMode?: VoiceModeToggle;
+}
+
+/** Voice mode's speaker button: whether it is on, and the toggle. */
+interface VoiceModeToggle {
+  readonly on: boolean;
+  toggle(): void;
 }
 
 /** What the voice note says in each phase (the error and notes bring their own text). */
@@ -501,6 +531,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   useEffect(() => dispatch({ type: "show" }), []);
 
   const current = model.queue[0];
+  const voice = props.voice;
   const thinking = feed.status?.state === "thinking" ||
     feed.status?.state === "starting";
   // Working with nothing to show (agents' messages, the brain starting): the companion thinks.
@@ -514,14 +545,21 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     }
   }, [thinking, faceState, current?.id]);
 
+  const speech = useBubbleSpeech(current, props.speakBubbles === true, voice);
   const finish = (message: CompanionMessage, actionId: string | null) => {
     closedRef.current.add(message.id);
     feed.answer(message, actionId);
     dispatch({ type: "finish", id: message.id });
   };
+  /** Closed by hand (the close button or a button): its speech stops too. */
+  const dismiss = (message: CompanionMessage, actionId: string | null) => {
+    speech.dismissed(message.id);
+    finish(message, actionId);
+    if (actionId !== null) ambient.onAction(message, actionId);
+  };
   /** Finished by a click in the bubble: the keyboard goes back to the tile. */
   const finishByHand = (message: CompanionMessage, actionId: string | null) => {
-    finish(message, actionId);
+    dismiss(message, actionId);
     if (!chatOpen) props.onRefocus();
   };
   const poke = () => {
@@ -536,7 +574,6 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   };
 
   const name = props.name ?? DEFAULT_COMPANION_NAME;
-  const voice = props.voice;
   const voicePhase = voice?.state.phase ?? "idle";
   const faceVoiceTurn = faceVoice(voicePhase, voice?.speaking === true);
   const talk = useTalkStep(
@@ -611,6 +648,19 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     reducedMotion: props.reducedMotion,
   });
 
+  const ambient = useCompanionAmbient({
+    enabled: props.ambient !== undefined,
+    quoteOfDay: props.ambient?.quoteOfDay === true,
+    encourage: props.ambient?.encourage === true,
+    every: props.ambient?.every ?? "sometimes",
+    floating: props.floating === true,
+    bubble: model.queue.length > 0,
+    busy: chatOpen || review !== undefined || inputs.voice || inputs.thinking,
+    asleep: sleep.asleep,
+    reducedMotion: props.reducedMotion,
+    dispatch,
+  });
+
   const life = useCompanionLife({
     ...base,
     dragging: drag.dragging,
@@ -679,7 +729,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
             note={feed.notes[current.id]}
             more={model.queue.length - 1}
             onAction={(id) => finishByHand(current, id)}
-            onClose={() => finish(current, null)}
+            onClose={() => dismiss(current, null)}
+            onExpire={() => finish(current, null)}
           />
         )}
       </div>
@@ -766,6 +817,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
           <VoiceButtons
             voice={voice}
             pttLabel={props.pttLabel ?? ""}
+            {...(props.voiceMode ? { voiceMode: props.voiceMode } : {})}
             onDone={() => {
               if (!chatOpen) props.onRefocus();
             }}
@@ -790,6 +842,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
 function VoiceButtons(props: {
   voice: VoiceApi;
   pttLabel: string;
+  /** Voice mode's speaker button (absent: none). */
+  voiceMode?: VoiceModeToggle;
   /** A voice button was used: give the keyboard back. */
   onDone(): void;
 }) {
@@ -850,6 +904,12 @@ function VoiceButtons(props: {
           <path d="M3 4h10M3 8h10M3 12h6" />
         </svg>
       </button>
+      {props.voiceMode && (
+        <VoiceModeButton
+          toggle={props.voiceMode}
+          onDone={props.onDone}
+        />
+      )}
       {voice.speaking && (
         <button
           type="button"
@@ -868,5 +928,33 @@ function VoiceButtons(props: {
         </button>
       )}
     </div>
+  );
+}
+
+/** Voice mode's speaker button: on, everything in the bubble is said aloud. */
+function VoiceModeButton(props: { toggle: VoiceModeToggle; onDone(): void }) {
+  const on = props.toggle.on;
+  return (
+    <button
+      type="button"
+      class="voice-mode"
+      data-testid="companion-voice-mode"
+      aria-pressed={on}
+      aria-label={on
+        ? "Voice mode on: the bubble is said aloud"
+        : "Voice mode off: say the bubble aloud"}
+      title={on ? "Voice mode: on" : "Voice mode: off"}
+      onClick={() => {
+        props.toggle.toggle();
+        props.onDone();
+      }}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 6h2.5l3.5-3v10l-3.5-3h-2.5z" />
+        {on
+          ? <path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4" />
+          : <path d="M11 6l3 4M14 6l-3 4" />}
+      </svg>
+    </button>
   );
 }

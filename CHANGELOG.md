@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- A quote of the day. At startup the companion shows a short quote with its
+  author in its bubble, with an Another button. If Qutty stays open past
+  midnight, the next day's quote comes with your first click, key press or
+  window focus after midnight. It shows once a day in one place, the floating
+  companion when it floats, and every window gets the same quote for the same
+  date. The 217 quotes are public domain: Marcus Aurelius, Seneca, Thoreau,
+  Dickinson, Shakespeare, Franklin and other writers who died long ago, with
+  disputed attributions left out. On by default; Settings → Companion →
+  Messages.
+- Encouragement, off by default: now and then the companion says a short kind or
+  inspiring line (90 of them, none repeated until all have been said). You
+  choose how often: rarely, sometimes or often (about every 2–4 hours, 45–90
+  minutes or 20–40 minutes of use). It never shows over a question or another
+  message, while you type, while the companion sleeps, or while the companion is
+  off.
+- Voice mode: Settings → Voice (or Settings → Companion, or the new speaker
+  button beside the mic) reads everything in the companion's bubble aloud.
+  Answers are read sentence by sentence as they stream in. Messages, agents'
+  questions with their buttons, the quote of the day with its author, and
+  encouragement are read too. Agents' notes and errors get a short summary.
+  Code, markdown and links are left out ("code omitted"). It uses the system
+  voice unless you picked a cloud voice, with your voice, speed and volume. A
+  new bubble cuts off the old one, closing a bubble stops its speech, and
+  talking stops it. With several windows open only one speaks: the floating
+  companion, or else the window you used last. That also applies to "Read aloud"
+  answers, which before could be read once per window.
+
 ## 0.7.1 — Denext 4.20.1, a Dock menu, a floating companion
 
 - Denext 4.20.1 (runtime 3.0.0-denext.27): fixes and security updates, among

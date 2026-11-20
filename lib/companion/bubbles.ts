@@ -91,5 +91,6 @@ export function turnBubble(
       : update.mood ?? (update.done ? "neutral" : "thinking"),
     actions: [],
     timeoutMs: update.done ? replyTimeoutMs(text) : 0,
+    ...(update.source === "mail" || update.isError ? { brief: true } : {}),
   };
 }

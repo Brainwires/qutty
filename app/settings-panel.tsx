@@ -709,6 +709,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
         backend={props.backend}
         {...(props.ollama ? { ollama: props.ollama.status } : {})}
         {...(props.floating ? { floating: props.floating } : {})}
+        voiceMode={settings.voice.voiceMode}
+        onVoiceMode={(voiceMode) => props.onVoice({ voiceMode })}
         onChange={props.onCompanion}
       />
     ),

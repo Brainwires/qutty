@@ -12,7 +12,10 @@
 // (the page's storage, followed as they change); a mode other than Floating closes it. Its voice
 // layer reads the answers aloud and runs its mic (dictation has no tile to type into here); the
 // tile alerts stay with the workspace windows. The hot face and the reactions to finished jobs
-// stay in the window too: they follow a window's own tiles.
+// stay in the window too: they follow a window's own tiles. The quote of the day and encouragement
+// are said here while it shows (app/companion/use-companion-ambient.ts), and in voice mode this
+// window is the one that reads the bubble aloud; its speaker button turns voice mode on and off
+// for every window (saved in the shared settings).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "denext";
 import { CompanionOverlay } from "./companion-overlay.tsx";
@@ -39,8 +42,24 @@ function storedSettings(): Settings {
   return sanitizeSettings(loadSettings());
 }
 
+/**
+ * Voice mode turned on or off from here: written into the shared settings, which the workspace
+ * windows follow (a `storage` event), and returned for this window.
+ */
+function saveVoiceMode(on: boolean): Settings | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}");
+    raw.voice = { ...(raw.voice ?? {}), voiceMode: on };
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(raw));
+    return storedSettings();
+  } catch (e) {
+    console.warn("companion: could not save voice mode", e);
+    return null;
+  }
+}
+
 /** The settings, followed as another window changes them. */
-function useSharedSettings(): Settings {
+function useSharedSettings(): [Settings, (next: Settings) => void] {
   const [settings, setSettings] = useState<Settings>(storedSettings);
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -49,7 +68,7 @@ function useSharedSettings(): Settings {
     globalThis.addEventListener("storage", onStorage);
     return () => globalThis.removeEventListener("storage", onStorage);
   }, []);
-  return settings;
+  return [settings, setSettings];
 }
 
 /** Whether the user asked for less motion. */
@@ -68,7 +87,7 @@ function useReducedMotion(): boolean {
 export function FloatingCompanion() {
   const [backend, setBackend] = useState<PtyBackend | null>(null);
   const [platform, setPlatform] = useState<KeyPlatform>("other");
-  const settings = useSharedSettings();
+  const [settings, setSettings] = useSharedSettings();
   const reducedMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   const { companion } = settings;
@@ -144,6 +163,23 @@ export function FloatingCompanion() {
             nightFrom: companion.nightFrom,
             nightTo: companion.nightTo,
             bubble: companion.reactBubble,
+          }}
+          {...(floating
+            ? {
+              ambient: {
+                quoteOfDay: companion.quoteOfDay,
+                encourage: companion.encourage,
+                every: companion.encourageEvery,
+              },
+            }
+            : {})}
+          speakBubbles={settings.voice.voiceMode}
+          voiceMode={{
+            on: settings.voice.voiceMode,
+            toggle: () => {
+              const next = saveVoiceMode(!settings.voice.voiceMode);
+              if (next) setSettings(next);
+            },
           }}
         />
       )}

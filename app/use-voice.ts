@@ -97,6 +97,13 @@ export interface VoiceApi {
   test(text: string): void;
   /** Say `text` as an alert, after whatever is being said (the companion's reactions). */
   alert(text: string): void;
+  /**
+   * Voice mode: say `text` from the companion's bubble, in order after what is queued, or with
+   * `replace` cutting off whatever is being said (a new bubble replaced the old one).
+   */
+  speak(text: string, replace?: boolean): void;
+  /** Bumped whenever the user cuts speech off (barge-in, the stop button): a stream stops there. */
+  speechCut(): number;
 }
 
 export function useVoice(opts: UseVoiceOptions): VoiceApi {
@@ -121,6 +128,9 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   }, [backend]);
   const keys = useMemo(() => voice ? backendKeys(voice) : undefined, [voice]);
 
+  // Voice mode's speech, in order: a `replace` waits for the interrupt to settle first.
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+  const cutRef = useRef(0);
   const queue = useMemo(() =>
     new SpeechQueue({
       engine: () => {
@@ -156,7 +166,10 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
           ...(companionName !== undefined ? { name: companionName } : {}),
         };
       },
-      bargeIn: () => void queue.interrupt(),
+      bargeIn: () => {
+        cutRef.current++;
+        void queue.interrupt();
+      },
       toCompanion: (text) =>
         void backend.companionSend(text, "voice").catch(() => {}),
       summarize: () =>
@@ -207,10 +220,10 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
 
   // Stop speaking when the app goes away, and when Speak answers is turned off.
   useEffect(() => () => void queue.interrupt(), [queue]);
-  const { speakAnswers } = opts.settings;
+  const { speakAnswers, voiceMode } = opts.settings;
   useEffect(() => {
-    if (!speakAnswers) void queue.interrupt();
-  }, [speakAnswers]);
+    if (!speakAnswers && !voiceMode) void queue.interrupt();
+  }, [speakAnswers, voiceMode]);
 
   // The hold-to-talk key (with the overlay shown) and the hold-to-dictate key (always, once
   // picked): intercepted at the window (capture) before xterm, like the workspace's shortcuts;
@@ -238,11 +251,19 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     cancel: () => void controller?.cancel(),
     send: (text) => controller?.send(text),
     summarize: () => controller?.summarize(),
-    stopSpeaking: () => void queue.interrupt(),
+    stopSpeaking: () => {
+      cutRef.current++;
+      void queue.interrupt();
+    },
     test: (text) => {
       void queue.interrupt().then(() => queue.say(text, "alert"));
     },
     alert: (text) => queue.say(text, "alert"),
+    speak: (text, replace = false) => {
+      const ready = replace ? queue.interrupt() : chainRef.current;
+      chainRef.current = ready.then(() => queue.say(text, "answer"));
+    },
+    speechCut: () => cutRef.current,
   };
 }
 

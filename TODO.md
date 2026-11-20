@@ -188,6 +188,32 @@
     and push-to-talk from a workspace window sends without the review box and
     without the floating face listening. Typing into the floating chat box on
     Linux (a layer-shell surface made with `focusable: false`) is untried.
+  - Done: the companion's own lines (Settings → Companion → Messages;
+    lib/companion/ambient.ts, app/companion/use-companion-ambient.ts). A quote
+    of the day (on by default; 217 public-domain quotes in
+    lib/companion/quotes.ts, picked by hashing the local date) at startup and at
+    the first interaction after midnight, once a day across windows (a claim in
+    shared storage; the floating companion follows the windows' activity through
+    `storage` events). Encouragement (off by default; 90 original lines in
+    lib/companion/encouragements.ts, a no-repeat bag) after 20–40 / 45–90 /
+    120–240 minutes of active use, only when nothing else wants the companion.
+  - Done: voice mode (Settings → Voice and → Companion, the speaker button
+    beside the mic; lib/voice/bubble-speech.ts,
+    app/companion/use-bubble-speech.ts). Everything in the bubble is said with
+    the chosen voice: answers sentence by sentence as they stream, `say`
+    messages, questions with their buttons, the quote with its author,
+    encouragement; mail turns and errors as a short summary; code, markdown and
+    URLs left out. A new bubble cuts off the old one's speech, closing a bubble
+    stops it, barge-in stops the rest of a stream. One window speaks
+    (lib/voice/speaker.ts): the floating companion while it shows, else the
+    workspace window that last had the focus or input (Speak answers follows the
+    same election now).
+  - Messages and voice mode, open: never heard in the real app yet (the demo e2e
+    uses a recording fake engine). The floating companion's speaker button
+    writes the shared settings itself (the workspace windows follow them). The
+    reaction line beside the companion and the hot line are not part of voice
+    mode (they keep their own voice-alert rules). A window that crashes without
+    `pagehide` keeps the speaker claim until another window is focused or used.
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP

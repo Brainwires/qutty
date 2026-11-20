@@ -136,6 +136,8 @@ import { anyAlertOn } from "../lib/voice/alerts.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { companionPlace } from "../lib/companion/settings.ts";
 import { useFloatingCompanion } from "./use-floating-companion.ts";
+import { useActivityBeacon } from "./companion/use-companion-ambient.ts";
+import { useVoiceSpeaker } from "./use-voice-speaker.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
@@ -587,6 +589,15 @@ function WorkspaceView() {
   });
   const companionShown = companionPlaced === "window";
   const companionOnHere = companionPlaced !== "off";
+  // The quote of the day and encouragement: in this window's companion unless the floating one
+  // says them (Floating chosen and possible here; nothing until that is known).
+  const { mode: companionMode } = state.settings.companion;
+  const ambientHere = companionMode === "window" ||
+    (companionMode === "floating" && floating.support !== null &&
+      !floating.support.ok);
+  useActivityBeacon(companionPlaced === "floating");
+  // One voice for every window: the floating companion's, else the focused or last-active one's.
+  const speaker = useVoiceSpeaker(companionPlaced === "floating");
   const voice = useVoice({
     backend: managerRef.current?.backend,
     settings: state.settings.voice,
@@ -595,7 +606,7 @@ function WorkspaceView() {
     // answers are the floating window's then.
     enabled: companionOnHere,
     review: companionShown,
-    answers: companionPlaced !== "floating",
+    answers: companionPlaced !== "floating" && speaker,
     companionName: state.settings.companion.name,
     // A dictation goes to the focused tile: its terminal, or a web tile's page (which answers
     // once the page took the text, or did not).
@@ -1433,6 +1444,24 @@ function WorkspaceView() {
             onReactionShown={reactions.onShown}
             onOpenSettings={() =>
               openSettings("companion", "setting-companion-brain")}
+            {...(ambientHere
+              ? {
+                ambient: {
+                  quoteOfDay: settings.companion.quoteOfDay,
+                  encourage: settings.companion.encourage,
+                  every: settings.companion.encourageEvery,
+                },
+              }
+              : {})}
+            speakBubbles={settings.voice.voiceMode && speaker}
+            voiceMode={{
+              on: settings.voice.voiceMode,
+              toggle: () =>
+                run({
+                  type: "setVoice",
+                  patch: { voiceMode: !settings.voice.voiceMode },
+                }),
+            }}
           />
         )}
         {broadcast.on && (

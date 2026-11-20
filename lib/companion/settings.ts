@@ -5,7 +5,8 @@
  * (Claude Code, a local Ollama model, or Anthropic's API with the user's key) and its model,
  * whether the companion is lively (idle expressions, eyes that follow the pointer:
  * lib/companion/face-life.ts), and its reactions (sleepy at night: lib/companion/sleepy.ts;
- * celebrate and sad over finished jobs: lib/companion/reactions.ts).
+ * celebrate and sad over finished jobs: lib/companion/reactions.ts), and its own lines (a quote of
+ * the day, encouragement now and then: lib/companion/ambient.ts).
  *
  * Client-safe and pure.
  *
@@ -18,6 +19,15 @@ import {
   type CompanionCorner,
   type CompanionMode,
 } from "./protocol.ts";
+
+/** How often the companion says an encouraging line (lib/companion/ambient.ts). */
+export type EncourageFrequency = "rarely" | "sometimes" | "often";
+/** Every frequency, as Settings lists them. */
+export const ENCOURAGE_FREQUENCIES: readonly EncourageFrequency[] = [
+  "rarely",
+  "sometimes",
+  "often",
+];
 
 /** The brain's model: the user's Claude Code default, or an alias. */
 export type BrainModel = "" | "haiku" | "sonnet" | "opus";
@@ -111,6 +121,15 @@ export interface CompanionSettings {
   reactAnyCommand: boolean;
   /** Reactions: a short line beside the companion saying what finished. */
   reactBubble: boolean;
+  /**
+   * A quote of the day in the bubble: at startup, and at the first use after midnight (once a
+   * day across every window; lib/companion/ambient.ts).
+   */
+  quoteOfDay: boolean;
+  /** Now and then a short comforting or inspiring line in the bubble. */
+  encourage: boolean;
+  /** How often {@linkcode CompanionSettings.encourage} speaks up. */
+  encourageEvery: EncourageFrequency;
 }
 
 /** The reactions' number ranges (Settings' fields). */
@@ -138,6 +157,9 @@ export const DEFAULT_COMPANION: CompanionSettings = {
   reactMinS: 20,
   reactAnyCommand: false,
   reactBubble: true,
+  quoteOfDay: true,
+  encourage: false,
+  encourageEvery: "sometimes",
 };
 
 const FLAGS = [
@@ -149,6 +171,8 @@ const FLAGS = [
   "sad",
   "reactAnyCommand",
   "reactBubble",
+  "quoteOfDay",
+  "encourage",
 ] as const;
 
 /**
@@ -179,6 +203,9 @@ export function sanitizeCompanion(
       const { min, max } = REACTION_RANGES[key];
       out[key] = Math.round(Math.min(max, Math.max(min, v)));
     }
+  }
+  if (ENCOURAGE_FREQUENCIES.includes(r.encourageEvery as EncourageFrequency)) {
+    out.encourageEvery = r.encourageEvery as EncourageFrequency;
   }
   if (COMPANION_MODELS.includes(r.model as BrainModel)) {
     out.model = r.model as BrainModel;
