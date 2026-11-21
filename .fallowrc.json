@@ -23,7 +23,9 @@
     ".deno-desktop/**",
     ".denext/**",
     // site/ is qutty.org, its own Denext app with its own deno.json and CI job.
-    "site/**"
+    "site/**",
+    // The test look's files (look.css, SVGs) are data the looks tests read from disk.
+    "tests/fixtures/looks/**"
   ],
   // deno.json maps @xterm/* to vendor/xterm/*.mjs, which is excluded above, so fallow can't
   // follow lib/xterm.ts's re-exports. lib/terminal-manager.ts consumes all of them.

@@ -11,8 +11,10 @@
 // It is not a workspace: it joins none and has no tiles. Its settings are the workspace windows'
 // (the page's storage, followed as they change); a mode other than Floating closes it. Its voice
 // layer reads the answers aloud and runs its mic (dictation has no tile to type into here); the
-// tile alerts stay with the workspace windows. The hot face and the reactions to finished jobs
-// stay in the window too: they follow a window's own tiles. The quote of the day and encouragement
+// tile alerts stay with the workspace windows. Its look is the settings' too (Settings → Companion
+// → Look), and "Reload looks" reaches it through the same storage
+// (app/companion/use-companion-look.ts). The hot face and the reactions to finished jobs stay in
+// the window too: they follow a window's own tiles. The quote of the day and encouragement
 // are said here while it shows (app/companion/use-companion-ambient.ts), and in voice mode this
 // window is the one that reads the bubble aloud; its speaker button turns voice mode on and off
 // for every window (saved in the shared settings).
@@ -144,6 +146,7 @@ export function FloatingCompanion() {
           corner="bottom-left"
           brain={companion.brain}
           lively={companion.lively}
+          look={companion.look}
           reducedMotion={reducedMotion}
           floating
           mover={win.mover}

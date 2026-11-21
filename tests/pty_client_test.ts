@@ -146,6 +146,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
+    "looks",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -165,6 +166,20 @@ Deno.test("desktop: the links methods go to the links extension as they are", as
     { method: "open", args: { kind: "reveal", path: "/p" } },
     { method: "editors", args: {} },
     { method: "edit", args: { command: "zed {file}", file: "/p/a", line: 2 } },
+  ]);
+});
+
+Deno.test("desktop: the companion looks go to the looks extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.looks.list();
+  await backend.looks.get("pixel-blob");
+  await backend.looks.create();
+  await backend.looks.openFolder();
+  assertEquals(bridge.calls, [
+    { method: "list", args: {} },
+    { method: "get", args: { id: "pixel-blob" } },
+    { method: "create", args: {} },
+    { method: "openFolder", args: {} },
   ]);
 });
 

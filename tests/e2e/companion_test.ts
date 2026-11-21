@@ -659,6 +659,7 @@ suite("companion", (test) => {
       quoteOfDay: true,
       encourage: false,
       encourageEvery: "sometimes",
+      look: "loopy",
     });
     assertEquals(await app.exists(OVERLAY), false);
   });

@@ -89,6 +89,9 @@ import type {
   CompanionWindowState,
 } from "./companion/floating.ts";
 import type { CompanionKeyService } from "./companion/keys.ts";
+import type { LooksBackend } from "./companion/looks.ts";
+import { createDemoLooks, type DemoLooks } from "./companion/looks-demo.ts";
+import type looksExtension from "../desktop/companion-looks.ts";
 import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
@@ -398,6 +401,11 @@ export interface PtyBackend {
   companionWindowReady(): Promise<boolean>;
   /** The floating companion gives the keyboard back to the workspace window used last. */
   companionRefocus(): Promise<void>;
+  /**
+   * The companion's looks (Settings → Companion → Look): the user's look folders
+   * (desktop/companion-looks.ts; the demo's, in memory: lib/companion/looks-demo.ts).
+   */
+  readonly looks: LooksBackend;
 
   // --- Agent tiles (lib/agent/sessions.ts, in the hub) ----------------------------------------
 
@@ -609,6 +617,7 @@ export function createDesktopBackend(
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const links = desktopExtension<typeof linksExtension>("links");
+  const looks = desktopExtension<typeof looksExtension>("looks");
   const stats = deps.system ?? system;
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
@@ -926,6 +935,12 @@ export function createDesktopBackend(
     },
     async companionRefocus() {
       await hub.companionRefocus({});
+    },
+    looks: {
+      list: () => looks.list({}),
+      get: (id) => looks.get({ id }),
+      create: () => looks.create({}),
+      openFolder: () => looks.openFolder({}),
     },
     async agentStart(req) {
       return await hub.agentStart(req) as AgentSnapshot;
@@ -1730,6 +1745,11 @@ export function createDemoBackend(): PtyBackend {
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
+  const demoLooks: DemoLooks = createDemoLooks();
+  // The e2e suite adds the looks it read from disk through desktop/companion-looks.ts.
+  if (pageParam("test") === "1") {
+    (globalThis as { __e2eLooks?: DemoLooks }).__e2eLooks = demoLooks;
+  }
   // `?peers=<name>`: pages of the demo move tiles to each other (lib/demo-windows.ts).
   const peerName = pageParam("peers");
   const session = createDemoSession(
@@ -1941,6 +1961,7 @@ export function createDemoBackend(): PtyBackend {
     onCompanionWindow: () => () => {},
     companionWindowReady: () => Promise.resolve(false),
     companionRefocus: () => Promise.resolve(),
+    looks: demoLooks,
     agentStart: (req) =>
       attempt(() => {
         // A resumed session's history from its "transcript file", as the desktop reads Claude

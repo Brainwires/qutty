@@ -56,6 +56,9 @@
 import { useEffect, useReducer, useRef, useState } from "denext";
 import type { Dispatch } from "denext";
 import { CompanionFace, type CompanionFaceProps } from "./companion-face.tsx";
+import { LookFace } from "./look-face.tsx";
+import { useCompanionLook } from "./use-companion-look.ts";
+import type { Look } from "../../lib/companion/looks.ts";
 import { DEFAULT_COMPANION_NAME } from "../../lib/companion/settings.ts";
 import { SpeechBubble } from "./speech-bubble.tsx";
 import {
@@ -176,6 +179,12 @@ export interface CompanionOverlayProps {
   speakBubbles?: boolean;
   /** Voice mode's speaker button beside the mic (absent: no button). */
   voiceMode?: VoiceModeToggle;
+  /**
+   * Settings → Companion → Look: the built-in face (`loopy`, absent) or a look's id from the looks
+   * folder (lib/companion/looks.ts), drawn instead once fetched; one that cannot be had leaves
+   * the built-in face.
+   */
+  look?: string;
 }
 
 /** Voice mode's speaker button: whether it is on, and the toggle. */
@@ -510,6 +519,15 @@ function useTalkStep(speaking: boolean, reducedMotion: boolean): number {
   return reducedMotion ? 2 : talkStep(tick);
 }
 
+/** The companion as drawn: a user look's picture once one is chosen and fetched, else the face. */
+function Avatar(
+  { look, ...props }: CompanionFaceProps & { look: Look | null },
+) {
+  return look
+    ? <LookFace look={look} {...props} />
+    : <CompanionFace {...props} />;
+}
+
 /** The companion, its bubble and its chat box, in a corner of the tile area. */
 export function CompanionOverlay(props: CompanionOverlayProps) {
   const { backend } = props;
@@ -693,6 +711,7 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
   }, [speaking, props.corner, current?.id]);
   useHtmlOverlay(drag.dragging);
 
+  const look = useCompanionLook(backend.looks, props.look).look;
   const showHot = face.hot;
   const onHotShown = useRef(props.onHotShown);
   onHotShown.current = props.onHotShown;
@@ -720,7 +739,9 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       data-voice={voicePhase}
       data-speaking={voice?.speaking ? "true" : "false"}
       data-face={face.layer}
+      data-look={look?.id}
     >
+      {look?.css && <style data-testid="companion-look-css">{look.css}</style>}
       <div class="bubble-slot">
         {current && (
           <SpeechBubble
@@ -784,7 +805,8 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
       )}
       <div class="stage">
         <div class="squash" ref={squashRef} data-companion-hit="">
-          <CompanionFace
+          <Avatar
+            look={look}
             label={name}
             state={model.avatar.state}
             mood={faceMood(current, model.avatar.state) ?? face.mood}
