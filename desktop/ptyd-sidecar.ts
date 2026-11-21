@@ -11,10 +11,21 @@
 // Under `deno run` (`deno task desktop`) the child is `deno run` of the app's entry with the
 // app's own flags, the same way.
 //
-// Kept on Denext 4.20: its sidecar child contract still has an IPC channel and no detached
-// option (`spawnSelf`'s `detached` / `stdio` are Node's, passed through untyped), so the child
-// drops the channel itself and the starter unrefs it. A detached sidecar contract in Denext would
-// replace this.
+// The sidecar child contract has an IPC channel (`spawnSelf`'s `detached` / `stdio` are Node's,
+// passed through untyped), so the child drops the channel itself and the starter unrefs it.
+//
+// Why not Denext 4.22's detached sidecar (`detached: { exitAfterMs?, keepAcrossUpdates? }`): it
+// outlives the app's quit, but not the way kept shells must.
+// - Installing a full-app update stops every detached sidecar (`killSidecarsNow("update")`), with
+//   or without `keepAcrossUpdates`: an update would end the shells the user kept. This daemon
+//   is untouched by an update.
+// - It is one instance per sidecar name. At launch an instance another app version started is
+//   shut down and replaced unless `keepAcrossUpdates`, and with it the new version reattaches
+//   to the old daemon whatever protocol it speaks, and starts none of its own. Here daemons of
+//   two protocol versions run side by side (`ptyd-<v>.sock`), and the newer app asks the user
+//   what to do with the older one's shells (desktop/kept-shells.ts). Naming the sidecar per
+//   protocol version does not help: a record no declared sidecar names is cleaned up at launch.
+// So the daemon keeps its own launch and lifetime (it ends itself once idle, desktop/ptyd.ts).
 
 import { connectPtyd, ptydDir, ptydSocketPath } from "./ptyd-client.ts";
 import { runPtyDaemon } from "./ptyd.ts";

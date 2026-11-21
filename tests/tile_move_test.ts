@@ -365,7 +365,7 @@ Deno.test("workspaces: an ended workspace retires once its moved terminals are g
 // The mover (desktop/tile-move.ts), with fake terminals and windows
 // ---------------------------------------------------------------------------------------------
 
-function fakeApp() {
+function fakeApp(order?: () => readonly string[] | null) {
   const workspaces = new WorkspaceRegistry();
   const owner = new Map<string, string>();
   const handed: [string, string][] = [];
@@ -407,6 +407,7 @@ function fakeApp() {
     emit: (event, data, window) => void events.push({ event, data, window }),
     windows: () => windows,
     bounds: (id) => bounds[id] ?? null,
+    ...(order ? { order } : {}),
     openWindow: (options) => {
       opened.push({ ...options });
       const id = `w${windows.length + 1}`;
@@ -621,6 +622,23 @@ Deno.test("tile mover: the window under a dragged tile is told where, and told w
     ["w3", { from: "main", title: "zsh", x: 100, y: 100 }],
     ["w3", { from: "main", leave: true }],
   ]);
+});
+
+Deno.test("tile mover: the OS's stacking order (windows.order()) decides the window under the tile", () => {
+  // w2 is in front of w3 on screen, though w3 had the focus last; then the OS cannot say.
+  let stacked: readonly string[] | null = ["main", "w2", "w3"];
+  const app = fakeApp(() => stacked);
+  app.workspaces.focused("w3");
+  const over = (x: number, y: number) =>
+    app.mover.dragOver("main", {
+      screen: { x, y },
+      origin: { x: 0, y: 0 },
+      title: "zsh",
+    });
+  assertEquals(over(1100, 200), { target: "w2" });
+  stacked = null;
+  assertEquals(over(1100, 200), { target: "w3" });
+  assertEquals(app.mover.targets("main").map((t) => t.window), ["w3", "w2"]);
 });
 
 Deno.test("tile mover: a tile that arrived and moves on before its page saved it is not pending twice", () => {

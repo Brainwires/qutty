@@ -62,32 +62,45 @@ export function audioLibFile(os: typeof Deno.build.os): string {
     : "librullama_audio_ffi.so";
 }
 
+/** The library's name in `desktop.bundle.libraries` (denext.config.ts) and `bundledLibraryPath`. */
+export const AUDIO_LIB_NAME = "rullama_audio_ffi";
+
+/** The `desktop.bundle.libraries` target of `os` / `arch` (`darwin-arm64`), or `undefined`. */
+export function audioLibTarget(
+  os: typeof Deno.build.os,
+  arch: typeof Deno.build.arch,
+): string | undefined {
+  const a = arch === "aarch64"
+    ? "arm64"
+    : arch === "x86_64"
+    ? "x64"
+    : undefined;
+  return a && (os === "darwin" || os === "linux" || os === "windows")
+    ? `${os}-${a}`
+    : undefined;
+}
+
 /**
  * Where the library is looked for, in order:
  * 1. `QUTTY_AUDIO_LIB` (a developer's build);
- * 2. beside the app: `Contents/Frameworks/` of a macOS bundle, `lib/` beside a Linux binary (for
- *    when Denext's packager can put extra files there; see TODO.md);
+ * 2. the app's bundled copy (`desktop.bundle.libraries`: Denext's `bundledLibraryPath`, in
+ *    `Contents/Frameworks/` of a macOS bundle, `lib/` beside a Linux binary, beside the Windows
+ *    `.exe`, or the project's `native/<target>/` file under `denext desktop run`);
  * 3. `<app support>/audio/`, where `deno task audio:lib` installs a local build.
  */
 export function audioLibCandidates(opts: {
   os: typeof Deno.build.os;
   env?: string;
-  execPath?: string;
+  /** `bundledLibraryPath(AUDIO_LIB_NAME)`: `null` when this build bundles none for the host. */
+  bundled?: string | null;
   appSupportDir?: string;
 }): string[] {
   const file = audioLibFile(opts.os);
   const out: string[] = [];
   if (opts.env) out.push(opts.env);
-  if (opts.execPath) {
-    const dir = opts.execPath.slice(0, opts.execPath.lastIndexOf("/"));
-    if (opts.os === "darwin" && dir.endsWith(".app/Contents/MacOS")) {
-      out.push(`${dir.slice(0, -"MacOS".length)}Frameworks/${file}`);
-    } else if (dir) {
-      out.push(`${dir}/lib/${file}`);
-    }
-  }
+  if (opts.bundled) out.push(opts.bundled);
   if (opts.appSupportDir) out.push(`${opts.appSupportDir}/audio/${file}`);
-  return out;
+  return [...new Set(out)];
 }
 
 const encoder = new TextEncoder();

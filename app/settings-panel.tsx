@@ -76,6 +76,7 @@ import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
+import { SitePermissionsSection } from "./site-permissions-settings.tsx";
 import { Modal } from "./modal.tsx";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
 import { WindowSettingsSection } from "./window-settings.tsx";
@@ -677,14 +678,22 @@ export function SettingsPanel(props: SettingsPanelProps) {
       />
     ),
     links: (
-      <SettingsGroup title="Links" testid="links-section">
-        <LinksSettingsSection
-          settings={settings.links}
-          backend={props.backend}
-          platform={props.platform}
-          onChange={props.onLinks}
-        />
-      </SettingsGroup>
+      <>
+        <SettingsGroup title="Links" testid="links-section">
+          <LinksSettingsSection
+            settings={settings.links}
+            backend={props.backend}
+            platform={props.platform}
+            onChange={props.onLinks}
+          />
+        </SettingsGroup>
+        <SettingsGroup
+          title="Site permissions"
+          testid="site-permissions-section"
+        >
+          <SitePermissionsSection />
+        </SettingsGroup>
+      </>
     ),
     sandbox: (
       <SettingsGroup title="Shared container" testid="sandbox-section">

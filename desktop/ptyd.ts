@@ -35,6 +35,7 @@ import {
   ReplayRing,
 } from "../lib/ptyd/protocol.ts";
 import { MAX_STATE_CHARS } from "../lib/ptyd/protocol.ts";
+import { ipcChannelPath } from "./ipc.ts";
 
 /** A byte stream to one client: an accepted socket, or an in-memory pair in tests. */
 export interface PtydConnection {
@@ -462,7 +463,9 @@ export async function runPtyDaemon(opts: {
   } = await import("./hub-socket.ts");
   const open = opts.openPty ?? runtimeOpenPty();
   if (!open) throw new Error("this runtime has no Deno.openPty");
-  const path = `${opts.dir}/${ptydSocketName()}`;
+  const path = ipcChannelPath(ptydSocketName().replace(/\.sock$/, ""), {
+    dir: opts.dir,
+  });
   const reactor = new FdReactor();
   // Another daemon of this version answers: leave it be (the listener would replace its socket).
   try {

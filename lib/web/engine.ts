@@ -35,6 +35,15 @@
  * calls `setOccluded(true)` and the native view swaps itself for a snapshot of its page
  * (lib/web/native-engine.ts, lib/web/overlays.ts). The iframe is HTML and ignores it.
  *
+ * Downloads and permission prompts: where the runtime hands them to the app
+ * (`capabilities.downloads`, `capabilities.permissionRequests`; the native engine on a runtime
+ * with Denext's `downloads: "app"` / `permissions: "app"`) the view reports each step of a
+ * download (`download`, lib/web/downloads.ts) and each permission request a page makes
+ * (`permission-request`, then `answerPermission`; lib/web/site-permissions.ts), and the tile
+ * draws its own download bar and permission bar (app/web-chrome.tsx). Elsewhere a download asks
+ * where to save it on its own (the OS save panel) and every permission prompt is refused; the
+ * iframe leaves both to the browser around it.
+ *
  * Client-safe: DOM APIs are used only inside `mount`.
  *
  * @module
@@ -56,6 +65,7 @@ import {
   startHistory,
   type WebHistory,
 } from "./history.ts";
+import type { WebDownload } from "./downloads.ts";
 
 /** Where a page load is (Denext's `WebViewLoadState`). */
 export type WebLoadState = "loading" | "interactive" | "complete" | "failed";
@@ -116,7 +126,33 @@ export interface WebViewEventMap {
     selectionText?: string;
     isEditable: boolean;
   };
+  /**
+   * A step of a download (with `capabilities.downloads`): the engine has already asked where to
+   * save it (the OS save panel); every later step of the same `id` follows, the last one
+   * `completed`, `cancelled` or `interrupted`.
+   */
+  download: WebDownload;
+  /**
+   * A page asks for permissions (with `capabilities.permissionRequests`): answer it with
+   * {@linkcode WebViewHandle.answerPermission}. Unanswered, it waits (the runtime refuses it after
+   * 5 minutes, which comes as `permission-cancelled`); with nobody listening it is refused.
+   */
+  "permission-request": WebPermissionRequest;
+  /** A request went away unanswered (refused): the page navigated, or it waited too long. */
+  "permission-cancelled": { id: number };
   closed: Record<string, never>;
+}
+
+/** A page's permission request (Denext's `WebViewPermissionRequest`). */
+export interface WebPermissionRequest {
+  /** The request's id (the runtime's). */
+  id: number;
+  /** The origin that asked (`"https://example.com"`). */
+  origin: string;
+  /** What it asks for (`"camera"`, `"microphone"`, `"geolocation"` …); one request may name several. */
+  permissions: string[];
+  /** The frame that asked, where the engine says. */
+  frame?: { isMain: boolean; origin?: string };
 }
 
 /** A view's state at once (Denext's `WebViewHandle.state()`). */
@@ -154,6 +190,12 @@ export interface WebEngineCapabilities {
   devTools: boolean;
   /** The page's context menu is the tile's (`context-menu`), not the engine's. */
   contextMenu: boolean;
+  /** Downloads come as `download` events, controlled with `controlDownload`. */
+  downloads: boolean;
+  /** A running download can be paused and resumed (`controlDownload` `pause` / `resume`). */
+  downloadPause: boolean;
+  /** A page's permission requests come as `permission-request`, answered by the tile. */
+  permissionRequests: boolean;
 }
 
 /** One page view (Denext's `WebViewHandle`, minus `capture`, `evaluate` and `setBounds`). */
@@ -210,6 +252,20 @@ export interface WebViewHandle {
   print(): Promise<void>;
   /** The engine's developer tools for the page. */
   openDevTools(): Promise<void>;
+  /**
+   * Pause, resume or cancel download `id` (a `download` event's). Absent where the engine does not
+   * report downloads (the iframe).
+   */
+  controlDownload?(
+    id: number,
+    action: "pause" | "resume" | "cancel",
+  ): Promise<void>;
+  /**
+   * Answer permission request `id` (a `permission-request` event's): `true` allows every
+   * permission it names, `false` refuses. A request already answered or gone is ignored. Absent
+   * where the engine does not hand requests over (the iframe).
+   */
+  answerPermission?(id: number, allow: boolean): void;
   on<K extends keyof WebViewEventMap>(
     event: K,
     fn: (ev: WebViewEventMap[K]) => void,
@@ -597,6 +653,9 @@ export const IframeEngine: WebEngine = {
     print: false,
     devTools: false,
     contextMenu: false,
+    downloads: false,
+    downloadPause: false,
+    permissionRequests: false,
   },
   canEmbed: (url) => canEmbedInFrame(url, appOrigin()),
   mount: (host, url) => Promise.resolve(new IframeView(host, url)),

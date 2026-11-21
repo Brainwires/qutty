@@ -10,3 +10,4 @@ dist/
 !.deno-desktop/config.json
 .claude/settings.local.json
 .DS_Store
+/native/
