@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.3 — 2026-11-21
+
 - Source Control, a tile like VS Code's Source Control view for one git
   repository (or worktree). Open it from `+` → Source Control, View → Source
   Control, or a terminal header's right-click menu → "Source Control for This
