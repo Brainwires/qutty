@@ -62,7 +62,8 @@
         "./desktop/voice.ts",
         "./desktop/ollama.ts",
         "./desktop/links.ts",
-        "./desktop/skins.ts"
+        "./desktop/skins.ts",
+        "./desktop/companion-looks.ts"
       ],
       "systemStats": true,
       "microphone": {

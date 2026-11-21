@@ -221,6 +221,7 @@ export function withBackendSpy(
     onCompanionWindow: (cb) => backend.onCompanionWindow(cb),
     companionWindowReady: () => backend.companionWindowReady(),
     companionRefocus: () => backend.companionRefocus(),
+    looks: backend.looks,
     agentStart: (req) => backend.agentStart(req),
     agentSend: (id, message) => backend.agentSend(id, message),
     agentInterrupt: (id) => backend.agentInterrupt(id),

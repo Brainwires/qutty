@@ -147,6 +147,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "ollama",
     "links",
     "skins",
+    "looks",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -186,6 +187,20 @@ Deno.test("desktop: the skins methods go to the skins extension", async () => {
     { method: "list", args: {} },
     { method: "get", args: { id: "neon" } },
     { method: "template", args: template },
+    { method: "openFolder", args: {} },
+  ]);
+});
+
+Deno.test("desktop: the companion looks go to the looks extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.looks.list();
+  await backend.looks.get("pixel-blob");
+  await backend.looks.create();
+  await backend.looks.openFolder();
+  assertEquals(bridge.calls, [
+    { method: "list", args: {} },
+    { method: "get", args: { id: "pixel-blob" } },
+    { method: "create", args: {} },
     { method: "openFolder", args: {} },
   ]);
 });

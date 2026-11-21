@@ -124,6 +124,10 @@ export default {
         // gets it (docs/skins.md). Reads only, plus the template copy through libc; the folder
         // is opened through a hidden PTY, as links are.
         "./desktop/skins.ts",
+        // The companion's looks (`desktop/companion-looks.ts`): the user's look folders in the
+        // app-support folder's `companions/`, read and checked, their pictures sent to the page
+        // as data: URLs; opening that folder runs through a hidden PTY like the links.
+        "./desktop/companion-looks.ts",
       ],
       // The lite system monitor: CPU, GPU and memory figures for the bar meter and the companion's
       // hot face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It

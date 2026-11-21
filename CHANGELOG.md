@@ -26,6 +26,15 @@
   the right of its header, and "Title" aligns the title left, center or right.
   Each can follow the skin's default. (The window's own buttons on macOS are the
   system's and stay where they are.)
+- Companion looks: Settings → Companion → Look picks what the companion looks
+  like. Loopy is the built-in look; a look of your own is a folder of pictures
+  (SVG, PNG, WebP or GIF), one per mood, of which only `idle` is required: a
+  missing mood uses a related one, then `idle`. Optional mouth frames make it
+  talk, and an optional `look.css` restyles its bubble. Open looks folder,
+  Reload looks and Create a look… (a starter look with a README listing every
+  mood) are beside the picker, and the floating companion wears the same look.
+  Pictures reach the page as data: URLs; looks run no scripts. The procedure is
+  in docs/companion-looks.md.
 - A quote of the day. At startup the companion shows a short quote with its
   author in its bubble, with an Another button. If Qutty stays open past
   midnight, the next day's quote comes with your first click, key press or

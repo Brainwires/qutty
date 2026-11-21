@@ -1463,6 +1463,7 @@ function WorkspaceView() {
             corner={settings.companion.corner}
             brain={settings.companion.brain}
             lively={settings.companion.lively}
+            look={settings.companion.look}
             reducedMotion={reducedMotion}
             onRefocus={refocus}
             onCorner={(corner) =>

@@ -208,6 +208,19 @@
     (lib/voice/speaker.ts): the floating companion while it shows, else the
     workspace window that last had the focus or input (Speak answers follows the
     same election now).
+  - Done: companion looks (Settings → Companion → Look; lib/companion/looks.ts,
+    lib/companion/look-build.ts, desktop/companion-looks.ts, the `looks`
+    extension; docs/companion-looks.md). A look is a folder in the app-support
+    folder's `companions/`: `look.json`, one picture per mood (only `idle`
+    required, a fallback chain to it), `speak-N` mouth frames, a scoped and
+    sanitized `look.css`. Read with links and sub-folders skipped and size caps,
+    sent as data: URLs, drawn in an `<img>` that takes the drawn face's moves. A
+    test look, Pixel Blob, is in tests/fixtures/looks (not built in).
+  - Looks, open: never tried in the real app (the folder reading is unit tested
+    on a temp folder, the page in the demo e2e). No file watching: a changed
+    look needs Reload looks. A look's own animated pictures (GIF, animated SVG)
+    play, but a look cannot add moves or keyframes of its own (CSS nesting drops
+    a nested `@keyframes`).
   - Messages and voice mode, open: never heard in the real app yet (the demo e2e
     uses a recording fake engine). The floating companion's speaker button
     writes the shared settings itself (the workspace windows follow them). The
