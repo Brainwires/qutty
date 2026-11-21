@@ -614,6 +614,26 @@
     extension, the folder button and `data:` fonts under the desktop CSP
     (`font-src 'self' data:` allows them on paper).
 
+## From the Herdr comparison (later)
+
+Ideas from [Herdr](https://herdr.dev), a Rust agent multiplexer. Its agent
+resume and screen-based state detection are done (CHANGELOG, Unreleased;
+docs/agent-detection.md).
+
+- [ ] **Remote machines** (next up after the current batch). Qutty on SSH hosts:
+      a remote helper on each host, its tiles and agents in the same workspace,
+      and a combined agent view across machines, like VS Code Remote-SSH.
+- [ ] **Agent scripting.**
+  - `prompt --wait`: send a prompt and wait for the turn, atomically.
+  - `wait_for_output`: wait for a pattern on a tile's screen.
+  - An event stream: status changes, output, tiles opening and closing.
+  - Layout export and apply, as data.
+  - Expose them as hub tools plus a small `qutty` CLI.
+- [ ] **Notifications.** Per-agent sounds for "done" and "needs you", and a
+      delivery choice: in-app toast, system notification, or off.
+- [ ] **Plugins.** A manifest-based plugin system: startup hooks, actions,
+      panes, link handlers.
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

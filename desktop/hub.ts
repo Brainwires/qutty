@@ -192,6 +192,17 @@ import {
   sendAgentInput,
 } from "./agent-host.ts";
 import { revertFiles, shortPath } from "../lib/agent/changes.ts";
+import { ScreenDetector } from "../lib/hub/screen-detect.ts";
+import type { AgentDetectionInfo } from "../lib/hub/protocol.ts";
+import type { ForegroundProcess } from "../lib/agent/detect/manifest.ts";
+import { builtinManifests } from "../lib/agent/detect/builtin.ts";
+import {
+  type ManifestSet,
+  mergeManifests,
+  type OverrideFile,
+} from "../lib/agent/detect/overrides.ts";
+import { setAgentResumeProvider } from "./agent-resume.ts";
+import { terminalSessions } from "./pty.ts";
 
 export type { AskRequest, HubSnapshot, IntegrationStatus, IntegrationTarget };
 
@@ -351,6 +362,13 @@ export interface HubServiceOptions {
    * (`undefined`: none, or no answer).
    */
   codexHooks?: () => Promise<ListedCodexHook[] | undefined>;
+  /**
+   * A terminal's foreground process, for the screen detection (tests). Default: the PTY
+   * extension's host.
+   */
+  foreground?: (id: string) => Promise<ForegroundProcess | undefined>;
+  /** Run `fn` in `ms` (the screen detection's throttle; tests). Default: `setTimeout`. */
+  later?: (fn: () => void, ms: number) => () => void;
   /** Another agent tile backend (tests). Default: Claude Code (desktop/agent-claude.ts). */
   createAgent?: (
     spec: AgentSessionSpec,
@@ -396,6 +414,11 @@ export class HubService {
    * start's background refresh racing an Install) must not clear what the newer one found.
    */
   #integrationRun = 0;
+  /** Screen-based agent state (lib/hub/screen-detect.ts) and the manifests it reads. */
+  readonly detector: ScreenDetector;
+  #manifests: ManifestSet = mergeManifests(builtinManifests(), []);
+  #foreground: (id: string) => Promise<ForegroundProcess | undefined>;
+  #appSupportDir: string | undefined;
 
   constructor(opts: HubServiceOptions) {
     this.paths = hubPaths(opts.home);
@@ -482,7 +505,76 @@ export class HubService {
       },
     });
     this.#server = new McpServer(handler);
+    this.#appSupportDir = opts.appSupportDir;
+    this.#foreground = opts.foreground ??
+      ((id) => terminalSessions().host.foreground(id));
+    const later = opts.later ?? ((fn: () => void, ms: number) => {
+      const t = setTimeout(fn, ms);
+      return () => clearTimeout(t);
+    });
+    const registry = this.core.registry;
+    this.detector = new ScreenDetector({
+      manifests: () => this.#manifests.manifests,
+      screen: (id) => this.#mirrors.get(id)?.screen(),
+      tile: (id) => registry.get(id),
+      setStatus: (id, status) => registry.setStatus(id, status),
+      setHarness: (id, harness) => registry.setHarness(id, harness),
+      clearHarness: (id) => registry.clearHarness(id),
+      later,
+    }, (id) => this.#manifests.sources.get(id));
     void this.refreshIntegration();
+    void this.reloadDetection();
+  }
+
+  /**
+   * Read the user's detection manifests again (`<appSupportDir>/agent-detection/`): the bundled
+   * ones under them. The files that were refused, with why.
+   */
+  async reloadDetection(): Promise<ManifestSet["errors"]> {
+    const files: OverrideFile[] = [];
+    const dir = this.#appSupportDir
+      ? `${this.#appSupportDir}/agent-detection`
+      : undefined;
+    if (dir) {
+      try {
+        for await (const e of Deno.readDir(dir)) {
+          if (!e.isFile || !/\.(json|toml)$/i.test(e.name)) continue;
+          const path = `${dir}/${e.name}`;
+          const text = await Deno.readTextFile(path).catch(() => undefined);
+          if (text !== undefined) files.push({ name: e.name, path, text });
+        }
+      } catch { /* no folder: the bundled manifests only */ }
+    }
+    this.#manifests = mergeManifests(builtinManifests(), files);
+    for (const e of this.#manifests.errors) {
+      console.warn(`hub: agent detection: ${e.path}: ${e.error}`);
+    }
+    return this.#manifests.errors;
+  }
+
+  /** The debug command's answer for terminal `id`: what was detected, which matcher fired. */
+  async detection(id: string): Promise<AgentDetectionInfo> {
+    await this.detector.evaluate(id).catch(() => undefined);
+    return { ...this.detector.info(id), errors: this.#manifests.errors };
+  }
+
+  /** Terminal `id`'s foreground process changed: look it up for the screen detection. */
+  foregroundChanged(id: string): void {
+    this.#foreground(id).then(
+      (fg) => {
+        if (this.#mirrors.has(id)) this.detector.foreground(id, fg);
+      },
+      () => {},
+    );
+  }
+
+  /** The agent session each terminal runs, for resuming it after a restart (desktop/kept-shells.ts). */
+  installResumeProvider(): void {
+    setAgentResumeProvider({
+      agentOf: (id) => this.core.registry.get(id),
+      hubArgs: (harness) => hubArgsFor(harness, this.paths, this.#installed),
+      resumed: (id) => this.core.registry.setResumed(id, true),
+    });
   }
 
   setEmit(emit: HubEmit): void {
@@ -590,6 +682,7 @@ export class HubService {
 
   data(id: string, text: string): void {
     this.#mirrors.get(id)?.write(text);
+    this.detector.data(id);
   }
 
   resized(id: string, cols: number, rows: number): void {
@@ -606,6 +699,7 @@ export class HubService {
     this.#conns.delete(id);
     this.#mirrors.get(id)?.dispose();
     this.#mirrors.delete(id);
+    this.detector.forget(id);
     this.#shellTalks.delete(id);
     this.core.removeTile(id);
   }
@@ -766,6 +860,8 @@ export class HubService {
         hook.input,
         hook.harness,
       );
+      // The hooks own this tile's status now; the screen only fills in what they leave out.
+      this.detector.hookSeen(identity.tileId, hook.harness);
       return { action: "close", reply: JSON.stringify(reply) };
     }
     return { action: "mcp" };
@@ -1038,13 +1134,28 @@ async function start(host: DesktopExtensionHost): Promise<void> {
   setPtyTaps({
     spawning: (id, info) => hub.spawning(id, info),
     data: (id, text) => hub.data(id, text),
+    foreground: (id) => hub.foregroundChanged(id),
     resized: (id, cols, rows) => hub.resized(id, cols, rows),
     ended: (id) => hub.ended(id),
   });
+  hub.installResumeProvider();
   globalThis.addEventListener("unload", () => {
     hub.stop().catch(() => {/* exiting */});
   });
 }
+
+const noResumeInput = objectSchema<{ id: string; on: boolean }>(
+  (v, issues) => {
+    if (typeof v.on !== "boolean") {
+      issues.push({ message: "on must be a boolean", path: ["on"] });
+    }
+    return { id: str(v, "id", issues, 64), on: v.on === true };
+  },
+);
+
+const detectionInput = objectSchema<{ id: string; reload: boolean }>(
+  (v, issues) => ({ id: str(v, "id", issues, 64), reload: v.reload === true }),
+);
 
 function requireService(): HubService {
   if (!service) {
@@ -1278,6 +1389,28 @@ export default defineDesktopExtension({
         return asValidation(async () =>
           requireService().core.registry.rename(id, name.trim()).name
         );
+      },
+    },
+    /** A terminal's "Don't resume this agent" (its tile's header menu; desktop/kept-shells.ts). */
+    setNoResume: {
+      input: noResumeInput,
+      handler: (args: unknown): void => {
+        const { id, on } = args as { id: string; on: boolean };
+        requireService().core.registry.setNoResume(id, on);
+      },
+    },
+    /**
+     * The agent detection debug command (`qutty.agentDetection()` in the page's devtools): for
+     * terminal `id`, the agent detected, which matcher fired, the state, and refused user
+     * manifests. `reload` reads the user's manifests again first.
+     */
+    detection: {
+      input: detectionInput,
+      handler: async (args: unknown) => {
+        const { id, reload } = args as { id: string; reload: boolean };
+        const hub = requireService();
+        if (reload) await hub.reloadDetection();
+        return await hub.detection(id);
       },
     },
     /** The companion's status and recent privileged actions. */

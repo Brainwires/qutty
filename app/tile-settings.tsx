@@ -1,8 +1,11 @@
 // Settings → Tiles: the activity indicators an unfocused tile and its chip wear (Full, Subtle or
 // Off, and which states show; lib/workspace/activity.ts), what a tile's header is titled (the
 // program's own title, or the process and folder), and whether a terminal running a coding-agent
-// harness gets the GUI overlay (app/harness-overlay.tsx).
+// harness gets the GUI overlay (app/harness-overlay.tsx), and whether a restart resumes the agents
+// that ran in the tiles (desktop/kept-shells.ts).
 
+import { useEffect, useState } from "denext";
+import { getPtyBackend } from "../lib/pty-client.ts";
 import {
   ACTIVITY_INDICATORS,
   ACTIVITY_TOGGLES,
@@ -139,7 +142,50 @@ export function TileSettingsSection(props: TileSettingsProps) {
           around its own terminal UI. A tile's header menu (right click) turns
           it off or on for that tile.
         </span>
+        <ResumeAgentsField />
       </SettingsGroup>
     </div>
+  );
+}
+
+/**
+ * "Resume agents after restart": an app-wide setting the app process keeps
+ * (desktop/kept-shells.ts), read and changed here directly, as "Keep shells running" is.
+ */
+function ResumeAgentsField() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    getPtyBackend().session.resumeAgents().then(
+      (v) => live && setOn(v),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (on === null) return null;
+  return (
+    <label class="field field-check">
+      <input
+        type="checkbox"
+        data-testid="setting-resume-agents"
+        checked={on}
+        onChange={(e) => {
+          const want = (e.target as HTMLInputElement).checked;
+          setOn(want);
+          void getPtyBackend().session.setResumeAgents(want).then(
+            setOn,
+            () => setOn(!want),
+          );
+        }}
+      />
+      <span class="field-label">Resume agents after restart</span>
+      <span class="field-hint">
+        {on
+          ? "When kept shells did not survive (a reboot), a tile that ran Claude Code or Codex starts its agent again on the same session, in its folder. More than eight at once ask first; a tile's header menu has Don't resume this agent."
+          : "After a restart the tiles open in their folders, without their agents."}
+      </span>
+    </label>
   );
 }

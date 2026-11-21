@@ -56,6 +56,7 @@ import type { SandboxStatus } from "./sandbox/lifecycle.ts";
 import type { SandboxSettings } from "./sandbox/settings.ts";
 import { createDemoSandbox, type SandboxAction } from "./sandbox/demo.ts";
 import type {
+  AgentDetectionInfo,
   AskAnswer,
   AskRequest,
   HubSnapshot,
@@ -330,6 +331,14 @@ export interface PtyBackend {
    * with the reason (taken, unusable).
    */
   hubRename(ptyId: string, name: string): Promise<string>;
+  /** Terminal `ptyId`'s "Don't resume this agent" (its tile's header menu). */
+  hubSetNoResume(ptyId: string, on: boolean): Promise<void>;
+  /**
+   * The agent detection debug command for terminal `ptyId` (`qutty.agentDetection()` in the
+   * devtools): the agent detected, the matcher that fired, the state. `reload` reads the user's
+   * manifests again first.
+   */
+  hubDetection(ptyId: string, reload?: boolean): Promise<AgentDetectionInfo>;
   /** Tell the hub this window's web tiles (all of them; agents see them as tiles `web-<n>`). */
   hubWebTiles(tiles: WebTileReport[]): Promise<void>;
   /** A full snapshot of the tiles after every change. */
@@ -872,6 +881,12 @@ export function createDesktopBackend(
     async hubRename(ptyId, name) {
       return await hub.rename({ id: ptyId, name });
     },
+    async hubSetNoResume(ptyId, on) {
+      await hub.setNoResume({ id: ptyId, on });
+    },
+    async hubDetection(ptyId, reload = false) {
+      return await hub.detection({ id: ptyId, reload });
+    },
     async hubWebTiles(tiles) {
       await hub.webTiles({ tiles });
     },
@@ -1093,6 +1108,9 @@ const DEMO_AGENT_HELP = [
   `  ${
     fg(209)
   }/pass${RESET} [what]        report a success (set_status note "<what> passed")`,
+  `  ${
+    fg(209)
+  }/resumed${RESET}           show the tile as resumed after a restart`,
   `  ${fg(209)}/exit${RESET}              quit`,
   `  anything else      busy for a moment, then idle; queued messages are read first`,
   "",
@@ -1452,6 +1470,9 @@ class DemoShell {
       );
     } else if (cmd === "/msg") {
       println(`${DIM}(demo) usage: /msg <name> <text>${RESET}`);
+    } else if (cmd === "/resumed") {
+      this.hub.setResumed(this.id);
+      println(`${DIM}(demo) marked as resumed after a restart${RESET}`);
     } else if (cmd === "/fail" || cmd === "/pass") {
       const what = rest.join(" ") || (cmd === "/fail" ? "build" : "tests");
       const note = `${what} ${cmd === "/fail" ? "failed" : "passed"}`;
@@ -1952,6 +1973,8 @@ export function createDemoBackend(): PtyBackend {
     hubAnswer: (id, action) => hub.answer(id, action),
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
     hubRename: (ptyId, name) => attempt(() => hub.rename(ptyId, name.trim())),
+    hubSetNoResume: (ptyId, on) => hub.setNoResume(ptyId, on),
+    hubDetection: (ptyId) => hub.detection(ptyId),
     hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
     onHubAsk: (cb) => hubAsks.on(cb),

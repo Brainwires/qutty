@@ -536,6 +536,15 @@ function TerminalTile(props: TerminalTileProps) {
           )}
           <span class="tile-meta" data-part="tile-meta">
             {props.renderHeadActions?.(entry)}
+            {props.agentOf?.(id)?.resumed && (
+              <span
+                class="tile-resumed"
+                data-testid="tile-resumed"
+                title="Its agent was resumed after a restart (Settings → Tiles → Resume agents after restart)"
+              >
+                resumed
+              </span>
+            )}
             {entry.exited && (
               <span class="tile-exited">
                 exited{entry.exitCode ? ` ${entry.exitCode}` : ""}

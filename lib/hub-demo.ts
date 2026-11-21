@@ -43,6 +43,7 @@ import { memorySecretStore } from "./secrets/api-keys.ts";
 import { codexTrustWarning } from "./hub/codex-trust.ts";
 import { CODEX_HOOK_EVENTS } from "./hub/hooks.ts";
 import type {
+  AgentDetectionInfo,
   AskRequest,
   HubSnapshot,
   IntegrationStatus,
@@ -361,6 +362,28 @@ export function createDemoHub(
     /** Rename tile `id` (an agent tile's header); the name. Throws with the reason. */
     rename(id: string, name: string): string {
       return registry.rename(id, name).name;
+    },
+    /** Tile `id`'s "Don't resume this agent" (its header menu). */
+    setNoResume(id: string, on: boolean): Promise<void> {
+      registry.setNoResume(id, on);
+      return Promise.resolve();
+    },
+    /** Mark tile `id` resumed after a restart (the demo agent's `/resumed`). */
+    setResumed(id: string): void {
+      registry.setResumed(id, true);
+    },
+    /** The agent detection debug command: the demo has no screen detection, only the hub. */
+    detection(id: string): Promise<AgentDetectionInfo> {
+      const tile = registry.get(id);
+      return Promise.resolve({
+        tileId: id,
+        ...(tile?.harness
+          ? { agent: tile.harness, via: "harness" as const }
+          : {}),
+        hooked: tile?.harness !== undefined,
+        ...(tile ? { status: tile.status } : {}),
+        errors: [],
+      });
     },
     /**
      * Ask the user from tile `from`: the tile waits until `reply` gets the answer (`null` when

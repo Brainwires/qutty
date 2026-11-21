@@ -1,0 +1,5 @@
+ Droid
+
+ > add retries to the http client
+
+ ⠹ Editing src/http.ts                  esc to stop

@@ -623,6 +623,18 @@ export default defineDesktopExtension({
         return shellKeeper().keepShells;
       },
     },
+    /** Settings → Tiles → "Resume agents after restart" (desktop/kept-shells.ts). */
+    resumeAgents: {
+      input: emptyInput,
+      handler: (): boolean => shellKeeper().resumeAgents,
+    },
+    setResumeAgents: {
+      input: keepInput,
+      handler: (args: unknown): boolean => {
+        shellKeeper().setResumeAgents((args as { on: boolean }).on);
+        return shellKeeper().resumeAgents;
+      },
+    },
     /** The calling window took the focus (the companion talks to the active window). */
     focus: {
       input: emptyInput,

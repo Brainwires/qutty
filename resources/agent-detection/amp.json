@@ -1,0 +1,28 @@
+{
+  "//": "Amp (Sourcegraph, closed source). confidence: low. Strings follow Herdr's manifest (Waiting for approval, Run this command?, Allow editing file:, the ╰ <mode> thinking ─ footer, esc to cancel); not checked against the CLI itself.",
+  "id": "amp",
+  "label": "Amp",
+  "confidence": "low",
+  "process": {
+    "names": ["amp"],
+    "argv": ["(^|/)amp(\\.js)?$", "/@sourcegraph/amp/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    { "id": "waiting-for-approval", "text": "Waiting for approval" },
+    { "id": "run-command", "text": "Run this command?" },
+    { "id": "allow-file", "regex": "Allow (editing|creating) file:" },
+    { "id": "confirm-tool", "text": "Confirm tool call" },
+    { "id": "approve-options", "all": ["approve", "deny with feedback"] }
+  ],
+  "working": [
+    {
+      "id": "status-footer",
+      "regex": "^\\s*╰\\s+\\S+\\s+(thinking|streaming|running tools|waiting)\\s+─",
+      "flags": "i"
+    },
+    { "id": "esc-to-cancel", "text": "esc to cancel" }
+  ],
+  "idle": []
+}

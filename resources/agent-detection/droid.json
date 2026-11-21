@@ -1,0 +1,23 @@
+{
+  "//": "Droid (Factory, closed source). confidence: low. Strings follow Herdr's manifest (enter to select · esc to cancel with > Yes, allow / > No, cancel; esc to stop while working); its idle prompt is unverified.",
+  "id": "droid",
+  "label": "Droid",
+  "confidence": "low",
+  "process": {
+    "names": ["droid"],
+    "argv": ["(^|/)droid(\\.js)?$"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    {
+      "id": "allow-menu",
+      "all": ["enter to select", "esc to cancel", "yes, allow"]
+    },
+    { "id": "select-menu", "all": ["enter select", "esc cancel", "navigate"] }
+  ],
+  "working": [
+    { "id": "esc-to-stop", "text": "esc to stop" }
+  ],
+  "idle": []
+}

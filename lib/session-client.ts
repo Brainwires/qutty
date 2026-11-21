@@ -128,6 +128,13 @@ export interface SessionBackend {
   keepShells(): Promise<boolean>;
   /** Change it; resolves to the setting now. */
   setKeepShells(on: boolean): Promise<boolean>;
+  /**
+   * Settings → Tiles → "Resume agents after restart": whether a launch whose kept shells did not
+   * survive (a reboot) resumes the coding agents that ran in them (desktop/kept-shells.ts).
+   */
+  resumeAgents(): Promise<boolean>;
+  /** Change it; resolves to the setting now. */
+  setResumeAgents(on: boolean): Promise<boolean>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
   /** The Dock menu's commands for this window (absent: no Dock menu, the demo). */
   readonly dockCommands?: DockCommands;
@@ -251,6 +258,8 @@ export function createDesktopSession(deps: {
     focus: () => ext.focus({}),
     keepShells: () => ext.keepShells({}),
     setKeepShells: (on) => ext.setKeepShells({ on }),
+    resumeAgents: () => ext.resumeAgents({}),
+    setResumeAgents: (on) => ext.setResumeAgents({ on }),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
@@ -319,6 +328,7 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
   const records = new Map<string, DemoRecord>();
   let snapshot: unknown = null;
   let keepShells = true;
+  let resumeAgents = true;
   const none = () => () => {};
   return {
     multiWindow: false,
@@ -347,6 +357,11 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
     setKeepShells(on) {
       keepShells = on;
       return Promise.resolve(keepShells);
+    },
+    resumeAgents: () => Promise.resolve(resumeAgents),
+    setResumeAgents(on) {
+      resumeAgents = on;
+      return Promise.resolve(resumeAgents);
     },
     onChanged: none,
     recordSpawn(id, cols, rows) {

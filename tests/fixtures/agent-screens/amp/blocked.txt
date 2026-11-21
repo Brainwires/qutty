@@ -1,0 +1,7 @@
+  Run this command?
+
+    pnpm add zod
+
+  ▸ Approve   Allow all for this session   Deny with feedback
+
+  Waiting for approval

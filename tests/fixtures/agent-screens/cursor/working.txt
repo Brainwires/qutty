@@ -1,0 +1,7 @@
+  Cursor Agent
+  ~/src/app · main
+
+  > add a health check endpoint
+
+  ⬢ Generating  12 tokens
+                                       ctrl+c to stop

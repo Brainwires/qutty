@@ -1,0 +1,6 @@
+  ┃  add a --verbose flag to the cli
+
+  ┃  Thinking…
+
+  ■■■■⬝⬝⬝⬝  esc interrupt
+  Build  claude-sonnet-4.5                  ctrl+p commands

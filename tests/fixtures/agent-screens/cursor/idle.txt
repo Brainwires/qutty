@@ -1,0 +1,4 @@
+  Added GET /health in src/server.ts.
+
+  → Add a follow-up
+  gpt-5 · 12.4%

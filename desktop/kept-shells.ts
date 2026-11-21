@@ -13,7 +13,10 @@
 //   restores (their keys are the workspace ids) rebuild every tile on its running shell;
 // - the daemon is gone (a reboot): the record the quit also wrote to the app's folder brings back
 //   the shell tiles in their last folder, their old text dimmed above the new prompt; other tiles
-//   come back ended;
+//   come back ended. A terminal that ran a coding agent with a known session (Claude Code, Codex:
+//   the hub's registry, recorded at the quit) gets its agent resumed in the fresh shell
+//   (lib/agent/resume.ts), staggered, at most eight without asking, with Settings → Tiles →
+//   "Resume agents after restart" on; an agent tile from the `+` picker comes back for that too;
 // - a daemon of another protocol version answers (an older Qutty's shells): the user is told, and
 //   may end them.
 //
@@ -37,6 +40,17 @@ import { unlinkPath } from "./hub-socket.ts";
 import { TileMover } from "./tile-move.ts";
 import { withArrivals } from "../lib/workspace/session.ts";
 import {
+  identityAtQuit,
+  planResumes,
+  RESUME_CAP,
+  resumeDelay,
+  resumeLine,
+} from "../lib/agent/resume.ts";
+import {
+  type AgentResumeProvider,
+  agentResumeProvider,
+} from "./agent-resume.ts";
+import {
   cutToLine,
   historyPrelude,
   plainHistory,
@@ -49,6 +63,7 @@ import {
   parseKept,
   respawnPlan,
   retarget,
+  type ShellRespawn,
 } from "../lib/ptyd/kept.ts";
 
 /** The file the quit's record also goes to, in the app-support folder. */
@@ -91,6 +106,12 @@ export interface KeeperDeps {
   sleep?(ms: number): Promise<void>;
   /** How long a spawn waits for a daemon that is starting (default 10 s). */
   connectWaitMs?: number;
+  /** The hub's side of resuming agents (none: no hub, nothing is resumed). */
+  agents?(): AgentResumeProvider | undefined;
+  /** Type into a terminal (a resume command). */
+  write?(id: string, text: string): Promise<void>;
+  /** Run `fn` in `ms` (the resumes' stagger). */
+  later?(fn: () => void, ms: number): void;
 }
 
 /** What the quit question and Settings use. */
@@ -105,6 +126,7 @@ export interface QuitKeeper {
 export class ShellKeeper implements QuitKeeper {
   #deps: KeeperDeps | undefined;
   #keep = true;
+  #resume = true;
   #client: PtydClient | undefined;
   #connecting: Promise<PtydClient | undefined> | undefined;
   #failedAt: number | undefined;
@@ -123,16 +145,33 @@ export class ShellKeeper implements QuitKeeper {
   /** Change the setting (saved for the next launch). */
   setKeepShells(on: boolean): void {
     this.#keep = on;
+    this.#savePrefs();
+  }
+
+  /**
+   * Whether a restart resumes the agents that ran in the kept shells (Settings → Tiles → "Resume
+   * agents after restart").
+   */
+  get resumeAgents(): boolean {
+    return this.#resume;
+  }
+
+  /** Change it (saved with the other setting). */
+  setResumeAgents(on: boolean): void {
+    this.#resume = on;
+    this.#savePrefs();
+  }
+
+  #savePrefs(): void {
     const d = this.#deps;
-    if (d?.appSupportDir) {
-      try {
-        d.writeText(
-          `${d.appSupportDir}/${PREFS_FILE}`,
-          JSON.stringify({ keepShells: on }),
-        );
-      } catch (err) {
-        console.warn("pty: could not save the keep-shells setting", err);
-      }
+    if (!d?.appSupportDir) return;
+    try {
+      d.writeText(
+        `${d.appSupportDir}/${PREFS_FILE}`,
+        JSON.stringify({ keepShells: this.#keep, resumeAgents: this.#resume }),
+      );
+    } catch (err) {
+      console.warn("pty: could not save the keep-shells settings", err);
     }
   }
 
@@ -185,6 +224,7 @@ export class ShellKeeper implements QuitKeeper {
     ids: string[],
   ): Promise<KeptRecord> {
     const terms = new Map<string, KeptTerminal>();
+    const agents = d.agents?.();
     await Promise.all(ids.map(async (id) => {
       const known = d.sessions.host.describe(id);
       const size = d.sessions.sizeOf(id) ?? { cols: 80, rows: 24 };
@@ -194,12 +234,16 @@ export class ShellKeeper implements QuitKeeper {
         sid: id,
         maxBytes: HISTORY_BYTES,
       }).catch(() => ({ text: "", truncated: false }));
+      const cwd = info?.cwd ?? known.cwd;
+      // The agent session it runs, while the agent still runs (resumed after a restart).
+      const agent = identityAtQuit(agents?.agentOf(id), info?.process, cwd);
       terms.set(id, {
         ptyId: id,
         shell: known.shell,
-        cwd: info?.cwd ?? known.cwd,
+        cwd,
         ...size,
         history: plainHistory(cutToLine(peek.text, peek.truncated)),
+        ...(agent ? { agent } : {}),
       });
     }));
     return {
@@ -225,6 +269,9 @@ export class ShellKeeper implements QuitKeeper {
       try {
         const v = prefs ? JSON.parse(prefs) : undefined;
         if (typeof v?.keepShells === "boolean") this.#keep = v.keepShells;
+        if (typeof v?.resumeAgents === "boolean") {
+          this.#resume = v.resumeAgents;
+        }
       } catch { /* a damaged file: the default */ }
     }
     const dir = await d.socketDir();
@@ -305,12 +352,22 @@ export class ShellKeeper implements QuitKeeper {
       return;
     }
     const record = parseKept(raw);
-    for (const ws of record?.workspaces ?? []) {
-      const plan = respawnPlan(ws);
-      if (plan.length === 0) continue;
+    const plans = (record?.workspaces ?? []).map((ws) => ({
+      ws,
+      plan: respawnPlan(ws),
+    }));
+    const chosen = await this.#chooseResumes(
+      d,
+      plans.flatMap((p) => p.plan),
+    );
+    let n = 0;
+    for (const { ws, plan } of plans) {
+      // An agent tile comes back only to resume its agent.
+      const starts = plan.filter((r) => !r.program || chosen.has(r));
+      if (starts.length === 0) continue;
       const moved = new Map<string, string>();
       d.workspaces.restore({ id: ws.id, name: ws.name, snapshot: ws.snapshot });
-      for (const r of plan) {
+      for (const r of starts) {
         try {
           const started = await d.sessions.restoreShell(
             ws.id,
@@ -318,17 +375,59 @@ export class ShellKeeper implements QuitKeeper {
               cols: r.cols,
               rows: r.rows,
               ...(r.cwd ? { cwd: r.cwd } : {}),
-              shell: r.shell,
+              ...(r.shell ? { shell: r.shell } : {}),
             },
             historyPrelude(r.history, "restored after the shells ended"),
           );
           moved.set(r.ptyId, started.id);
+          if (chosen.has(r)) this.#resumeIn(d, started.id, r, n++);
         } catch (err) {
           console.warn(`pty: could not restore a shell of ${ws.name}`, err);
         }
       }
       d.workspaces.save(ws.id, retarget(ws.snapshot, moved));
     }
+  }
+
+  /**
+   * The respawned terminals whose agent is resumed: with the setting on, up to
+   * {@linkcode RESUME_CAP}, and the rest only when the user says so.
+   */
+  async #chooseResumes(
+    d: KeeperDeps,
+    plan: readonly ShellRespawn[],
+  ): Promise<Set<ShellRespawn>> {
+    if (!d.agents?.() || !d.write) return new Set();
+    const candidates = plan.flatMap((r) =>
+      r.agent ? [{ ptyId: r.ptyId, agent: r.agent, survived: false, r }] : []
+    );
+    const { resume, ask } = planResumes(candidates, this.#resume);
+    let picked = resume;
+    if (ask.length > 0) {
+      const all = resume.length + ask.length;
+      const choice = d.confirm
+        ? await d.confirm(resumeQuestion(all)).catch(() => 0)
+        : 0;
+      picked = choice === 1 ? [...resume, ...ask] : choice === 0 ? resume : [];
+    }
+    return new Set(picked.map((c) => c.r));
+  }
+
+  /** Type `r`'s resume command into its fresh shell `id`, the `n`th resume (staggered). */
+  #resumeIn(d: KeeperDeps, id: string, r: ShellRespawn, n: number): void {
+    const agent = r.agent;
+    const agents = d.agents?.();
+    const write = d.write;
+    if (!agent || !agents || !write) return;
+    const line = resumeLine(agent, agents.hubArgs(agent.harness), r.program);
+    const later = d.later ??
+      ((fn: () => void, ms: number) => void setTimeout(fn, ms));
+    later(() => {
+      write(id, line).then(
+        () => agents.resumed(id),
+        (err) => console.warn(`pty: could not resume the agent in ${id}`, err),
+      );
+    }, resumeDelay(n));
   }
 
   /** Another version's daemon still runs shells: say so, and end them if the user wants. */
@@ -412,6 +511,20 @@ export class ShellKeeper implements QuitKeeper {
   }
 }
 
+/** The question when more than {@linkcode RESUME_CAP} agents would resume at once. */
+export function resumeQuestion(n: number): DesktopConfirmOptions {
+  return {
+    title: "Resume agents",
+    message: `${n} coding agents were running when Qutty last quit`,
+    detail:
+      `Their shells did not survive the restart. Resume the first ${RESUME_CAP} now, all ${n}, or none (each tile still opens in its folder).`,
+    buttons: [`Resume ${RESUME_CAP}`, `Resume All ${n}`, "Don't Resume"],
+    defaultId: 0,
+    cancelId: 2,
+    kind: "info",
+  };
+}
+
 /** The keeper's dependencies in the app: the daemon's socket, files through libc, the message box. */
 export function desktopKeeperDeps(
   sessions: TerminalSessions,
@@ -437,6 +550,8 @@ export function desktopKeeperDeps(
     },
     remove: (path) => void unlinkPath(path),
     ...(host.confirm ? { confirm: (o) => host.confirm!(o) } : {}),
+    agents: agentResumeProvider,
+    write: (id, text) => sessions.host.write(id, text),
   };
 }
 

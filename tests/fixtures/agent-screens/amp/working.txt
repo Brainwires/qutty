@@ -1,0 +1,7 @@
+  > migrate the config loader to zod
+
+  ✓ Read src/config.ts
+
+╭─────────────────────────────────────────────────╮
+│                                                 │
+╰ smart thinking ─────────────────── esc to cancel╯

@@ -1,0 +1,5 @@
+• The build script bundles app/ with esbuild, then copies public/.
+
+› Ask Codex to do anything
+
+  100% context left · ? for shortcuts

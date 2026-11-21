@@ -1,0 +1,10 @@
+╭──────────────────────────────────────────────────╮
+│ ?  WriteFile src/utils/strings.ts                │
+│                                                  │
+│ Apply this change?                               │
+│                                                  │
+│ ● 1. Yes, allow once                             │
+│   2. Yes, allow always                           │
+│   3. Modify with external editor                 │
+│   4. No, suggest changes (esc)                   │
+╰──────────────────────────────────────────────────╯

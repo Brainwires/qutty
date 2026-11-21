@@ -1,0 +1,9 @@
+ Execute command?
+
+   npm test
+
+ > Yes, allow
+   Yes, always allow npm test
+   No, cancel
+
+ Use ↑↓ to navigate · Enter to select · Esc to cancel

@@ -1,0 +1,23 @@
+{
+  "//": "Cursor agent CLI (closed source). confidence: low. Approval and working strings follow Herdr's manifest (Run this command?, Run (once) (y), Skip (esc or n), Write to this file?, ctrl+c to stop); its idle prompt is unverified.",
+  "id": "cursor",
+  "label": "Cursor Agent",
+  "confidence": "low",
+  "process": {
+    "names": ["cursor-agent"],
+    "argv": ["(^|/)cursor-agent$", "/cursor-agent/versions/[^/]+/index\\.js$"]
+  },
+  "lines": 15,
+  "interrupt": "ctrl-c",
+  "blocked": [
+    { "id": "run-command", "all": ["run this command?", "skip (esc or n)"] },
+    { "id": "run-once", "text": "Run (once) (y)" },
+    { "id": "write-file", "all": ["write to this file?", "proceed (y)"] },
+    { "id": "waiting-for-approval", "text": "Waiting for approval" }
+  ],
+  "working": [
+    { "id": "ctrl-c-to-stop", "text": "ctrl+c to stop" },
+    { "id": "spinner", "regex": "^\\s*(⬡|⬢|[⠀-⣿]+)\\s+\\w+ing\\b" }
+  ],
+  "idle": []
+}
