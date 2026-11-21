@@ -201,7 +201,7 @@ import {
   mergeManifests,
   type OverrideFile,
 } from "../lib/agent/detect/overrides.ts";
-import { setAgentResumeProvider } from "./agent-resume.ts";
+import { agentsChanged, setAgentResumeProvider } from "./agent-resume.ts";
 import { terminalSessions } from "./pty.ts";
 
 export type { AskRequest, HubSnapshot, IntegrationStatus, IntegrationTarget };
@@ -520,6 +520,7 @@ export class HubService {
       setStatus: (id, status) => registry.setStatus(id, status),
       setHarness: (id, harness) => registry.setHarness(id, harness),
       clearHarness: (id) => registry.clearHarness(id),
+      agentExited: (id) => registry.setSession(id, undefined),
       later,
     }, (id) => this.#manifests.sources.get(id));
     void this.refreshIntegration();
@@ -592,6 +593,8 @@ export class HubService {
     queueMicrotask(() => {
       this.#tilesQueued = false;
       this.#emit("tiles", this.core.snapshot());
+      // The shell keeper's live record follows (desktop/kept-shells.ts, debounced there).
+      agentsChanged();
     });
   }
 

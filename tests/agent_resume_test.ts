@@ -16,6 +16,8 @@ import {
 import { parseKept, respawnPlan } from "../lib/ptyd/kept.ts";
 import { hubArgsFor, hubPaths } from "../lib/hub/launch.ts";
 import { Registry } from "../lib/hub/registry.ts";
+import { CoalescedWriter, lostShellsPlan } from "../lib/ptyd/live.ts";
+import { ScreenDetector } from "../lib/hub/screen-detect.ts";
 
 const SID = "0b8f5a9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
 
@@ -221,4 +223,86 @@ Deno.test("resume: the registry's resumed and don't-resume marks", () => {
   r.clearHarness("pty-1");
   assertEquals(r.get("pty-1")!.harness, undefined);
   assertEquals(r.get("pty-1")!.name, "shell-1");
+});
+
+Deno.test("live record: writes are coalesced, and none after a clean exit", () => {
+  const timers: (() => void)[] = [];
+  let writes = 0;
+  const w = new CoalescedWriter(() => writes++, (fn) => void timers.push(fn));
+  w.poke();
+  w.poke();
+  w.poke();
+  assertEquals(timers.length, 1, "one write scheduled for the burst");
+  timers.shift()!();
+  assertEquals(writes, 1);
+  w.poke();
+  assertEquals(timers.length, 1, "a later change schedules another");
+  w.stop();
+  timers.shift()!();
+  w.poke();
+  assertEquals([writes, timers.length], [1, 0]);
+});
+
+Deno.test("live record: the daemon dying offers to restart its shell tiles and resume their agents", () => {
+  const term = (n: number, agent?: string) => ({
+    ptyId: `pty-${n}`,
+    shell: "/bin/zsh",
+    cols: 80,
+    rows: 24,
+    ...(agent ? { agent: { harness: "claude", session: agent } } : {}),
+  });
+  const record = parseKept({
+    v: 1,
+    workspaces: [{
+      id: "ws",
+      name: "W",
+      snapshot: {
+        tiles: {
+          t1: { ptyId: "pty-1", profile: { kind: "shell" } },
+          t2: { ptyId: "pty-2", profile: { kind: "shell" } },
+          t3: { ptyId: "pty-3", profile: { kind: "shell" } },
+          t4: {
+            ptyId: "pty-4",
+            profile: { kind: "agent", program: "/x/claude", name: "claude" },
+          },
+        },
+      },
+      terms: [term(1, "a"), term(2), term(3, "c"), term(4, "d")],
+    }],
+  })!;
+  // pty-3 ran in the app (sandboxed, or the daemon refused it): it did not end.
+  const { lost, resume } = lostShellsPlan(
+    record,
+    new Set(["pty-1", "pty-2", "pty-4"]),
+    true,
+  );
+  assertEquals(lost, [{
+    workspace: "ws",
+    ptys: ["pty-1", "pty-2"],
+    agents: 1,
+  }]);
+  assertEquals(resume.map((r) => r.ptyId), ["pty-1"]);
+  // The setting off: the shells, no agents.
+  assertEquals(
+    lostShellsPlan(record, new Set(["pty-1"]), false).lost[0].agents,
+    0,
+  );
+});
+
+Deno.test("screen detector: a shell back in the foreground means the agent quit (its session goes)", () => {
+  const exited: string[] = [];
+  const d = new ScreenDetector({
+    manifests: () => [],
+    screen: () => undefined,
+    tile: () => ({ harness: "claude", status: "idle" }),
+    setStatus: () => {},
+    setHarness: () => {},
+    clearHarness: () => {},
+    agentExited: (id) => void exited.push(id),
+    later: () => () => {},
+  });
+  d.foreground("pty-1", { name: "claude" });
+  assertEquals(exited, []);
+  d.foreground("pty-1", { name: "-zsh" });
+  assertEquals(exited, ["pty-1"]);
 });

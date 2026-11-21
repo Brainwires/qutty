@@ -16,6 +16,7 @@ import {
   ReplayRing,
 } from "../lib/ptyd/protocol.ts";
 import { parseKept, respawnPlan, retarget } from "../lib/ptyd/kept.ts";
+import { LIVE_FILE } from "../lib/ptyd/live.ts";
 import { PtyDaemon } from "../desktop/ptyd.ts";
 import { PtydClient } from "../desktop/ptyd-client.ts";
 import {
@@ -720,8 +721,12 @@ function agentRecord(n: number) {
 }
 
 /** A launch whose keeper resumes agents into a recorder (no hub, no real typing). */
-function resumingLaunch(record: unknown, answers: number[] = []) {
-  const files = memoryFiles({ [`/app/${KEPT_FILE}`]: JSON.stringify(record) });
+function resumingLaunch(
+  record: unknown,
+  answers: number[] = [],
+  file = KEPT_FILE,
+) {
+  const files = memoryFiles({ [`/app/${file}`]: JSON.stringify(record) });
   const app = launch(undefined, files, answers);
   const typed: [string, string][] = [];
   const resumed: string[] = [];
@@ -800,7 +805,7 @@ async function restoredWorkspace(
       ) === true,
   );
   assertEquals(app.workspaces.list()[0].name, "Workspace 3");
-  assertEquals(files.size, 0);
+  assertEquals(files.has(`/app/${KEPT_FILE}`), false);
   await app.sessions.disposeAll();
 }
 
@@ -862,4 +867,77 @@ Deno.test("quit: the keep question, its default and its three answers", async ()
     assertEquals(keptCalls, kept);
     off();
   }
+});
+
+Deno.test("keeper: after an unclean exit (no quit, no daemon) the live record brings the tiles and their agents back", async () => {
+  // A crash or power loss: no quit wrote kept-shells.json; the live record is there.
+  const r = resumingLaunch(agentRecord(2), [], LIVE_FILE);
+  await r.app.keeper.start(r.deps);
+  await until("the resumes", () => r.resumed.length === 2);
+  const ptys = r.app.workspaces.ptysOf("ws-a");
+  assertEquals(ptys.length, 2);
+  assertEquals(r.typed[1][1], "cd -- /repo2 && claude --hub --resume s2\r");
+  // The workspace's layout is back: its snapshot, on the fresh shells.
+  const snap = r.app.workspaces.snapshotOf("ws-a") as {
+    tiles: Record<string, { ptyId: string }>;
+  };
+  assertEquals(Object.values(snap.tiles).map((t) => t.ptyId), ptys);
+  // The live record now follows this session (its terminals, no agent known to the hub yet).
+  await until("the live record", () => {
+    const text = r.files.files.get(`/app/${LIVE_FILE}`);
+    return text !== undefined && text.includes(ptys[0]) &&
+      !text.includes('"s1"');
+  });
+  // A clean exit removes it: the next launch is not taken for a crash.
+  r.app.keeper.cleanExit();
+  assertEquals(r.files.files.has(`/app/${LIVE_FILE}`), false);
+  await r.app.sessions.disposeAll();
+});
+
+Deno.test("keeper: the live record is written as agents change, and an exited agent's entry goes", async () => {
+  const files = memoryFiles();
+  const app = launch(undefined, files);
+  const pending: (() => void)[] = [];
+  const sessions = new Map<string, string>();
+  let changed: () => void = () => {};
+  const deps: KeeperDeps = {
+    ...app.deps,
+    agents: () => ({
+      agentOf: (id) =>
+        sessions.has(id)
+          ? { harness: "claude", session: sessions.get(id), cwd: "/repo" }
+          : {},
+      hubArgs: () => [],
+      resumed: () => {},
+    }),
+    write: () => Promise.resolve(),
+    later: (fn) => void pending.push(fn),
+    watchAgents: (fn) => void (changed = fn),
+  };
+  await app.keeper.start(deps);
+  app.workspaces.join("main", "ws-a");
+  const t = await app.sessions.spawn(
+    { cols: 80, rows: 24, shell: "/bin/sh" },
+    { id: "main" },
+  );
+  const live = () =>
+    JSON.parse(files.files.get(`/app/${LIVE_FILE}`) ?? "null") as {
+      workspaces: { terms: { ptyId: string; agent?: { session: string } }[] }[];
+    } | null;
+  // A page save and a SessionStart in the same moment: one write.
+  app.workspaces.save("ws-a", SNAPSHOT_FOR(t.id));
+  sessions.set(t.id, "sess-1");
+  changed();
+  changed();
+  assertEquals(pending.length, 1, "the changes are coalesced");
+  pending.shift()!();
+  assertEquals(live()!.workspaces[0].terms[0].agent?.session, "sess-1");
+  // The agent quits back to its shell (the hub forgets its session): its entry goes.
+  sessions.delete(t.id);
+  changed();
+  pending.shift()!();
+  assertEquals(live()!.workspaces[0].terms[0].ptyId, t.id);
+  assertEquals(live()!.workspaces[0].terms[0].agent, undefined);
+  await app.sessions.disposeAll();
+  await app.fake.quit();
 });

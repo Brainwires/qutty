@@ -22,6 +22,7 @@ import type {
 } from "../desktop/session.ts";
 import type { DragOver, MoveRequest } from "../desktop/tile-move.ts";
 import type { JoinedPty } from "./workspace/session.ts";
+import type { LostShells as ShellsLost } from "./ptyd/live.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
   isFreshMenuEvent,
@@ -135,6 +136,16 @@ export interface SessionBackend {
   resumeAgents(): Promise<boolean>;
   /** Change it; resolves to the setting now. */
   setResumeAgents(on: boolean): Promise<boolean>;
+  /**
+   * The PTY daemon died while the app ran and took this window's shells (`ptys`, the ended
+   * terminals' ids) with it; `agents` of them can have their agent resumed.
+   */
+  onShellsLost(cb: (lost: ShellsLost) => void): () => void;
+  /**
+   * A fresh shell (`newId`) started in the tile whose terminal the daemon took (`oldId`): resume
+   * its agent. Whether one is resumed.
+   */
+  resumeLost(oldId: string, newId: string): Promise<boolean>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
   /** The Dock menu's commands for this window (absent: no Dock menu, the demo). */
   readonly dockCommands?: DockCommands;
@@ -260,6 +271,9 @@ export function createDesktopSession(deps: {
     setKeepShells: (on) => ext.setKeepShells({ on }),
     resumeAgents: () => ext.resumeAgents({}),
     setResumeAgents: (on) => ext.setResumeAgents({ on }),
+    onShellsLost: (cb) =>
+      deps.onDesktopEvent<ShellsLost>("session", "shellsLost", cb),
+    resumeLost: (oldId, newId) => ext.resumeLost({ oldId, newId }),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
@@ -358,6 +372,9 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
       keepShells = on;
       return Promise.resolve(keepShells);
     },
+    // The demo has no daemon to lose.
+    onShellsLost: none,
+    resumeLost: () => Promise.resolve(false),
     resumeAgents: () => Promise.resolve(resumeAgents),
     setResumeAgents(on) {
       resumeAgents = on;

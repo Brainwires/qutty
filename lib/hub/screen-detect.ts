@@ -55,6 +55,11 @@ export interface DetectorDeps {
   setStatus(id: string, status: TileStatus): void;
   setHarness(id: string, harness: string): void;
   clearHarness(id: string): void;
+  /**
+   * A shell is in tile `id`'s foreground again: whatever agent ran there has quit (the hub forgets
+   * its session, so a restart never resumes it).
+   */
+  agentExited?(id: string): void;
   /** Run `fn` in `ms` (the read's throttle); returns a cancel. */
   later(fn: () => void, ms: number): () => void;
 }
@@ -126,6 +131,7 @@ export class ScreenDetector {
       ? manifests.find((m) => m.id === tile.harness)
       : undefined;
     const agent = byProcess ?? byHarness;
+    if (shell) this.#deps.agentExited?.(id);
     if (agent?.id !== before) s.hooked = false;
     s.agent = agent;
     s.via = byProcess ? "process" : byHarness ? "harness" : undefined;

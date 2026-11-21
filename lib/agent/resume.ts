@@ -93,9 +93,20 @@ export function identityAtQuit(
   process: string | undefined,
   terminalCwd?: string,
 ): AgentIdentity | undefined {
-  if (!tile || process === undefined || isShellProcess(process)) {
-    return undefined;
-  }
+  if (process === undefined || isShellProcess(process)) return undefined;
+  return liveIdentity(tile, terminalCwd);
+}
+
+/**
+ * The identity to keep in the live record (written as it changes, for a restart after a crash or
+ * power loss): the hub tile's resumable harness and session id. The hub forgets a tile's session
+ * when its agent quits back to the shell (lib/hub/screen-detect.ts), so a quit agent drops out.
+ */
+export function liveIdentity(
+  tile: TileAgentState | undefined,
+  terminalCwd?: string,
+): AgentIdentity | undefined {
+  if (!tile) return undefined;
   const cwd = tile.cwd ?? terminalCwd;
   return identityOf({
     harness: tile.harness,

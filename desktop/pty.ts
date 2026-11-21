@@ -1363,6 +1363,9 @@ export default defineDesktopExtension({
         appSupportDir: h.appSupportDir,
         confirm: (o) => h.confirm(o),
       }));
+      // A clean exit removes the live session record; a crash or power loss leaves it for the
+      // next launch to restore from.
+      globalThis.addEventListener("unload", () => keeper.cleanExit());
       if (Deno.env.get("QUTTY_PTY_SELFTEST") === "persist") {
         runSelfTest("persist", () => persistSelfTest(sessions, keeper));
       }

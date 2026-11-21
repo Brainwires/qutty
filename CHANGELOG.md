@@ -16,6 +16,21 @@
   "Resume agents after restart" (on by default) turns this off, and a tile's
   header menu (right click) has "Don't resume this agent". Other agents give
   Qutty no session id, so they are not resumed.
+- Agents also come back after a crash, a kernel panic or a power loss.
+  - **The live record:** Qutty keeps a record of the session as it changes, in
+    `live-session.json` in the app folder. It holds each workspace's tiles and
+    layout, and each terminal's folder and agent session. It is written
+    atomically, with changes gathered for a second before each write. An agent
+    that quits back to its shell drops out of the record. A clean quit removes
+    the file.
+  - **After an unclean exit:** the next launch finds the file. It brings back
+    the workspaces' tiles and layout (shells in their folders) and resumes the
+    agents, the same way as after a quit that kept the shells. Before this, such
+    a launch got the layout settings back, but only one fresh shell.
+  - **When the shell keeper dies mid-session:** if the PTY daemon dies while
+    Qutty runs, the window offers "Restart shells and resume N agents" in a
+    strip at the bottom. It does not block anything: Dismiss leaves the tiles
+    ended.
 - Screen-based agent state. Qutty now tells working / waiting for you / idle for
   agents without hooks, by reading the bottom of the tile's screen against
   per-agent detection manifests. Manifests are bundled for Claude Code, Codex,

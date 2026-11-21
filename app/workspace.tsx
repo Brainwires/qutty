@@ -125,6 +125,7 @@ import { LinkMenu } from "./link-menu.tsx";
 import { useLauncher } from "./use-launcher.ts";
 import { useHub } from "./use-hub.ts";
 import { isResumable } from "../lib/agent/resume.ts";
+import { useShellsLost } from "./shells-lost.tsx";
 import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
@@ -1301,6 +1302,13 @@ function WorkspaceView() {
     tileMove.openMenu(id, x, y, extra);
   }, [harnessIn, hubTileOf, tileMove.openMenu]);
 
+  // The PTY daemon died under us: offer to restart the shells it took and resume their agents.
+  const tileIds = useCallback(
+    () => stateRef.current.terminals.map((t) => t.id),
+    [],
+  );
+  const shellsLost = useShellsLost(ready ? managerRef.current : null, tileIds);
+
   const manager = managerRef.current;
   const showStrip = desktop && barPosition !== "top";
 
@@ -1543,6 +1551,7 @@ function WorkspaceView() {
             }}
           />
         )}
+        {shellsLost}
         {broadcast.on && (
           <BroadcastBanner
             state={broadcast.state}

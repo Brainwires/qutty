@@ -41,6 +41,7 @@ import { TileMover } from "./tile-move.ts";
 import { withArrivals } from "../lib/workspace/session.ts";
 import {
   identityAtQuit,
+  liveIdentity,
   planResumes,
   RESUME_CAP,
   resumeDelay,
@@ -49,7 +50,14 @@ import {
 import {
   type AgentResumeProvider,
   agentResumeProvider,
+  onAgentsChanged,
 } from "./agent-resume.ts";
+import {
+  CoalescedWriter,
+  LIVE_FILE,
+  type LostShells,
+  lostShellsPlan,
+} from "../lib/ptyd/live.ts";
 import {
   cutToLine,
   historyPrelude,
@@ -110,8 +118,10 @@ export interface KeeperDeps {
   agents?(): AgentResumeProvider | undefined;
   /** Type into a terminal (a resume command). */
   write?(id: string, text: string): Promise<void>;
-  /** Run `fn` in `ms` (the resumes' stagger). */
+  /** Run `fn` in `ms` (the resumes' stagger, the live record's debounce). */
   later?(fn: () => void, ms: number): void;
+  /** Call `fn` when the hub's tiles change (desktop/agent-resume.ts `onAgentsChanged`). */
+  watchAgents?(fn: () => void): void;
 }
 
 /** What the quit question and Settings use. */
@@ -120,6 +130,8 @@ export interface QuitKeeper {
   keepable(): number;
   /** Let every daemon terminal go and leave the workspaces with the daemon; how many. */
   keepForNextLaunch(): Promise<number>;
+  /** The quit goes ahead: a clean exit (the live session record goes). */
+  cleanExit?(): void;
 }
 
 /** The setting, and the shells kept across launches. */
@@ -131,6 +143,18 @@ export class ShellKeeper implements QuitKeeper {
   #connecting: Promise<PtydClient | undefined> | undefined;
   #failedAt: number | undefined;
   #ready: Promise<void> = Promise.resolve();
+  /** The live record's writer (made at `start`; writes only once the startup has read it). */
+  #live: CoalescedWriter | undefined;
+  /** The live record as last written, and which of its terminals ran in the daemon. */
+  #lastLive:
+    | { text: string; record: KeptRecord; remote: Set<string> }
+    | undefined;
+  /** The app is exiting cleanly: the daemon going away is no loss. */
+  #exiting = false;
+  /** Old PTY id → its agent to resume, after the daemon died (`resumeLost`). */
+  #lost = new Map<string, ShellRespawn>();
+  #lostResumes = 0;
+  #onLost = new Set<(lost: LostShells) => void>();
 
   /** Settled once the last launch's shells are back (or there were none). */
   get ready(): Promise<void> {
@@ -178,11 +202,109 @@ export class ShellKeeper implements QuitKeeper {
   /** Read the setting, bring back the last launch's shells, and route new tiles to the daemon. */
   start(deps: KeeperDeps): Promise<void> {
     this.#deps = deps;
+    const live = new CoalescedWriter(
+      () => this.#writeLive(deps),
+      deps.later ?? ((fn, ms) => void setTimeout(fn, ms)),
+    );
     this.#ready = this.#startup(deps).catch((err) => {
       console.error("pty: could not restore the last session's shells", err);
+    }).finally(() => {
+      // The live record follows the session from now on (it was read above).
+      this.#live = live;
+      this.#writeLive(deps);
     });
+    deps.workspaces.onSaved(() => this.#live?.poke());
+    deps.watchAgents?.(() => this.#live?.poke());
     deps.sessions.setRemote((id, options) => this.#open(id, options));
     return this.#ready;
+  }
+
+  /**
+   * The app exits cleanly (a quit, whatever it did with the shells): the live record goes, so the
+   * next launch does not take it for a crash.
+   */
+  cleanExit(): void {
+    this.#exiting = true;
+    this.#live?.stop();
+    const d = this.#deps;
+    if (d?.appSupportDir) d.remove(`${d.appSupportDir}/${LIVE_FILE}`);
+  }
+
+  /** The live record now: every running terminal, its workspace's snapshot, its agent session. */
+  #liveRecord(d: KeeperDeps): KeptRecord {
+    const agents = d.agents?.();
+    const ids = d.sessions.ids().filter((id) => d.sessions.host.isRunning(id));
+    const terms = new Map<string, KeptTerminal>();
+    for (const id of ids) {
+      const known = d.sessions.host.describe(id);
+      if (!known) continue;
+      const tile = agents?.agentOf(id);
+      const agent = liveIdentity(tile, known.cwd);
+      terms.set(id, {
+        ptyId: id,
+        shell: known.shell,
+        cwd: tile?.cwd ?? known.cwd,
+        ...(d.sessions.sizeOf(id) ?? { cols: 80, rows: 24 }),
+        ...(agent ? { agent } : {}),
+      });
+    }
+    return this.#recordOf(d, ids, terms);
+  }
+
+  /** Write the live record when it changed (atomically: a crash mid-write keeps the old one). */
+  #writeLive(d: KeeperDeps): void {
+    if (!d.appSupportDir || this.#exiting) return;
+    const record = this.#liveRecord(d);
+    const text = JSON.stringify({ ...record, savedAt: 0 });
+    const remote = new Set(d.sessions.remoteIds());
+    const same = this.#lastLive?.text === text;
+    this.#lastLive = { text, record, remote };
+    if (same) return;
+    try {
+      d.writeText(`${d.appSupportDir}/${LIVE_FILE}`, JSON.stringify(record));
+    } catch (err) {
+      console.warn("pty: could not write the live session record", err);
+    }
+  }
+
+  /** Call `fn` when the daemon dies and takes shells with it (the session extension tells the page). */
+  onShellsLost(fn: (lost: LostShells) => void): () => void {
+    this.#onLost.add(fn);
+    return () => this.#onLost.delete(fn);
+  }
+
+  /** The daemon went away while the app runs: offer to start its tiles' shells again. */
+  #daemonLost(d: KeeperDeps): void {
+    const last = this.#lastLive;
+    if (this.#exiting || !last || last.remote.size === 0) return;
+    const { lost, resume } = lostShellsPlan(
+      last.record,
+      last.remote,
+      this.#resume && d.agents?.() !== undefined,
+    );
+    for (const r of resume) this.#lost.set(r.ptyId, r);
+    for (const l of lost) {
+      for (const fn of [...this.#onLost]) {
+        try {
+          fn(l);
+        } catch (err) {
+          console.error("pty: a lost-shells listener failed", err);
+        }
+      }
+    }
+  }
+
+  /**
+   * The page started a fresh shell (`newId`) in the tile whose terminal the daemon took (`oldId`):
+   * resume the agent that ran there, if it is one to resume.
+   */
+  resumeLost(oldId: string, newId: string): boolean {
+    const d = this.#deps;
+    const r = this.#lost.get(oldId);
+    if (!d || !r) return false;
+    this.#lost.delete(oldId);
+    this.#resumeIn(d, newId, r, this.#lostResumes++);
+    return true;
   }
 
   keepable(): number {
@@ -196,6 +318,10 @@ export class ShellKeeper implements QuitKeeper {
     const ids = d.sessions.remoteIds();
     if (ids.length === 0) return 0;
     const record = await this.#record(d, client, ids);
+    // The quit is under way: the daemon closing from here on is no loss, and the live record
+    // stays as it is until the exit removes it.
+    this.#exiting = true;
+    this.#live?.stop();
     // Let go first (each `detach` is answered before `setState`, which is answered last).
     for (const id of ids) d.sessions.letGo(id);
     await client.request("setState", {
@@ -246,6 +372,15 @@ export class ShellKeeper implements QuitKeeper {
         ...(agent ? { agent } : {}),
       });
     }));
+    return this.#recordOf(d, ids, terms);
+  }
+
+  /** The record of terminals `ids` (described in `terms`) and the workspaces they are in. */
+  #recordOf(
+    d: KeeperDeps,
+    ids: readonly string[],
+    terms: ReadonlyMap<string, KeptTerminal>,
+  ): KeptRecord {
     return {
       v: KEPT_VERSION,
       savedAt: (d.now ?? Date.now)(),
@@ -279,17 +414,20 @@ export class ShellKeeper implements QuitKeeper {
     const file = d.appSupportDir
       ? `${d.appSupportDir}/${KEPT_FILE}`
       : undefined;
+    // The live record is there only when the last exit was not clean (a crash, a power loss).
+    const liveText = d.appSupportDir
+      ? await d.readText(`${d.appSupportDir}/${LIVE_FILE}`)
+      : undefined;
     let adopted = false;
     if (client) {
       this.#attachClient(client);
       adopted = await this.#adoptAll(d, client);
     }
     // No daemon, or a fresh one the sidecar just started (a reboot ended the old one): the record
-    // the quit wrote brings the shell tiles back instead.
-    if (!adopted && file) {
-      const text = await d.readText(file);
-      if (text) await this.#respawn(d, text);
-    }
+    // the quit wrote brings the shell tiles back instead; with no quit at all, the live record.
+    const text = !adopted && file ? await d.readText(file) : undefined;
+    if (text) await this.#respawn(d, text);
+    else if (!adopted && liveText) await this.#respawn(d, liveText);
     if (file) d.remove(file);
     // No daemon yet (the sidecar is starting one): look for it now, so the first tiles' shells
     // find it (a spawn meanwhile waits for this, not for a fresh wait of its own).
@@ -455,7 +593,10 @@ export class ShellKeeper implements QuitKeeper {
   #attachClient(client: PtydClient): void {
     this.#client = client;
     client.onClose(() => {
-      if (this.#client === client) this.#client = undefined;
+      if (this.#client !== client) return;
+      this.#client = undefined;
+      // The daemon died under the running app (not a quit): its shells ended with it.
+      if (this.#deps) this.#daemonLost(this.#deps);
     });
   }
 
@@ -552,6 +693,7 @@ export function desktopKeeperDeps(
     ...(host.confirm ? { confirm: (o) => host.confirm!(o) } : {}),
     agents: agentResumeProvider,
     write: (id, text) => sessions.host.write(id, text),
+    watchAgents: (fn) => void onAgentsChanged(fn),
   };
 }
 
