@@ -1,23 +1,25 @@
 // An agent tile's insides (the frame — position, phase, header, close — is app/tile-cluster.tsx's,
-// shared with the terminals and web tiles): a coding agent's chat drawn like a terminal.
+// shared with the terminals and web tiles): a coding agent's chat, in the harness overlay's card
+// look (the styles under "The agent tile's card look" in public/styles.css).
 //
-// - The header (`AgentHead`): a status dot, the agent's avatar (app/agent-avatar.tsx, in its
-//   backend's colour), its name (its hub name; click to edit), the model picker (the backend's
-//   models, lib/agent/tile.ts `agentModels`), the permission mode (ask / accept edits / plan /
-//   bypass: the session restarts, resumed), what it is doing, and a menu: Open in terminal
-//   (`claude --resume <session>` or `codex resume <thread>` in a normal tile, in the same folder:
-//   the real TUI), New session, Close.
-// - The body (`AgentBody`): the transcript (lib/agent/transcript.ts rows) in the terminal's font
-//   and colours — the user's prompts after a `>`, the assistant's markdown, thinking (dim,
-//   collapsed), tool calls as `● Tool(arg)` rows with a `⎿` summary that expand to the diff, the
-//   command and its output, or the input and result; permission questions with Allow, Allow
-//   always and Deny, under the tool call they are about; a footer per turn (done · tok/s · time ·
-//   cost). It sticks to the bottom unless you scrolled up ("Jump to latest").
+// - The header card (`AgentHead`): the agent's avatar (app/agent-avatar.tsx, in its backend's
+//   colour), its name (its hub name; click to edit), the backend, the model picker (the backend's
+//   models, lib/agent/tile.ts `agentModels`) and the permission mode (ask / accept edits / plan /
+//   bypass: the session restarts, resumed) as pill selects, a status pill, and a menu: Open in
+//   terminal (`claude --resume <session>` or `codex resume <thread>` in a normal tile, in the same
+//   folder: the real TUI), New session, Close.
+// - The body (`AgentBody`): the transcript (lib/agent/transcript.ts rows), prose in the UI font and
+//   code in the terminal's — the user's prompts as bubbles, the assistant's markdown, thinking
+//   (quiet, collapsed), tool calls as cards with a status icon and a summary that expand to the
+//   diff, the command and its output, or the input and result; permission questions with Allow,
+//   Allow always and Deny, inside the tool call they are about; a footer per turn (done · tok/s ·
+//   time · cost). Empty, a centred intro: the backend's avatar, "Ask Claude anything", the folder.
+//   It sticks to the bottom unless you scrolled up ("Jump to latest").
 // - Once the session changed a file, tabs over the body: Transcript and Changes (the session's
 //   edits as one diff to accept, revert or open: app/agent-changes.tsx).
 // - The side rail: jump to the top, jump to the latest, maximize / restore the tile (the tile's
 //   own control), and read the last reply aloud (the companion's voice; again to stop).
-// - The prompt box: two lines at least, it grows with its text; Enter sends, Shift+Enter is a new
+// - The prompt box: one line at first, it grows with its text; Enter sends, Shift+Enter is a new
 //   line; ↑ at the text's start (↓ at its end; either end of one line) walks the prompt history
 //   (lib/agent/prompt-box.ts: every tile's prompts, this tile's first). Its toolbar: attach files
 //   (also by drop or paste; images go as images), a picture of a web tile (where the engine can
@@ -148,12 +150,24 @@ function agentOf(
   return entry.chat?.agent ?? state?.snap?.spec.agent;
 }
 
-/** The backend's name and colour, for its prompt box ("Ask Claude…", Claude's orange Send). */
+/** The backend's name and glyph: the prompt box's placeholder ("Ask Claude…"), the avatars. */
 function backendLook(
   kind: AgentKind | undefined,
-): { id: string; label: string; color: string } {
-  if (kind === "ollama") return { id: "ollama", label: "Ollama", color: "" };
+): { id: string; label: string; glyph: string } {
+  if (kind === "ollama") return { id: "ollama", label: "Ollama", glyph: "◆" };
   return harnessSpec(kind === "codex" ? "codex" : "claude");
+}
+
+/** The backend's round avatar (its glyph on its colour, the tile's `--harness`). */
+function BackendAvatar(props: { glyph: string; size?: "big" }) {
+  return (
+    <span
+      class={`agent-head-avatar${props.size === "big" ? " is-big" : ""}`}
+      aria-hidden="true"
+    >
+      {props.glyph}
+    </span>
+  );
 }
 
 /** Milliseconds since `since`, updated each animation frame (seconds resolution). */
@@ -219,21 +233,20 @@ export function AgentHead(
     : groupText(group);
   return (
     <span class="agent-head" ref={anchor} data-testid="agent-head">
-      <span
-        class="agent-dot"
-        data-group={group}
-        data-testid="agent-dot"
-        aria-hidden="true"
-      />
-      <AgentAvatar
-        name={entry.title}
-        harness={agentHarness(agent)}
-        size={15}
-      />
+      <span class="agent-head-pattern">
+        <AgentAvatar
+          name={entry.title}
+          harness={agentHarness(agent)}
+          size={32}
+        />
+      </span>
       <NameField
         name={entry.title}
         onRename={(name) => hooks.rename(id, name)}
       />
+      <span class="agent-backend" data-testid="agent-backend">
+        {agentLabel(agent)}
+      </span>
       <button
         type="button"
         class="agent-model"
@@ -244,7 +257,7 @@ export function AgentHead(
         onClick={() => setMenu(menu === "model" ? "none" : "model")}
       >
         {modelLabel(model)}
-        <span class="agent-caret" aria-hidden="true">▾</span>
+        <Chevron />
       </button>
       <button
         type="button"
@@ -260,14 +273,21 @@ export function AgentHead(
         }}
       >
         {MODE_LABELS[mode]}
-        <span class="agent-caret" aria-hidden="true">▾</span>
+        <Chevron />
       </button>
+      <span class="agent-head-gap" />
       <span
         class="agent-status"
         data-testid="agent-status"
         data-group={group}
         title={state?.failed ?? t?.error ?? ""}
       >
+        <span
+          class="agent-dot"
+          data-group={group}
+          data-testid="agent-dot"
+          aria-hidden="true"
+        />
         {status}
       </span>
       <button
@@ -280,7 +300,11 @@ export function AgentHead(
         aria-expanded={menu === "more"}
         onClick={() => setMenu(menu === "more" ? "none" : "more")}
       >
-        ⋯
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+          <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
+        </svg>
       </button>
       {menu === "model" && (
         <div class="menu agent-menu" role="menu" data-testid="agent-models">
@@ -392,6 +416,26 @@ export function AgentHead(
         </div>
       )}
     </span>
+  );
+}
+
+/** A small down chevron (a pill select's, a card's). */
+function Chevron() {
+  return (
+    <svg
+      class="agent-caret"
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+    </svg>
   );
 }
 
@@ -605,13 +649,19 @@ export function AgentBody(
             </div>
           )}
           {!state?.failed && (!t || t.rows.length === 0) && (
-            <div class="agent-welcome" data-testid="agent-welcome">
-              <div class="agent-welcome-title">✻ {entry.title}</div>
-              <div>
-                {t ? `in ${entry.chat?.cwd ?? t.cwd ?? "~"}` : "starting…"}
+            <div
+              class="agent-welcome"
+              data-testid="agent-welcome"
+              data-part="agent-welcome"
+            >
+              <BackendAvatar glyph={backend.glyph} size="big" />
+              <div class="agent-welcome-title">
+                {t
+                  ? `${promptPlaceholder(backend).replace(/…$/, "")} anything`
+                  : `Starting ${entry.title}…`}
               </div>
-              <div class="agent-dim">
-                Enter sends · Shift+Enter new line · Esc interrupts
+              <div class="agent-welcome-cwd">
+                {t ? `in ${entry.chat?.cwd ?? t.cwd ?? "~"}` : "starting…"}
               </div>
             </div>
           )}
@@ -620,9 +670,7 @@ export function AgentBody(
             <div class="agent-working" data-testid="agent-working">
               <span class="agent-spinner" aria-hidden="true">✻</span>{" "}
               {t.asking.length > 0 ? "Waiting for you…" : "Working…"}{" "}
-              <span class="agent-dim">
-                {formatDuration(elapsed)} · esc to interrupt
-              </span>
+              <span class="agent-dim">{formatDuration(elapsed)}</span>
             </div>
           )}
         </div>
@@ -654,7 +702,6 @@ export function AgentBody(
         transcript={t}
         disabled={!state?.snap}
         placeholder={promptPlaceholder(backend)}
-        {...(backend.color ? { tint: backend.color } : {})}
         onSent={jump}
       />
     </div>
@@ -710,6 +757,7 @@ function RowView(
           class="agent-row agent-user"
           data-testid="agent-row"
           data-type="user"
+          data-part="agent-message"
         >
           <span class="agent-mark">&gt;</span>
           <div class="agent-user-text">
@@ -728,6 +776,7 @@ function RowView(
           class="agent-row agent-text"
           data-testid="agent-row"
           data-type="text"
+          data-part="agent-message"
         >
           <span class="agent-mark agent-bullet">●</span>
           <Markdown text={row.text} openUrl={hooks.openUrl} />
@@ -831,6 +880,7 @@ function ToolRow(
   return (
     <div
       class={`agent-row agent-tool${props.nested ? " is-nested" : ""}`}
+      data-part="agent-tool"
       data-testid="agent-tool"
       data-tool={row.name}
       data-status={row.status}
@@ -848,6 +898,7 @@ function ToolRow(
         </span>
         <span class="agent-tool-name">{title.name}</span>
         {title.arg && <span class="agent-tool-arg">({title.arg})</span>}
+        <Chevron />
       </button>
       {props.children}
       <div class="agent-tool-sum" data-testid="agent-tool-summary">
@@ -867,17 +918,22 @@ function ToolGroup(
 ) {
   const [open, setOpen] = useState(false);
   return (
-    <div class="agent-row agent-tool agent-group" data-testid="agent-group">
+    <div
+      class="agent-row agent-tool agent-group"
+      data-part="agent-tool"
+      data-testid="agent-group"
+      data-open={open ? "true" : undefined}
+    >
       <button
         type="button"
         class="agent-tool-head"
         aria-expanded={open}
-        onClick={() =>
-          setOpen(!open)}
+        onClick={() => setOpen(!open)}
       >
         <span class="agent-mark agent-tool-dot" data-status="done">●</span>
         <span class="agent-tool-name">{props.label}</span>
-        <span class="agent-dim">{open ? " ▾" : " (expand)"}</span>
+        <span class="agent-dim agent-expand">{open ? "" : " (expand)"}</span>
+        <Chevron />
       </button>
       {open &&
         props.rows.map((r) => (
@@ -1010,6 +1066,7 @@ function Permission(
         props.inline ? " is-inline" : ""
       }`}
       data-testid="agent-permission"
+      data-part="agent-permission"
       data-decision={row.decision ?? ""}
       data-inline={props.inline ? "true" : undefined}
     >
@@ -1175,8 +1232,6 @@ function Prompt(
     disabled: boolean;
     /** "Ask Claude…", by the tile's backend. */
     placeholder: string;
-    /** The backend's colour (Send, the focus ring); absent: the theme's accent. */
-    tint?: string;
     onSent(): void;
   },
 ) {
@@ -1199,7 +1254,6 @@ function Prompt(
       sendTitle={running
         ? "Queue (Enter): sent when this turn is done"
         : "Send (Enter)"}
-      {...(props.tint ? { tint: props.tint } : {})}
       queue={t?.queue ?? []}
       images
       own={() =>

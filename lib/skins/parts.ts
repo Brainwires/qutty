@@ -58,6 +58,13 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   cls("tile-grip", "A free-form tile's resize grip (edges and corners)."),
   part("agent-body", "An agent tile's body (its transcript and prompt)."),
   part(
+    "agent-message",
+    'A message in an agent tile\'s transcript; `[data-type="user"]` or `"text"`.',
+  ),
+  part("agent-tool", "A tool call's card in an agent tile's transcript."),
+  part("agent-permission", "A permission question's card (Allow / Deny)."),
+  part("agent-welcome", "An agent tile's empty state (its avatar and folder)."),
+  part(
     "composer",
     "A prompt box: the composer card of an agent tile or a harness overlay.",
   ),

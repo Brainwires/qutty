@@ -146,6 +146,7 @@ export function SideRail(
     <div
       class={`agent-rail${props.class ? ` ${props.class}` : ""}`}
       data-testid={`${p}-rail`}
+      data-companion-avoid=""
     >
       <RailButton testid={`${p}-top`} label="Jump to top" onClick={props.onTop}>
         <path d="M3.5 2.5h9M8 13.5V5.5M4.5 9 8 5.5 11.5 9" />
@@ -334,9 +335,6 @@ export interface PromptBoxProps {
   /** The Send button's accessible name and tooltip (it shows an arrow). */
   sendLabel: string;
   sendTitle: string;
-  /** The colour of the Send button and the focus ring (`--harness`; absent: the tile's, else the
-   * theme's accent). */
-  tint?: string;
   /** Messages waiting to be sent (an agent tile's queue), above the text. */
   queue?: readonly string[];
   /** Pictures can be attached (an agent tile; a terminal takes text only). */
@@ -560,7 +558,6 @@ export function PromptBox(props: PromptBoxProps) {
       data-part="composer"
       data-testid={`${p}-prompt`}
       data-empty={empty ? "true" : undefined}
-      style={props.tint ? { "--harness": props.tint } : undefined}
       ref={promptRef}
     >
       {queue.length > 0 && (
