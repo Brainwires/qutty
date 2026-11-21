@@ -197,6 +197,9 @@ change without notice.
 | `[data-part="tile-body"]`       | A terminal tile's body (xterm draws inside it).                                                                 |
 | `.tile-grip`                    | A free-form tile's resize grip (its edges and corners).                                                         |
 | `[data-part="agent-body"]`      | An agent tile's body: its transcript and prompt.                                                                |
+| `[data-part="composer"]`        | A prompt box: the composer card of an agent tile or a harness overlay. `[data-empty]` while nothing is typed.   |
+| `[data-part="composer-input"]`  | A prompt box's text field.                                                                                      |
+| `[data-part="composer-button"]` | A button in a prompt box: `.agent-tool-btn` (attach, saved, history, dictate), `.agent-stop`, `.agent-send`.    |
 | `[data-part="web-toolbar"]`     | A web tile's toolbar, in its header.                                                                            |
 | `.web-btn`                      | A button in a web tile's toolbar.                                                                               |
 | `[data-part="web-address"]`     | A web tile's address field.                                                                                     |

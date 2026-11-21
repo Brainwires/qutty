@@ -4366,6 +4366,17 @@ kbd {
   user-select: none;
   -webkit-user-select: none;
 }
+/* Off the prompt boxes and the harness rail it would cover (app/companion/use-companion-dodge.ts). */
+.companion-overlay {
+  transform: translate(
+    var(--companion-dodge-x, 0px),
+    var(--companion-dodge-y, 0px)
+  );
+  transition: transform 220ms var(--ease);
+}
+.reduced-motion .companion-overlay {
+  transition: none;
+}
 .companion-overlay[data-corner="bottom-right"] {
   right: 14px;
   bottom: 6px;
@@ -6656,26 +6667,51 @@ pre.agent-detail {
   cursor: default;
 }
 
-/* The prompt box. */
+/* The prompt box (app/prompt-box.tsx): the composer of an agent tile and of a harness overlay.
+   A translucent card in the UI font, floating over what is behind it: the text on top, one row of
+   buttons under it (attach, saved prompts, history on the left; dictate, stop and the round Send
+   on the right). Its colour is the harness's (`--harness`: Claude's orange, Codex's green; the
+   theme's accent otherwise): the focus ring and Send. Sizes are in px so the tile's zoom (the
+   `zoom` above) scales all of it. */
 .agent-prompt {
+  --hc: var(--harness, var(--accent));
+  --composer-radius: 16px;
+  --composer-btn: 30px;
   flex: none;
-  margin: 0 8px 8px;
-  padding: 6px 8px 5px;
+  position: relative;
+  margin: 4px 10px 10px;
+  padding: 10px 10px 8px;
   border: 1px solid var(--line-2);
-  border-radius: 7px;
-  background: rgba(var(--hi-rgb), 0.025);
+  border-radius: var(--composer-radius);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--hi-rgb), 0.05),
+    0 1px 2px rgba(var(--shadow-rgb), calc(0.12 * var(--shadow-a))),
+    0 12px 32px -10px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
+  color: var(--text);
+  font: 14px/1.5 var(--sans);
+  transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
-.tile.is-focused .agent-prompt:focus-within {
-  border-color: rgba(var(--accent-rgb), 0.7);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+.agent-prompt:focus-within {
+  border-color: color-mix(in srgb, var(--hc) 45%, var(--line-2));
+  box-shadow:
+    inset 0 1px 0 rgba(var(--hi-rgb), 0.05),
+    0 0 0 3px color-mix(in srgb, var(--hc) 12%, transparent),
+    0 12px 32px -10px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
 }
 .agent-prompt.is-dragging {
   border-style: dashed;
-  border-color: var(--accent);
+  border-color: var(--hc);
+  background: color-mix(in srgb, var(--hc) 8%, var(--panel));
 }
 .agent-queue {
-  margin-bottom: 4px;
+  margin: 0 4px 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
   color: var(--text-2);
+  font-size: 13px;
 }
 .agent-queued {
   overflow: hidden;
@@ -6685,86 +6721,204 @@ pre.agent-detail {
 .agent-files {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 8px;
 }
 .agent-file {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 2px 1px 6px;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 10px;
   border: 1px solid var(--line-2);
-  border-radius: 4px;
+  border-radius: 8px;
+  background: rgba(var(--hi-rgb), 0.04);
   color: var(--text-2);
-  font-size: 0.9em;
+  font: 500 12px/1 var(--sans);
 }
 .agent-file-x {
   appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  font: inherit;
+  font: 15px/1 var(--sans);
 }
 .agent-file-x:hover {
+  background: rgba(var(--red-rgb), 0.12);
   color: var(--red);
 }
 .agent-note {
   color: var(--tint-yellow, var(--amber));
-  font-size: 0.9em;
+  font-size: 12px;
 }
 .agent-input-row {
   display: flex;
-  gap: 1ch;
+  padding: 2px 6px 0;
 }
-.agent-caret-mark {
-  flex: none;
-  color: var(--accent);
-}
+/* One line at first, up to eight (then it scrolls); the height follows the text (prompt-box.tsx). */
 textarea.agent-input {
   flex: 1;
   min-width: 0;
-  min-height: calc(2em * var(--agent-lh, 1.35));
-  max-height: 320px;
+  min-height: 1.5em;
+  max-height: calc(8 * 1.5em);
   padding: 0;
   border: 0;
   outline: none;
   resize: none;
+  overflow-y: auto;
   background: transparent;
   color: var(--text);
   font: inherit;
+  caret-color: var(--hc);
   user-select: text;
   -webkit-user-select: text;
 }
 textarea.agent-input::placeholder {
   color: var(--text-3);
+  opacity: 1;
 }
 .agent-tools {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
+  gap: 8px;
+  margin-top: 8px;
+}
+.agent-tool-group {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.agent-tool-group[data-group="send"] {
+  gap: 6px;
+}
+.agent-tool-btn {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--composer-btn);
+  height: var(--composer-btn);
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.agent-tool-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-tool-btn:hover:not(:disabled) {
+  background: rgba(var(--hi-rgb), 0.08);
+  color: var(--text);
 }
 .agent-tool-btn[aria-expanded="true"] {
-  background: rgba(var(--hi-rgb), 0.07);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--hc) 14%, transparent);
+  color: var(--hc);
 }
 .agent-tool-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
-/* The toolbar's menus (saved prompts, history, pictures) open upward. */
+.agent-tool-btn:focus-visible,
+.agent-send:focus-visible,
+.agent-stop:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--hc) 70%, transparent);
+  outline-offset: 1px;
+}
+/* The keys, only while the box has the keyboard and nothing is typed yet. */
+.agent-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font: 12px/1 var(--sans);
+  text-align: right;
+  opacity: 0;
+  transition: opacity 160ms var(--ease);
+}
+.agent-prompt[data-empty]:focus-within .agent-hint {
+  opacity: 0.75;
+}
+.agent-send,
+.agent-stop {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease),
+    box-shadow 140ms var(--ease), transform 90ms var(--ease);
+}
+.agent-send {
+  width: 32px;
+  height: 32px;
+  background: var(--hc);
+  color: #fff;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 4px 12px -2px color-mix(in srgb, var(--hc) 55%, transparent);
+}
+.agent-send svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--hc) 88%, #fff);
+}
+.agent-send:active:not(:disabled),
+.agent-stop:active {
+  transform: scale(0.92);
+}
+.agent-send:disabled {
+  background: rgba(var(--hi-rgb), 0.08);
+  color: var(--text-3);
+  box-shadow: none;
+  cursor: default;
+}
+.agent-stop {
+  width: var(--composer-btn);
+  height: var(--composer-btn);
+  background: rgba(var(--red-rgb), 0.14);
+  color: var(--red);
+}
+.agent-stop svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-stop:hover {
+  background: rgba(var(--red-rgb), 0.24);
+}
+.reduced-motion .agent-send,
+.reduced-motion .agent-stop {
+  transition: none;
+}
+/* The bottom row's menus (saved prompts, history, pictures) open upward from it. */
 .menu.agent-menu.agent-pop {
   top: auto;
-  bottom: calc(100% + 4px);
-  left: 0;
-  min-width: 220px;
+  bottom: calc(100% + 10px);
+  left: -2px;
+  min-width: 240px;
   max-width: min(420px, 100%);
-  max-height: 260px;
+  max-height: 280px;
   overflow-y: auto;
+  border-radius: 12px;
+  font-family: var(--sans);
 }
 .agent-pop-row {
   display: flex;
@@ -6775,62 +6929,9 @@ textarea.agent-input::placeholder {
   min-width: 0;
 }
 .agent-pop-empty {
-  padding: 6px 8px;
+  padding: 8px 10px;
   color: var(--text-3);
-  font: 11px/1 var(--mono);
-}
-.agent-tool-btn {
-  appearance: none;
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 20px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-}
-.agent-tool-btn:hover {
-  background: rgba(var(--hi-rgb), 0.07);
-  color: var(--text);
-}
-.agent-hint {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--text-3);
-  font: 10.5px/1 var(--mono);
-}
-.agent-send,
-.agent-stop {
-  appearance: none;
-  height: 20px;
-  padding: 0 9px;
-  border: 1px solid var(--line-2);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-2);
-  font: 10.5px/1 var(--mono);
-  cursor: pointer;
-}
-.agent-send:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.agent-send:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.agent-stop {
-  border-color: rgba(var(--red-rgb), 0.6);
-  color: var(--red);
-}
-.agent-stop:hover {
-  background: rgba(var(--red-rgb), 0.12);
+  font: 12px/1 var(--sans);
 }
 
 /* "Claude Code (chat)": the folder question. */
@@ -6913,14 +7014,11 @@ textarea.agent-input::placeholder {
 /* A GUI around a terminal that runs a coding-agent harness: floating cards (the header, the
    terminal, the prompt) on a tile background a shade warmer and darker than them, tinted with the
    harness's brand colour (`--harness`, set on the tile; the theme's accent when it has none).
-   Without the overlay the frame is just the terminal's host (`display: contents`), and the prompt
-   box's toolbar groups lay out as one row (the agent tile's). */
-.term-frame,
-.agent-tool-group {
+   Without the overlay the frame is just the terminal's host (`display: contents`). One scale for
+   all of it: 16px cards, 30px icon buttons with 16px icons (9px corners in a card, round on the
+   rail), the same hover. */
+.term-frame {
   display: contents;
-}
-.agent-send-icon {
-  display: none;
 }
 .tile.is-harness {
   --hc: var(--harness, var(--accent));
@@ -6932,6 +7030,14 @@ textarea.agent-input::placeholder {
     var(--shadow) calc(38% * var(--shadow-a))
   );
 }
+/* Focused, the frame takes the harness's colour, quieter than the theme's glow: the cards inside
+   carry the focus (the prompt box's ring). */
+.tile.is-harness.is-focused {
+  border-color: color-mix(in srgb, var(--hc) 50%, var(--line-2));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--hc) 10%, transparent),
+    0 12px 36px rgba(var(--shadow-rgb), calc(0.4 * var(--shadow-a)));
+}
 .tile.is-harness .tile-title,
 .tile.is-harness .tile-agent {
   display: none;
@@ -6939,12 +7045,12 @@ textarea.agent-input::placeholder {
 
 /* The header card. */
 .tile.is-harness .tile-head {
-  height: 58px;
+  height: 54px;
   margin: 10px 10px 0;
   padding: 0 10px 0 11px;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid var(--line-2);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--panel);
   box-shadow:
     0 1px 0 rgba(var(--hi-rgb), 0.04) inset,
@@ -6955,8 +7061,8 @@ textarea.agent-input::placeholder {
 }
 /* The busy shimmer runs inside the card's rounded corners. */
 .tile.is-harness .tile-head::after {
-  left: 14px;
-  right: 14px;
+  left: 16px;
+  right: 16px;
 }
 .harness-head {
   position: relative;
@@ -6970,12 +7076,12 @@ textarea.agent-input::placeholder {
   flex: none;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--hc);
   color: #fff;
-  font: 18px/1 var(--mono);
+  font: 16px/1 var(--mono);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--hc) 22%, transparent),
     0 4px 14px color-mix(in srgb, var(--hc) 35%, transparent);
@@ -7017,7 +7123,7 @@ textarea.agent-input::placeholder {
   border-radius: 12px;
   background: rgba(var(--hi-rgb), 0.04);
   color: var(--text-2);
-  font: 600 11.5px/1 var(--sans);
+  font: 600 12px/1 var(--sans);
   white-space: nowrap;
 }
 .harness-chip::before {
@@ -7083,21 +7189,25 @@ textarea.agent-input::placeholder {
   flex: none;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 9px;
   background: transparent;
-  color: var(--text-2);
+  color: var(--text-3);
   cursor: pointer;
+}
+.harness-icon-btn svg {
+  width: 16px;
+  height: 16px;
 }
 .tile.is-harness .tile-ctl svg {
   width: 12px;
   height: 12px;
 }
 .tile.is-harness .tile-close {
-  font-size: 20px;
+  font-size: 18px;
 }
 .harness-icon-btn:hover,
 .harness-icon-btn[aria-expanded="true"],
@@ -7105,11 +7215,15 @@ textarea.agent-input::placeholder {
   background: rgba(var(--hi-rgb), 0.08);
   color: var(--text);
 }
+.tile.is-harness .tile-close:hover {
+  background: rgba(var(--red-rgb), 0.14);
+  color: var(--red);
+}
 .tile.is-harness .tile-meta {
   gap: 2px;
 }
 .menu.agent-menu.harness-menu {
-  top: 46px;
+  top: 40px;
   left: auto;
   right: 0;
 }
@@ -7119,11 +7233,11 @@ textarea.agent-input::placeholder {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) 32px;
   grid-template-rows: minmax(0, 1fr) auto;
   column-gap: 10px;
-  row-gap: 12px;
-  padding: 10px 10px 16px;
+  row-gap: 10px;
+  padding: 10px 10px 12px;
 }
 .harness-frame > .tile-body {
   grid-column: 1;
@@ -7131,7 +7245,7 @@ textarea.agent-input::placeholder {
   min-width: 0;
   padding: 14px 12px 12px 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--tile);
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(var(--shadow-rgb), calc(0.24 * var(--shadow-a)));
@@ -7153,29 +7267,36 @@ textarea.agent-input::placeholder {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .harness-rail .agent-rail-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--line-2);
   border-radius: 50%;
-  background: var(--panel);
-  color: var(--text-2);
-  box-shadow: 0 4px 12px rgba(var(--shadow-rgb), calc(0.22 * var(--shadow-a)));
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--text-3);
+  box-shadow: 0 4px 12px -4px rgba(var(--shadow-rgb), calc(0.4 *
+    var(--shadow-a)));
+  transition: color 120ms var(--ease), border-color 120ms var(--ease),
+    background 120ms var(--ease);
 }
 .harness-rail .agent-rail-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 .harness-rail .agent-rail-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--hc) 50%, var(--line-2));
+  border-color: color-mix(in srgb, var(--hc) 45%, var(--line-2));
   background: var(--panel);
   color: var(--text);
 }
+.harness-rail .agent-rail-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--hc) 70%, transparent);
+  outline-offset: 1px;
+}
 .harness-rail .agent-rail-btn[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--hc) 60%, var(--line-2));
+  border-color: color-mix(in srgb, var(--hc) 55%, var(--line-2));
+  background: color-mix(in srgb, var(--hc) 12%, var(--panel));
   color: var(--hc);
 }
 .harness-rail-badged {
@@ -7198,13 +7319,13 @@ textarea.agent-input::placeholder {
 }
 .harness-help {
   position: absolute;
-  right: 46px;
+  right: 42px;
   bottom: 0;
   z-index: 5;
   width: 270px;
   padding: 12px 14px;
   border: 1px solid var(--line-2);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--panel);
   color: var(--text-2);
   font: 12px/1.5 var(--sans);
@@ -7223,134 +7344,11 @@ textarea.agent-input::placeholder {
   color: var(--text);
 }
 
-/* The prompt card, with its toolbar as pill tabs hanging off its bottom edge. */
+/* The prompt box: the composer card (above), across the bottom of the frame. */
 .harness-frame > .agent-prompt.harness-prompt {
   grid-column: 1 / -1;
   grid-row: 2;
   margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.tile.is-focused .harness-prompt.agent-prompt:focus-within {
-  box-shadow: none;
-}
-.harness-prompt .agent-input-row {
-  padding: 14px 16px;
-  border: 1.5px solid color-mix(in srgb, var(--hc) 60%, var(--line-2));
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 8px 24px rgba(var(--shadow-rgb), calc(0.26 * var(--shadow-a)));
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-.harness-prompt:focus-within .agent-input-row {
-  border-color: var(--hc);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--hc) 18%, transparent),
-    0 8px 24px rgba(var(--shadow-rgb), calc(0.26 * var(--shadow-a)));
-}
-.harness-prompt.is-dragging .agent-input-row {
-  border-style: dashed;
-}
-.harness-prompt .agent-caret-mark {
-  display: none;
-}
-.harness-prompt textarea.agent-input {
-  min-height: 6em;
-  font: 14px/1.5 var(--sans);
-}
-.harness-prompt .agent-files,
-.harness-prompt .agent-queue {
-  margin: 0 6px 6px;
-}
-.harness-prompt .agent-tools {
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  padding: 0 16px;
-  border-top: 0;
-}
-.harness-prompt .agent-tool-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px 6px 5px;
-  border: 1.5px solid color-mix(in srgb, var(--hc) 25%, var(--line-2));
-  border-top: 0;
-  border-radius: 0 0 14px 14px;
-  background: var(--panel);
-}
-.harness-prompt .agent-hint {
-  align-self: center;
-  padding-top: 2px;
-  font: 11.5px/1 var(--sans);
-}
-.harness-prompt .agent-tool-btn {
-  width: 32px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--text-2);
-}
-.harness-prompt .agent-tool-btn svg {
-  width: 18px;
-  height: 18px;
-}
-.harness-prompt .agent-tool-btn:hover {
-  color: var(--text);
-}
-.harness-prompt .agent-tool-group[data-group="send"] {
-  gap: 8px;
-  padding: 4px 6px 6px 8px;
-}
-.harness-prompt .agent-stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 15px;
-  background: rgba(var(--red-rgb), 0.1);
-  font: 600 12px/1 var(--sans);
-}
-.harness-prompt .agent-stop::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: currentColor;
-}
-.harness-prompt .agent-send {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-}
-.harness-prompt .agent-send:not(:disabled) {
-  background: var(--hc);
-  color: #fff;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--hc) 40%, transparent);
-}
-.harness-prompt .agent-send:disabled {
-  background: rgba(var(--hi-rgb), 0.08);
-  color: var(--text-3);
-}
-.harness-prompt .agent-send-icon {
-  display: block;
-  width: 18px;
-  height: 18px;
-}
-.harness-prompt .agent-send-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 /* ---- Tile frame options (lib/skins/settings.ts) and Settings → Skin ----------------------- */

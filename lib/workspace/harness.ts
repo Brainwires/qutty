@@ -110,6 +110,17 @@ const SHELLS = new Set([
   "demo-sh",
 ]);
 
+/**
+ * The prompt box's placeholder for a harness, short and by its name: "Ask Claude…",
+ * "Message Codex…".
+ */
+export function promptPlaceholder(
+  spec: Pick<HarnessSpec, "id" | "label">,
+): string {
+  const name = spec.label.trim().split(/\s+/)[0] || spec.id;
+  return spec.id === "claude" ? `Ask ${name}…` : `Message ${name}…`;
+}
+
 /** The spec for a harness name (`claude`); an unknown harness gets a plain one. */
 export function harnessSpec(name: string): HarnessSpec {
   const id = name.trim().toLowerCase();

@@ -2,12 +2,16 @@
 // coding agent) and the harness overlay (app/harness-overlay.tsx: the GUI around a harness's own
 // terminal UI). The parts without a DOM are lib/agent/prompt-box.ts.
 //
-// - `PromptBox`: two lines at least, it grows with its text; Enter sends, Shift+Enter is a new
-//   line; ↑ at the text's start (↓ at its end; either end of one line) walks the prompt history
-//   (every tile's prompts, this tile's first). Its toolbar: attach files (also by drop or paste),
-//   a picture of a web tile (where the engine can take one), saved prompts (inserted at the
-//   caret; the current prompt saved), the history menu, hold-to-dictate (with the companion), a
-//   Stop / Interrupt button and Send. History and saved prompts live in localStorage.
+// - `PromptBox`: the composer, a card in the UI font. One line at first, it grows with its text
+//   to eight lines (then scrolls); Enter sends, Shift+Enter is a new line; ↑ at the text's start
+//   (↓ at its end; either end of one line) walks the prompt history (every tile's prompts, this
+//   tile's first). Its bottom row: on the left attach files (also by drop or paste), a picture of
+//   a web tile (where the engine can take one), saved prompts (inserted at the caret; the current
+//   prompt saved) and the history menu; on the right hold-to-dictate (with the companion), a
+//   Stop / Interrupt button (only while there is something to stop) and the round Send button.
+//   The key hint shows only while the box has the keyboard and is empty; the rest is in the
+//   buttons' tooltips. History and saved prompts live in localStorage. Skins reach it by
+//   `data-part="composer"` (and `composer-input`, `composer-button`).
 // - `SideRail`: jump to the top, jump to the latest, maximize / restore the tile, and read aloud
 //   (the companion's voice; again to stop).
 //
@@ -274,6 +278,7 @@ function ToolButton(
     <button
       type="button"
       class="agent-tool-btn"
+      data-part="composer-button"
       data-testid={props.testid}
       title={props.label}
       aria-label={props.label}
@@ -285,12 +290,12 @@ function ToolButton(
     >
       <svg
         viewBox="0 0 16 16"
-        width="14"
-        height="14"
+        width="16"
+        height="16"
         aria-hidden="true"
         fill="none"
         stroke="currentColor"
-        stroke-width="1.3"
+        stroke-width="1.35"
         stroke-linecap="round"
         stroke-linejoin="round"
       >
@@ -322,12 +327,16 @@ export interface PromptBoxProps {
   class?: string;
   /** Sending does nothing yet (the agent has not started). */
   disabled: boolean;
+  /** Short: "Ask Claude…". */
   placeholder: string;
-  /** The toolbar's quiet hint. */
+  /** The keys, shown faintly while the box has the keyboard and is empty. */
   hint: string;
-  /** The Send button's text and tooltip. */
+  /** The Send button's accessible name and tooltip (it shows an arrow). */
   sendLabel: string;
   sendTitle: string;
+  /** The colour of the Send button and the focus ring (`--harness`; absent: the tile's, else the
+   * theme's accent). */
+  tint?: string;
   /** Messages waiting to be sent (an agent tile's queue), above the text. */
   queue?: readonly string[];
   /** Pictures can be attached (an agent tile; a terminal takes text only). */
@@ -338,7 +347,7 @@ export interface PromptBoxProps {
   onSend(text: string, files: AgentAttachment[]): void;
   /** Escape in the box; `true`: it was handled (an agent tile interrupts its turn). */
   onEscape?(): boolean;
-  /** The red button before Send (Stop, Interrupt). */
+  /** The round stop button before Send (Stop, Interrupt); absent while there is nothing to stop. */
   stop?: { label: string; title: string; testid: string; run(): void };
   /** Dictation and the companion type here: subscribe to what they insert. */
   onInsert?(cb: (s: string) => void): () => void;
@@ -375,12 +384,16 @@ export function PromptBox(props: PromptBoxProps) {
   const caret = useRef<number | null>(null);
   const pressAt = useRef<number | undefined>(undefined);
 
-  // Grow with the text (two lines at least: the CSS), and put the caret where an insert left it.
+  // Grow with the text, up to the CSS's max-height (eight lines; then it scrolls), and put the
+  // caret where an insert left it. The height is in ems, so it follows the tile's zoom.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+    const css = getComputedStyle(el);
+    const max = parseFloat(css.maxHeight) || 320;
+    const em = parseFloat(css.fontSize) || 14;
+    el.style.height = `${Math.min(el.scrollHeight, max) / em}em`;
     if (caret.current !== null) {
       el.selectionStart = el.selectionEnd = caret.current;
       caret.current = null;
@@ -538,12 +551,16 @@ export function PromptBox(props: PromptBoxProps) {
     dictation?.release(Date.now() - pressAt.current);
     pressAt.current = undefined;
   };
+  const empty = !text && files.length === 0;
   return (
     <div
       class={`agent-prompt${props.class ? ` ${props.class}` : ""}${
         dragging ? " is-dragging" : ""
       }`}
+      data-part="composer"
       data-testid={`${p}-prompt`}
+      data-empty={empty ? "true" : undefined}
+      style={props.tint ? { "--harness": props.tint } : undefined}
       ref={promptRef}
     >
       {queue.length > 0 && (
@@ -575,12 +592,13 @@ export function PromptBox(props: PromptBoxProps) {
         </div>
       )}
       <div class="agent-input-row">
-        <span class="agent-caret-mark" aria-hidden="true">&gt;</span>
         <textarea
           ref={inputRef}
           class="agent-input"
+          data-part="composer-input"
           data-testid={`${p}-input`}
-          rows={2}
+          aria-label={props.placeholder}
+          rows={1}
           spellcheck={false}
           placeholder={props.placeholder}
           value={text}
@@ -629,8 +647,8 @@ export function PromptBox(props: PromptBoxProps) {
           }}
         />
         {
-          /* Groups: what goes with the prompt, the voice, what sends or stops it (a plain row in
-            an agent tile; pill tabs under the harness overlay's card). */
+          /* One row: what goes with the prompt on the left, the voice and what sends or stops it
+          on the right, the key hint between them. */
         }
         <span class="agent-tool-group" data-group="compose">
           <ToolButton
@@ -670,11 +688,13 @@ export function PromptBox(props: PromptBoxProps) {
             <path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8M2.5 2.5v2.3h2.3M8 5v3.2l2.2 1.4" />
           </ToolButton>
         </span>
-        {dictation && (
-          <span class="agent-tool-group" data-group="voice">
+        <span class="agent-hint" aria-hidden="true">{props.hint}</span>
+        <span class="agent-tool-group" data-group="send">
+          {dictation && (
             <button
               type="button"
               class="agent-tool-btn"
+              data-part="composer-button"
               data-testid={`${p}-mic`}
               title="Hold to dictate into the prompt"
               aria-label="Dictate"
@@ -688,61 +708,58 @@ export function PromptBox(props: PromptBoxProps) {
             >
               <svg
                 viewBox="0 0 16 16"
-                width="14"
-                height="14"
+                width="16"
+                height="16"
                 aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.35"
+                stroke-linecap="round"
               >
-                <rect
-                  x="5.5"
-                  y="1.75"
-                  width="5"
-                  height="8.5"
-                  rx="2.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.3"
-                />
-                <path
-                  d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.3"
-                  stroke-linecap="round"
-                />
+                <rect x="5.5" y="1.75" width="5" height="8.5" rx="2.5" />
+                <path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2" />
               </svg>
             </button>
-          </span>
-        )}
-        <span class="agent-hint">{props.hint}</span>
-        <span class="agent-tool-group" data-group="send">
+          )}
           {props.stop && (
             <button
               type="button"
               class="agent-stop"
+              data-part="composer-button"
               data-testid={props.stop.testid}
               title={props.stop.title}
+              aria-label={props.stop.label}
               onPointerDown={(e) => e.preventDefault()}
               onClick={props.stop.run}
             >
-              {props.stop.label}
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect
+                  x="4"
+                  y="4"
+                  width="8"
+                  height="8"
+                  rx="1.75"
+                  fill="currentColor"
+                />
+              </svg>
             </button>
           )}
           <button
             type="button"
             class="agent-send"
+            data-part="composer-button"
             data-testid={`${p}-send`}
             title={props.sendTitle}
+            aria-label={props.sendLabel}
             disabled={props.disabled || (!text.trim() && files.length === 0)}
             onClick={send}
           >
-            <span class="agent-send-label">{props.sendLabel}</span>
             <svg
-              class="agent-send-icon"
               viewBox="0 0 16 16"
               aria-hidden="true"
               fill="none"
               stroke="currentColor"
-              stroke-width="1.8"
+              stroke-width="1.9"
               stroke-linecap="round"
               stroke-linejoin="round"
             >

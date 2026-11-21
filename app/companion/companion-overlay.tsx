@@ -16,7 +16,9 @@
 //
 // Dragging the companion (app/companion/use-companion-drag.ts) moves it to another corner: past a
 // few pixels a press is a drag, not a click; on release it snaps to the nearest corner, which is
-// saved as Settings → Companion → Corner (`onCorner`).
+// saved as Settings → Companion → Corner (`onCorner`). In its corner it keeps off the prompt boxes
+// and the harness overlay's rail (app/companion/use-companion-dodge.ts): over one, it moves beside
+// or above it, so a drop over a prompt box settles next to it.
 //
 // The bubble never takes the keyboard by itself (a question can arrive mid-typing); after a
 // button or the close, the keyboard goes back to the focused tile. Escape in the chat box closes
@@ -102,6 +104,7 @@ import {
 } from "../../lib/companion/lip-sync.ts";
 import { useCompanionLife } from "./use-companion-life.ts";
 import { useCompanionDrag, type WindowMover } from "./use-companion-drag.ts";
+import { useCompanionDodge } from "./use-companion-dodge.ts";
 import { mayLiven } from "../../lib/companion/face-life.ts";
 import { mayShowHot } from "../../lib/sysstats.ts";
 import {
@@ -544,6 +547,13 @@ export function CompanionOverlay(props: CompanionOverlayProps) {
     onDrop: (corner) => props.onCorner?.(corner),
     ...(props.mover ? { mover: props.mover } : {}),
   });
+  // Off the prompt boxes and the harness rail (app/companion/use-companion-dodge.ts).
+  useCompanionDodge(
+    overlayRef,
+    !props.floating,
+    drag.dragging,
+    props.corner,
+  );
   const feed = useCompanionFeed(backend, dispatch, closedRef.current);
   useTimedMoves(model.avatar, dispatch);
   useEffect(() => dispatch({ type: "show" }), []);

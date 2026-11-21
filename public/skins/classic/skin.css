@@ -285,6 +285,90 @@
   box-shadow: var(--c-raised);
 }
 
+/* A harness overlay's terminal card is a sunken well, its rail buttons square and raised. */
+:root[data-skin="classic"] .harness-frame > [data-part="tile-body"] {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-raised);
+  transition: none;
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn:hover:not(:disabled) {
+  background: var(--c-face);
+  color: var(--c-text);
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn:active:not(:disabled),
+:root[data-skin="classic"] .harness-rail .agent-rail-btn[aria-pressed="true"] {
+  background: var(--c-checker);
+  box-shadow: var(--c-pressed);
+}
+
+/* The prompt box (an agent tile's, a harness overlay's): a raised panel with a sunken white
+   text field, square tool buttons that rise under the pointer and a square raised Send. No
+   translucency, no glow. */
+:root[data-skin="classic"] [data-part="composer"] {
+  --composer-radius: 0px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--c-raised);
+  color: var(--c-text);
+  font: 11px/1.35 var(--c-font);
+  transition: none;
+}
+:root[data-skin="classic"] [data-part="composer"]:focus-within {
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] [data-part="composer"] .agent-input-row {
+  padding: 4px 5px;
+  background: var(--tile);
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] [data-part="composer-input"] {
+  min-height: 2.7em;
+  font: 12px/1.35 var(--c-font);
+  caret-color: auto;
+}
+:root[data-skin="classic"] [data-part="composer-button"] {
+  border-radius: 0;
+  background: transparent;
+  color: var(--c-text);
+  box-shadow: none;
+  transition: none;
+}
+:root[data-skin="classic"] [data-part="composer-button"]:hover:not(:disabled),
+:root[data-skin="classic"] [data-part="composer-button"][aria-expanded="true"] {
+  background: transparent;
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] .agent-send[data-part="composer-button"],
+:root[data-skin="classic"] .agent-stop[data-part="composer-button"] {
+  background: var(--c-face);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .agent-send[data-part="composer-button"]:disabled {
+  color: var(--c-shadow);
+}
+:root[data-skin="classic"] .agent-stop[data-part="composer-button"] {
+  color: var(--red);
+}
+:root[data-skin="classic"] [data-part="composer-button"]:active:not(:disabled) {
+  transform: none;
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] .agent-hint {
+  font: 11px/1 var(--c-font);
+}
+
 /* A web tile: its buttons sit on the bar, its address field is a sunken white box. */
 :root[data-skin="classic"] .web-btn {
   border-radius: 0;

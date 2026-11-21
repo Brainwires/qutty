@@ -74,6 +74,7 @@ import {
   parseMarkdown,
 } from "../lib/agent/markdown.ts";
 import { lastReply } from "../lib/agent/prompt-box.ts";
+import { harnessSpec, promptPlaceholder } from "../lib/workspace/harness.ts";
 import type { TerminalEntry } from "../lib/workspace/store.ts";
 import { type AgentStore, type AgentTileState } from "./use-agents.ts";
 import { Modal } from "./modal.tsx";
@@ -145,6 +146,14 @@ function agentOf(
   state: AgentTileState | undefined,
 ): AgentKind | undefined {
   return entry.chat?.agent ?? state?.snap?.spec.agent;
+}
+
+/** The backend's name and colour, for its prompt box ("Ask Claude…", Claude's orange Send). */
+function backendLook(
+  kind: AgentKind | undefined,
+): { id: string; label: string; color: string } {
+  if (kind === "ollama") return { id: "ollama", label: "Ollama", color: "" };
+  return harnessSpec(kind === "codex" ? "codex" : "claude");
 }
 
 /** Milliseconds since `since`, updated each animation frame (seconds resolution). */
@@ -498,6 +507,7 @@ export function AgentBody(
     if (root && !root.contains(document.activeElement)) focusAgentTile(id);
   }, [props.focused, id, !!state?.snap]);
 
+  const backend = backendLook(agentOf(entry, state));
   const style: Record<string, string> = {
     "--agent-font": hooks.font.family,
     "--agent-size": `${hooks.font.size}px`,
@@ -643,6 +653,8 @@ export function AgentBody(
         hooks={hooks}
         transcript={t}
         disabled={!state?.snap}
+        placeholder={promptPlaceholder(backend)}
+        {...(backend.color ? { tint: backend.color } : {})}
         onSent={jump}
       />
     </div>
@@ -1161,6 +1173,10 @@ function Prompt(
     hooks: AgentTileHooks;
     transcript: Transcript | undefined;
     disabled: boolean;
+    /** "Ask Claude…", by the tile's backend. */
+    placeholder: string;
+    /** The backend's colour (Send, the focus ring); absent: the theme's accent. */
+    tint?: string;
     onSent(): void;
   },
 ) {
@@ -1175,12 +1191,15 @@ function Prompt(
     <PromptBox
       testPrefix="agent"
       disabled={props.disabled}
-      placeholder={running
-        ? "Queue a message for when it's done…"
-        : "Give your agent a prompt or a task: Enter to send, Shift+Enter for a new line"}
-      hint={running ? "esc to interrupt" : "↑↓ history · shift+enter new line"}
-      sendLabel={running ? "Queue ↵" : "Send ↵"}
-      sendTitle={running ? "Queue (Enter)" : "Send (Enter)"}
+      placeholder={running ? "Queue a message…" : props.placeholder}
+      hint={running
+        ? "Enter to queue, Esc to stop"
+        : "Enter to send, Shift+Enter for a new line"}
+      sendLabel={running ? "Queue" : "Send"}
+      sendTitle={running
+        ? "Queue (Enter): sent when this turn is done"
+        : "Send (Enter)"}
+      {...(props.tint ? { tint: props.tint } : {})}
       queue={t?.queue ?? []}
       images
       own={() =>
@@ -1200,7 +1219,7 @@ function Prompt(
       {...(running
         ? {
           stop: {
-            label: "■ Stop",
+            label: "Stop",
             title: "Stop (Esc)",
             testid: "agent-stop",
             run: () => store.interrupt(id),

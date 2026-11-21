@@ -57,6 +57,15 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   part("tile-body", "A terminal tile's body (xterm draws inside it)."),
   cls("tile-grip", "A free-form tile's resize grip (edges and corners)."),
   part("agent-body", "An agent tile's body (its transcript and prompt)."),
+  part(
+    "composer",
+    "A prompt box: the composer card of an agent tile or a harness overlay.",
+  ),
+  part("composer-input", "A prompt box's text field."),
+  part(
+    "composer-button",
+    "A button in a prompt box (attach, saved, history, dictate, stop, Send).",
+  ),
   part("web-toolbar", "A web tile's toolbar, in its header."),
   cls("web-btn", "A button in a web tile's toolbar."),
   part("web-address", "A web tile's address field."),

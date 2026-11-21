@@ -8,6 +8,7 @@ import {
   harnessSpec,
   isShellProcess,
   promptChunks,
+  promptPlaceholder,
   speakableScreen,
   withFiles,
 } from "../lib/workspace/harness.ts";
@@ -177,4 +178,12 @@ Deno.test("store: the overlay setting (on by default), a tile's own choice, the 
   // A title without a process keeps the last one.
   s = reduce(s, { type: "title", id: "t1", title: "x" });
   assertEquals(s.terminals[0].process, "claude");
+});
+
+Deno.test("promptPlaceholder: short, by the harness's name", () => {
+  assertEquals(promptPlaceholder(harnessSpec("claude")), "Ask Claude…");
+  assertEquals(promptPlaceholder(harnessSpec("codex")), "Message Codex…");
+  assertEquals(promptPlaceholder(harnessSpec("gemini")), "Message Gemini…");
+  assertEquals(promptPlaceholder(harnessSpec("aider")), "Message aider…");
+  assertEquals(promptPlaceholder({ id: "x", label: " " }), "Message x…");
 });
