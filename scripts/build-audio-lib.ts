@@ -1,17 +1,19 @@
 // Builds rullama-hardware's audio library (the `rullama-audio-ffi` cdylib in the Rullama repo) and
-// installs it where the app looks for it: `<app support>/audio/` (desktop/voice.ts). This is the
-// developer's (and, until Denext's packager can bundle extra files, the packaged app's) way to get
-// on-device push-to-talk:
+// installs it where the app looks for it (desktop/voice.ts): `<app support>/audio/`, the
+// developer's way to get on-device push-to-talk, or with `--native` the project's
+// `native/<target>/`, where `desktop.bundle.libraries` (denext.config.ts) has the package scripts
+// bundle it into the app:
 //
 //   deno task audio:lib                      # Rullama checked out next to Qutty
 //   RULLAMA_DIR=~/src/rullama deno task audio:lib
 //   deno task audio:lib --lib path/to/librullama_audio_ffi.dylib   # install a prebuilt one
+//   deno task audio:lib --native             # into native/<target>/ for packaging
 //
 // Needs cargo and cmake (whisper-rs builds whisper.cpp). The Whisper model is not handled here:
 // the app downloads it on first use (Settings → Voice), with its checksum checked.
 
 import { dirname, join } from "@std/path";
-import { audioLibFile } from "../lib/voice/ffi.ts";
+import { audioLibFile, audioLibTarget } from "../lib/voice/ffi.ts";
 
 /** The app's support folder, as Denext's runtime resolves it (desktop.app.identifier). */
 export function appSupportDir(
@@ -72,16 +74,37 @@ async function build(): Promise<string> {
   );
 }
 
+/**
+ * Where `--native` puts the library: `native/<target>/<file>` in the project, the file
+ * `desktop.bundle.libraries` (denext.config.ts) names for the host target, so the package scripts
+ * bundle it and `denext desktop run` finds it with `bundledLibraryPath`.
+ */
+export function nativeLibDest(
+  projectDir: string,
+  os: typeof Deno.build.os,
+  arch: typeof Deno.build.arch,
+): string {
+  const target = audioLibTarget(os, arch);
+  if (!target) throw new Error(`no bundled-library target for ${os}-${arch}`);
+  return join(projectDir, "native", target, audioLibFile(os));
+}
+
 if (import.meta.main) {
   const libArg = Deno.args.indexOf("--lib");
   const lib = libArg >= 0 ? Deno.args[libArg + 1] : await build();
   if (!lib || !await exists(lib)) throw new Error(`no library at ${lib}`);
   const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
-  const dest = join(
-    appSupportDir(Deno.build.os, home, (n) => Deno.env.get(n)),
-    "audio",
-    audioLibFile(Deno.build.os),
-  );
+  const dest = Deno.args.includes("--native")
+    ? nativeLibDest(
+      new URL("..", import.meta.url).pathname,
+      Deno.build.os,
+      Deno.build.arch,
+    )
+    : join(
+      appSupportDir(Deno.build.os, home, (n) => Deno.env.get(n)),
+      "audio",
+      audioLibFile(Deno.build.os),
+    );
   await Deno.mkdir(dirname(dest), { recursive: true });
   await Deno.copyFile(lib, dest);
   console.log(`Installed ${dest}`);

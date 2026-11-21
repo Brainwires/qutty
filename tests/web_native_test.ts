@@ -56,6 +56,7 @@ function fakeViews(caps: NativeCapabilities = ALL) {
     fire(event: string, detail?: unknown): void;
     evaluate: (script: string) => Promise<unknown>;
     capture: () => Promise<Blob>;
+    permissionHandler: ((req: unknown) => boolean | Promise<boolean>) | null;
   }[] = [];
   const attached: { view: AttachedView; detached: boolean }[] = [];
   const frames: (() => void)[] = [];
@@ -80,6 +81,9 @@ function fakeViews(caps: NativeCapabilities = ALL) {
         },
         evaluate: (_script: string): Promise<unknown> => Promise.resolve(true),
         capture: () => Promise.resolve(new Blob(["jpeg"])),
+        permissionHandler: null as
+          | ((req: unknown) => boolean | Promise<boolean>)
+          | null,
       };
       raws.push(fake);
       const raw = {
@@ -125,6 +129,12 @@ function fakeViews(caps: NativeCapabilities = ALL) {
           if (!set) handlers.set(event, set = new Set());
           set.add(fn);
           return () => void set.delete(fn);
+        },
+        setPermissionRequestHandler: (
+          h: ((req: unknown) => boolean | Promise<boolean>) | null,
+        ) => {
+          log.push(`setPermissionRequestHandler ${h ? "fn" : "null"}`);
+          fake.permissionHandler = h;
         },
         close: () => {
           log.push("close");
@@ -228,6 +238,9 @@ Deno.test("native: the engine is picked when the runtime hosts web views, else t
     print: false,
     devTools: false,
     contextMenu: false,
+    downloads: false,
+    downloadPause: false,
+    permissionRequests: false,
   });
   assertEquals(webEngine(), engine);
   assertEquals(await detectWebEngine(off.views), engine, "asked once");
@@ -1049,4 +1062,199 @@ Deno.test("native: the browser features pass through when the runtime has them",
   assertEquals(off.capabilities.contextMenu, false);
   await off.mount(fakeHost().host, "https://example.com/");
   assertEquals("contextMenu" in plain.created[0], false);
+});
+
+/** A fake of Denext's download item: its calls logged, its steps fired by the test. */
+function fakeItem(log: string[], id = 7) {
+  const updated = new Set<(item: unknown) => void>();
+  const done = new Set<(d: unknown) => void>();
+  const act = (name: string) => () => {
+    log.push(`item ${name}`);
+    return Promise.resolve();
+  };
+  const item = {
+    id,
+    url: "https://example.com/big.zip",
+    filename: "big.zip",
+    mimeType: "application/zip",
+    totalBytes: undefined as number | undefined,
+    receivedBytes: 0,
+    state: "requested",
+    path: undefined as string | undefined,
+    paused: false,
+    canResume: false,
+    save: act("save"),
+    saveAs: act("saveAs"),
+    cancel: act("cancel"),
+    pause: act("pause"),
+    resume: act("resume"),
+    reveal: act("reveal"),
+    on(event: string, fn: (x: unknown) => void) {
+      const set = event === "updated" ? updated : done;
+      set.add(fn);
+      return () => void set.delete(fn);
+    },
+    update(patch: Record<string, unknown>) {
+      Object.assign(item, patch);
+      for (const fn of [...updated]) fn(item);
+    },
+    finish(d: Record<string, unknown>) {
+      Object.assign(item, d);
+      for (const fn of [...done]) fn(d);
+    },
+  };
+  return item;
+}
+
+Deno.test("native: without the runtime's download and permission events, the old policies stay", async () => {
+  const f = fakeViews();
+  const engine = createNativeEngine(f.views, {
+    ...ALL,
+    downloadEvents: false,
+    permissionRequests: false,
+    downloadPause: true,
+  });
+  assertEquals(
+    [
+      engine.capabilities.downloads,
+      engine.capabilities.downloadPause,
+      engine.capabilities.permissionRequests,
+    ],
+    [false, false, false],
+  );
+  const view = await engine.mount(fakeHost().host, "https://example.com/");
+  assertEquals(f.created[0].downloads, "ask");
+  assertEquals(f.created[0].permissions, "deny");
+  assertEquals(f.raws[0].permissionHandler, null, "no handler is set");
+  assertEquals(f.log.includes("setPermissionRequestHandler fn"), false);
+  assertEquals(IframeEngine.capabilities.downloads, false);
+  assertEquals(IframeEngine.capabilities.permissionRequests, false);
+  // A stray item is not taken up.
+  const item = fakeItem(f.log);
+  f.raws[0].fire("will-download", item);
+  assertEquals(f.log.includes("item saveAs"), false);
+  await view.close();
+});
+
+Deno.test("native: downloads go to the save panel and every step comes to the tile", async () => {
+  const caps = {
+    ...ALL,
+    downloadEvents: true,
+    downloadPause: true,
+    permissionRequests: true,
+  };
+  const f = fakeViews(caps);
+  const engine = createNativeEngine(f.views, caps);
+  assertEquals(
+    [
+      engine.capabilities.downloads,
+      engine.capabilities.downloadPause,
+      engine.capabilities.permissionRequests,
+    ],
+    [true, true, true],
+  );
+  const view = await engine.mount(fakeHost().host, "https://example.com/");
+  assertEquals(f.created[0].downloads, "app");
+  assertEquals(f.created[0].permissions, "app");
+  const seen: unknown[] = [];
+  view.on("download", (d) => seen.push(d));
+  const item = fakeItem(f.log);
+  f.raws[0].fire("will-download", item);
+  assert(f.log.includes("item saveAs"), "the OS save panel decides it");
+  assertEquals(f.log.includes("item reveal"), false);
+  item.update({ state: "progressing", receivedBytes: 10, path: "/d/big.zip" });
+  item.update({ receivedBytes: 20, totalBytes: 100 });
+  await view.controlDownload!(7, "pause");
+  await view.controlDownload!(7, "resume");
+  await view.controlDownload!(7, "cancel");
+  await view.controlDownload!(99, "cancel");
+  assertEquals(
+    f.log.filter((l) => l.startsWith("item ")),
+    ["item saveAs", "item pause", "item resume", "item cancel"],
+  );
+  item.finish({ state: "completed", path: "/d/big.zip" });
+  item.update({ receivedBytes: 999 });
+  const base = {
+    id: 7,
+    url: "https://example.com/big.zip",
+    filename: "big.zip",
+    mimeType: "application/zip",
+    paused: false,
+    canResume: false,
+  };
+  assertEquals(seen, [
+    { ...base, receivedBytes: 0, state: "requested" },
+    { ...base, receivedBytes: 10, state: "progressing", path: "/d/big.zip" },
+    {
+      ...base,
+      totalBytes: 100,
+      receivedBytes: 20,
+      state: "progressing",
+      path: "/d/big.zip",
+    },
+    {
+      ...base,
+      totalBytes: 100,
+      receivedBytes: 20,
+      state: "completed",
+      path: "/d/big.zip",
+    },
+  ], "nothing after done");
+  // Over: its controls do nothing.
+  f.log.length = 0;
+  await view.controlDownload!(7, "cancel");
+  assertEquals(f.log, []);
+  // Without downloadPause, pausing is refused.
+  const nf = fakeViews({ ...caps, downloadPause: false });
+  const ne = createNativeEngine(nf.views, { ...caps, downloadPause: false });
+  assertEquals(ne.capabilities.downloadPause, false);
+  const nv = await ne.mount(fakeHost().host, "https://example.com/");
+  nf.raws[0].fire("will-download", fakeItem(nf.log, 3));
+  await assertRejects(() => nv.controlDownload!(3, "pause"));
+  await nv.close();
+  await view.close();
+});
+
+Deno.test("native: permission requests wait for the tile's answer", async () => {
+  const caps = { ...ALL, permissionRequests: true };
+  const f = fakeViews(caps);
+  const engine = createNativeEngine(f.views, caps);
+  const view = await engine.mount(fakeHost().host, "https://example.com/");
+  assert(f.log.includes("setPermissionRequestHandler fn"));
+  const handler = f.raws[0].permissionHandler!;
+  const req = (id: number) => ({
+    id,
+    origin: "https://meet.example",
+    permissions: ["camera", "microphone"],
+    frame: { isMain: true },
+  });
+  // Nobody listens: refused at once.
+  assertEquals(await handler(req(1)), false);
+  const asked: unknown[] = [];
+  const gone: unknown[] = [];
+  view.on("permission-request", (e) => asked.push(e));
+  view.on("permission-cancelled", (e) => gone.push(e));
+  const allowed = handler(req(2));
+  assertEquals(asked, [{
+    id: 2,
+    origin: "https://meet.example",
+    permissions: ["camera", "microphone"],
+    frame: { isMain: true },
+  }]);
+  let answered = false;
+  void Promise.resolve(allowed).then(() => answered = true);
+  await settle();
+  assertEquals(answered, false, "it waits for the tile");
+  view.answerPermission!(2, true);
+  assertEquals(await allowed, true);
+  view.answerPermission!(2, false); // already answered: ignored
+  // Cancelled by the runtime (a page load): refused, and the tile hears it.
+  const withdrawn = handler(req(3));
+  f.raws[0].fire("permission-request", { id: 3, state: "cancelled" });
+  assertEquals(await withdrawn, false);
+  assertEquals(gone, [{ id: 3 }]);
+  // Still waiting when the view closes: refused.
+  const left = handler(req(4));
+  await view.close();
+  assertEquals(await left, false);
 });

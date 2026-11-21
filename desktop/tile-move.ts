@@ -14,7 +14,8 @@
 //
 // The gesture (app/use-tile-move.ts): a header dragged out of its window asks `dragOver` with the
 // pointer's screen position while it is outside; the window under it (Denext's window frames,
-// front to back by the most recent focus: Denext has no z-order) is told (`dragHover`, so it
+// front to back as the OS stacks them, Denext 4.22's `windows.order()`; by the most recent focus
+// where the OS does not tell) is told (`dragHover`, so it
 // highlights where the tile would land) and the one left is told it was left. Released over a
 // window, the tile moves there; released over no window of the app, it tears off into a new
 // window there (`openWindow` at a position), unless it is the source window's only tile (then
@@ -128,6 +129,12 @@ export interface TileMoveDeps {
   windows(): readonly { id: string; kind: string; key?: string }[];
   /** A window's frame on screen, `null` where the runtime cannot say. */
   bounds(id: string): Frame | null;
+  /**
+   * The windows on screen front to back as the OS stacks them (Denext 4.22's `windows.order()`
+   * with `source: "os"`), `null` where the OS does not tell: then the most recent focus orders
+   * them.
+   */
+  order?(): readonly string[] | null;
   /** Open a window (`host.openWindow`); throws when it cannot. */
   openWindow(options: DesktopOpenWindowOptions): { id: string };
   /** Close a window for good, without its page's close guard. */
@@ -160,8 +167,9 @@ export class TileMover {
   }
 
   /**
-   * The windows other than `from` that show a workspace: the most recently focused first (the
-   * best guess at the front one where windows overlap), then the rest.
+   * The windows other than `from` that show a workspace, front to back: the OS's stacking order
+   * where it tells (`order`), else the most recently focused first (the best guess at the front
+   * one where windows overlap); then the rest.
    */
   #others(from: string): string[] {
     const ws = this.#d.workspaces;
@@ -169,8 +177,12 @@ export class TileMover {
       w.kind !== "panel" && w.id !== from &&
       ws.workspaceOfWindow(w.id) !== undefined
     ).map((w) => w.id);
-    const focus = ws.focusOrder().filter((w) => open.includes(w));
-    return [...focus, ...open.filter((w) => !focus.includes(w))];
+    let stacked: readonly string[] | null = null;
+    try {
+      stacked = this.#d.order?.() ?? null;
+    } catch { /* the runtime could not say: the focus order */ }
+    const front = (stacked ?? ws.focusOrder()).filter((w) => open.includes(w));
+    return [...front, ...open.filter((w) => !front.includes(w))];
   }
 
   #frames(from: string): WindowFrame[] {

@@ -74,6 +74,7 @@ import {
   removeDir,
   unlinkPath,
 } from "./hub-socket.ts";
+import { ipcChannelPath } from "./ipc.ts";
 import { askVisibleIn, hubEventTarget, workspaces } from "./workspace-host.ts";
 import { companionWindow, isCompanionWindow } from "./companion-window.ts";
 import { focusAppWindow } from "./windows.ts";
@@ -601,9 +602,9 @@ export class HubService {
     });
   }
 
-  /** The socket path of terminal `id`. */
+  /** The socket path of terminal `id` (desktop/ipc.ts: `<socketDir>/<id>.sock` on macOS / Linux). */
   socketPath(id: string): string {
-    return `${this.socketDir}/${id}.sock`;
+    return ipcChannelPath(id, { dir: this.socketDir });
   }
 
   // --- PTY taps ------------------------------------------------------------------------------

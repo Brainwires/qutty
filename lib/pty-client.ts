@@ -194,6 +194,10 @@ export interface PtyProcessInfo {
   process: string;
   /** The foreground process's working directory, when it could be read. */
   cwd?: string;
+  /** The foreground process's arguments, the program first (where the runtime tells them). */
+  argv?: string[];
+  /** The terminal device (where the runtime tells it). */
+  tty?: string;
 }
 
 /** How a terminal ended. `signal` is the terminating signal number, or `null`. */

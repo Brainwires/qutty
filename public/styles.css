@@ -5296,7 +5296,7 @@ html[data-floating] body {
   flex: none;
   background: var(--head);
 }
-.web-chrome:has(> .bm-bar, > .web-find) {
+.web-chrome:has(> .bm-bar, > .web-find, > .web-permission, > .web-downloads) {
   border-bottom: 1px solid var(--line);
 }
 .web-progress {
@@ -5527,6 +5527,127 @@ html[data-floating] body {
   color: var(--text-3);
   font: 10.5px/1 var(--sans);
   font-variant-numeric: tabular-nums;
+}
+/* The permission bar and the download bar (app/web-chrome.tsx): part of the chrome above the
+   body, never over it (a native view draws above all HTML). */
+.web-permission,
+.web-download {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 10px;
+  color: var(--text-2);
+  font: 11px/1.3 var(--sans);
+}
+.web-permission {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.web-permission-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.web-permission-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.web-permission-remember {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.web-bar-btn {
+  appearance: none;
+  flex: none;
+  height: 20px;
+  padding: 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  font: 11px/1 var(--sans);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.web-bar-btn:hover {
+  background: rgba(var(--hi-rgb), 0.08);
+  color: var(--text);
+}
+.web-bar-btn.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ink);
+}
+.web-bar-btn.is-primary:hover {
+  filter: brightness(1.08);
+  background: var(--accent);
+  color: var(--ink);
+}
+.web-downloads {
+  max-height: 80px;
+  overflow-y: auto;
+}
+.web-download + .web-download {
+  border-top: 1px solid var(--line);
+}
+.web-download-name {
+  flex: 0 1 auto;
+  min-width: 40px;
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.web-download-meter {
+  position: relative;
+  flex: 0 1 120px;
+  min-width: 40px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(var(--hi-rgb), 0.1);
+}
+.web-download-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+.web-download[data-paused="true"] .web-download-fill {
+  background: var(--text-3);
+}
+.web-download-meter.is-indeterminate .web-download-fill {
+  width: 30%;
+  animation: web-download-sweep 1.2s ease-in-out infinite;
+}
+@keyframes web-download-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.web-download-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.web-download[data-state="interrupted"] .web-download-status {
+  color: var(--red);
 }
 /* The bookmark popovers (app/bookmark-popover.tsx). */
 .bm-popover {
@@ -6470,6 +6591,41 @@ pre.agent-detail {
 /* A preset in the + menu, under "Claude Code (chat)". */
 .launch-preset .menu-label {
   padding-left: 10px;
+}
+
+/* Settings → Links → Site permissions (app/site-permissions-settings.tsx). */
+.site-permission-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.site-permission {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.site-permission-site {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.site-permission-kind {
+  color: var(--text-2);
+}
+.site-permission-choice {
+  min-width: 56px;
+  color: var(--text-3);
+}
+.site-permission-choice.is-deny {
+  color: var(--red);
+}
+.site-permission .btn-quiet {
+  padding: 2px 8px;
 }
 
 /* Settings → Agents → Presets (app/agent-presets-settings.tsx). */

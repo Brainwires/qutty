@@ -1,6 +1,7 @@
 // What every web tile in a window shares, and every window too (lib/web/synced.ts: each on its
-// own localStorage key, followed across windows): the bookmarks, the visited pages and the zoom
-// each site was left at. Plus which of the browser dialogs (the bookmark manager, History) is
+// own localStorage key, followed across windows): the bookmarks, the visited pages, the zoom
+// each site was left at and the permissions each site was always allowed or denied
+// (lib/web/site-permissions.ts). Plus which of the browser dialogs (the bookmark manager, History) is
 // open: the bar, the star and the `+` menu open them, the workspace shows them.
 
 import { useEffect, useState } from "denext";
@@ -9,6 +10,11 @@ import {
   BOOKMARKS_STORAGE_KEY,
   sanitizeBookmarks,
 } from "../lib/web/bookmarks.ts";
+import {
+  sanitizeSitePermissions,
+  SITE_PERMISSIONS_STORAGE_KEY,
+  type SitePermissions,
+} from "../lib/web/site-permissions.ts";
 import { type SyncedStore, syncedStore } from "../lib/web/synced.ts";
 import {
   sanitizeVisits,
@@ -32,6 +38,10 @@ export const visitsStore: SyncedStore<Visits> = syncedStore(
 export const zoomStore: SyncedStore<SiteZoom> = syncedStore(
   ZOOM_STORAGE_KEY,
   sanitizeZoom,
+);
+export const sitePermissionsStore: SyncedStore<SitePermissions> = syncedStore(
+  SITE_PERMISSIONS_STORAGE_KEY,
+  sanitizeSitePermissions,
 );
 
 /** Follow `store`'s value. */

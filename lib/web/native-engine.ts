@@ -39,7 +39,26 @@
  * Policies: logins persist (the named partition {@linkcode WEB_PARTITION}); a popup opens nothing
  * in the view and is reported (`new-window`: the tile opens it in a new tile); a download asks
  * where to save it (the OS save panel); camera, microphone, location and notification prompts are
- * refused.
+ * refused, unless the tile answers them (below).
+ *
+ * Downloads and permission prompts, where the runtime hands them to the app:
+ *
+ * - **Downloads** (`webViewCapabilities().downloadEvents`): the view is created with
+ *   `downloads: "app"`, and each `will-download` item is answered at once with its `saveAs()`
+ *   (the OS save panel, what `downloads: "ask"` does on an older runtime) and reported as
+ *   `download` events, one per step (lib/web/downloads.ts `WebDownload`), so the tile shows its
+ *   download bar. `controlDownload` pauses (`downloadPause`), resumes and cancels one. Showing the
+ *   saved file is not the item's `reveal()`: from a page that refuses a file saved through the
+ *   save panel, so the tile reveals the item's `path` through the backend (desktop/links.ts).
+ * - **Permission prompts** (`permissionRequests`): the view is created with `permissions: "app"`
+ *   and its `setPermissionRequestHandler` hands each request to the tile as a
+ *   `permission-request` event; the handler's promise waits until the tile calls
+ *   `answerPermission` (Denext refuses after 5 minutes on its own, and a page load refuses the
+ *   requests of the page it leaves: both come as the raw `permission-request` event's `cancelled`
+ *   and go to the tile as `permission-cancelled`). A request nobody listens to is refused, and so
+ *   is every request still waiting when the view closes.
+ *
+ * Elsewhere the view keeps `downloads: "ask"` and `permissions: "deny"`.
  *
  * Everything the runtime does is behind {@linkcode NativeWebViews}, so the tests drive the engine
  * with a fake. Client-safe: nothing runs at import.
@@ -56,7 +75,9 @@ import {
   onWindowFocus,
   type WebViewCapabilities,
   webViewCapabilities,
+  type WebViewDownloadItem,
   type WebViewHandle as DenextWebView,
+  type WebViewPermissionRequest,
 } from "denext/desktop/window";
 import type {
   WebEngine,
@@ -65,9 +86,16 @@ import type {
   WebViewState,
 } from "./engine.ts";
 import { parseWebUrl } from "./url.ts";
+import type { WebDownload } from "./downloads.ts";
 
 /** The storage partition every web tile shares: persistent, so logins survive a restart. */
 export const WEB_PARTITION = "qutty-web";
+
+/**
+ * How long a permission request waits for the tile's answer (ms): Denext's own limit, after which
+ * it refuses the request whether or not it says so.
+ */
+const PERMISSION_WAIT_MS = 5 * 60_000;
 
 /** The most forward keys a view takes (Denext's limit). */
 export const MAX_FORWARD_KEYS = 64;
@@ -97,6 +125,7 @@ export type RawWebView = Pick<
   | "openDevTools"
   | "on"
   | "close"
+  | "setPermissionRequestHandler"
 >;
 
 /** What `attachWebView` drives: the engine's stand-in for the view. */
@@ -126,6 +155,9 @@ export type NativeCapabilities =
       | "contextMenu"
       | "blur"
       | "keyUp"
+      | "downloadEvents"
+      | "downloadPause"
+      | "permissionRequests"
     >
   >;
 
@@ -269,6 +301,24 @@ export function insertTextScript(text: string): string {
 })()`;
 }
 
+/** A plain copy of download `item` as it is now (its fields are live). */
+function downloadOf(item: WebViewDownloadItem): WebDownload {
+  return {
+    id: item.id,
+    url: item.url,
+    filename: item.filename,
+    ...(item.mimeType ? { mimeType: item.mimeType } : {}),
+    ...(typeof item.totalBytes === "number"
+      ? { totalBytes: item.totalBytes }
+      : {}),
+    receivedBytes: item.receivedBytes,
+    state: item.state,
+    ...(item.path ? { path: item.path } : {}),
+    paused: item.paused === true,
+    canResume: item.canResume === true,
+  };
+}
+
 /** What the views of one engine share. */
 interface Shared {
   readonly views: NativeWebViews;
@@ -314,6 +364,10 @@ class NativeView implements WebViewHandle {
    */
   #hidingFocused = false;
   #z: number | undefined;
+  /** The downloads still going (until their `done`). */
+  readonly #downloads = new Map<number, WebViewDownloadItem>();
+  /** The permission requests waiting for the tile's answer. */
+  readonly #permissions = new Map<number, (allow: boolean) => void>();
 
   constructor(raw: RawWebView, host: HTMLElement, shared: Shared) {
     this.#raw = raw;
@@ -379,7 +433,105 @@ class NativeView implements WebViewHandle {
         })),
       raw.on("closed", () => this.#finish()),
     );
+    if (shared.caps.downloadEvents) {
+      this.#offs.push(
+        raw.on("will-download", (item) => this.#onDownload(item)),
+      );
+    }
+    if (shared.caps.permissionRequests) {
+      raw.setPermissionRequestHandler((req) => this.#onPermission(req));
+      this.#offs.push(raw.on("permission-request", (e) => {
+        if (e.state === "cancelled") this.#dropPermission(e.id);
+      }));
+    }
     this.#attach();
+  }
+
+  /** A download the runtime handed over: the save panel decides it, the tile follows it. */
+  #onDownload(item: WebViewDownloadItem): void {
+    if (this.#closed) return;
+    this.#downloads.set(item.id, item);
+    const report = (patch: Partial<WebDownload> = {}) => {
+      if (!this.#closed) {
+        this.#emit("download", { ...downloadOf(item), ...patch });
+      }
+    };
+    const offUpdated = item.on("updated", () => report());
+    const offDone = item.on("done", (done) => {
+      offUpdated();
+      offDone();
+      this.#downloads.delete(item.id);
+      report({
+        state: done.state,
+        ...(done.path ? { path: done.path } : {}),
+        ...(done.reason ? { reason: done.reason } : {}),
+        paused: false,
+      });
+    });
+    report();
+    item.saveAs().catch((err) => {
+      // The runtime took no answer (the download ended meanwhile): `done` says how.
+      console.warn("web tile: the download was not saved", err);
+    });
+  }
+
+  /** A page's permission request: the tile answers it (`answerPermission`), or nobody does. */
+  #onPermission(req: WebViewPermissionRequest): Promise<boolean> {
+    if (this.#closed || !this.#listeners["permission-request"]?.size) {
+      return Promise.resolve(false);
+    }
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(
+        () => this.#dropPermission(req.id),
+        PERMISSION_WAIT_MS,
+      );
+      this.#permissions.set(req.id, (allow) => {
+        clearTimeout(timer);
+        resolve(allow);
+      });
+      this.#emit("permission-request", {
+        id: req.id,
+        origin: req.origin,
+        permissions: [...req.permissions],
+        ...(req.frame
+          ? {
+            frame: {
+              isMain: req.frame.isMain,
+              ...(req.frame.origin ? { origin: req.frame.origin } : {}),
+            },
+          }
+          : {}),
+      });
+    });
+  }
+
+  /** Request `id` went away unanswered: refused, and the tile drops its prompt. */
+  #dropPermission(id: number): void {
+    const resolve = this.#permissions.get(id);
+    if (!resolve) return;
+    this.#permissions.delete(id);
+    resolve(false);
+    this.#emit("permission-cancelled", { id });
+  }
+
+  answerPermission(id: number, allow: boolean): void {
+    const resolve = this.#permissions.get(id);
+    if (!resolve) return;
+    this.#permissions.delete(id);
+    resolve(allow === true);
+  }
+
+  controlDownload(
+    id: number,
+    action: "pause" | "resume" | "cancel",
+  ): Promise<void> {
+    const item = this.#downloads.get(id);
+    if (this.#closed || !item) return Promise.resolve();
+    if (action === "cancel") return item.cancel();
+    if (!this.#shared.caps.downloadPause) {
+      return Promise.reject(new Error("this runtime cannot pause downloads"));
+    }
+    return action === "pause" ? item.pause() : item.resume();
   }
 
   #emit<K extends keyof WebViewEventMap>(event: K, ev: WebViewEventMap[K]) {
@@ -643,6 +795,10 @@ class NativeView implements WebViewHandle {
     this.#attachment?.detach();
     this.#attachment = null;
     for (const off of this.#offs) off();
+    // What still waits is refused (the runtime ends the downloads: `done` with `cancelled`).
+    for (const resolve of this.#permissions.values()) resolve(false);
+    this.#permissions.clear();
+    this.#downloads.clear();
     this.#dropShot();
     this.#emit("closed", {});
     for (const k of Object.keys(this.#listeners)) {
@@ -714,6 +870,10 @@ export function createNativeEngine(
       print: caps.print === true,
       devTools: caps.devTools === true,
       contextMenu: caps.contextMenu === true,
+      downloads: caps.downloadEvents === true,
+      downloadPause: caps.downloadEvents === true &&
+        caps.downloadPause === true,
+      permissionRequests: caps.permissionRequests === true,
     },
     canEmbed: (url) => canEmbedNatively(url, appOrigin),
     setForwardKeys(keys) {
@@ -730,8 +890,9 @@ export function createNativeEngine(
         visible: false,
         partition: WEB_PARTITION,
         allowPopups: "deny",
-        downloads: "ask",
-        permissions: "deny",
+        // The tile follows downloads and answers permission prompts where the runtime lets it.
+        downloads: caps.downloadEvents ? "app" : "ask",
+        permissions: caps.permissionRequests ? "app" : "deny",
         // The tile draws the page's context menu (link, selection, navigation, Inspect).
         ...(caps.contextMenu ? { contextMenu: "app" as const } : {}),
         ...(caps.forwardKeys ? { forwardKeys: keys } : {}),

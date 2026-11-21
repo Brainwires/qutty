@@ -168,6 +168,27 @@ export default {
       ready: { signal: true, timeoutMs: 10_000 },
       restart: { on: "never" },
     }],
+    // The voice extension's native audio library (rullama-hardware's `rullama-audio-ffi` cdylib,
+    // desktop/voice.ts): each target's build, put in `native/<target>/` by `deno task audio:lib
+    // --native` (or a release job), is copied into the bundle by the package scripts (macOS
+    // `Contents/Frameworks`, signed with the app; Linux `lib/`; beside the Windows `.exe`), and the
+    // app finds it with `bundledLibraryPath("rullama_audio_ffi")`. Optional: a target built
+    // without it ships without on-device push-to-talk, and the app still looks in
+    // `<app support>/audio/` (lib/voice/ffi.ts `audioLibCandidates`). `Deno.dlopen` needs the
+    // `ffi` grant below.
+    bundle: {
+      libraries: [{
+        name: "rullama_audio_ffi",
+        files: {
+          "darwin-arm64": "native/darwin-arm64/librullama_audio_ffi.dylib",
+          "darwin-x64": "native/darwin-x64/librullama_audio_ffi.dylib",
+          "linux-arm64": "native/linux-arm64/librullama_audio_ffi.so",
+          "linux-x64": "native/linux-x64/librullama_audio_ffi.so",
+          "windows-x64": "native/windows-x64/rullama_audio_ffi.dll",
+        },
+        optional: true,
+      }],
+    },
     // Never `/usr/bin/security` (no item of Qutty's was ever stored through it): the runtime's own
     // Keychain store only, so no `--allow-run=security` is baked.
     secureStore: { legacy: false },

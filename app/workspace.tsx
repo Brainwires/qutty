@@ -467,9 +467,14 @@ function WorkspaceView() {
       void globalThis.navigator?.clipboard?.writeText(text).catch((err) =>
         console.warn("web tile: the clipboard refused", err)
       ),
+    revealFile: (path) =>
+      void managerRef.current?.backend.linkOpen({ kind: "reveal", path })
+        .catch((err) => console.warn("web tile: reveal failed", err)),
+    platform,
   }), [
     webEngine,
     cycling,
+    platform,
     openWebTile,
     state.settings.links.home,
     state.settings.links.bookmarksBar,

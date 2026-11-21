@@ -49,7 +49,9 @@ export function forgetEndedWorkspaces(
 }
 
 const WINDOWS_KEY = Symbol.for("qutty.runtimeWindows");
-type RuntimeWindows = Pick<DesktopWindows, "get">;
+type RuntimeWindows =
+  & Pick<DesktopWindows, "get">
+  & Partial<Pick<DesktopWindows, "order">>;
 const shared = globalThis as Record<symbol, RuntimeWindows | undefined>;
 
 /**
@@ -84,6 +86,22 @@ export function focusAppWindow(id: string): void {
     shared[WINDOWS_KEY]?.get(id)?.focus();
   } catch (err) {
     console.error(`window ${id}: could not focus it`, err);
+  }
+}
+
+/**
+ * The app's windows on screen front to back as the OS stacks them (Denext 4.22's
+ * `windows.order()` with `source: "os"`: macOS, Windows, Linux on X11), for a tile dragged between
+ * windows (desktop/tile-move.ts). `null` where the OS does not tell (`source: "focus"`: Wayland, an
+ * older runtime; the tile mover then orders by Qutty's own focus order), or before desktop.ts
+ * shared the runtime's windows.
+ */
+export function appWindowOrder(): readonly string[] | null {
+  try {
+    const order = shared[WINDOWS_KEY]?.order?.();
+    return order?.source === "os" ? order.ids : null;
+  } catch {
+    return null;
   }
 }
 

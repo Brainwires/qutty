@@ -20,6 +20,7 @@ import {
   ptydSocketName,
   ptydSocketVersion,
 } from "../lib/ptyd/protocol.ts";
+import { connectIpc, ipcChannelPath, isPipePath } from "./ipc.ts";
 
 /** A request without its id, by op. */
 type RequestOf<K extends PtydRequest["op"]> = Omit<
@@ -321,13 +322,18 @@ export async function ptydDir(): Promise<string> {
   return own ? await privateDir(own) : await privateUserDir();
 }
 
-/** The daemon's socket for protocol `v` in the user's private folder `dir`. */
+/**
+ * The daemon's channel for protocol `v`: `ptyd-<v>.sock` in the user's private folder `dir` on
+ * macOS / Linux, a named pipe on Windows (desktop/ipc.ts `ipcChannelPath`).
+ */
 export function ptydSocketPath(dir: string, v: number = PTYD_PROTOCOL): string {
-  return `${dir}/${ptydSocketName(v)}`;
+  return ipcChannelPath(ptydSocketName(v).replace(/\.sock$/, ""), { dir });
 }
 
-/** Connect to the daemon's socket at `path` (rejects when nothing answers there). */
+/** Connect to the daemon's channel at `path` (rejects when nothing answers there). */
 export async function connectPtyd(path: string): Promise<PtydClient> {
+  // A Windows pipe: Denext's local IPC (desktop/ipc.ts); a unix socket: libc.
+  if (isPipePath(path)) return new PtydClient(await connectIpc(path));
   const { FdReactor, connectUnix } = await import("./hub-socket.ts");
   return new PtydClient(connectUnix(path, sharedReactor(FdReactor)));
 }
