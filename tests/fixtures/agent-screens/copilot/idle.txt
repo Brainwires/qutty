@@ -1,0 +1,4 @@
+ ● There are 3 open bugs: #12, #15 and #19.
+
+ >
+ ~/src/app [⎇ main]                               claude-sonnet-4.5

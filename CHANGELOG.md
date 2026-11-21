@@ -29,6 +29,52 @@
   and are grouped by repository in the Workspaces menu (which gains
   "Worktrees…"). New agent tiles there start in the worktree. The agent hub's
   `list_peers` / `whoami` give each tile's worktree folder and branch.
+- Agents resume after a restart. Kept shells survive quitting Qutty but not a
+  reboot or the loss of the PTY daemon. Now each tile's agent session is
+  recorded at the quit: the Claude Code or Codex session id that the hub's hooks
+  report. When the shells did not survive, the restored tile's fresh shell `cd`s
+  to the agent's folder and runs `claude --resume <id>` or `codex resume <id>`,
+  with the flags Qutty normally adds (MCP server, hooks). An agent tile from the
+  `+` picker comes back for this too. The resumes are staggered. With more than
+  eight, Qutty asks first: Resume 8, Resume All, or Don't Resume. A tile whose
+  kept shell survived is never resumed into, because its agent is still running.
+  Neither is an agent that had already quit to its shell. A resumed tile shows
+  "resumed" in its header until the agent's first turn. Settings → Tiles →
+  "Resume agents after restart" (on by default) turns this off, and a tile's
+  header menu (right click) has "Don't resume this agent". Other agents give
+  Qutty no session id, so they are not resumed.
+- Agents also come back after a crash, a kernel panic or a power loss.
+  - **The live record:** Qutty keeps a record of the session as it changes, in
+    `live-session.json` in the app folder. It holds each workspace's tiles and
+    layout, and each terminal's folder and agent session. It is written
+    atomically, with changes gathered for a second before each write. An agent
+    that quits back to its shell drops out of the record. A clean quit removes
+    the file.
+  - **After an unclean exit:** the next launch finds the file. It brings back
+    the workspaces' tiles and layout (shells in their folders) and resumes the
+    agents, the same way as after a quit that kept the shells. Before this, such
+    a launch got the layout settings back, but only one fresh shell.
+  - **When the shell keeper dies mid-session:** if the PTY daemon dies while
+    Qutty runs, the window offers "Restart shells and resume N agents" in a
+    strip at the bottom. It does not block anything: Dismiss leaves the tiles
+    ended.
+- Screen-based agent state. Qutty now tells working / waiting for you / idle for
+  agents without hooks, by reading the bottom of the tile's screen against
+  per-agent detection manifests. Manifests are bundled for Claude Code, Codex,
+  Gemini CLI, opencode, aider, GitHub Copilot CLI, Cursor Agent, Amp, Qwen Code,
+  Kimi Code CLI and Droid. The state feeds the same status as the badges, the
+  overlay and the companion.
+  - Hooks stay authoritative. For a hooked agent, the screen only adds an
+    approval prompt the hooks did not report.
+  - "Waiting" needs a matched approval UI. Qutty never guesses it.
+  - The foreground process's name and arguments now also identify the agent, so
+    the harness overlay turns on for these agents, including Node and Python
+    CLIs such as `node …/gemini`.
+  - Your own manifests, JSON or TOML, go in `agent-detection/` in Qutty's app
+    folder and always win.
+  - In the devtools, `qutty.agentDetection()` shows what was detected for the
+    focused tile, which matcher fired, and the state.
+  - docs/agent-detection.md has the format.
 
 ## 0.7.2 — 2026-11-21
 

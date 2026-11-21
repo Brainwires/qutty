@@ -1,0 +1,12 @@
+>_ OpenAI Codex (v0.167.0)
+
+› explain the build script
+
+• Explored
+  └ Read package.json, build.ts
+
+• Working (8s • esc to interrupt)
+
+› Ask Codex to do anything
+
+  100% context left · ? for shortcuts

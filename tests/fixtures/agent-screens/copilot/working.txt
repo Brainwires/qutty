@@ -1,0 +1,7 @@
+ Welcome to GitHub Copilot CLI
+
+ > list the open issues labelled bug
+
+ ● Thinking… (esc to cancel)
+
+ ~/src/app [⎇ main]                               claude-sonnet-4.5

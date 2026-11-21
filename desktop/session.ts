@@ -135,6 +135,13 @@ const endWindowInput = objectSchema<{ confirm: boolean }>((v, issues) => {
   return { confirm: v.confirm === true };
 });
 
+const resumeLostInput = objectSchema<{ oldId: string; newId: string }>(
+  (v, issues) => ({
+    oldId: str(v, "oldId", issues, 64),
+    newId: str(v, "newId", issues, 64),
+  }),
+);
+
 const keepInput = objectSchema<{ on: boolean }>((v, issues) => {
   if (typeof v.on !== "boolean") {
     issues.push({ message: "on must be a boolean", path: ["on"] });
@@ -287,7 +294,14 @@ export function guardQuit(
   keeper: QuitKeeper = shellKeeper(),
 ): () => void {
   let asking = false;
+  // A quit that goes ahead is a clean exit: the live session record goes (desktop/kept-shells.ts).
   return host.onBeforeQuit(async () => {
+    const allow = await decide();
+    if (allow) keeper.cleanExit?.();
+    return allow;
+  });
+
+  async function decide(): Promise<boolean> {
     const decision = workspaces.beforeQuit();
     const shells = keeper.keepable();
     if (shells > 0) {
@@ -323,7 +337,7 @@ export function guardQuit(
     } finally {
       asking = false;
     }
-  });
+  }
 }
 
 /**
@@ -499,6 +513,7 @@ export default defineDesktopExtension({
     "dragHover",
     "moveRequest",
     "dockCommand",
+    "shellsLost",
   ],
   setup: (host) => {
     mover = createTileMover(host);
@@ -513,6 +528,12 @@ export default defineDesktopExtension({
       }, CHANGED_DEBOUNCE_MS);
     });
     followWindows(host);
+    // The PTY daemon died under the running app: the window showing the workspace offers to start
+    // its tiles' shells again and resume their agents (desktop/kept-shells.ts).
+    shellKeeper().onShellsLost((lost) => {
+      const window = workspaces.windowOf(lost.workspace);
+      if (window) host.emit("shellsLost", lost, { window, retain: false });
+    });
     guardQuit(host);
     const ask = createAskEnd(host);
     endWindow = createEndWindow(ask);
@@ -621,6 +642,29 @@ export default defineDesktopExtension({
       handler: (args: unknown): boolean => {
         shellKeeper().setKeepShells((args as { on: boolean }).on);
         return shellKeeper().keepShells;
+      },
+    },
+    /**
+     * The page started a fresh shell (`newId`) in a tile whose terminal the dead daemon took
+     * (`oldId`): resume the agent that ran there. Whether one is resumed.
+     */
+    resumeLost: {
+      input: resumeLostInput,
+      handler: (args: unknown): boolean => {
+        const { oldId, newId } = args as { oldId: string; newId: string };
+        return shellKeeper().resumeLost(oldId, newId);
+      },
+    },
+    /** Settings → Tiles → "Resume agents after restart" (desktop/kept-shells.ts). */
+    resumeAgents: {
+      input: emptyInput,
+      handler: (): boolean => shellKeeper().resumeAgents,
+    },
+    setResumeAgents: {
+      input: keepInput,
+      handler: (args: unknown): boolean => {
+        shellKeeper().setResumeAgents((args as { on: boolean }).on);
+        return shellKeeper().resumeAgents;
       },
     },
     /** The calling window took the focus (the companion talks to the active window). */

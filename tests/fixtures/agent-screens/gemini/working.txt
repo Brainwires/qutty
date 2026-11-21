@@ -1,0 +1,14 @@
+ ███ GEMINI
+
+Tips for getting started:
+1. Ask questions, edit files, or run commands.
+
+> summarise README.md
+
+⠼ Counting electrons… (esc to cancel, 4s)
+
+Using: 1 GEMINI.md file
+╭──────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file           │
+╰──────────────────────────────────────────────────╯
+~/src/app        no sandbox        gemini-2.5-pro

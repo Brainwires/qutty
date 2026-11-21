@@ -1,0 +1,31 @@
+{
+  "//": "GitHub Copilot CLI (closed source). confidence: low. The approval options are from docs.github.com (use-copilot-cli); the working and selection hints follow Herdr's manifest; its idle prompt is unverified.",
+  "id": "copilot",
+  "label": "Copilot CLI",
+  "confidence": "low",
+  "process": {
+    "names": ["copilot"],
+    "argv": ["(^|/)copilot(\\.js)?$", "/@github/copilot/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    {
+      "id": "approval-options",
+      "all": ["1. yes", "tell copilot what to do differently"]
+    },
+    { "id": "select-cancel", "all": ["enter to select", "esc to cancel"] },
+    { "id": "confirm-cancel", "all": ["enter to confirm", "esc to cancel"] }
+  ],
+  "working": [
+    {
+      "id": "esc-to-cancel",
+      "regex": "esc (again )?to cancel|esc cancel|esc interrupt"
+    },
+    {
+      "id": "background-agents",
+      "regex": "^\\s*◎\\s+Waiting for background agents"
+    }
+  ],
+  "idle": []
+}

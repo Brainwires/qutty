@@ -8,10 +8,15 @@
  * the daemon is gone by then (a reboot): the shell tiles then start afresh in their last folder,
  * their old text shown dimmed above the new prompt ({@linkcode respawnPlan}).
  *
+ * Each terminal also records the coding agent session running in it, when the hub knows one
+ * (lib/agent/resume.ts): after a restart its fresh shell resumes that agent.
+ *
  * Pure, so it is tested without a daemon (tests/kept_shells_test.ts).
  *
  * @module
  */
+
+import { type AgentIdentity, identityOf } from "../agent/resume.ts";
 
 /** The record's version. */
 export const KEPT_VERSION = 1;
@@ -27,6 +32,8 @@ export interface KeptTerminal {
   rows: number;
   /** Its recent text, plain (only in the file: the daemon has the real replay). */
   history?: string;
+  /** The agent session running in it at the quit (resumed after a restart). */
+  agent?: AgentIdentity;
 }
 
 /** One kept workspace. */
@@ -60,6 +67,7 @@ function termOf(v: unknown): KeptTerminal | undefined {
   const cols = dim(v.cols);
   const rows = dim(v.rows);
   if (cols === undefined || rows === undefined) return undefined;
+  const agent = identityOf(v.agent);
   return {
     ptyId: v.ptyId,
     shell: v.shell,
@@ -67,6 +75,7 @@ function termOf(v: unknown): KeptTerminal | undefined {
     cols,
     rows,
     ...(typeof v.history === "string" ? { history: v.history } : {}),
+    ...(agent ? { agent } : {}),
   };
 }
 
@@ -105,12 +114,22 @@ export function parseKept(raw: unknown): KeptRecord | undefined {
 export interface ShellRespawn {
   /** The tile's old PTY id (its snapshot names it). */
   ptyId: string;
-  /** The shell: the tile's picked one, else the one that ran (the default shell then). */
-  shell: string;
+  /**
+   * The shell: the tile's picked one, else the one that ran; none for an agent tile (the default
+   * shell then).
+   */
+  shell?: string;
   cwd?: string;
   cols: number;
   rows: number;
   history: string;
+  /** The agent session that ran in it, to resume (lib/agent/resume.ts `planResumes` decides). */
+  agent?: AgentIdentity;
+  /**
+   * An agent tile from the `+` picker (its program and arguments): it comes back only to resume
+   * its agent, its shell `exec`ing it.
+   */
+  program?: { path: string; args?: string[] };
 }
 
 /** The snapshot's tiles (`{ [tileId]: { ptyId, profile } }`), loosely. */
@@ -118,10 +137,30 @@ function tilesOf(snapshot: unknown): Record<string, unknown> {
   return isObject(snapshot) && isObject(snapshot.tiles) ? snapshot.tiles : {};
 }
 
+/** An agent tile's program, when it is one a restart may resume (not ollama's, not sandboxed). */
+function agentProgram(
+  profile: Record<string, unknown>,
+): ShellRespawn["program"] | undefined {
+  if (
+    profile.kind !== "agent" || typeof profile.program !== "string" ||
+    profile.sandbox === true || profile.plain === true ||
+    profile.ollamaModel !== undefined
+  ) {
+    return undefined;
+  }
+  const args = Array.isArray(profile.args) &&
+      profile.args.every((a) => typeof a === "string")
+    ? { args: profile.args as string[] }
+    : {};
+  return { path: profile.program, ...args };
+}
+
 /**
  * Which of a kept workspace's terminals start again when the daemon is gone: the plain shell tiles
- * (not an agent, not ssh, not sandboxed), in their last folder, with their history. Other tiles
- * come back as ended (their command is not rerun behind the user's back).
+ * (not ssh, not sandboxed), in their last folder, with their history and the agent session that
+ * ran in them; and the agent tiles from the `+` picker that had an agent session to resume (a
+ * shell that `exec`s the agent). Other tiles come back as ended (their command is not rerun
+ * behind the user's back).
  */
 export function respawnPlan(ws: KeptWorkspaceRecord): ShellRespawn[] {
   const byPty = new Map(ws.terms.map((t) => [t.ptyId, t]));
@@ -129,16 +168,23 @@ export function respawnPlan(ws: KeptWorkspaceRecord): ShellRespawn[] {
   for (const tile of Object.values(tilesOf(ws.snapshot))) {
     if (!isObject(tile) || typeof tile.ptyId !== "string") continue;
     const profile = isObject(tile.profile) ? tile.profile : undefined;
-    if (profile?.kind !== "shell" || profile.sandbox === true) continue;
     const term = byPty.get(tile.ptyId);
-    if (!term) continue;
+    if (!profile || !term) continue;
+    const program = agentProgram(profile);
+    const shellTile = profile.kind === "shell" && profile.sandbox !== true;
+    if (!shellTile && !(program && term.agent)) continue;
+    const shell = !shellTile ? {} : {
+      shell: typeof profile.shell === "string" ? profile.shell : term.shell,
+    };
     out.push({
       ptyId: term.ptyId,
-      shell: typeof profile.shell === "string" ? profile.shell : term.shell,
+      ...shell,
       ...(term.cwd !== undefined ? { cwd: term.cwd } : {}),
       cols: term.cols,
       rows: term.rows,
       history: term.history ?? "",
+      ...(term.agent ? { agent: term.agent } : {}),
+      ...(program ? { program } : {}),
     });
   }
   return out;

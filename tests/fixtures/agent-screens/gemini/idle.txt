@@ -1,0 +1,7 @@
+✦ README.md describes a small CLI that converts CSV to JSON.
+
+Using: 1 GEMINI.md file
+╭──────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file           │
+╰──────────────────────────────────────────────────╯
+~/src/app        no sandbox        gemini-2.5-pro

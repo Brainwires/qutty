@@ -1,0 +1,7 @@
+  $ npm run migrate
+
+  Run this command?
+  Not in allowlist: npm run migrate
+  → Run (once) (y)
+    Add Shell(npm) to allowlist? (tab)
+    Skip (esc or n)

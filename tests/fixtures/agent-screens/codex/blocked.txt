@@ -1,0 +1,11 @@
+• Ran git status
+
+  Would you like to run the following command?
+
+  $ git push origin main
+
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `git push` (a)
+  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel

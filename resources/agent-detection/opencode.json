@@ -1,0 +1,26 @@
+{
+  "//": "opencode. Strings from sst/opencode packages/tui: routes/session/permission.tsx (Permission required), util/permission.ts (Allow once, Always allow, Reject), component/prompt/index.tsx (esc interrupt, Ask anything…).",
+  "id": "opencode",
+  "label": "OpenCode",
+  "confidence": "high",
+  "process": {
+    "names": ["opencode"],
+    "argv": ["(^|/)opencode(\\.cjs|\\.js)?$"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    { "id": "permission-required", "text": "Permission required" },
+    {
+      "id": "permission-options",
+      "all": ["allow once", "always allow", "reject"]
+    }
+  ],
+  "working": [
+    { "id": "esc-interrupt", "regex": "esc (again to )?interrupt" },
+    { "id": "progress", "regex": "[■⬝]{4,}" }
+  ],
+  "idle": [
+    { "id": "ask-anything", "text": "Ask anything" }
+  ]
+}

@@ -8,7 +8,11 @@
  * - the agent hub's registration (`qutty-hook` SessionStart, or the MCP handshake, sets the
  *   tile's `harness`);
  * - the agent tool the tile was launched as (the `+` picker's `agent:claude`, an Ollama pair);
- * - the foreground process (`info`: `claude`, `codex`, `gemini`, `opencode`, `aider`, …);
+ * - the foreground process (`info`: `claude`, `codex`, `gemini`, `opencode`, `aider`, and the
+ *   process names of the bundled agent detection manifests, lib/agent/detect/: `cursor-agent`,
+ *   `amp`, `droid`, …). The hub also matches the process's arguments (a CLI that runs as
+ *   `node …/gemini`) and names the tile's harness from them (lib/hub/screen-detect.ts), which
+ *   arrives here as the hub's registration;
  * - the title the program set (OSC 0 / 2: Claude Code's "✳ Claude Code", "Codex", …).
  *
  * A shell in the foreground means the harness has exited (the hub keeps a tile's harness once it
@@ -25,6 +29,8 @@
 
 import { tileInput } from "../hub/tile-input.ts";
 import { harnessLabel, OLLAMA_HARNESSES } from "../ollama/harnesses.ts";
+import { builtinManifests } from "../agent/detect/builtin.ts";
+import { agentForProcess } from "../agent/detect/manifest.ts";
 
 /** A harness the overlay knows how to frame. */
 export interface HarnessSpec {
@@ -118,20 +124,28 @@ export function harnessSpec(name: string): HarnessSpec {
     const { processes: _p, title: _t, ...spec } = known;
     return spec;
   }
+  // A harness with a bundled detection manifest (Copilot, Cursor, Amp, …): its label and key.
+  const manifest = builtinManifests().find((m) => m.id === id);
   return {
     id,
-    label: harnessLabel(id),
+    label: manifest?.label ?? harnessLabel(id),
     glyph: "◆",
     color: "",
-    interrupt: ESC,
+    interrupt: manifest?.interrupt ?? ESC,
   };
 }
 
-/** A harness name from a foreground process name (`claude`, `/usr/local/bin/codex`). */
+/**
+ * A harness name from a foreground process name (`claude`, `/usr/local/bin/codex`): the known
+ * harnesses, then the bundled detection manifests' process names (`cursor-agent`, `amp`, …), then
+ * `ollama launch`'s harnesses.
+ */
 function byProcess(process: string): string | undefined {
   const base = process.trim().split("/").pop()?.toLowerCase() ?? "";
   const known = KNOWN.find((h) => h.processes.includes(base));
   if (known) return known.id;
+  const manifest = agentForProcess(builtinManifests(), { name: base });
+  if (manifest) return manifest.id;
   return OLLAMA_HARNESSES.some((h) => h.name === base) ? base : undefined;
 }
 

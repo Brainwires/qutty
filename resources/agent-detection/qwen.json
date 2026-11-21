@@ -1,0 +1,27 @@
+{
+  "//": "Qwen Code (a Gemini CLI fork). Strings from QwenLM/qwen-code packages/cli/src/ui: LoadingIndicator.tsx ((12s · esc to cancel)), ToolConfirmationMessage.tsx (Yes, allow once, Yes, allow always, No, suggest changes (esc)), Waiting for user confirmation..., Type your message or @path/to/file. A node script: argv[1] is the qwen bin.",
+  "id": "qwen",
+  "label": "Qwen Code",
+  "confidence": "high",
+  "process": {
+    "names": ["qwen"],
+    "argv": ["(^|/)qwen(\\.js)?$", "/@qwen-code/qwen-code/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    { "id": "allow-once", "all": ["yes, allow once", "no, suggest changes"] },
+    {
+      "id": "waiting-for-confirmation",
+      "text": "Waiting for user confirmation..."
+    },
+    { "id": "trust-folder", "text": "Do you trust this folder?" }
+  ],
+  "working": [
+    { "id": "esc-to-cancel", "regex": "\\(\\d+[smh][^)]*esc to cancel\\)" },
+    { "id": "esc-to-cancel-plain", "text": "esc to cancel" }
+  ],
+  "idle": [
+    { "id": "placeholder", "text": "Type your message or @path/to/file" }
+  ]
+}

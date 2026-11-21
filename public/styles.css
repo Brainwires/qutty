@@ -2897,6 +2897,15 @@ kbd {
 .tile-agent[data-status="waiting"] .tile-agent-status {
   color: var(--accent);
 }
+/* An agent resumed after a restart (desktop/kept-shells.ts), until it gets busy. */
+.tile-resumed {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
+  font: 10px/14px var(--mono);
+}
 .tile-agent-unread {
   min-width: 14px;
   height: 12px;

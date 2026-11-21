@@ -221,6 +221,11 @@ export class TerminalSessions {
     });
   }
 
+  /** Every terminal the sessions know (running or ended, not yet released). */
+  ids(): string[] {
+    return [...this.#sizes.keys()];
+  }
+
   /** The running terminals that live in the PTY daemon (what a quit can keep). */
   remoteIds(): string[] {
     return [...this.#sizes.keys()].filter((id) => this.host.isRemote(id));

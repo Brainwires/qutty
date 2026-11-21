@@ -124,6 +124,8 @@ import { useLinks } from "./use-links.ts";
 import { LinkMenu } from "./link-menu.tsx";
 import { useLauncher } from "./use-launcher.ts";
 import { useHub } from "./use-hub.ts";
+import { isResumable } from "../lib/agent/resume.ts";
+import { useShellsLost } from "./shells-lost.tsx";
 import { AskDialog } from "./ask-dialog.tsx";
 import { CompanionOverlay } from "./companion/companion-overlay.tsx";
 import { useCompanion } from "./use-companion.ts";
@@ -1280,9 +1282,32 @@ function WorkspaceView() {
       speech,
     };
   }, [ready, companionOnHere, dictation, speech, openSettings]);
+  // The agent detection debug command, in the page's devtools: `qutty.agentDetection()` logs (and
+  // returns) what the hub detected for the focused tile: the agent, how, which manifest matcher
+  // fired on its screen and the state; `qutty.agentDetection(true)` reads the user's manifests
+  // again first (lib/hub/screen-detect.ts, docs/agent-detection.md).
+  useEffect(() => {
+    const g = globalThis as { qutty?: Record<string, unknown> };
+    const agentDetection = async (reload = false) => {
+      const id = stateRef.current.focusedId;
+      const pty = id ? managerRef.current?.ptyId(id) : undefined;
+      if (!pty) return console.info("agent detection: no focused terminal");
+      const info = await managerRef.current!.backend.hubDetection(pty, reload);
+      console.info("agent detection:", info);
+      return info;
+    };
+    g.qutty = { ...g.qutty, agentDetection };
+    return () => {
+      if (g.qutty?.agentDetection === agentDetection) {
+        delete g.qutty.agentDetection;
+      }
+    };
+  }, []);
+
   /**
-   * A right click on tile `id`'s header: "GUI overlay" (on a terminal running a harness), then the
-   * windows it can move to.
+   * A right click on tile `id`'s header: "GUI overlay" (on a terminal running a harness), "Don't
+   * resume this agent" (on one whose agent a restart would resume), then the windows it can move
+   * to.
    */
   const openHeadMenu = useCallback((id: string, x: number, y: number) => {
     const entry = stateRef.current.terminals.find((t) => t.id === id);
@@ -1307,8 +1332,30 @@ function WorkspaceView() {
         run: () => dispatch({ type: "setGuiOverlay", id, on: !on }),
       });
     }
+    // A terminal whose agent a restart would resume (lib/agent/resume.ts): leave it be.
+    const hub = entry && !entry.chat ? hubTileOf(id) : undefined;
+    const pty = managerRef.current?.ptyId(id);
+    if (hub && pty && hub.session && isResumable(hub.harness)) {
+      const off = hub.noResume === true;
+      extra.push({
+        action: "no-resume",
+        label: "Don't resume this agent",
+        checked: off,
+        run: () =>
+          void managerRef.current?.backend.hubSetNoResume(pty, !off).catch(
+            (err) => console.warn("could not change the resume choice", err),
+          ),
+      });
+    }
     tileMove.openMenu(id, x, y, extra);
-  }, [harnessIn, tileMove.openMenu]);
+  }, [harnessIn, hubTileOf, tileMove.openMenu]);
+
+  // The PTY daemon died under us: offer to restart the shells it took and resume their agents.
+  const tileIds = useCallback(
+    () => stateRef.current.terminals.map((t) => t.id),
+    [],
+  );
+  const shellsLost = useShellsLost(ready ? managerRef.current : null, tileIds);
 
   const manager = managerRef.current;
   const showStrip = desktop && barPosition !== "top";
@@ -1556,6 +1603,7 @@ function WorkspaceView() {
             }}
           />
         )}
+        {shellsLost}
         {broadcast.on && (
           <BroadcastBanner
             state={broadcast.state}

@@ -158,13 +158,51 @@ export class Registry {
     this.#onChange();
   }
 
-  /** A new status; `note` (from `set_status`) says how it went, and any other change clears it. */
+  /**
+   * Forget the tile's harness (the program screen detection recognised has quit). A tile still on
+   * its default name goes back to `shell-<n>`.
+   */
+  clearHarness(id: string): void {
+    const tile = this.#tiles.get(id);
+    if (!tile || tile.harness === undefined) return;
+    delete tile.harness;
+    delete tile.session;
+    delete tile.resumed;
+    if (this.#defaultNamed.has(id)) {
+      tile.name = this.#freeName(`shell-${id.replace(/\D/g, "")}`, id);
+    }
+    this.#onChange();
+  }
+
+  /**
+   * A new status; `note` (from `set_status`) says how it went, and any other change clears it. A
+   * resumed agent that gets busy is no longer "resumed".
+   */
   setStatus(id: string, status: TileStatus, note?: string): void {
     const tile = this.#tiles.get(id);
     if (!tile || (tile.status === status && tile.note === note)) return;
     tile.status = status;
     if (note === undefined) delete tile.note;
     else tile.note = note;
+    if (status === "busy") delete tile.resumed;
+    this.#onChange();
+  }
+
+  /** Mark the tile's agent as resumed after a restart, or not. */
+  setResumed(id: string, resumed: boolean): void {
+    this.#flag(id, "resumed", resumed);
+  }
+
+  /** The tile's "Don't resume this agent". */
+  setNoResume(id: string, noResume: boolean): void {
+    this.#flag(id, "noResume", noResume);
+  }
+
+  #flag(id: string, key: "resumed" | "noResume", on: boolean): void {
+    const tile = this.#tiles.get(id);
+    if (!tile || (tile[key] === true) === on) return;
+    if (on) tile[key] = true;
+    else delete tile[key];
     this.#onChange();
   }
 

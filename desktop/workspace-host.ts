@@ -122,6 +122,7 @@ export class WorkspaceRegistry {
   #busy: () => BusyTile[] = () => [];
   #ended = new Set<(id: string, ptys: string[]) => void>();
   #changed = new Set<() => void>();
+  #saved = new Set<() => void>();
   #confirmedAt: number | undefined;
   /** Workspaces to end, not detach, once their window closes. */
   readonly #endOnClose = new Set<string>();
@@ -399,7 +400,24 @@ export class WorkspaceRegistry {
   /** The page's snapshot of workspace `id` (tiles, layout, MRU order). */
   save(id: string, snapshot: unknown): void {
     const ws = this.#workspaces.get(id);
-    if (ws) ws.snapshot = snapshot;
+    if (!ws) return;
+    ws.snapshot = snapshot;
+    for (const fn of [...this.#saved]) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("workspaces: a save listener failed", err);
+      }
+    }
+  }
+
+  /**
+   * Call `fn` after every snapshot a page saves (the shell keeper's live record of the session,
+   * desktop/kept-shells.ts, which it debounces).
+   */
+  onSaved(fn: () => void): () => void {
+    this.#saved.add(fn);
+    return () => this.#saved.delete(fn);
   }
 
   /**
