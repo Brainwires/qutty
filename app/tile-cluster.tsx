@@ -84,6 +84,8 @@ import { zoomLabel } from "../lib/web/zoom.ts";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 import { AgentBody, AgentHead, type AgentTileHooks } from "./agent-tile.tsx";
 import { ScmBody, type ScmTileHooks } from "./scm-tile.tsx";
+import { HARNESS_COLORS } from "../lib/agent/avatar.ts";
+import { agentHarness } from "../lib/agent/tile.ts";
 import {
   HarnessControls,
   HarnessHead,
@@ -396,10 +398,12 @@ function TerminalTile(props: TerminalTileProps) {
   // prompt's content (`--tile-zoom`, styles.css). A web tile's page zooms itself.
   const zoom = web ? 1 : props.zoomOf?.(entry) ?? 1;
   const zoomed = !isActualSize(zoom);
-  // The harness's brand colour, for its cards (the theme's accent when it has none).
+  // The harness's (or the agent tile's backend's) brand colour, for its cards (the theme's accent
+  // when it has none).
   const tileStyle = {
     ...style,
     ...(harnessView?.spec.color ? { "--harness": harnessView.spec.color } : {}),
+    ...(agent ? { "--harness": HARNESS_COLORS[agentHarness(entry.chat)] } : {}),
     ...(zoomed ? { "--tile-zoom": String(zoom) } : {}),
   };
   // A web or agent tile's body is never scaled: it has no terminal to keep at one size. Nor is a

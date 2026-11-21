@@ -58,6 +58,22 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   cls("tile-grip", "A free-form tile's resize grip (edges and corners)."),
   part("agent-body", "An agent tile's body (its transcript and prompt)."),
   part("scm-body", "A Source Control tile's body (its panel and diff)."),
+  part(
+    "agent-message",
+    'A message in an agent tile\'s transcript; `[data-type="user"]` or `"text"`.',
+  ),
+  part("agent-tool", "A tool call's card in an agent tile's transcript."),
+  part("agent-permission", "A permission question's card (Allow / Deny)."),
+  part("agent-welcome", "An agent tile's empty state (its avatar and folder)."),
+  part(
+    "composer",
+    "A prompt box: the composer card of an agent tile or a harness overlay.",
+  ),
+  part("composer-input", "A prompt box's text field."),
+  part(
+    "composer-button",
+    "A button in a prompt box (attach, saved, history, dictate, stop, Send).",
+  ),
   part("web-toolbar", "A web tile's toolbar, in its header."),
   cls("web-btn", "A button in a web tile's toolbar."),
   part("web-address", "A web tile's address field."),

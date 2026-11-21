@@ -165,7 +165,7 @@
 
 /* The title bar: a gradient band set 2px into the grey face. Inside it the text tokens are the
    bar's own, so the title, the badges, the age and a web tile's buttons all read on it. */
-:root[data-skin="classic"] .tile:not(.is-harness) [data-part="tile-head"] {
+:root[data-skin="classic"] .tile:not(.is-harness, .is-agent) [data-part="tile-head"] {
   --c-bar: linear-gradient(90deg, var(--c-title-off-a), var(--c-title-off-b));
   --text: var(--c-title-off-text);
   --text-2: var(--c-title-off-text);
@@ -184,7 +184,7 @@
   color: var(--text);
   font: 700 11px/1 var(--c-font);
 }
-:root[data-skin="classic"] .tile.is-focused:not(.is-harness) [data-part="tile-head"] {
+:root[data-skin="classic"] .tile.is-focused:not(.is-harness, .is-agent) [data-part="tile-head"] {
   --c-bar: linear-gradient(90deg, var(--c-title-a), var(--c-title-b));
   --text: var(--c-title-text);
   --text-2: var(--c-title-text);
@@ -193,7 +193,7 @@
   --line-2: color-mix(in srgb, var(--c-title-text) 55%, transparent);
 }
 /* An unfocused tile with something to show: its bar takes the activity's colour. */
-:root[data-skin="classic"] [data-activity-mode="full"] .tile:not(.is-harness, [data-activity="none"])[data-activity] [data-part="tile-head"] {
+:root[data-skin="classic"] [data-activity-mode="full"] .tile:not(.is-harness, .is-agent, [data-activity="none"])[data-activity] [data-part="tile-head"] {
   --c-bar: linear-gradient(
     90deg,
     color-mix(in srgb, var(--act) 70%, var(--c-dark)),
@@ -205,8 +205,8 @@
   animation: none;
 }
 /* Sandboxed and broadcast tiles keep their hatching, over the bar. */
-:root[data-skin="classic"] .tile.is-sandbox:not(.is-harness) [data-part="tile-head"],
-:root[data-skin="classic"] .tile.is-broadcast:not(.is-harness) [data-part="tile-head"] {
+:root[data-skin="classic"] .tile.is-sandbox:not(.is-harness, .is-agent) [data-part="tile-head"],
+:root[data-skin="classic"] .tile.is-broadcast:not(.is-harness, .is-agent) [data-part="tile-head"] {
   background-image:
     repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.2) 0 6px,
     transparent 6px 12px),
@@ -278,11 +278,187 @@
 }
 
 /* A harness tile's header is a card of its own: the same card, squared and raised. */
-:root[data-skin="classic"] .tile.is-harness [data-part="tile-head"] {
+:root[data-skin="classic"] .tile.is-harness [data-part="tile-head"],
+:root[data-skin="classic"] .tile.is-agent [data-part="tile-head"] {
   border: 0;
   border-radius: 0;
   background: var(--c-face);
   box-shadow: var(--c-raised);
+}
+
+/* A harness overlay's terminal card is a sunken well, its rail buttons square and raised. */
+:root[data-skin="classic"] .harness-frame > [data-part="tile-body"] {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-raised);
+  transition: none;
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn:hover:not(:disabled) {
+  background: var(--c-face);
+  color: var(--c-text);
+}
+:root[data-skin="classic"] .harness-rail .agent-rail-btn:active:not(:disabled),
+:root[data-skin="classic"] .harness-rail .agent-rail-btn[aria-pressed="true"] {
+  background: var(--c-checker);
+  box-shadow: var(--c-pressed);
+}
+
+/* An agent tile: its header is a card like a harness overlay's (above); the pills square and
+   raised, the transcript a sunken white well, messages, tool calls and questions flat panels with
+   a thin bevel, the rail square raised buttons. */
+:root[data-skin="classic"] .agent-backend,
+:root[data-skin="classic"] .tile.is-agent .agent-model,
+:root[data-skin="classic"] .tile.is-agent .agent-status {
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  font: 11px/1 var(--c-font);
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-model[aria-expanded="true"] {
+  box-shadow: var(--c-thin-sunken);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-name {
+  border-radius: 0;
+  font: 700 12px/1 var(--c-font);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-more {
+  border-radius: 0;
+}
+:root[data-skin="classic"] .tile.is-agent .agent-scroll {
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-tabs,
+:root[data-skin="classic"] .tile.is-agent .agent-tab {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  font: 11px/1 var(--c-font);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-tab[aria-selected="true"] {
+  box-shadow: var(--c-thin-sunken);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-rail-btn {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-raised);
+  transition: none;
+}
+:root[data-skin="classic"] .tile.is-agent .agent-rail-btn[aria-pressed="true"] {
+  background: var(--c-checker);
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] .tile.is-agent [data-part="agent-message"][data-type="user"],
+:root[data-skin="classic"] .tile.is-agent [data-part="agent-tool"],
+:root[data-skin="classic"] .tile.is-agent [data-part="agent-permission"],
+:root[data-skin="classic"] .tile.is-agent .agent-change-file {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] .tile.is-agent [data-part="agent-tool"].is-nested {
+  box-shadow: none;
+}
+:root[data-skin="classic"] .tile.is-agent [data-part="agent-permission"].is-open {
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-detail,
+:root[data-skin="classic"] .tile.is-agent .agent-perm-preview,
+:root[data-skin="classic"] .tile.is-agent .md-pre {
+  border: 0;
+  border-radius: 0;
+  background: var(--tile);
+  box-shadow: var(--c-thin-sunken);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-btn {
+  border-radius: 0;
+  font: 11px/1 var(--c-font);
+}
+:root[data-skin="classic"] .tile.is-agent .agent-perm-actions .btn-primary {
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .agent-head-pattern,
+:root[data-skin="classic"] .agent-head-pattern .agent-avatar,
+:root[data-skin="classic"] [data-part="agent-welcome"] .agent-head-avatar {
+  border-radius: 0;
+  box-shadow: var(--c-raised);
+}
+
+/* The prompt box (an agent tile's, a harness overlay's): a raised panel with a sunken white
+   text field, square tool buttons that rise under the pointer and a square raised Send. No
+   translucency, no glow. */
+:root[data-skin="classic"] [data-part="composer"] {
+  --composer-radius: 0px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--c-raised);
+  color: var(--c-text);
+  font: 11px/1.35 var(--c-font);
+  transition: none;
+}
+:root[data-skin="classic"] [data-part="composer"]:focus-within {
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] [data-part="composer"] .agent-input-row {
+  padding: 4px 5px;
+  background: var(--tile);
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] [data-part="composer-input"] {
+  min-height: 2.7em;
+  font: 12px/1.35 var(--c-font);
+  caret-color: auto;
+}
+:root[data-skin="classic"] [data-part="composer-button"] {
+  border-radius: 0;
+  background: transparent;
+  color: var(--c-text);
+  box-shadow: none;
+  transition: none;
+}
+:root[data-skin="classic"] [data-part="composer-button"]:hover:not(:disabled),
+:root[data-skin="classic"] [data-part="composer-button"][aria-expanded="true"] {
+  background: transparent;
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] .agent-send[data-part="composer-button"],
+:root[data-skin="classic"] .agent-stop[data-part="composer-button"] {
+  background: var(--c-face);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .agent-send[data-part="composer-button"]:disabled {
+  color: var(--c-shadow);
+}
+:root[data-skin="classic"] .agent-stop[data-part="composer-button"] {
+  color: var(--red);
+}
+:root[data-skin="classic"] [data-part="composer-button"]:active:not(:disabled) {
+  transform: none;
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] .agent-hint {
+  font: 11px/1 var(--c-font);
 }
 
 /* A web tile: its buttons sit on the bar, its address field is a sunken white box. */
