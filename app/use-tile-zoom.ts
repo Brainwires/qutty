@@ -31,8 +31,8 @@ interface SharedZoomHooks {
   setSharedZoom(zoom: number): void;
 }
 
-/** A terminal tile (not a web or agent tile): one the terminal manager draws. */
-const isTerminal = (t: TerminalEntry) => !t.web && !t.chat;
+/** A terminal tile (not a web, agent or Source Control tile): one the terminal manager draws. */
+const isTerminal = (t: TerminalEntry) => !t.web && !t.chat && !t.scm;
 
 export function useTileZoom(opts: TileZoomOptions) {
   const { ready, state, manager, run } = opts;

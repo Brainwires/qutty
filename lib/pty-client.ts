@@ -34,6 +34,9 @@ import { createDemoLinks } from "./links-demo.ts";
 import type skinsExtension from "../desktop/skins.ts";
 import type { SkinsClient } from "./skins/skin.ts";
 import { createDemoSkins } from "./skins/demo.ts";
+import type { ScmClient } from "./scm/types.ts";
+import { createDesktopScm } from "./scm/client.ts";
+import { createDemoScm } from "./scm/demo.ts";
 import { fromSystemStats, type SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
 import {
@@ -261,6 +264,11 @@ export interface PtyBackend {
 
   /** The user's skins folder: list it, read one skin, copy a template in, open it. */
   skins: SkinsClient;
+
+  // --- Source Control (desktop/scm.ts) -------------------------------------------------------
+
+  /** git for the Source Control tile (app/scm-tile.tsx); the demo's is an in-memory repository. */
+  scm: ScmClient;
 
   // --- The system monitor (Denext's `system.stats`, the `systemStats` capability) ------------
 
@@ -805,6 +813,7 @@ export function createDesktopBackend(
       template: (request) => skins.template(request),
       openFolder: () => skins.openFolder({}),
     },
+    scm: createDesktopScm(desktopExtension, onDesktopEvent),
     sysSample: async () => fromSystemStats(await stats.stats()),
     onData: (id, cb) => {
       listen();
@@ -1921,6 +1930,7 @@ export function createDemoBackend(): PtyBackend {
     linkEditors: () => links.editors(),
     linkEdit: (request) => links.edit(request),
     skins,
+    scm: createDemoScm(),
     sysSample: () => Promise.resolve(demoSample()),
     info(id) {
       return attempt(() => {

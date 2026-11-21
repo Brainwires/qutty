@@ -155,6 +155,9 @@ import { BookmarkManager } from "./bookmark-manager.tsx";
 import { HistoryDialog } from "./history-dialog.tsx";
 import type { OpenWhere } from "./bookmarks-bar.tsx";
 import { focusAgentTile } from "./agent-tile.tsx";
+import { focusScmTile } from "./scm-tile.tsx";
+import { useScmTiles } from "./use-scm-tiles.ts";
+import { WorktreeBadge } from "./worktree-badge.tsx";
 import {
   type HarnessHooks,
   type HarnessView,
@@ -247,7 +250,7 @@ function WorkspaceView() {
     const id = after.focusedId;
     if (
       id && id !== before.focusedId && !isWebTile(after.terminals, id) &&
-      !isAgentTile(after.terminals, id)
+      !isAgentTile(after.terminals, id) && !isScmTile(after.terminals, id)
     ) {
       managerRef.current?.focus(id);
     }
@@ -260,10 +263,13 @@ function WorkspaceView() {
   const focusKeyboard = useCallback((id: string) => {
     if (isWebTile(stateRef.current.terminals, id)) focusWebTile(id);
     else if (isAgentTile(stateRef.current.terminals, id)) focusAgentTile(id);
+    else if (isScmTile(stateRef.current.terminals, id)) focusScmTile(id);
     else managerRef.current?.focus(id);
   }, []);
   /** The agent tiles (app/use-agent-tiles.tsx), for what is declared before them. */
   const agentsRef = useRef<AgentTilesView | null>(null);
+  /** The Source Control tiles (app/use-scm-tiles.ts), likewise. */
+  const scmTilesRef = useRef<ReturnType<typeof useScmTiles> | null>(null);
 
   /** A web tile showing `url`, beside the focused tile (it becomes the focused one). */
   const openWebTile = useCallback((url: string) => {
@@ -499,10 +505,16 @@ function WorkspaceView() {
     dispatch,
     focus: (id) => focusKeyboard(id),
     // A new workspace starts with the default shell on the host, whatever plain `+` opens.
+    // A window opened for a worktree (Source Control → Open as Workspace) starts in its folder.
     fresh: () => {
-      if (stateRef.current.terminals.length === 0) {
-        openTile({ kind: "shell", sandbox: false });
-      }
+      if (stateRef.current.terminals.length > 0) return;
+      const mark = scmTilesRef.current?.openedFor;
+      if (mark) dispatch({ type: "setWorktree", mark });
+      openTile({
+        kind: "shell",
+        sandbox: false,
+        ...(mark ? { cwd: mark.path } : {}),
+      });
     },
     chat: {
       rows: (id) => agentsRef.current?.store?.rows(id) ?? [],
@@ -725,8 +737,25 @@ function WorkspaceView() {
     speech,
     ...(capture ? { capture } : {}),
     openInEditor,
+    turnEnded: () => scmTilesRef.current?.agentTurnEnded(),
+    ...(state.worktree ? { worktree: state.worktree.path } : {}),
   });
   agentsRef.current = agentTiles;
+
+  // Source Control tiles (app/scm-tile.tsx) and worktree workspaces (lib/scm/worktrees.ts).
+  const scmTiles = useScmTiles({
+    backend: ready ? managerRef.current?.backend ?? null : null,
+    manager: ready ? managerRef.current : null,
+    state,
+    platform,
+    dispatch,
+    run,
+    nextId: () => `t${++seqRef.current}`,
+    openTile,
+    openInEditor,
+    agents: agentsRef,
+  });
+  scmTilesRef.current = scmTiles;
 
   // The lite system monitor: the bar meter, and the companion's hot face (with Lively on).
   const monitor = state.settings.monitor;
@@ -972,6 +1001,12 @@ function WorkspaceView() {
       if (
         stateRef.current.cycle && !(platform === "mac" ? e.metaKey : e.ctrlKey)
       ) dispatch({ type: "endCycle" });
+      // A Source Control tile's commit box takes ⌘↩ / Ctrl+Enter (Commit) while it has the
+      // keyboard; everywhere else that key stays Maximize Tile.
+      if (
+        e.key === "Enter" && (platform === "mac" ? e.metaKey : e.ctrlKey) &&
+        (e.target as Element | null)?.closest?.("[data-commit-box]")
+      ) return;
       // The one router: over a focused web tile its browser keys first (⌘L, ⌘R, ⌘[ …).
       const focusedId = stateRef.current.focusedId;
       const routed = routeKey(
@@ -1143,6 +1178,7 @@ function WorkspaceView() {
     webPage: webEngine?.capabilities.drawsAboveHtml === true,
     webDialogs: webEngine !== null,
     agentChat: true,
+    sourceControl: true,
     modalOpen,
     ...(tileMove.enabled && managerRef.current?.backend.session.moves
       ? { moves: managerRef.current.backend.session.moves }
@@ -1159,6 +1195,7 @@ function WorkspaceView() {
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
       openAgentChat: (agent) => agentTiles.openLaunch(agent),
+      openSourceControl: (show) => scmTiles.openForFocused(show),
       webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
         const id = stateRef.current.focusedId;
@@ -1209,7 +1246,7 @@ function WorkspaceView() {
   const overlayDefault = settings.harnessOverlay;
   /** The harness tile `entry` runs now (whether or not its overlay shows). */
   const harnessIn = useCallback((entry: (typeof state.terminals)[number]) => {
-    if (entry.web || entry.chat) return undefined;
+    if (entry.web || entry.chat || entry.scm) return undefined;
     const hub = hubTileOf(entry.id);
     const spec = detectHarness({
       ...(hub?.harness ? { hubHarness: hub.harness } : {}),
@@ -1250,6 +1287,17 @@ function WorkspaceView() {
   const openHeadMenu = useCallback((id: string, x: number, y: number) => {
     const entry = stateRef.current.terminals.find((t) => t.id === id);
     const extra: LinkMenuItem[] = [];
+    // A terminal on this machine: Source Control for the folder it is in.
+    if (
+      entry && !entry.web && !entry.chat && !entry.scm && !entry.ssh &&
+      !entry.sandbox
+    ) {
+      extra.push({
+        action: "source-control",
+        label: "Source Control for This Folder",
+        run: () => scmTilesRef.current?.openFor(id),
+      });
+    }
     if (entry && harnessIn(entry)) {
       const on = entry.guiOverlay ?? stateRef.current.settings.harnessOverlay;
       extra.push({
@@ -1328,6 +1376,7 @@ function WorkspaceView() {
             }
             : {}),
           onAgentChat: agentTiles.openLaunch,
+          onSourceControl: scmTiles.openForFocused,
           ...(agentTiles.apiKey ? { apiKeyChat: true } : {}),
           agentPresets: state.settings.agentPresets,
         }}
@@ -1356,6 +1405,7 @@ function WorkspaceView() {
         {...(monitor.meter ? { stats: sys.stats } : {})}
         workspaces={
           <>
+            {state.worktree && <WorktreeBadge mark={state.worktree} />}
             <AgentsMenu
               agents={agentTiles.summaries}
               nameOf={(id) =>
@@ -1366,6 +1416,7 @@ function WorkspaceView() {
               session={session}
               now={now}
               newWindowLabel={platform === "mac" ? "⌘N" : "Ctrl+N"}
+              onWorktrees={() => scmTiles.openForFocused("worktrees")}
             />
           </>
         }
@@ -1408,6 +1459,7 @@ function WorkspaceView() {
             agentOf={hubTileOf}
             web={webHooks}
             agent={agentTiles.hooks}
+            scm={scmTiles.hooks}
             harnessOf={harnessOf}
             harness={harnessHooks}
             renderHeadActions={(entry) =>
@@ -1420,7 +1472,7 @@ function WorkspaceView() {
               )}
             renderHeadLead={(entry) => (
               <>
-                {broadcast.on && !entry.web && !entry.chat && (
+                {broadcast.on && !entry.web && !entry.chat && !entry.scm && (
                   <BroadcastCheck
                     checked={broadcast.members.has(entry.id)}
                     ssh={entry.ssh !== undefined}
@@ -1573,6 +1625,7 @@ function WorkspaceView() {
           onAgentPresets={(presets) =>
             run({ type: "setAgentPresets", presets })}
           onMonitor={(patch) => run({ type: "setMonitor", patch })}
+          onScm={(patch) => run({ type: "setScm", patch })}
           {...(windowClose.guarded
             ? {
               onWindowClose: (choice: WindowClose) =>
@@ -1623,7 +1676,7 @@ function WorkspaceView() {
       )}
       {windowClose.asking && (
         <CloseWindowDialog
-          terminals={state.terminals.filter((t) => !t.web).length}
+          terminals={state.terminals.filter((t) => !t.web && !t.scm).length}
           onAnswer={windowClose.answer}
         />
       )}
@@ -1734,6 +1787,14 @@ function isWebTile(
   id: string,
 ): boolean {
   return terminals.some((t) => t.id === id && t.web !== undefined);
+}
+
+/** Whether tile `id` is a Source Control tile (no terminal). */
+function isScmTile(
+  terminals: readonly { id: string; scm?: unknown }[],
+  id: string,
+): boolean {
+  return terminals.some((t) => t.id === id && t.scm !== undefined);
 }
 
 /** Whether tile `id` is an agent tile (a chat, no terminal). */

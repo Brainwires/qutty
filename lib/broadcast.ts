@@ -55,6 +55,8 @@ export interface BroadcastCandidate {
   web?: unknown;
   /** Set for an agent chat tile (app/agent-tile.tsx): never a member (it has no terminal). */
   chat?: unknown;
+  /** Set for a Source Control tile (app/scm-tile.tsx): never a member either. */
+  scm?: unknown;
 }
 
 /**
@@ -69,7 +71,9 @@ export function defaultMembers(
   visibleIds: ReadonlySet<string>,
 ): string[] {
   return entries
-    .filter((e) => visibleIds.has(e.id) && !e.web && !e.chat && !e.agent)
+    .filter((e) =>
+      visibleIds.has(e.id) && !e.web && !e.chat && !e.scm && !e.agent
+    )
     .map((e) => e.id);
 }
 

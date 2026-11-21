@@ -33,6 +33,8 @@ export interface ShellProfile {
   shell?: string;
   /** Runs in the window's shared Docker sandbox. */
   sandbox?: boolean;
+  /** Where it starts (default: the home folder); Source Control's worktrees set it. */
+  cwd?: string;
 }
 
 /**

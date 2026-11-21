@@ -53,6 +53,7 @@ import {
 } from "@rullama/mcp-server";
 import { asValidation, emptyInput, objectSchema, str } from "./schema.ts";
 import { resolveProgram, setPtyTaps, writeTerminal } from "./pty.ts";
+import { denoWorktreeFs, worktreeOf } from "../lib/scm/worktree-info.ts";
 import { ensureDir, writeFileAtomic } from "./libc.ts";
 import { listCodexHooks } from "./codex-trust.ts";
 import {
@@ -409,6 +410,8 @@ export class HubService {
     this.#codexHooks = opts.codexHooks ?? (() => this.#installedCodexHooks());
     const write = opts.write ?? writeTerminal;
     this.core = new HubCore({
+      // Each tile's git checkout (its folder's nearest `.git`), for list_peers.
+      worktreeOf: (cwd) => worktreeOf(cwd, denoWorktreeFs),
       // An agent tile's "screen" is its transcript; typing into it sends a prompt.
       mirror: (id) => this.#agentMirror(id) ?? this.#mirrors.get(id),
       write: (id, text) => {

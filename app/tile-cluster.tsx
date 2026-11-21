@@ -83,6 +83,7 @@ import { isActualSize } from "../lib/workspace/tile-zoom.ts";
 import { zoomLabel } from "../lib/web/zoom.ts";
 import { useHtmlOverlay, useTileMotion } from "./use-html-overlay.ts";
 import { AgentBody, AgentHead, type AgentTileHooks } from "./agent-tile.tsx";
+import { ScmBody, type ScmTileHooks } from "./scm-tile.tsx";
 import {
   HarnessControls,
   HarnessHead,
@@ -106,6 +107,8 @@ interface TileExtras {
   web?: WebTileHooks;
   /** What agent tiles (an entry with `chat`) are drawn with (app/agent-tile.tsx). */
   agent?: AgentTileHooks;
+  /** What Source Control tiles (an entry with `scm`) are drawn with (app/scm-tile.tsx). */
+  scm?: ScmTileHooks;
   /** The harness a terminal runs, when its overlay shows (app/harness-overlay.tsx). */
   harnessOf?(entry: TerminalEntry): HarnessView | undefined;
   /** What harness overlays are drawn with. */
@@ -193,6 +196,7 @@ export function TileCluster(props: TileClusterProps) {
           broadcastIds={props.broadcastIds}
           web={props.web}
           agent={props.agent}
+          scm={props.scm}
           harnessOf={props.harnessOf}
           harness={props.harness}
           freeform={props.freeform}
@@ -381,8 +385,10 @@ function TerminalTile(props: TerminalTileProps) {
 
   // An agent tile: its chat instead of a terminal (the manager never knows its id either).
   const agent = entry.chat ? props.agent : undefined;
+  // A Source Control tile: its panel (no terminal either).
+  const scm = entry.scm ? props.scm : undefined;
   // A terminal running a harness, framed by its overlay.
-  const harnessView = !web && !agent && props.harness
+  const harnessView = !web && !agent && !scm && props.harness
     ? props.harnessOf?.(entry)
     : undefined;
   const harness = harnessView && props.harness;
@@ -398,9 +404,10 @@ function TerminalTile(props: TerminalTileProps) {
   };
   // A web or agent tile's body is never scaled: it has no terminal to keep at one size. Nor is a
   // harness overlay's (its frame is not the plain body the scale maths measures).
-  const full = web || agent || harnessView ? null : props.full;
+  const full = web || agent || scm || harnessView ? null : props.full;
   const classes = ["tile", `is-${phase}`];
   if (agent) classes.push("is-agent");
+  if (scm) classes.push("is-scm");
   if (harnessView) classes.push("is-harness");
   if (full) classes.push("is-scaled");
   if (focused) classes.push("is-focused");
@@ -439,6 +446,7 @@ function TerminalTile(props: TerminalTileProps) {
       data-ssh={entry.ssh ? "true" : undefined}
       data-web={web ? "true" : undefined}
       data-agent-tile={agent ? "true" : undefined}
+      data-scm-tile={scm ? "true" : undefined}
       data-harness={harnessView?.spec.id}
       data-sandbox={entry.sandbox ? "true" : undefined}
       data-tint={tint}
@@ -576,7 +584,7 @@ function TerminalTile(props: TerminalTileProps) {
             <span class="tile-buttons" data-part="tile-buttons">
               <WindowControls
                 maximized={props.maximized}
-                web={!!web}
+                what={web ? "web tile" : scm ? "Source Control" : "terminal"}
                 onMinimize={() => props.onMinimize(id)}
                 onMaximize={() => props.onMaximize(id)}
                 onRestore={() => props.onRestore(id)}
@@ -594,6 +602,8 @@ function TerminalTile(props: TerminalTileProps) {
                   ? "Close web tile"
                   : agent
                   ? "Close agent"
+                  : scm
+                  ? "Close Source Control"
                   : "Close terminal"}
                 title="Close"
                 onClick={(e) => {
@@ -624,6 +634,8 @@ function TerminalTile(props: TerminalTileProps) {
               onRestore={() => props.onRestore(id)}
             />
           )
+          : scm
+          ? <ScmBody entry={entry} hooks={scm} focused={focused} />
           : (
             // The terminal's frame: just its host (`display: contents`), or, with the harness
             // overlay, the host as a card beside the side rail, over the prompt box.
@@ -702,12 +714,13 @@ const HEAD_CONTROLS =
 /** A tile's Minimize and Maximize / Restore buttons (beside its close button). */
 function WindowControls(props: {
   maximized: boolean;
-  web: boolean;
+  /** What the tile is, for the buttons' labels ("Minimize terminal"). */
+  what: string;
   onMinimize(): void;
   onMaximize(): void;
   onRestore(): void;
 }) {
-  const what = props.web ? "web tile" : "terminal";
+  const what = props.what;
   // The tile's own pointerdown focus is skipped (`data-keep-focus`): each action focuses (or moves
   // the focus away) itself.
   const button = (

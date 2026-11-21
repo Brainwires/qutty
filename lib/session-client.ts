@@ -97,8 +97,11 @@ export interface SessionBackend {
   list(): Promise<WorkspaceInfo[]>;
   /** Show detached workspace `id` in a window of its own. */
   reopen(id: string): Promise<void>;
-  /** A new, empty workspace in a new window (as Cmd+N). */
-  newWindow(): Promise<void>;
+  /**
+   * A new, empty workspace in a new window (as Cmd+N). `query` (`?worktree=…`) opens it as a
+   * worktree's workspace (lib/scm/worktrees.ts).
+   */
+  newWindow(query?: string): Promise<void>;
   /** End workspace `id` for real: its terminals are killed (and its sandbox stopped). */
   end(id: string): Promise<void>;
   /**
@@ -231,8 +234,10 @@ export function createDesktopSession(deps: {
     async reopen(id) {
       await deps.window.openWindow(workspaceWindow(id));
     },
-    async newWindow() {
-      await deps.window.openWindow(workspaceWindow(newWorkspaceId(), true));
+    async newWindow(query) {
+      await deps.window.openWindow(
+        workspaceWindow(newWorkspaceId(), true, query ?? ""),
+      );
     },
     async end(id) {
       await ext.end({ id });

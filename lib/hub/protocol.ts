@@ -43,6 +43,11 @@ export interface TileInfo {
   label?: string;
   /** Its working directory, when known. */
   cwd?: string;
+  /**
+   * The git checkout its working directory is in (lib/scm/worktree-info.ts): the checkout's
+   * folder, its branch, and whether it is a linked worktree (`git worktree add`).
+   */
+  worktree?: { path: string; branch?: string; linked: boolean };
   status: TileStatus;
   /** It runs in the window's shared Docker sandbox (its cwd is a path inside the container). */
   sandbox?: boolean;

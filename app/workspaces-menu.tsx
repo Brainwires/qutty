@@ -2,12 +2,27 @@
 // windows are closed (their terminals still run) to reopen or end for real, opens a new window,
 // and ends this window's own workspace. A badge counts the detached ones. Ending asks once more,
 // on the same button, since it kills the workspace's terminals.
+//
+// Worktree workspaces (lib/scm/worktrees.ts) wear "⑂ branch" and their repository's name, and
+// are listed after the others, grouped by repository. "Worktrees…" opens Source Control on the
+// focused terminal's repository at its Worktrees section (New Worktree, Open as Workspace,
+// Remove).
 
 import { useEffect, useRef, useState } from "denext";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
 import type { WorkspaceInfo } from "../lib/session-client.ts";
 import type { SessionView } from "./use-session.ts";
 import { formatAge } from "../lib/workspace/format.ts";
+import { WorktreeBadge } from "./worktree-badge.tsx";
+
+/** Ordinary workspaces first, then worktree workspaces grouped by repository and branch. */
+function grouped(list: WorkspaceInfo[]): WorkspaceInfo[] {
+  const key = (w: WorkspaceInfo) =>
+    w.worktree ? `1\n${w.worktree.repo}\n${w.worktree.branch}` : "0";
+  return list.map((w, i) => ({ w, i })).sort((a, b) =>
+    key(a.w) < key(b.w) ? -1 : key(a.w) > key(b.w) ? 1 : a.i - b.i
+  ).map(({ w }) => w);
+}
 
 /** "3 terminals · 1 agent busy". */
 function summary(w: WorkspaceInfo): string {
@@ -46,12 +61,16 @@ export function WorkspacesMenu(props: {
   session: SessionView;
   now: number;
   newWindowLabel: string;
+  /** "Worktrees…": Source Control at its worktrees (new, open as a workspace, remove). */
+  onWorktrees?: () => void;
 }) {
   const { session } = props;
   const [open, setOpen] = useState(false);
   useHtmlOverlay(open);
   const ref = useRef<HTMLDivElement | null>(null);
-  const detached = session.workspaces.filter((w) => w.state === "detached");
+  const detached = grouped(
+    session.workspaces.filter((w) => w.state === "detached"),
+  );
   const self = session.workspaces.find((w) => w.id === session.workspace?.id);
 
   useEffect(() => {
@@ -123,7 +142,10 @@ export function WorkspacesMenu(props: {
           {detached.map((w) => (
             <div class="ws-row" key={w.id} data-testid="ws-row" data-ws={w.id}>
               <div class="ws-text">
-                <span class="ws-name">{w.name}</span>
+                <span class="ws-name">
+                  {w.name}
+                  {w.worktree && <WorktreeBadge mark={w.worktree} repoName />}
+                </span>
                 <span class="ws-meta">
                   {summary(w)}
                   {w.detachedAt !== undefined &&
@@ -161,10 +183,29 @@ export function WorkspacesMenu(props: {
             <span class="menu-label">New window</span>
             <kbd>{props.newWindowLabel}</kbd>
           </button>
+          {props.onWorktrees && (
+            <button
+              type="button"
+              class="menu-item"
+              data-testid="ws-worktrees"
+              title="New Worktree, Open Worktree as a workspace, Remove Worktree"
+              onClick={() => {
+                setOpen(false);
+                props.onWorktrees?.();
+              }}
+            >
+              <span class="menu-label">Worktrees…</span>
+            </button>
+          )}
           {self && (
             <div class="ws-row ws-self">
               <div class="ws-text">
-                <span class="ws-name">This window: {self.name}</span>
+                <span class="ws-name">
+                  This window: {self.name}
+                  {self.worktree && (
+                    <WorktreeBadge mark={self.worktree} repoName />
+                  )}
+                </span>
                 <span class="ws-meta">
                   Closing it keeps its terminals running.
                 </span>

@@ -28,6 +28,7 @@ import {
   stopOutput,
 } from "./hooks.ts";
 import type { ScrollbackPage } from "./mirror.ts";
+import type { TileWorktree } from "../scm/worktree-info.ts";
 import { type WebTileReport, WebTiles } from "./web-tiles.ts";
 import type { PageRequest } from "../web/page-script.ts";
 
@@ -60,6 +61,8 @@ export interface HubEnv {
   control(command: ControlCommand): Promise<ControlResult>;
   /** The registry changed. */
   changed(snapshot: HubSnapshot): void;
+  /** The git checkout a folder is in, for each tile's `worktree` (absent: none). */
+  worktreeOf?(cwd: string): TileWorktree | undefined;
   /** A message for the companion was queued (the companion runtime picks it up). */
   companionMail?(): void;
 }
@@ -144,7 +147,10 @@ export class HubCore {
 
   constructor(env: HubEnv) {
     this.#env = env;
-    this.registry = new Registry(() => this.#env.changed(this.snapshot()));
+    this.registry = new Registry(
+      () => this.#env.changed(this.snapshot()),
+      (cwd) => this.#env.worktreeOf?.(cwd),
+    );
     this.mailboxes = new Mailboxes((owner) => {
       if (owner !== COMPANION) {
         this.registry.setUnread(owner, this.mailboxes.unread(owner));

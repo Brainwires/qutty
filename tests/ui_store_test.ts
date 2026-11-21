@@ -281,6 +281,7 @@ Deno.test("settings: the theme and the Settings tab sanitise, reduce and persist
     "companion",
     "voice",
     "monitor",
+    "scm",
   ]);
 
   let s = initialState();

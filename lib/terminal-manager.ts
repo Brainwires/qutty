@@ -842,8 +842,12 @@ export class TerminalManager {
       ? { sandbox: true }
       : {};
     switch (profile.kind) {
-      case "shell":
-        return profile.shell ? { shell: profile.shell, ...sandbox } : sandbox;
+      case "shell": {
+        const cwd = profile.cwd && !profile.sandbox ? { cwd: profile.cwd } : {};
+        return profile.shell
+          ? { shell: profile.shell, ...sandbox, ...cwd }
+          : { ...sandbox, ...cwd };
+      }
       case "agent":
         // `agent` lets the hub add the flags that connect it (desktop/hub.ts).
         if (profile.plain) {

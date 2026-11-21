@@ -32,6 +32,10 @@ Website: <https://qutty.org>
   built-in Classic turns every tile into a late-90s child window, and you can
   write your own in CSS ([docs/skins.md](docs/skins.md)). Tile window buttons go
   left or right, titles left, center or right.
+- **Source Control** in a tile, like VS Code's: stage files or single hunks,
+  commit, switch branches, fetch / pull / push, history, stashes, and git
+  worktrees that open as workspaces of their own
+  ([docs/source-control.md](docs/source-control.md)).
 - **Adjustable font** typeface and size.
 - **Your macOS key bindings** (`DefaultKeyBinding.dict`) work inside the
   terminal.

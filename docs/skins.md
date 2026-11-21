@@ -197,6 +197,7 @@ change without notice.
 | `[data-part="tile-body"]`       | A terminal tile's body (xterm draws inside it).                                                                 |
 | `.tile-grip`                    | A free-form tile's resize grip (its edges and corners).                                                         |
 | `[data-part="agent-body"]`      | An agent tile's body: its transcript and prompt.                                                                |
+| `[data-part="scm-body"]`        | A Source Control tile's body: its panel and diff.                                                               |
 | `[data-part="web-toolbar"]`     | A web tile's toolbar, in its header.                                                                            |
 | `.web-btn`                      | A button in a web tile's toolbar.                                                                               |
 | `[data-part="web-address"]`     | A web tile's address field.                                                                                     |

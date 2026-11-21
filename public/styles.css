@@ -7424,3 +7424,556 @@ textarea.agent-input::placeholder {
   gap: 6px;
   padding: 9px 0 4px;
 }
+
+/* ---- Source Control tile (app/scm-tile.tsx) -------------------------------------------- */
+
+.scm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--tile);
+  font: 12px/1.4 var(--sans);
+  user-select: text;
+  -webkit-user-select: text;
+  zoom: var(--tile-zoom, 1);
+  container-type: inline-size;
+}
+.scm-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.scm-head,
+.scm-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.scm-subhead {
+  padding: 3px 10px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.scm-repo {
+  font-weight: 600;
+  color: var(--text);
+}
+.scm-branch,
+.scm-tool,
+.scm-seg-btn,
+.scm-icon-btn,
+.scm-link-btn,
+.scm-section-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.scm-branch {
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.scm-tool {
+  padding: 3px 7px;
+  border: 1px solid var(--line-2);
+  font-size: 11px;
+}
+.scm-branch:hover,
+.scm-tool:hover:not(:disabled),
+.scm-icon-btn:hover:not(:disabled),
+.scm-seg-btn:hover {
+  background: rgba(var(--hi-rgb), 0.06);
+  color: var(--text);
+}
+.scm-tool:disabled,
+.scm-icon-btn:disabled,
+.scm-link-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.scm-ab {
+  font: 11px/1 var(--mono);
+  color: var(--text-2);
+}
+.scm-spacer {
+  flex: 1;
+}
+.scm-link-btn {
+  color: var(--accent);
+  font-size: 11px;
+  padding: 1px 4px;
+}
+.scm-link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.scm-link-btn.is-danger,
+.scm-icon-btn.is-danger {
+  color: var(--red);
+}
+.scm-icon-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+}
+.scm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.scm-progress,
+.scm-error,
+.scm-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.scm-progress {
+  color: var(--text-2);
+  font-family: var(--mono);
+}
+.scm-progress-line {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.scm-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(var(--accent-rgb), 0.3);
+  border-top-color: var(--accent);
+  animation: scm-spin 0.8s linear infinite;
+}
+@keyframes scm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.scm-error {
+  color: var(--red);
+  background: rgba(var(--red-rgb), 0.08);
+  white-space: pre-wrap;
+}
+.scm-error > span {
+  flex: 1;
+}
+.scm-confirm {
+  background: rgba(var(--hi-rgb), 0.04);
+  flex-wrap: wrap;
+}
+.scm-confirm > span {
+  flex: 1 1 200px;
+}
+.scm-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+.scm-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.scm-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+.scm-panel.has-diff .scm-list {
+  flex: 0 0 min(340px, 42%);
+  border-right: 1px solid var(--line);
+}
+@container (max-width: 640px) {
+  .scm-panel.has-diff .scm-list {
+    display: none;
+  }
+}
+.scm-commit-box {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.scm-message {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--text);
+  font: 12px/1.4 var(--sans);
+}
+.scm-message:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+.scm-commit-row {
+  display: flex;
+}
+.scm-commit-btn {
+  flex: 1;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 6px 0 0 6px;
+}
+.scm-commit-more {
+  padding: 5px 8px;
+  border-radius: 0 6px 6px 0;
+  border-left-width: 0;
+}
+.scm-menu {
+  right: 0;
+  top: calc(100% + 4px);
+}
+.scm-branch-menu {
+  left: 0;
+  right: auto;
+  width: 280px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scm-branch-list {
+  overflow: auto;
+}
+.scm-input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--text);
+  font: 11.5px/1.3 var(--mono);
+}
+.scm-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+}
+.scm-group,
+.scm-section {
+  margin-top: 2px;
+}
+.scm-group-head,
+.scm-section-head {
+  display: flex;
+  align-items: center;
+  padding: 3px 6px 3px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--tile);
+  z-index: 1;
+}
+.scm-section-head {
+  border-top: 1px solid var(--line);
+}
+.scm-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 2px 4px;
+}
+.scm-caret {
+  width: 1em;
+  color: var(--text-3);
+}
+.scm-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(var(--hi-rgb), 0.08);
+  font: 10px/14px var(--mono);
+  text-align: center;
+}
+.scm-row {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 1px 8px 1px 22px;
+  text-align: left;
+  cursor: pointer;
+}
+.scm-row:hover {
+  background: rgba(var(--hi-rgb), 0.04);
+}
+.scm-row.is-selected {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.scm-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.scm-name {
+  color: var(--text);
+}
+.scm-dir {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.scm-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.scm-file .scm-row-actions {
+  visibility: hidden;
+}
+.scm-file:hover .scm-row-actions,
+.scm-file:focus-within .scm-row-actions {
+  visibility: visible;
+}
+.scm-letter {
+  width: 14px;
+  text-align: center;
+  font: 600 11px/1 var(--mono);
+  color: var(--text-2);
+}
+.scm-letter.is-M,
+.scm-letter.is-T {
+  color: var(--amber);
+}
+.scm-letter.is-A,
+.scm-letter.is-U {
+  color: var(--accent);
+}
+.scm-letter.is-D,
+.scm-letter.is-C {
+  color: var(--red);
+}
+.scm-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  font: 10px/14px var(--mono);
+}
+.scm-badge.is-agent {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.scm-dim {
+  color: var(--text-3);
+}
+.scm-pad {
+  padding: 6px 12px;
+}
+.scm-commit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.scm-commit:hover,
+.scm-commit.is-open {
+  background: rgba(var(--hi-rgb), 0.04);
+}
+.scm-graph {
+  flex: none;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  fill: var(--accent);
+}
+.scm-commit-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.scm-commit-meta {
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.scm-ref {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+  font: 10px/14px var(--mono);
+  white-space: nowrap;
+}
+.scm-ref.is-tag {
+  background: rgba(var(--hi-rgb), 0.08);
+  color: var(--amber);
+}
+.scm-commit-files .scm-row {
+  padding-left: 34px;
+}
+.scm-wt-branch {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.scm-diff {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.scm-diff-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.scm-diff-path {
+  font: 11.5px/1.3 var(--mono);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scm-diff-kind {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.scm-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.scm-seg-btn {
+  border-radius: 0;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.scm-seg-btn.is-on {
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+}
+.scm-diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font: 11.5px/1.45 var(--mono);
+}
+.scm-hunk-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: rgba(var(--hi-rgb), 0.04);
+  color: var(--text-3);
+  position: sticky;
+  top: 0;
+}
+.scm-hunk-range {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.scm-hunk-lines {
+  margin: 0;
+  font: inherit;
+}
+.scm-hunk-lines .diff-line {
+  white-space: pre;
+}
+.scm-ln {
+  display: inline-block;
+  width: 4.5ch;
+  padding-right: 0.5ch;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.scm-side-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.scm-side-cell {
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+}
+.scm-side-cell + .scm-side-cell {
+  border-left: 1px solid var(--line);
+}
+.scm-chooser {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scm-chooser-title {
+  font-weight: 600;
+}
+.scm-chooser .scm-form {
+  padding: 0;
+}
+.scm-chooser-list .scm-row {
+  padding-left: 4px;
+}
+
+/* A worktree workspace's badge (app/worktree-badge.tsx): the bar and the Workspaces menu. */
+.wt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 4px;
+  padding: 1px 6px;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 5px;
+  font: 10.5px/14px var(--mono);
+  white-space: nowrap;
+}
+.wt-branch {
+  color: var(--accent);
+}
+.wt-repo {
+  color: var(--text-2);
+}

@@ -63,7 +63,8 @@
         "./desktop/ollama.ts",
         "./desktop/links.ts",
         "./desktop/skins.ts",
-        "./desktop/companion-looks.ts"
+        "./desktop/companion-looks.ts",
+        "./desktop/scm.ts"
       ],
       "systemStats": true,
       "microphone": {

@@ -121,6 +121,7 @@ export function useTileMove(opts: {
     const tile = o.tiles.find((t) => t.id === id);
     const size = tile ? { size: { w: tile.rect.w, h: tile.rect.h } } : {};
     if (entry.web) return { entry, tile: { web: entry.web }, ...size };
+    if (entry.scm) return { entry, tile: { scm: entry.scm }, ...size };
     const m = o.manager;
     const home = m?.home(id);
     return {

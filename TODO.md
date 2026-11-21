@@ -614,6 +614,17 @@
     extension, the folder button and `data:` fonts under the desktop CSP
     (`font-src 'self' data:` allows them on paper).
 
+- [x] **Source Control tile** (VS Code's view, a subset) and **worktrees as
+      workspaces**: docs/source-control.md.
+  - Open: "Open as Workspace" needs several windows (the desktop app); the demo
+    opens a terminal tile instead. The native window list (Window menu) still
+    titles a worktree workspace "Workspace N"; only the switcher bar and the
+    Workspaces menu show its "⑂ branch". On Linux the desktop app's Ctrl+Enter
+    accelerator (Maximize Tile) may win over the commit box's Ctrl+Enter. No
+    line-level staging (hunks only), no inline blame, no merge editor. Not tried
+    in the packaged app yet (the `scm` extension, `Deno.watchFs` under the
+    desktop runtime, a new window opened with `?worktree=`).
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

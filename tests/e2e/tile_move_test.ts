@@ -60,7 +60,7 @@ suite("tile move", (test) => {
 
         // The header's menu lists the other window.
         await rightClick(app, await headerPoint(app, moving));
-        assertEquals(await menuActions(app), ["move:demo-B"]);
+        assertEquals(await menuActions(app), ["source-control", "move:demo-B"]);
         await app.click(
           '[data-testid=tile-move-menu-item][data-action="move:demo-B"]',
         );
@@ -111,11 +111,17 @@ suite("tile move", (test) => {
   test(
     "tile move: the menu lists no window when there is none, and moving back works",
     async (app) => {
-      // Alone: a right click on a header opens no menu (no other window, no tear-off in the demo).
+      // Alone: a right click on a header lists no window (no other window, no tear-off in the
+      // demo), only the terminal's own "Source Control for This Folder".
       const [only] = await app.ensureTerminals(1);
       await rightClick(app, await headerPoint(app, only));
-      await new Promise((r) => setTimeout(r, 400));
-      assert(!(await app.exists("[data-testid=tile-move-menu]")));
+      assertEquals(await menuActions(app), ["source-control"]);
+      await app.press("Escape");
+      await waitFor(
+        async () => !(await app.exists("[data-testid=tile-move-menu]")),
+        3000,
+        "the menu closed",
+      );
 
       const peer = await app.openPeer("peers=D");
       try {
@@ -123,7 +129,7 @@ suite("tile move", (test) => {
         await app.ensureTerminals(2);
         const moving = (await tileIds(app))[1];
         await rightClick(app, await headerPoint(app, moving));
-        assertEquals(await menuActions(app), ["move:demo-D"]);
+        assertEquals(await menuActions(app), ["source-control", "move:demo-D"]);
         await app.click(
           '[data-testid=tile-move-menu-item][data-action="move:demo-D"]',
         );
@@ -136,7 +142,10 @@ suite("tile move", (test) => {
         await peer.run(arrived, "echo went-over");
         // And back again, to the first window.
         await rightClick(peer, await headerPoint(peer, arrived));
-        assertEquals(await menuActions(peer), ["move:demo-C"]);
+        assertEquals(await menuActions(peer), [
+          "source-control",
+          "move:demo-C",
+        ]);
         await peer.click(
           '[data-testid=tile-move-menu-item][data-action="move:demo-C"]',
         );

@@ -14,6 +14,7 @@ import {
   type TileStatus,
   USER,
 } from "./protocol.ts";
+import type { TileWorktree } from "../scm/worktree-info.ts";
 
 /** The longest name `set_name` accepts. */
 const MAX_NAME = 40;
@@ -56,10 +57,24 @@ export class Registry {
   /** Tiles whose name is still the default (renamed when their harness becomes known). */
   #defaultNamed = new Set<string>();
   #onChange: () => void;
+  #worktreeOf: (cwd: string) => TileWorktree | undefined;
 
-  /** @param onChange Called after every change (the page's badges re-render from a snapshot). */
-  constructor(onChange: () => void = () => {}) {
+  /**
+   * @param onChange Called after every change (the page's badges re-render from a snapshot).
+   * @param worktreeOf The git checkout a folder is in (each tile's `worktree`; none by default).
+   */
+  constructor(
+    onChange: () => void = () => {},
+    worktreeOf: (cwd: string) => TileWorktree | undefined = () => undefined,
+  ) {
     this.#onChange = onChange;
+    this.#worktreeOf = worktreeOf;
+  }
+
+  /** The checkout of a host folder (a sandboxed tile's cwd is inside its container: none). */
+  #worktree(cwd: string | undefined, sandbox: boolean | undefined) {
+    const wt = cwd && !sandbox ? this.#worktreeOf(cwd) : undefined;
+    return wt ? { worktree: { ...wt } } : {};
   }
 
   add(seed: TileSeed): TileInfo {
@@ -77,6 +92,7 @@ export class Registry {
       ...(seed.model ? { model: seed.model } : {}),
       ...(seed.label ? { label: seed.label } : {}),
       ...(seed.cwd ? { cwd: seed.cwd } : {}),
+      ...this.#worktree(seed.cwd, seed.sandbox),
       ...(seed.sandbox ? { sandbox: true } : {}),
       ...(seed.kind === "web" ? { kind: "web" as const } : {}),
       ...(seed.url ? { url: seed.url } : {}),
@@ -172,7 +188,14 @@ export class Registry {
   ): void {
     const patch: Partial<TileInfo> = {};
     if (meta.label !== undefined) patch.label = meta.label;
-    if (meta.cwd !== undefined) patch.cwd = meta.cwd;
+    if (meta.cwd !== undefined) {
+      patch.cwd = meta.cwd;
+      const tile = this.#tiles.get(id);
+      const wt = this.#worktree(meta.cwd, tile?.sandbox).worktree;
+      if (JSON.stringify(wt) !== JSON.stringify(tile?.worktree)) {
+        patch.worktree = wt;
+      }
+    }
     if (meta.url !== undefined) patch.url = meta.url;
     this.#patch(id, patch);
   }

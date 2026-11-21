@@ -28,6 +28,19 @@
 // window (tests/workspace_host_test.ts). The singleton {@linkcode workspaces} is shared by the
 // `pty`, `session` and `sandbox` extensions and by desktop.ts (the Dock and the window keys).
 
+import { worktreeMarkOf } from "../lib/scm/worktrees.ts";
+import { repoName } from "../lib/scm/tile.ts";
+
+/** A worktree workspace's badge facts, from its page's snapshot (lib/scm/worktrees.ts). */
+function worktreeInfo(
+  snapshot: unknown,
+): { worktree?: { branch: string; repo: string } } {
+  const mark = worktreeMarkOf(snapshot);
+  return mark
+    ? { worktree: { branch: mark.branch, repo: repoName(mark.repo) } }
+    : {};
+}
+
 /** A workspace as the page's Workspaces menu lists it. */
 export interface WorkspaceInfo {
   id: string;
@@ -42,6 +55,8 @@ export interface WorkspaceInfo {
   busy: number;
   /** When it was detached (ms since the epoch). */
   detachedAt?: number;
+  /** A worktree workspace's branch and repository (lib/scm/worktrees.ts), for its "⑂" badge. */
+  worktree?: { branch: string; repo: string };
 }
 
 /** A workspace kept for the next launch (desktop/kept-shells.ts): what the page saved, its terminals. */
@@ -476,6 +491,7 @@ export class WorkspaceRegistry {
         running: [...ws.ptys].filter((p) => !this.#exited.has(p)).length,
         busy: [...ws.ptys].filter((p) => busy.has(p)).length,
         ...(ws.detachedAt !== undefined ? { detachedAt: ws.detachedAt } : {}),
+        ...worktreeInfo(ws.snapshot),
       }));
   }
 

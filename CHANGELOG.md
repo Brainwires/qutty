@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Source Control, a tile like VS Code's Source Control view for one git
+  repository (or worktree). Open it from `+` → Source Control, View → Source
+  Control, or a terminal header's right-click menu → "Source Control for This
+  Folder". It shows the branch picker (switch, with a warning when the tree is
+  dirty; create), ahead / behind, and Fetch / Pull / Push / Sync with progress
+  and Cancel. It has a commit box (⌘↩ in the box commits; Commit Staged, Commit
+  All, Amend; with nothing staged it offers to stage everything), and the Merge
+  / Staged / Changes / Untracked groups with stage, unstage and discard per file
+  and per group. Discards ask first, and untracked files go to the Trash where
+  there is one. A diff view (unified or side by side) stages, unstages and
+  discards single hunks. Below that are the history with a graph lane and each
+  commit's files and diffs, stashes (push with a message, apply, pop, drop), and
+  worktrees. The tile refreshes on file changes, focus, its own actions and
+  agents' finished turns. Files an agent tile changed carry an "agent" badge.
+  "Follow focused terminal" re-targets it. Git runs in hidden PTYs (no new
+  permissions). Credentials are git's own helpers and ssh-agent; Qutty never
+  handles a password. docs/source-control.md has the details.
+- Worktrees as workspaces: New Worktree (an existing or new branch) checks out
+  to `<repo-parent>/.qutty-worktrees/<repo>/<branch>` (or under Settings →
+  Source Control → Worktree folder) and opens it as a workspace of its own, a
+  window with a terminal in the worktree. Open as Workspace does the same for
+  any listed worktree. Remove runs `git worktree remove`: it asks before
+  `--force` on a dirty checkout and never deletes the branch. Worktree
+  workspaces wear a "⑂ branch" badge with their repository's name in the bar,
+  and are grouped by repository in the Workspaces menu (which gains
+  "Worktrees…"). New agent tiles there start in the worktree. The agent hub's
+  `list_peers` / `whoami` give each tile's worktree folder and branch.
+
 ## 0.7.2 — 2026-11-21
 
 - Skins. A theme sets the colours; a skin changes how the chrome is drawn:
