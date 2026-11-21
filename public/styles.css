@@ -4248,6 +4248,109 @@ kbd {
   }
 }
 
+/* ---------------------------------------------------------------- Companion looks */
+
+/* A user look (app/companion/look-face.tsx; lib/companion/looks.ts): its picture in the drawn
+   face's `.companion-avatar` / `.companion-face` pair, so the face's moves above (pop-in, bob, hop,
+   fold, each mood's shake or nod) move it too. Its size is set on the element (look.json `size`,
+   by default the drawn face's box). Here: the picture fills the box, a bob while it talks without
+   mouth frames, a swell while it listens, a squish for a blink without a `blink` picture. A look's
+   own look.css is scoped under `[data-look="<id>"]` on the overlay. */
+.companion-overlay .companion-look .companion-face {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 90%;
+}
+.companion-overlay .companion-look-picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: 50% 100%;
+}
+.companion-overlay .companion-look[data-bob] .companion-look-picture {
+  animation: companion-look-talk 440ms ease-in-out infinite;
+}
+.companion-overlay .companion-look[data-voice="listening"] .companion-look-picture {
+  transform: scale(calc(1 + var(--companion-listen, 0) * 0.07));
+  filter: drop-shadow(0 0 calc(2px + var(--companion-listen, 0) * 6px)
+    var(--accent));
+  transition: transform 90ms ease-out;
+}
+.companion-overlay .companion-look[data-state="blink"]:not([data-picture="blink"]) .companion-look-picture {
+  animation: companion-look-blink 160ms ease-in-out;
+}
+@keyframes companion-look-talk {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: scale(1.03, 0.96) translateY(1px);
+  }
+}
+@keyframes companion-look-blink {
+  50% {
+    transform: scaleY(0.94);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-overlay .companion-look * {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
+}
+
+/* Settings → Companion → Look: the picker, a thumbnail and name per look. */
+.companion-look-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.companion-look-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 84px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.companion-look-choice img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+.companion-look-choice span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.companion-look-choice.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.companion-look-choice:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.companion-look-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 /* Where the overlay sits: a corner of the tile area, laid out like the example's window (the
    bubble on top, the companion below it on the left). Clicks pass through it except on the
    companion, the bubble and the chat box. */
@@ -4343,6 +4446,13 @@ html[data-floating] body {
 .companion-overlay .bubble-from > span:first-child {
   font-weight: 600;
   color: var(--companion-wire-edge);
+}
+.companion-overlay .bubble-cite {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  font-style: italic;
+  text-align: right;
+  color: var(--text-3);
 }
 .companion-overlay .bubble-note {
   margin: 4px 0 0;
@@ -4572,6 +4682,10 @@ html[data-floating] body {
 }
 .companion-overlay .voice-stop {
   color: var(--red);
+}
+.companion-overlay .voice-mode[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .companion-overlay .voice-note {
   margin: 0 0 6px 4px;
@@ -7237,4 +7351,76 @@ textarea.agent-input::placeholder {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* ---- Tile frame options (lib/skins/settings.ts) and Settings → Skin ----------------------- */
+
+/* Where a tile header's window buttons sit and how its title is aligned: `data-frame-buttons`
+   and `data-frame-title` on <html>, from the skin's defaults or the user's own choice, so they
+   hold under every skin. The buttons are one group (`.tile-buttons`) at the end of `.tile-meta`.
+   On the right the group dissolves into the meta row (`display: contents`), which lays the
+   header out exactly as before; on the left the meta row dissolves instead and the group goes
+   first. Each button's place in the group is `--frame-order-*` (1 to 3, set with the skin). */
+.tile-buttons {
+  display: contents;
+}
+[data-part="tile-button"][data-button="minimize"] {
+  order: var(--frame-order-minimize, 1);
+}
+[data-part="tile-button"][data-button="maximize"],
+[data-part="tile-button"][data-button="restore"] {
+  order: var(--frame-order-maximize, 2);
+}
+[data-part="tile-button"][data-button="close"] {
+  order: var(--frame-order-close, 3);
+}
+:root[data-frame-buttons="left"] .tile-meta {
+  display: contents;
+}
+:root[data-frame-buttons="left"] .tile-buttons {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+  order: -1;
+}
+:root[data-frame-buttons="left"] .tile:not(.is-harness) .tile-head {
+  padding: 0 10px 0 6px;
+}
+:root[data-frame-buttons="left"] .tile.is-harness .tile-buttons {
+  gap: 2px;
+}
+:root[data-frame-title="center"] .tile-title {
+  text-align: center;
+}
+:root[data-frame-title="right"] .tile-title {
+  text-align: right;
+}
+
+/* Settings → Appearance → Skin (app/skin-settings.tsx). */
+.skin-picker {
+  margin-bottom: 6px;
+}
+.skin-error,
+.skin-problems {
+  margin: 6px 0;
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.45;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.skin-problems {
+  padding: 0 0 0 16px;
+  color: var(--text-2);
+}
+.skin-problems code {
+  font: 11px/1 var(--mono);
+  color: var(--text);
+}
+.skin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 0 4px;
 }

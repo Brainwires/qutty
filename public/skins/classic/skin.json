@@ -1,0 +1,36 @@
+{
+  "id": "classic",
+  "name": "Classic",
+  "author": "Qutty",
+  "version": "1",
+  "description": "A late-90s desktop: grey bevelled frames, and every tile a child window with a title bar.",
+  "theme": {
+    "base": "paper",
+    "scheme": "light",
+    "tokens": {
+      "--ink": "#808080",
+      "--ink-2": "#c0c0c0",
+      "--tile": "#ffffff",
+      "--head": "#c0c0c0",
+      "--line": "#808080",
+      "--line-2": "#808080",
+      "--panel": "#c0c0c0",
+      "--text": "#000000",
+      "--text-2": "#202020",
+      "--text-3": "#505050",
+      "--accent": "#000080",
+      "--accent-ink": "#ffffff",
+      "--accent-glow": "rgba(0, 0, 128, 0.2)",
+      "--amber": "#806000",
+      "--red": "#a00000",
+      "--hi": "#000000",
+      "--shadow": "#000000",
+      "--shadow-a": "0.5"
+    }
+  },
+  "frame": {
+    "buttons": "right",
+    "title": "left",
+    "buttonOrder": ["minimize", "maximize", "close"]
+  }
+}

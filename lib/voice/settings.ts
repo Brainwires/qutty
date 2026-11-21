@@ -61,6 +61,12 @@ export const PTT_KEYS: readonly PttKey[] = [
 export interface VoiceSettings {
   /** Read the companion's answers aloud. */
   speakAnswers: boolean;
+  /**
+   * Voice mode: everything the companion's bubble shows is said aloud too (answers as they
+   * stream, `say` messages, questions with their buttons, the quote of the day, encouragement;
+   * lib/voice/bubble-speech.ts). Includes {@linkcode VoiceSettings.speakAnswers}.
+   */
+  voiceMode: boolean;
   ttsEngine: TtsEngineId;
   /** A voice name (the OS's) or model (Deepgram: `aura-asteria-en`); `""` is the default. */
   voice: string;
@@ -90,6 +96,7 @@ export interface VoiceSettings {
 
 export const DEFAULT_VOICE: VoiceSettings = {
   speakAnswers: false,
+  voiceMode: false,
   ttsEngine: "system",
   voice: "",
   rate: 1,
@@ -106,6 +113,7 @@ export const DEFAULT_VOICE: VoiceSettings = {
 
 const BOOLEAN_KEYS = [
   "speakAnswers",
+  "voiceMode",
   "alertFinished",
   "alertPermission",
   "alertBuildFailed",

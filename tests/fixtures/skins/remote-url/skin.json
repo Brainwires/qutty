@@ -1,0 +1,5 @@
+{
+  "id": "remote-url",
+  "name": "Remote URL",
+  "description": "A test skin that must be refused: its stylesheet reaches for the network."
+}

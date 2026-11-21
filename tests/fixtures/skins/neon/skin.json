@@ -1,0 +1,25 @@
+{
+  "id": "neon",
+  "name": "Neon",
+  "author": "Qutty tests",
+  "version": "1.0.0",
+  "description": "A test skin: glowing frames, the window buttons on the left.",
+  "theme": {
+    "base": "plum",
+    "tokens": {
+      "--accent": "#39ff14",
+      "--tile": "#050505"
+    }
+  },
+  "terminal": {
+    "fontFamily": "\"Fira Code\", monospace",
+    "theme": {
+      "cursor": "#ff00ff"
+    }
+  },
+  "frame": {
+    "buttons": "left",
+    "title": "center",
+    "buttonOrder": ["close", "maximize", "minimize"]
+  }
+}

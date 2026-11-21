@@ -1,0 +1,606 @@
+/* Classic: a late-90s desktop look. Grey bevelled frames, every tile a child window with a
+   gradient title bar and square window buttons, a toolbar for the switcher bar, flat menus.
+
+   Everything is drawn with CSS: no images, no fonts. It is written against the skin contract
+   (docs/skins.md): `data-part` hooks and the stable classes, under `:root[data-skin="classic"]`.
+   The colours come from the theme tokens the skin's skin.json sets (a light grey set), so the
+   bevels below are mixes of `--panel`: with "Use the skin's colours" off they follow the chosen
+   theme instead.
+
+   Two things a skin must leave alone, which this one does: a tile's border stays 1px and its
+   header 26px tall (the layout of scaled tiles counts on both). */
+
+:root[data-skin="classic"] {
+  /* The 3D palette, from the face colour. With the paired tokens: #c0c0c0, white, #dfdfdf,
+     #808080, black. */
+  --c-face: var(--panel);
+  --c-hi: color-mix(in srgb, var(--panel), #fff 100%);
+  --c-light: color-mix(in srgb, var(--panel), #fff 50%);
+  --c-shadow: color-mix(in srgb, var(--panel), #000 33.4%);
+  --c-dark: color-mix(in srgb, var(--panel), #000 100%);
+  --c-raised:
+    inset -1px -1px var(--c-dark), inset 1px 1px var(--c-hi), inset -2px -2px var(--c-shadow),
+    inset 2px 2px var(--c-light);
+  --c-pressed:
+    inset -1px -1px var(--c-hi), inset 1px 1px var(--c-dark), inset -2px -2px var(--c-light),
+    inset 2px 2px var(--c-shadow);
+  --c-sunken:
+    inset -1px -1px var(--c-hi), inset 1px 1px var(--c-shadow), inset -2px -2px var(--c-light),
+    inset 2px 2px var(--c-dark);
+  --c-thin-raised: inset -1px -1px var(--c-shadow), inset 1px 1px var(--c-hi);
+  --c-thin-sunken: inset -1px -1px var(--c-hi), inset 1px 1px var(--c-shadow);
+  /* A 2px checker of face and highlight: a pressed-in toggle, a scrollbar's track. */
+  --c-checker: repeating-conic-gradient(var(--c-hi) 0 25%, var(--c-face) 0 50%) 0 0 / 2px 2px;
+  /* Title bars: the active one runs from the accent to a lighter blue, the inactive one from
+     the shadow grey to the face. */
+  --c-title-a: var(--accent);
+  --c-title-b: color-mix(in srgb, var(--accent) 30%, #1a9be0);
+  --c-title-text: var(--accent-ink);
+  --c-title-off-a: var(--c-shadow);
+  --c-title-off-b: color-mix(in srgb, var(--c-shadow), var(--c-face) 70%);
+  --c-title-off-text: color-mix(in srgb, var(--c-face), #fff 55%);
+  /* The theme's text colours, kept under other names: a title bar and a selected menu row set
+     --text and friends to their own (so whatever is inside follows), and controls inside them
+     take these back. */
+  --c-text: var(--text);
+  --c-text-2: var(--text-2);
+  --c-text-3: var(--text-3);
+  --c-font: "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
+  --sans: var(--c-font);
+  --radius: 0px;
+}
+
+:root[data-skin="classic"] body {
+  font: 11px/1.35 var(--c-font);
+}
+:root[data-skin="classic"] :focus-visible {
+  outline: 1px dotted var(--c-dark);
+  outline-offset: -4px;
+}
+:root[data-skin="classic"] kbd {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+
+/* ---- The window canvas and the bar ------------------------------------------------------ */
+
+:root[data-skin="classic"] [data-part="app"] {
+  background: var(--ink);
+}
+:root[data-skin="classic"] [data-part="drag-strip"] {
+  background: var(--c-face);
+  box-shadow: inset 0 -1px var(--c-shadow);
+}
+/* The bar: a toolbar. Its buttons are flat until the pointer is over them. */
+:root[data-skin="classic"] [data-part="bar"] {
+  background: var(--c-face);
+  border-color: var(--c-shadow);
+  box-shadow: inset 0 1px var(--c-hi), inset 1px 0 var(--c-hi);
+  gap: 4px;
+}
+:root[data-skin="classic"] .bar-btn {
+  height: 22px;
+  min-width: 22px;
+  border: 0;
+  border-radius: 0;
+  color: var(--c-text);
+  transition: none;
+}
+:root[data-skin="classic"] .bar-btn:hover {
+  background: transparent;
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] .bar-btn:active,
+:root[data-skin="classic"] .bar-btn.is-open,
+:root[data-skin="classic"] .bar-btn.is-on {
+  background: var(--c-checker);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-sunken);
+}
+/* Chips: task buttons. The focused tile's is pressed in. */
+:root[data-skin="classic"] [data-part="chip"] {
+  height: 22px;
+  padding: 0 4px 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  font: 11px/1 var(--c-font);
+  box-shadow: var(--c-raised);
+  transition: transform var(--tile-ms) var(--ease);
+}
+:root[data-skin="classic"] [data-part="chip"]:hover {
+  background: var(--c-face);
+  color: var(--c-text);
+}
+:root[data-skin="classic"] [data-part="chip"].is-overflow,
+:root[data-skin="classic"] [data-part="chip"].is-minimized {
+  color: var(--c-text-3);
+  opacity: 1;
+}
+:root[data-skin="classic"] [data-part="chip"].is-focused {
+  background: var(--c-checker);
+  color: var(--c-text);
+  font-weight: 700;
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] [data-part="chip"] .chip-ordinal {
+  color: var(--c-text-3);
+  opacity: 1;
+}
+:root[data-skin="classic"] .chip-close {
+  width: 14px;
+  height: 14px;
+  border-radius: 0;
+  color: var(--c-text);
+  font: 700 12px/1 var(--c-font);
+}
+:root[data-skin="classic"] .chip-close:hover {
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+
+/* ---- Tiles: child windows --------------------------------------------------------------- */
+
+/* The frame: the 1px border is the outer bevel, and an overlay draws the inner one (so the
+   tile's geometry is what the layout expects). */
+:root[data-skin="classic"] [data-part="tile"] {
+  border-radius: 0;
+  border-color: var(--c-light) var(--c-dark) var(--c-dark) var(--c-light);
+  background: var(--tile);
+  box-shadow: none;
+}
+:root[data-skin="classic"] [data-part="tile"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: inset 1px 1px var(--c-hi), inset -1px -1px var(--c-shadow);
+}
+
+/* The title bar: a gradient band set 2px into the grey face. Inside it the text tokens are the
+   bar's own, so the title, the badges, the age and a web tile's buttons all read on it. */
+:root[data-skin="classic"] .tile:not(.is-harness) [data-part="tile-head"] {
+  --c-bar: linear-gradient(90deg, var(--c-title-off-a), var(--c-title-off-b));
+  --text: var(--c-title-off-text);
+  --text-2: var(--c-title-off-text);
+  --text-3: color-mix(in srgb, var(--c-title-off-text) 80%, transparent);
+  --line: color-mix(in srgb, var(--c-title-off-text) 40%, transparent);
+  --line-2: color-mix(in srgb, var(--c-title-off-text) 55%, transparent);
+  --hi-rgb: 255, 255, 255;
+  gap: 6px;
+  padding: 0 5px 1px 7px;
+  border-bottom-color: var(--c-face);
+  background-color: var(--c-face);
+  background-image: var(--c-bar);
+  background-repeat: no-repeat;
+  background-position: 2px 2px;
+  background-size: calc(100% - 4px) 21px;
+  color: var(--text);
+  font: 700 11px/1 var(--c-font);
+}
+:root[data-skin="classic"] .tile.is-focused:not(.is-harness) [data-part="tile-head"] {
+  --c-bar: linear-gradient(90deg, var(--c-title-a), var(--c-title-b));
+  --text: var(--c-title-text);
+  --text-2: var(--c-title-text);
+  --text-3: color-mix(in srgb, var(--c-title-text) 80%, transparent);
+  --line: color-mix(in srgb, var(--c-title-text) 40%, transparent);
+  --line-2: color-mix(in srgb, var(--c-title-text) 55%, transparent);
+}
+/* An unfocused tile with something to show: its bar takes the activity's colour. */
+:root[data-skin="classic"] [data-activity-mode="full"] .tile:not(.is-harness, [data-activity="none"])[data-activity] [data-part="tile-head"] {
+  --c-bar: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--act) 70%, var(--c-dark)),
+    color-mix(in srgb, var(--act) 45%, var(--c-face))
+  );
+  --text: #fff;
+  --text-2: #fff;
+  background-color: var(--c-face);
+  animation: none;
+}
+/* Sandboxed and broadcast tiles keep their hatching, over the bar. */
+:root[data-skin="classic"] .tile.is-sandbox:not(.is-harness) [data-part="tile-head"],
+:root[data-skin="classic"] .tile.is-broadcast:not(.is-harness) [data-part="tile-head"] {
+  background-image:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.2) 0 6px,
+    transparent 6px 12px),
+    var(--c-bar);
+}
+:root[data-skin="classic"] .tile.has-tint [data-part="tile-head"] {
+  box-shadow: none;
+}
+:root[data-skin="classic"] [data-part="tile-title"] {
+  font-weight: 700;
+}
+:root[data-skin="classic"] .tile-badge {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+:root[data-skin="classic"] [data-part="tile-meta"] {
+  font-weight: 400;
+}
+:root[data-skin="classic"] .tile-rank {
+  background: transparent;
+  color: inherit;
+}
+:root[data-skin="classic"] [data-part="tile-zoom"] {
+  height: 14px;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  box-shadow: var(--c-thin-raised);
+}
+
+/* The window buttons: grey squares, always shown. */
+:root[data-skin="classic"] [data-part="tile-buttons"] {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+:root[data-skin="classic"] [data-part="tile-button"] {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  font: 700 13px/1 var(--c-font);
+  opacity: 1;
+  box-shadow: var(--c-raised);
+  transition: none;
+}
+:root[data-skin="classic"] [data-part="tile-button"]:hover {
+  background: var(--c-face);
+  color: var(--c-text);
+}
+:root[data-skin="classic"] [data-part="tile-button"]:active {
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] [data-part="tile-button"] svg {
+  width: 9px;
+  height: 9px;
+  stroke-width: 1.8;
+}
+
+/* A harness tile's header is a card of its own: the same card, squared and raised. */
+:root[data-skin="classic"] .tile.is-harness [data-part="tile-head"] {
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  box-shadow: var(--c-raised);
+}
+
+/* A web tile: its buttons sit on the bar, its address field is a sunken white box. */
+:root[data-skin="classic"] .web-btn {
+  border-radius: 0;
+  color: var(--text);
+  transition: none;
+}
+:root[data-skin="classic"] .web-btn:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: inset -1px -1px rgba(0, 0, 0, 0.5), inset 1px 1px rgba(255, 255,
+    255, 0.7);
+}
+:root[data-skin="classic"] .web-omnibox {
+  --text: var(--c-text);
+  --text-2: var(--c-text-2);
+  --text-3: var(--c-text-3);
+  --line: var(--c-shadow);
+  --line-2: var(--c-shadow);
+  --hi-rgb: 0, 0, 0;
+  height: 18px;
+  border: 0;
+  border-radius: 0;
+  background: var(--tile);
+  font-weight: 400;
+  box-shadow: var(--c-thin-sunken);
+}
+:root[data-skin="classic"] .web-omnibox.is-editing {
+  box-shadow: var(--c-thin-sunken);
+}
+:root[data-skin="classic"] [data-part="web-chrome"] {
+  background: var(--c-face);
+}
+
+/* ---- Menus ------------------------------------------------------------------------------ */
+
+:root[data-skin="classic"] .menu {
+  padding: 3px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  box-shadow: var(--c-raised), 2px 2px 0 rgba(0, 0, 0, 0.35);
+  animation: none;
+}
+:root[data-skin="classic"] .menu-item {
+  border-radius: 0;
+  padding: 5px 8px;
+  color: var(--c-text);
+  font: 11px/1 var(--c-font);
+}
+/* The row under the pointer is the selection: the accent behind it, and its text tokens turned
+   to the accent's ink so secondary text inside it follows. */
+:root[data-skin="classic"] .menu-item:hover:not(:disabled) {
+  --text: var(--accent-ink);
+  --text-2: var(--accent-ink);
+  --text-3: var(--accent-ink);
+  --accent: var(--accent-ink);
+  background: var(--c-title-a);
+  color: var(--accent-ink);
+}
+:root[data-skin="classic"] .menu-item.is-active {
+  color: var(--c-text);
+  font-weight: 700;
+}
+:root[data-skin="classic"] .menu-item.is-active:hover {
+  color: var(--accent-ink);
+}
+:root[data-skin="classic"] .menu-item:disabled {
+  opacity: 1;
+  color: var(--c-shadow);
+  text-shadow: 1px 1px var(--c-hi);
+}
+:root[data-skin="classic"] .menu-heading {
+  color: var(--c-text-3);
+  font: 700 10px/1 var(--c-font);
+}
+:root[data-skin="classic"] .menu-sep {
+  height: 2px;
+  margin: 3px 2px;
+  background: linear-gradient(var(--c-shadow) 50%, var(--c-hi) 50%);
+}
+
+/* ---- Dialogs and Settings --------------------------------------------------------------- */
+
+:root[data-skin="classic"] [data-part="dialog-backdrop"] {
+  background: rgba(0, 0, 0, 0.2);
+  animation: none;
+}
+:root[data-skin="classic"] [data-part="dialog"] {
+  padding: 3px;
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--c-raised), 3px 3px 0 rgba(0, 0, 0, 0.35);
+  animation: none;
+}
+/* A dialog's heading is its title bar. */
+:root[data-skin="classic"] .modal-head,
+:root[data-skin="classic"] .settings-head {
+  --text: var(--c-title-text);
+  --text-2: var(--c-title-text);
+  --text-3: var(--c-title-text);
+  min-height: 22px;
+  padding: 2px 3px 2px 6px;
+  border-bottom: 0;
+  background: linear-gradient(90deg, var(--c-title-a), var(--c-title-b));
+  color: var(--c-title-text);
+}
+:root[data-skin="classic"] .modal-head h2,
+:root[data-skin="classic"] .settings-head h2 {
+  font: 700 11px/1 var(--c-font);
+  letter-spacing: 0;
+}
+:root[data-skin="classic"] .modal-foot {
+  border-top: 0;
+  color: var(--c-text-2);
+  box-shadow: inset 0 1px var(--c-shadow), inset 0 2px var(--c-hi);
+}
+:root[data-skin="classic"] .settings-side {
+  border-right: 1px solid var(--c-shadow);
+  background: var(--c-face);
+  box-shadow: 1px 0 var(--c-hi);
+}
+:root[data-skin="classic"] .settings-tab {
+  border-radius: 0;
+  padding: 4px 8px;
+  color: var(--c-text);
+  font: 11px/1.3 var(--c-font);
+}
+:root[data-skin="classic"] .settings-tab:hover {
+  background: transparent;
+  outline: 1px dotted var(--c-dark);
+  outline-offset: -1px;
+}
+:root[data-skin="classic"] .settings-tab.is-active {
+  background: var(--c-title-a);
+  color: var(--accent-ink);
+  font-weight: 400;
+}
+:root[data-skin="classic"] .settings-category-title {
+  color: var(--c-text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-skin="classic"] .settings-group-title {
+  color: var(--c-text);
+  font: 700 11px/1.2 var(--c-font);
+}
+/* The Settings dialog's close button: a window button on its title bar. */
+:root[data-skin="classic"] .settings-close {
+  top: 7px;
+  right: 7px;
+  width: 16px;
+  min-width: 16px;
+  height: 14px;
+  padding: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  font: 700 12px/1 var(--c-font);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .settings-close:hover {
+  background: var(--c-face);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] .settings-close:active {
+  box-shadow: var(--c-pressed);
+}
+/* A group box: an etched line. */
+:root[data-skin="classic"] .settings-group-body {
+  border: 1px solid var(--c-shadow);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: 1px 1px var(--c-hi), inset 1px 1px var(--c-hi);
+}
+
+/* ---- Buttons and fields ----------------------------------------------------------------- */
+
+:root[data-skin="classic"] .btn-primary,
+:root[data-skin="classic"] .btn-quiet,
+:root[data-skin="classic"] .segmented button,
+:root[data-skin="classic"] .pattern-option {
+  --text: var(--c-text);
+  --text-2: var(--c-text-2);
+  --text-3: var(--c-text-3);
+  border: 0;
+  border-radius: 0;
+  background: var(--c-face);
+  color: var(--c-text);
+  font: 11px/1.2 var(--c-font);
+  box-shadow: var(--c-raised);
+  transition: none;
+}
+:root[data-skin="classic"] .btn-primary,
+:root[data-skin="classic"] .btn-quiet {
+  min-height: 21px;
+  padding: 4px 12px;
+}
+/* The default button: a black line around it. */
+:root[data-skin="classic"] .btn-primary {
+  box-shadow: var(--c-raised), 0 0 0 1px var(--c-dark);
+}
+:root[data-skin="classic"] .btn-primary:hover,
+:root[data-skin="classic"] .btn-quiet:hover:not(:disabled),
+:root[data-skin="classic"] .pattern-option:hover {
+  background: var(--c-face);
+  color: var(--c-text);
+}
+:root[data-skin="classic"] .btn-primary:active:not(:disabled),
+:root[data-skin="classic"] .btn-quiet:active:not(:disabled),
+:root[data-skin="classic"] .segmented button:active {
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] .btn-primary:disabled,
+:root[data-skin="classic"] .btn-quiet:disabled {
+  opacity: 1;
+  color: var(--c-shadow);
+  text-shadow: 1px 1px var(--c-hi);
+}
+:root[data-skin="classic"] .btn-quiet.is-danger,
+:root[data-skin="classic"] .btn-primary.is-danger {
+  color: var(--red);
+}
+:root[data-skin="classic"] .segmented {
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+:root[data-skin="classic"] .segmented button.is-active,
+:root[data-skin="classic"] .pattern-option.is-active {
+  background: var(--c-checker);
+  color: var(--c-text);
+  font-weight: 700;
+  box-shadow: var(--c-pressed);
+}
+:root[data-skin="classic"] .field-select,
+:root[data-skin="classic"] .settings-search,
+:root[data-skin="classic"] [data-part="dialog"] input[type="text"],
+:root[data-skin="classic"] [data-part="dialog"] input[type="number"],
+:root[data-skin="classic"] [data-part="dialog"] input[type="password"],
+:root[data-skin="classic"] [data-part="dialog"] textarea {
+  border: 0;
+  border-radius: 0;
+  background: var(--tile);
+  color: var(--c-text);
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] .field-select:focus,
+:root[data-skin="classic"] .settings-search:focus {
+  box-shadow: var(--c-sunken);
+}
+:root[data-skin="classic"] [data-part="tile-body"] {
+  background: var(--tile);
+}
+:root[data-skin="classic"] .empty {
+  color: var(--c-hi);
+}
+
+/* ---- Scrollbars: a wide grey bar, a raised thumb, arrow buttons -------------------------- */
+
+:root[data-skin="classic"] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-track {
+  background: var(--c-checker);
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-thumb {
+  background: var(--c-face);
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-corner {
+  background: var(--c-face);
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-button {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-color: var(--c-face);
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: var(--c-raised);
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-button:active {
+  box-shadow: var(--c-pressed);
+}
+/* One arrow at each end (not the doubled pair some engines draw). */
+:root[data-skin="classic"] ::-webkit-scrollbar-button:vertical:start:increment,
+:root[data-skin="classic"] ::-webkit-scrollbar-button:vertical:end:decrement,
+:root[data-skin="classic"] ::-webkit-scrollbar-button:horizontal:start:increment,
+:root[data-skin="classic"] ::-webkit-scrollbar-button:horizontal:end:decrement {
+  display: none;
+}
+/* The arrows: a wedge of a conic gradient, cut to a small box. */
+:root[data-skin="classic"] ::-webkit-scrollbar-button:vertical:decrement {
+  background-image: conic-gradient(from 135deg at 50% 0, var(--c-dark) 90deg,
+    transparent 0);
+  background-size: 8px 4px;
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-button:vertical:increment {
+  background-image: conic-gradient(from -45deg at 50% 100%, var(--c-dark) 90deg,
+    transparent 0);
+  background-size: 8px 4px;
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-button:horizontal:decrement {
+  background-image: conic-gradient(from 45deg at 0 50%, var(--c-dark) 90deg,
+    transparent 0);
+  background-size: 4px 8px;
+}
+:root[data-skin="classic"] ::-webkit-scrollbar-button:horizontal:increment {
+  background-image: conic-gradient(from 225deg at 100% 50%, var(--c-dark) 90deg,
+    transparent 0);
+  background-size: 4px 8px;
+}
+/* The chips strip scrolls without a bar, as in every skin. */
+:root[data-skin="classic"] [data-part="chips"]::-webkit-scrollbar {
+  display: none;
+}

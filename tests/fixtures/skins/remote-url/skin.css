@@ -1,0 +1,4 @@
+/* Refused: a skin's stylesheet may only load files from its own folder. */
+:root[data-skin="remote-url"] [data-part="app"] {
+  background-image: url("https://example.com/wallpaper.png");
+}

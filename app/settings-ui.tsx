@@ -25,6 +25,7 @@ export function SettingsGroup(props: {
   return (
     <section
       class="settings-group"
+      data-part="settings-group"
       data-testid={props.testid}
       aria-label={props.title}
     >

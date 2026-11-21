@@ -188,6 +188,45 @@
     and push-to-talk from a workspace window sends without the review box and
     without the floating face listening. Typing into the floating chat box on
     Linux (a layer-shell surface made with `focusable: false`) is untried.
+  - Done: the companion's own lines (Settings → Companion → Messages;
+    lib/companion/ambient.ts, app/companion/use-companion-ambient.ts). A quote
+    of the day (on by default; 217 public-domain quotes in
+    lib/companion/quotes.ts, picked by hashing the local date) at startup and at
+    the first interaction after midnight, once a day across windows (a claim in
+    shared storage; the floating companion follows the windows' activity through
+    `storage` events). Encouragement (off by default; 90 original lines in
+    lib/companion/encouragements.ts, a no-repeat bag) after 20–40 / 45–90 /
+    120–240 minutes of active use, only when nothing else wants the companion.
+  - Done: voice mode (Settings → Voice and → Companion, the speaker button
+    beside the mic; lib/voice/bubble-speech.ts,
+    app/companion/use-bubble-speech.ts). Everything in the bubble is said with
+    the chosen voice: answers sentence by sentence as they stream, `say`
+    messages, questions with their buttons, the quote with its author,
+    encouragement; mail turns and errors as a short summary; code, markdown and
+    URLs left out. A new bubble cuts off the old one's speech, closing a bubble
+    stops it, barge-in stops the rest of a stream. One window speaks
+    (lib/voice/speaker.ts): the floating companion while it shows, else the
+    workspace window that last had the focus or input (Speak answers follows the
+    same election now).
+  - Done: companion looks (Settings → Companion → Look; lib/companion/looks.ts,
+    lib/companion/look-build.ts, desktop/companion-looks.ts, the `looks`
+    extension; docs/companion-looks.md). A look is a folder in the app-support
+    folder's `companions/`: `look.json`, one picture per mood (only `idle`
+    required, a fallback chain to it), `speak-N` mouth frames, a scoped and
+    sanitized `look.css`. Read with links and sub-folders skipped and size caps,
+    sent as data: URLs, drawn in an `<img>` that takes the drawn face's moves. A
+    test look, Pixel Blob, is in tests/fixtures/looks (not built in).
+  - Looks, open: never tried in the real app (the folder reading is unit tested
+    on a temp folder, the page in the demo e2e). No file watching: a changed
+    look needs Reload looks. A look's own animated pictures (GIF, animated SVG)
+    play, but a look cannot add moves or keyframes of its own (CSS nesting drops
+    a nested `@keyframes`).
+  - Messages and voice mode, open: never heard in the real app yet (the demo e2e
+    uses a recording fake engine). The floating companion's speaker button
+    writes the shared settings itself (the workspace windows follow them). The
+    reaction line beside the companion and the hot line are not part of voice
+    mode (they keep their own voice-alert rules). A window that crashes without
+    `pagehide` keeps the speaker claim until another window is focused or used.
   - Done: Codex (CLI 0.167) end to end: `env_vars` for the MCP server, hooks for
     SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop /
     Interrupt with their trust (session flags, or the user's config.toml), MCP
@@ -556,6 +595,25 @@
   - Not doing: embedding t3code (sidecar, worker mode, PTY adapter). The agent
     tile replaces it (decided 2026-11-17).
 
+- [x] **Skins** (Settings → Appearance → Skin; docs/skins.md). A skin restyles
+      the chrome through a documented contract (`data-part` hooks and stable
+      classes, `lib/skins/parts.ts`), scoped by `data-skin` on `<html>`.
+      Built-in: Qutty and Classic (`public/skins/classic/`, linked always). User
+      skins are folders in `<app support>/skins/` (`desktop/skins.ts`): checked,
+      the stylesheet sanitized (`lib/skins/skin.ts`: no `@import`, no remote
+      `url()`), assets inlined as `data:` URLs, applied as a constructed
+      stylesheet (the CSP allows no inline `<style>`). Tile frame options
+      (buttons left / right, title alignment) as `data-frame-*` on `<html>`.
+  - Open: the floating companion's window does not take the skin or a skin's
+    colours (it applies the chosen theme only). No hover preview in the picker
+    (a skin restyles the Settings dialog under the pointer). The user skin's
+    stylesheet arrives after the first paint at launch (the built-ins do not
+    have this: their stylesheets are linked). Classic is tuned for its own grey
+    colours; with "Use the skin's colours" off it follows the theme but dark
+    themes get stark bevels. Not tried in the packaged app: the `skins`
+    extension, the folder button and `data:` fonts under the desktop CSP
+    (`font-src 'self' data:` allows them on paper).
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =
@@ -592,6 +650,9 @@
 - [x] v0.7.1: Denext 4.20.1 (web view cursor and CEF security fixes), the Dock
       menu (New Window, New Terminal, agent chats, open windows, Reopen Closed
       Window), the floating companion window.
+- [x] v0.7.2: skins (Classic, user skins, tile frame button and title options),
+      companion looks (user look folders), quote of the day, encouragement,
+      voice mode.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

@@ -22,6 +22,11 @@ import {
   sanitizeFont,
 } from "./fonts.ts";
 import { DEFAULT_THEME_ID, sanitizeThemeId, type ThemeId } from "./themes.ts";
+import {
+  DEFAULT_SKIN,
+  sanitizeSkinSettings,
+  type SkinSettings,
+} from "../skins/settings.ts";
 import type { SshProfile } from "../ssh-ui.ts";
 import { isEntryId, type PlusOpens, sanitizePlusOpens } from "../launcher.ts";
 import {
@@ -217,6 +222,8 @@ export interface Settings extends FontSettings {
    * lib/workspace/tile-order.ts).
    */
   focusToMain: boolean;
+  /** Settings → Appearance → Skin: the skin and the tile frame options (lib/skins/settings.ts). */
+  skin: SkinSettings;
   /** The colour theme (see themes.ts). */
   theme: ThemeId;
   /** The Settings tab selected last (the dialog opens on it). */
@@ -390,6 +397,8 @@ export type WorkspaceAction =
   /** Tiles `a` and `b` trade places in the tile order (a header dragged onto another tile). */
   | { type: "swapTiles"; a: string; b: string }
   | { type: "setTheme"; theme: ThemeId }
+  /** Settings → Appearance → Skin. */
+  | { type: "setSkin"; patch: Partial<SkinSettings> }
   | { type: "setPlusOpens"; plusOpens: PlusOpens }
   | { type: "setCompanion"; patch: Partial<CompanionSettings> }
   | { type: "setVoice"; patch: Partial<VoiceSettings> }
@@ -427,6 +436,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inactiveTiles: "resize",
   focusToMain: true,
   theme: DEFAULT_THEME_ID,
+  skin: { ...DEFAULT_SKIN },
   settingsTab: "general",
   plusOpens: "default",
   lastLaunch: null,
@@ -471,6 +481,7 @@ function cloneSettings(s: Settings): Settings {
     companion: { ...s.companion },
     voice: { ...s.voice },
     sandbox: { ...s.sandbox },
+    skin: { ...s.skin },
     links: { ...s.links },
     monitor: { ...s.monitor },
     activity: { ...s.activity },
@@ -590,6 +601,7 @@ export function sanitizeSettings(
   }
   // Present but unknown (a removed theme, junk) falls back to the default theme.
   if (r.theme !== undefined) out.theme = sanitizeThemeId(r.theme);
+  if (r.skin !== undefined) out.skin = sanitizeSkinSettings(r.skin, out.skin);
   if (r.plusOpens !== undefined) out.plusOpens = sanitizePlusOpens(r.plusOpens);
   if (r.lastLaunch === null || isEntryId(r.lastLaunch)) {
     out.lastLaunch = r.lastLaunch;
@@ -1327,6 +1339,13 @@ function reduceCore(
       const voice = sanitizeVoice(action.patch, state.settings.voice);
       if (sameVoice(voice, state.settings.voice)) return state;
       return { ...state, settings: { ...state.settings, voice } };
+    }
+    case "setSkin": {
+      const skin = sanitizeSkinSettings(action.patch, state.settings.skin);
+      if (JSON.stringify(skin) === JSON.stringify(state.settings.skin)) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, skin } };
     }
     case "setSandbox": {
       const sandbox = sanitizeSandbox(action.patch, state.settings.sandbox);

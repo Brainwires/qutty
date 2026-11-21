@@ -110,7 +110,11 @@ export function WebToolbar(props: { view: WebTileView }) {
   >(null);
   const list = navMenu?.dir === -1 ? view.backList : view.forwardList;
   return (
-    <span class="web-toolbar" data-testid="web-toolbar">
+    <span
+      class="web-toolbar"
+      data-testid="web-toolbar"
+      data-part="web-toolbar"
+    >
       <ToolButton
         testid="web-back"
         label="Back"
@@ -273,6 +277,7 @@ function AddressField(props: { view: WebTileView }) {
           type="text"
           class={`web-address${hostAt >= 0 ? " is-pretty" : ""}`}
           data-testid="web-address"
+          data-part="web-address"
           aria-label="Address"
           role="combobox"
           aria-expanded={suggestions.length > 0}
@@ -442,7 +447,7 @@ function Suggestions(props: {
 export function WebChrome(props: { view: WebTileView }) {
   const { view } = props;
   return (
-    <div class="web-chrome" data-testid="web-chrome">
+    <div class="web-chrome" data-testid="web-chrome" data-part="web-chrome">
       <div
         class="web-progress"
         data-testid="web-progress"
