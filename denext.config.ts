@@ -119,6 +119,11 @@ export default {
         // files, folders and the editor, through hidden PTYs as well (Denext's `shell`
         // capability only opens paths inside the app's own folders).
         "./desktop/links.ts",
+        // User skins (`desktop/skins.ts`): the skins folder in the app-support folder, each
+        // skin checked and its stylesheet sanitized with its assets inlined before the page
+        // gets it (docs/skins.md). Reads only, plus the template copy through libc; the folder
+        // is opened through a hidden PTY, as links are.
+        "./desktop/skins.ts",
       ],
       // The lite system monitor: CPU, GPU and memory figures for the bar meter and the companion's
       // hot face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It

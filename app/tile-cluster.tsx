@@ -430,6 +430,7 @@ function TerminalTile(props: TerminalTileProps) {
       class={classes.join(" ")}
       style={tileStyle}
       data-testid="tile"
+      data-part="tile"
       data-id={id}
       data-rank={visible ? rank : ""}
       data-phase={phase}
@@ -466,6 +467,7 @@ function TerminalTile(props: TerminalTileProps) {
       <div class="tile-inner">
         <header
           class="tile-head"
+          data-part="tile-head"
           ref={headRef}
           onPointerDown={(e) => {
             // Free-form: a drag on the header moves the tile (not from its controls). Tiled with
@@ -521,6 +523,7 @@ function TerminalTile(props: TerminalTileProps) {
           <AgentBadge tile={props.agentOf?.(id)} />
           <span
             class="tile-title"
+            data-part="tile-title"
             data-testid="tile-title"
             title={props.title}
           >
@@ -531,7 +534,7 @@ function TerminalTile(props: TerminalTileProps) {
           {harness && harnessView && (
             <HarnessHead entry={entry} view={harnessView} hooks={harness} />
           )}
-          <span class="tile-meta">
+          <span class="tile-meta" data-part="tile-meta">
             {props.renderHeadActions?.(entry)}
             {entry.exited && (
               <span class="tile-exited">
@@ -552,6 +555,7 @@ function TerminalTile(props: TerminalTileProps) {
               <button
                 type="button"
                 class="tile-zoom"
+                data-part="tile-zoom"
                 data-testid="tile-zoom"
                 data-keep-focus
                 aria-label={`Zoom ${zoomLabel(zoom)}: actual size`}
@@ -565,33 +569,41 @@ function TerminalTile(props: TerminalTileProps) {
                 {zoomLabel(zoom)}
               </button>
             )}
-            <WindowControls
-              maximized={props.maximized}
-              web={!!web}
-              onMinimize={() => props.onMinimize(id)}
-              onMaximize={() => props.onMaximize(id)}
-              onRestore={() => props.onRestore(id)}
-            />
-            <button
-              type="button"
-              class="tile-close"
-              data-testid="tile-close"
-              // Not focused first (the tile's capture-phase pointerdown): focusing an unfocused
-              // tile moves it to the top slot, so the click would land on whatever is there now.
-              data-keep-focus
-              aria-label={web
-                ? "Close web tile"
-                : agent
-                ? "Close agent"
-                : "Close terminal"}
-              title="Close"
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onClose(id);
-              }}
-            >
-              ×
-            </button>
+            {
+              /* The window buttons: one group, so the frame options (lib/skins/settings.ts) can
+                put it on either side of the header and order the buttons inside it. */
+            }
+            <span class="tile-buttons" data-part="tile-buttons">
+              <WindowControls
+                maximized={props.maximized}
+                web={!!web}
+                onMinimize={() => props.onMinimize(id)}
+                onMaximize={() => props.onMaximize(id)}
+                onRestore={() => props.onRestore(id)}
+              />
+              <button
+                type="button"
+                class="tile-close"
+                data-testid="tile-close"
+                data-part="tile-button"
+                data-button="close"
+                // Not focused first (the tile's capture-phase pointerdown): focusing an unfocused
+                // tile moves it to the top slot, so the click would land on whatever is there now.
+                data-keep-focus
+                aria-label={web
+                  ? "Close web tile"
+                  : agent
+                  ? "Close agent"
+                  : "Close terminal"}
+                title="Close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onClose(id);
+                }}
+              >
+                ×
+              </button>
+            </span>
           </span>
         </header>
         {web
@@ -621,6 +633,7 @@ function TerminalTile(props: TerminalTileProps) {
             >
               <div
                 class="tile-body"
+                data-part="tile-body"
                 data-testid="tile-body"
                 ref={hostRef}
                 style={full ? scaledBodyStyle(full, rect, focused) : undefined}
@@ -708,6 +721,8 @@ function WindowControls(props: {
       type="button"
       class="tile-ctl"
       data-testid={testid}
+      data-part="tile-button"
+      data-button={testid.slice("tile-".length)}
       data-keep-focus
       aria-label={label}
       title={title}

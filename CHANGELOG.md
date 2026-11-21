@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Skins. A theme sets the colours; a skin changes how the chrome is drawn:
+  fonts, borders and bevels, tile title bars and window buttons, button and
+  scrollbar shapes, menus, dialogs, the switcher bar. Settings → Appearance →
+  Skin has two built in. "Qutty" is the app's own look. "Classic" is a late-90s
+  desktop: grey bevelled frames, every tile a child window with a gradient title
+  bar and square Minimize, Maximize and Close buttons, a toolbar for the bar,
+  flat menus and wide scrollbars, drawn entirely in CSS with a light grey colour
+  set of its own ("Use the skin's colours" turns that off, so it takes your
+  theme).
+- Your own skins: a folder with a `skin.json` and a `skin.css` in the skins
+  folder (Settings has Open skins folder and Reload skins; on macOS it is
+  `~/Library/Application Support/org.qutty.Qutty/skins/`). "Start from Classic"
+  copies the Classic skin there as a template. A skin can bring colours, a
+  terminal font, fonts and images of its own. Skins never run code and never
+  reach the network: `@import`, remote `url()`s and anything else that could
+  load something are refused, and a skin's images and fonts are read from its
+  own folder only. A skin that fails a check shows the reason in Settings and
+  Qutty's own look is used. docs/skins.md has the format and the list of parts a
+  skin can style.
+- Tile frame options, under any skin: Settings → Appearance → Skin → "Frame
+  buttons" puts each tile's Minimize, Maximize and Close buttons on the left or
+  the right of its header, and "Title" aligns the title left, center or right.
+  Each can follow the skin's default. (The window's own buttons on macOS are the
+  system's and stay where they are.)
 - A quote of the day. At startup the companion shows a short quote with its
   author in its bubble, with an Another button. If Qutty stays open past
   midnight, the next day's quote comes with your first click, key press or

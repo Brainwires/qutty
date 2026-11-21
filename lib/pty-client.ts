@@ -31,6 +31,9 @@ import type ollamaExtension from "../desktop/ollama.ts";
 import type linksExtension from "../desktop/links.ts";
 import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
 import { createDemoLinks } from "./links-demo.ts";
+import type skinsExtension from "../desktop/skins.ts";
+import type { SkinsClient } from "./skins/skin.ts";
+import { createDemoSkins } from "./skins/demo.ts";
 import { fromSystemStats, type SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
 import {
@@ -250,6 +253,11 @@ export interface PtyBackend {
   linkEditors(): Promise<string[]>;
   /** Run an editor command template on a file. */
   linkEdit(request: LinkEditRequest): Promise<void>;
+
+  // --- Skins (desktop/skins.ts) --------------------------------------------------------------
+
+  /** The user's skins folder: list it, read one skin, copy a template in, open it. */
+  skins: SkinsClient;
 
   // --- The system monitor (Denext's `system.stats`, the `systemStats` capability) ------------
 
@@ -609,6 +617,7 @@ export function createDesktopBackend(
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const links = desktopExtension<typeof linksExtension>("links");
+  const skins = desktopExtension<typeof skinsExtension>("skins");
   const stats = deps.system ?? system;
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
@@ -781,6 +790,12 @@ export function createDesktopBackend(
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors({}),
     linkEdit: (request) => links.edit(request),
+    skins: {
+      list: () => skins.list({}),
+      get: (id) => skins.get({ id }),
+      template: (request) => skins.template(request),
+      openFolder: () => skins.openFolder({}),
+    },
     sysSample: async () => fromSystemStats(await stats.stats()),
     onData: (id, cb) => {
       listen();
@@ -1730,6 +1745,7 @@ export function createDemoBackend(): PtyBackend {
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
+  const skins = createDemoSkins();
   // `?peers=<name>`: pages of the demo move tiles to each other (lib/demo-windows.ts).
   const peerName = pageParam("peers");
   const session = createDemoSession(
@@ -1884,6 +1900,7 @@ export function createDemoBackend(): PtyBackend {
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors(),
     linkEdit: (request) => links.edit(request),
+    skins,
     sysSample: () => Promise.resolve(demoSample()),
     info(id) {
       return attempt(() => {

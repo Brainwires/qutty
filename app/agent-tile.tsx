@@ -519,6 +519,7 @@ export function AgentBody(
     <div
       class="tile-body agent-body"
       data-testid="agent-body"
+      data-part="agent-body"
       ref={rootRef}
       style={style}
       onKeyDown={(e) => {

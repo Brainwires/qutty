@@ -146,6 +146,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
+    "skins",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -165,6 +166,27 @@ Deno.test("desktop: the links methods go to the links extension as they are", as
     { method: "open", args: { kind: "reveal", path: "/p" } },
     { method: "editors", args: {} },
     { method: "edit", args: { command: "zed {file}", file: "/p/a", line: 2 } },
+  ]);
+});
+
+Deno.test("desktop: the skins methods go to the skins extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.skins.list();
+  await backend.skins.get("neon");
+  const template = {
+    id: "my-classic",
+    name: "My Classic",
+    from: "classic",
+    manifest: "{}",
+    css: "a{}",
+  };
+  await backend.skins.template(template);
+  await backend.skins.openFolder();
+  assertEquals(bridge.calls, [
+    { method: "list", args: {} },
+    { method: "get", args: { id: "neon" } },
+    { method: "template", args: template },
+    { method: "openFolder", args: {} },
   ]);
 });
 

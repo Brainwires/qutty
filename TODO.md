@@ -582,6 +582,25 @@
   - Not doing: embedding t3code (sidecar, worker mode, PTY adapter). The agent
     tile replaces it (decided 2026-11-17).
 
+- [x] **Skins** (Settings → Appearance → Skin; docs/skins.md). A skin restyles
+      the chrome through a documented contract (`data-part` hooks and stable
+      classes, `lib/skins/parts.ts`), scoped by `data-skin` on `<html>`.
+      Built-in: Qutty and Classic (`public/skins/classic/`, linked always). User
+      skins are folders in `<app support>/skins/` (`desktop/skins.ts`): checked,
+      the stylesheet sanitized (`lib/skins/skin.ts`: no `@import`, no remote
+      `url()`), assets inlined as `data:` URLs, applied as a constructed
+      stylesheet (the CSP allows no inline `<style>`). Tile frame options
+      (buttons left / right, title alignment) as `data-frame-*` on `<html>`.
+  - Open: the floating companion's window does not take the skin or a skin's
+    colours (it applies the chosen theme only). No hover preview in the picker
+    (a skin restyles the Settings dialog under the pointer). The user skin's
+    stylesheet arrives after the first paint at launch (the built-ins do not
+    have this: their stylesheets are linked). Classic is tuned for its own grey
+    colours; with "Use the skin's colours" off it follows the theme but dark
+    themes get stark bevels. Not tried in the packaged app: the `skins`
+    extension, the folder button and `data:` fonts under the desktop CSP
+    (`font-src 'self' data:` allows them on paper).
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =

@@ -22,6 +22,8 @@
     "out/**",
     ".deno-desktop/**",
     ".denext/**",
+    // Test skins (tests/skins_store_test.ts reads them as data): stylesheets, not modules.
+    "tests/fixtures/skins/**",
     // site/ is qutty.org, its own Denext app with its own deno.json and CI job.
     "site/**"
   ],

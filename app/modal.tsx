@@ -46,6 +46,7 @@ export function Modal(props: ModalProps) {
   return (
     <div
       class="modal-backdrop"
+      data-part="dialog-backdrop"
       data-testid={`${props.testid}-backdrop`}
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) props.onClose();
@@ -54,6 +55,7 @@ export function Modal(props: ModalProps) {
       <div
         class={`modal${props.class ? ` ${props.class}` : ""}`}
         role="dialog"
+        data-part="dialog"
         aria-modal="true"
         aria-label={props.label}
         data-testid={props.testid}

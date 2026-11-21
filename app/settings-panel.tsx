@@ -34,7 +34,10 @@ import {
   SETTINGS_TABS,
   type SettingsTab,
 } from "../lib/workspace/store.ts";
-import { type ThemeId, THEMES } from "../lib/workspace/themes.ts";
+import { themeById, type ThemeId, THEMES } from "../lib/workspace/themes.ts";
+import type { SkinSettings } from "../lib/skins/settings.ts";
+import { SkinSettingsSection } from "./skin-settings.tsx";
+import type { SkinsApi } from "./use-skins.ts";
 import {
   browserFontProbe,
   CUSTOM_FONT_ID,
@@ -105,6 +108,9 @@ export interface SettingsPanelProps {
   /** Settings → Appearance → Zoom (also View → "Zoom All Tiles Together"). */
   onZoomTogether(on: boolean): void;
   onTheme(theme: ThemeId): void;
+  /** Settings → Appearance → Skin: the skins on offer and the one in use (app/use-skins.ts). */
+  skins: SkinsApi;
+  onSkin(patch: Partial<SkinSettings>): void;
   /** A tab was picked (remembered as `settings.settingsTab`). */
   onTab(tab: SettingsTab): void;
   /**
@@ -503,6 +509,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <>
         <SettingsGroup title="Theme" testid="theme-section">
           <ThemePicker current={settings.theme} onTheme={props.onTheme} />
+        </SettingsGroup>
+        <SettingsGroup title="Skin" testid="skin-section">
+          <SkinSettingsSection
+            settings={settings.skin}
+            skins={props.skins}
+            theme={themeById(settings.theme)}
+            platform={props.platform}
+            onSkin={props.onSkin}
+          />
         </SettingsGroup>
         <SettingsGroup title="Font" testid="font-section">
           <FontSection

@@ -7249,3 +7249,75 @@ textarea.agent-input::placeholder {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---- Tile frame options (lib/skins/settings.ts) and Settings → Skin ----------------------- */
+
+/* Where a tile header's window buttons sit and how its title is aligned: `data-frame-buttons`
+   and `data-frame-title` on <html>, from the skin's defaults or the user's own choice, so they
+   hold under every skin. The buttons are one group (`.tile-buttons`) at the end of `.tile-meta`.
+   On the right the group dissolves into the meta row (`display: contents`), which lays the
+   header out exactly as before; on the left the meta row dissolves instead and the group goes
+   first. Each button's place in the group is `--frame-order-*` (1 to 3, set with the skin). */
+.tile-buttons {
+  display: contents;
+}
+[data-part="tile-button"][data-button="minimize"] {
+  order: var(--frame-order-minimize, 1);
+}
+[data-part="tile-button"][data-button="maximize"],
+[data-part="tile-button"][data-button="restore"] {
+  order: var(--frame-order-maximize, 2);
+}
+[data-part="tile-button"][data-button="close"] {
+  order: var(--frame-order-close, 3);
+}
+:root[data-frame-buttons="left"] .tile-meta {
+  display: contents;
+}
+:root[data-frame-buttons="left"] .tile-buttons {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+  order: -1;
+}
+:root[data-frame-buttons="left"] .tile:not(.is-harness) .tile-head {
+  padding: 0 10px 0 6px;
+}
+:root[data-frame-buttons="left"] .tile.is-harness .tile-buttons {
+  gap: 2px;
+}
+:root[data-frame-title="center"] .tile-title {
+  text-align: center;
+}
+:root[data-frame-title="right"] .tile-title {
+  text-align: right;
+}
+
+/* Settings → Appearance → Skin (app/skin-settings.tsx). */
+.skin-picker {
+  margin-bottom: 6px;
+}
+.skin-error,
+.skin-problems {
+  margin: 6px 0;
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.45;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.skin-problems {
+  padding: 0 0 0 16px;
+  color: var(--text-2);
+}
+.skin-problems code {
+  font: 11px/1 var(--mono);
+  color: var(--text);
+}
+.skin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 0 4px;
+}
