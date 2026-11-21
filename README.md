@@ -28,6 +28,10 @@ Website: <https://qutty.org>
   command, a bell, a failed or a finished command on its header and border,
   titled by what the program calls itself.
 - **Six themes**, three dark and three light, switched live.
+- **Skins** that change how the chrome is drawn, not just its colours: the
+  built-in Classic turns every tile into a late-90s child window, and you can
+  write your own in CSS ([docs/skins.md](docs/skins.md)). Tile window buttons go
+  left or right, titles left, center or right.
 - **Adjustable font** typeface and size.
 - **Your macOS key bindings** (`DefaultKeyBinding.dict`) work inside the
   terminal.

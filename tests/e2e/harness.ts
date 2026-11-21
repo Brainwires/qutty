@@ -24,6 +24,7 @@ import {
   type LayoutOptions,
   type Rect,
 } from "../../lib/layout/mod.ts";
+import { QUOTE_DAY_KEY } from "../../lib/companion/ambient.ts";
 import {
   DEFAULT_SETTINGS,
   type Settings,
@@ -316,6 +317,12 @@ export interface OpenOptions {
   query?: string;
   /** Keep the origin's storage (a second page of the same app: `App.openPeer`). */
   keepStorage?: boolean;
+  /**
+   * Let the companion's quote of the day show (on by default in the app). Off unless asked for:
+   * every other case starts as if today's quote had been shown already, so no bubble appears
+   * that it does not expect.
+   */
+  quote?: boolean;
 }
 
 const DEFAULT_W = 1400;
@@ -396,6 +403,23 @@ function clickGuardScript(): void {
   }
 }
 
+/**
+ * Installed in every page before the app's scripts unless a case asks for the quote of the day:
+ * the quote counts as shown for every day to come (lib/companion/ambient.ts `claimDay`).
+ */
+function quietQuoteScript(key: string): void {
+  try {
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ day: "9999-12-31", by: "e2e" }),
+      );
+    }
+  } catch {
+    // No storage: the app shows nothing either.
+  }
+}
+
 /** One page of the app with helpers. Created by `suite` for every case. */
 export class App {
   readonly errors: string[] = [];
@@ -455,6 +479,13 @@ export class App {
     await this.cdp.Page.addScriptToEvaluateOnNewDocument({
       source: `(${clickGuardScript.toString()})();`,
     });
+    if (!this.opts.quote) {
+      await this.cdp.Page.addScriptToEvaluateOnNewDocument({
+        source: `(${quietQuoteScript.toString()})(${
+          JSON.stringify(QUOTE_DAY_KEY)
+        });`,
+      });
+    }
     const throttle = Number(Deno.env.get("E2E_CPU_THROTTLE") ?? "0");
     if (throttle > 1) {
       await this.cdp.Emulation.setCPUThrottlingRate({ rate: throttle });

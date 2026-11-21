@@ -149,41 +149,64 @@ export class SpeechQueue {
 
 /** The longest answer read aloud (cut at a sentence end before it). */
 const MAX_SPOKEN = 600;
+/** Inline code longer than this (characters) is not read out. */
+const MAX_INLINE_CODE = 40;
 
 /**
- * `text` as it should be said: code, markdown marks, links and list bullets dropped, cut to about
- * {@linkcode MAX_SPOKEN} characters at a sentence end.
+ * `text` as it should be said, whole: code blocks become "code omitted" (and long inline code
+ * too), markdown marks, quote marks and list bullets are dropped, links become their text or
+ * "a link", whitespace is collapsed. An unclosed code block (a reply still streaming) counts as
+ * one.
  */
-export function speakableText(text: string): string {
-  let t = text
-    .replace(/```[\s\S]*?```/g, " (code) ")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+export function cleanSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(?:```|$)/g, " code omitted. ")
+    .replace(
+      /`([^`]*)`/g,
+      (_, code: string) =>
+        code.length > MAX_INLINE_CODE ? "code omitted" : code,
+    )
+    .replace(/!?\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "a link")
-    .replace(/^\s{0,3}(?:#{1,6}|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
     .replace(/[*_~]{1,3}([^*_~\n]+)[*_~]{1,3}/g, "$1")
     .replace(/\s+/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .replace(/([.!?])\.(?=\s|$)/g, "$1")
     .trim();
-  if (t.length > MAX_SPOKEN) {
-    const cut = t.slice(0, MAX_SPOKEN);
-    const end = Math.max(
-      cut.lastIndexOf(". "),
-      cut.lastIndexOf("! "),
-      cut.lastIndexOf("? "),
-    );
-    t = end > MAX_SPOKEN / 3 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`;
-  }
-  return t;
+}
+
+/** `text` cut to about `max` characters at a sentence end. */
+export function cutAtSentence(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const end = Math.max(
+    cut.lastIndexOf(". "),
+    cut.lastIndexOf("! "),
+    cut.lastIndexOf("? "),
+  );
+  return end > max / 3 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`;
+}
+
+/**
+ * `text` as it should be said: {@linkcode cleanSpeech}, cut to about {@linkcode MAX_SPOKEN}
+ * characters at a sentence end.
+ */
+export function speakableText(text: string): string {
+  return cutAtSentence(cleanSpeech(text), MAX_SPOKEN);
 }
 
 /**
  * What to read aloud for a companion update, or `null`: a finished answer to the user (typed or
- * spoken) while Speak answers is on. Errors, agents' mail turns and partial text are not read.
+ * spoken) while Speak answers is on and voice mode is off. Errors, agents' mail turns and partial
+ * text are not read.
  */
 export function answerToSpeak(
   update: CompanionUpdate,
-  settings: Pick<VoiceSettings, "speakAnswers">,
+  settings: Pick<VoiceSettings, "speakAnswers"> & { voiceMode?: boolean },
 ): { key: string; text: string } | null {
+  // Voice mode reads the bubble itself (lib/voice/bubble-speech.ts), answers included.
+  if (settings.voiceMode) return null;
   if (!settings.speakAnswers || update.kind !== "turn") return null;
   if (!update.done || update.isError || update.quiet) return null;
   if (update.source !== "user") return null;

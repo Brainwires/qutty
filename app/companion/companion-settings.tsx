@@ -3,7 +3,8 @@
 // transparent window of its own on top of the others, grayed out with the reason where the system
 // cannot float it, with whether that window shows on every Space; or off, when `ask_user`
 // questions use the ask dialog instead), its corner in the window,
-// whether it is lively (idle expressions, eyes that follow the pointer), its reactions (sleepy at
+// whether it is lively (idle expressions, eyes that follow the pointer), its look (the built-in
+// Loopy or a look from the looks folder: app/companion/look-settings.tsx), its reactions (sleepy at
 // night, celebrate and sad over finished jobs: app/companion/reaction-settings.tsx), whether its
 // brain may run, which brain (headless Claude Code with its model, a local Ollama model that can
 // call tools, from the Ollama helper's tracked models, or Anthropic's API with the user's key,
@@ -34,7 +35,9 @@ import { hasTools, type OllamaStatus } from "../../lib/ollama/cli.ts";
 import type { PtyBackend } from "../../lib/pty-client.ts";
 import { detectPlatform } from "../../lib/workspace/keys.ts";
 import { ReactionSettings } from "./reaction-settings.tsx";
+import { MessageSettings } from "./message-settings.tsx";
 import { ApiKeyField } from "./api-key-field.tsx";
+import { LookSettings } from "./look-settings.tsx";
 import { SettingsGroup, SettingsLink } from "../settings-ui.tsx";
 import type { FloatingSupport } from "../../lib/companion/floating.ts";
 
@@ -45,6 +48,9 @@ export interface CompanionSettingsProps {
   ollama?: OllamaStatus;
   /** Whether the companion can float here, and why not (absent: not known yet). */
   floating?: FloatingSupport;
+  /** Settings → Voice → Voice mode, offered here too. */
+  voiceMode?: boolean;
+  onVoiceMode?(on: boolean): void;
   onChange(patch: Partial<CompanionSettings>): void;
 }
 
@@ -226,10 +232,31 @@ export function CompanionSettingsSection(props: CompanionSettingsProps) {
           </span>
         </label>
       </SettingsGroup>
+      <SettingsGroup title="Look" testid="companion-look-settings">
+        <LookSettings
+          settings={settings}
+          looks={props.backend?.looks}
+          shown={shown}
+          onChange={onChange}
+        />
+      </SettingsGroup>
       <SettingsGroup title="Reactions">
         <ReactionSettings
           settings={settings}
           shown={shown}
+          onChange={onChange}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Messages">
+        <MessageSettings
+          settings={settings}
+          shown={shown}
+          {...(props.onVoiceMode
+            ? {
+              voiceMode: props.voiceMode === true,
+              onVoiceMode: props.onVoiceMode,
+            }
+            : {})}
           onChange={onChange}
         />
       </SettingsGroup>

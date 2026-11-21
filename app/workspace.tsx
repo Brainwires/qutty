@@ -75,6 +75,8 @@ import {
 } from "../lib/workspace/activity.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
 import { applyChromeTheme, themeById } from "../lib/workspace/themes.ts";
+import { effectiveTheme, withSkinFont } from "../lib/skins/skin.ts";
+import { useSkins } from "./use-skins.ts";
 import {
   initialState,
   isMaximized,
@@ -136,6 +138,8 @@ import { anyAlertOn } from "../lib/voice/alerts.ts";
 import { flatEntries, plusLabel } from "../lib/launcher.ts";
 import { companionPlace } from "../lib/companion/settings.ts";
 import { useFloatingCompanion } from "./use-floating-companion.ts";
+import { useActivityBeacon } from "./companion/use-companion-ambient.ts";
+import { useVoiceSpeaker } from "./use-voice-speaker.ts";
 import { opensInSandbox } from "../lib/sandbox/settings.ts";
 import { useSandboxSettings } from "./sandbox-settings.tsx";
 import { useOllama } from "./use-ollama.ts";
@@ -587,6 +591,15 @@ function WorkspaceView() {
   });
   const companionShown = companionPlaced === "window";
   const companionOnHere = companionPlaced !== "off";
+  // The quote of the day and encouragement: in this window's companion unless the floating one
+  // says them (Floating chosen and possible here; nothing until that is known).
+  const { mode: companionMode } = state.settings.companion;
+  const ambientHere = companionMode === "window" ||
+    (companionMode === "floating" && floating.support !== null &&
+      !floating.support.ok);
+  useActivityBeacon(companionPlaced === "floating");
+  // One voice for every window: the floating companion's, else the focused or last-active one's.
+  const speaker = useVoiceSpeaker(companionPlaced === "floating");
   const voice = useVoice({
     backend: managerRef.current?.backend,
     settings: state.settings.voice,
@@ -595,7 +608,7 @@ function WorkspaceView() {
     // answers are the floating window's then.
     enabled: companionOnHere,
     review: companionShown,
-    answers: companionPlaced !== "floating",
+    answers: companionPlaced !== "floating" && speaker,
     companionName: state.settings.companion.name,
     // A dictation goes to the focused tile: its terminal, or a web tile's page (which answers
     // once the page took the text, or did not).
@@ -677,7 +690,27 @@ function WorkspaceView() {
     (path: string, line?: number) => linksRef.current.openInEditor(path, line),
     [],
   );
+  // The skin (Settings → Appearance → Skin; app/use-skins.ts): `data-skin` and the frame options
+  // on <html>, a user skin's stylesheet, and the colours and terminal font the skin brings.
+  const skins = useSkins(
+    ready ? managerRef.current?.backend ?? null : null,
+    state.settings.skin,
+  );
+  const skinColors = state.settings.skin.colors;
+  const theme = useMemo(
+    () =>
+      effectiveTheme(
+        themeById(state.settings.theme),
+        skins.active,
+        skinColors,
+      ),
+    [state.settings.theme, skins.active, skinColors],
+  );
+  const skinFont = skinColors ? skins.active.terminal?.fontFamily : undefined;
+
   const agentTiles = useAgentTiles({
+    theme,
+    ...(skinFont ? { skinFont } : {}),
     backend: ready ? managerRef.current?.backend ?? null : null,
     manager: ready ? managerRef.current : null,
     state,
@@ -871,26 +904,36 @@ function WorkspaceView() {
     state.settings;
   useEffect(() => {
     if (!ready) return;
-    managerRef.current?.setFont(
-      terminalFontOptions({
-        fontFamily,
-        fontFamilyCustom,
-        fontSize,
-        lineHeight,
-        fontWeight,
-      }),
-    );
-  }, [ready, fontFamily, fontFamilyCustom, fontSize, lineHeight, fontWeight]);
+    const font = terminalFontOptions({
+      fontFamily,
+      fontFamilyCustom,
+      fontSize,
+      lineHeight,
+      fontWeight,
+    });
+    // A skin's terminal font goes ahead of the chosen one (which stays as its fallback).
+    managerRef.current?.setFont({
+      ...font,
+      fontFamily: withSkinFont(font.fontFamily, skinFont),
+    });
+  }, [
+    ready,
+    fontFamily,
+    fontFamilyCustom,
+    fontSize,
+    lineHeight,
+    fontWeight,
+    skinFont,
+  ]);
 
   // The colour theme: the chrome's CSS variables on <html> and every terminal's colours (new ones
   // too). A layout effect, so a hydrated theme is in place before the first paint after it and
   // before the first terminal is created.
-  const themeId = state.settings.theme;
+  // With a skin that brings its own colours (and Settings → Skin lets it), those are the theme.
   useLayoutEffect(() => {
-    const theme = themeById(themeId);
     applyChromeTheme(document.documentElement, theme);
     if (ready) managerRef.current?.setTheme(theme.terminal);
-  }, [ready, themeId]);
+  }, [ready, theme]);
 
   useSandboxSettings(
     ready ? managerRef.current?.backend ?? null : null,
@@ -1229,6 +1272,7 @@ function WorkspaceView() {
       }`}
       data-platform={platform}
       data-testid="app"
+      data-part="app"
       data-pattern={settings.layout.pattern}
       data-view={state.view}
       data-focused={focusedId ?? ""}
@@ -1237,6 +1281,7 @@ function WorkspaceView() {
       {showStrip && (
         <div
           class="drag-strip"
+          data-part="drag-strip"
           ref={stripRef}
           aria-hidden="true"
         />
@@ -1325,7 +1370,12 @@ function WorkspaceView() {
           </>
         }
       />
-      <div class="cluster" ref={clusterRef} data-testid="cluster">
+      <div
+        class="cluster"
+        ref={clusterRef}
+        data-testid="cluster"
+        data-part="cluster"
+      >
         {manager && (
           <TileCluster
             manager={manager}
@@ -1413,6 +1463,7 @@ function WorkspaceView() {
             corner={settings.companion.corner}
             brain={settings.companion.brain}
             lively={settings.companion.lively}
+            look={settings.companion.look}
             reducedMotion={reducedMotion}
             onRefocus={refocus}
             onCorner={(corner) =>
@@ -1433,6 +1484,24 @@ function WorkspaceView() {
             onReactionShown={reactions.onShown}
             onOpenSettings={() =>
               openSettings("companion", "setting-companion-brain")}
+            {...(ambientHere
+              ? {
+                ambient: {
+                  quoteOfDay: settings.companion.quoteOfDay,
+                  encourage: settings.companion.encourage,
+                  every: settings.companion.encourageEvery,
+                },
+              }
+              : {})}
+            speakBubbles={settings.voice.voiceMode && speaker}
+            voiceMode={{
+              on: settings.voice.voiceMode,
+              toggle: () =>
+                run({
+                  type: "setVoice",
+                  patch: { voiceMode: !settings.voice.voiceMode },
+                }),
+            }}
           />
         )}
         {broadcast.on && (
@@ -1487,6 +1556,8 @@ function WorkspaceView() {
           onFont={(patch) => run({ type: "setFont", patch })}
           onZoomTogether={(on) => run({ type: "setZoomTogether", on })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
+          skins={skins}
+          onSkin={(patch) => run({ type: "setSkin", patch })}
           onTab={(tab) => run({ type: "setSettingsTab", tab })}
           target={settingsTarget}
           launchSections={launcher.sections}

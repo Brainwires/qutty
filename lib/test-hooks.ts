@@ -9,6 +9,10 @@
 //   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
 // - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for the companion's
 // night.
+// - `window.dispatchEvent(new Event("qutty:encourage"))` (ENCOURAGE_EVENT): the companion's next
+//   encouraging line is due now (it still waits for a free moment; app/companion/
+//   use-companion-ambient.ts). An event, not a `__e2e` hook, so the floating companion's page
+//   hears it too.
 // - `window.__e2e.requestClose(reason)`: a click on the window's close button (or a quit), asked
 //   of the page's close guard; `window.__e2e.windowCalls`: the session's `closeWindow` /
 //   `endWindow` calls, in order.
@@ -168,6 +172,7 @@ export function withBackendSpy(
       spy.links.push({ kind: "edit", ...request });
       return backend.linkEdit(request);
     },
+    skins: backend.skins,
     sysSample: () => backend.sysSample(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
@@ -216,6 +221,7 @@ export function withBackendSpy(
     onCompanionWindow: (cb) => backend.onCompanionWindow(cb),
     companionWindowReady: () => backend.companionWindowReady(),
     companionRefocus: () => backend.companionRefocus(),
+    looks: backend.looks,
     agentStart: (req) => backend.agentStart(req),
     agentSend: (id, message) => backend.agentSend(id, message),
     agentInterrupt: (id) => backend.agentInterrupt(id),
@@ -261,6 +267,9 @@ export function installE2eHooks(
 
 /** How far the e2e suite moved the clock (`window.__e2e.setClock`), ms. 0 outside test mode. */
 let clockOffset = 0;
+
+/** Test mode: the companion's next encouraging line is due now (see the module comment). */
+export const ENCOURAGE_EVENT = "qutty:encourage";
 
 /** The event the window gets when the e2e suite moves the clock. */
 export const CLOCK_EVENT = "qutty:clock";

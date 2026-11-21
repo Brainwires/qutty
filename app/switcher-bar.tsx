@@ -445,6 +445,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
       class={`bar bar-${props.position}${vertical ? " is-vertical" : ""}`}
       aria-label="Terminals"
       data-testid="bar"
+      data-part="bar"
       data-position={props.position}
     >
       <div class="bar-lead" data-no-window-drag>
@@ -577,6 +578,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
       <div
         class="chips"
         data-testid="chips"
+        data-part="chips"
         ref={listRef}
         onWheel={(e) => {
           const list = listRef.current;
@@ -608,6 +610,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
                 }}
                 class={cls.join(" ")}
                 data-testid="chip"
+                data-part="chip"
                 data-id={id}
                 data-ordinal={ordinal}
                 data-rank={rank}

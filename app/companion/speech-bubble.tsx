@@ -3,7 +3,8 @@
 //
 // Ported from Denext's examples/companion (components/SpeechBubble.tsx; same author, MIT). Qutty
 // adds who a message is from (an agent's `ask_user`, a `qutty-hook say`), a small note under the
-// text (the tool the companion is using), and test ids.
+// text (the tool the companion is using), who said it under the text (the quote of the day's
+// author), and test ids.
 import { useEffect } from "denext";
 import type { CompanionMessage } from "../../lib/companion/messages.ts";
 
@@ -17,17 +18,19 @@ export interface SpeechBubbleProps {
   readonly more?: number;
   /** A button was pressed (the bubble is done). */
   readonly onAction: (actionId: string) => void;
-  /** The bubble closed: the close button, or its time ran out. */
+  /** The bubble closed: the close button, or (without `onExpire`) its time ran out. */
   readonly onClose: () => void;
+  /** Its time ran out (default: `onClose`). */
+  readonly onExpire?: () => void;
 }
 
 /** A speech bubble pointing at the companion. */
 export function SpeechBubble(
-  { message, note, more = 0, onAction, onClose }: SpeechBubbleProps,
+  { message, note, more = 0, onAction, onClose, onExpire }: SpeechBubbleProps,
 ) {
   useEffect(() => {
     if (message.timeoutMs <= 0) return;
-    const timer = setTimeout(onClose, message.timeoutMs);
+    const timer = setTimeout(onExpire ?? onClose, message.timeoutMs);
     return () => clearTimeout(timer);
   }, [message.id, message.timeoutMs]);
 
@@ -67,6 +70,11 @@ export function SpeechBubble(
       <p class="bubble-text" data-testid="companion-bubble-text">
         {message.text}
       </p>
+      {message.cite && (
+        <p class="bubble-cite" data-testid="companion-bubble-cite">
+          — {message.cite}
+        </p>
+      )}
       {note && (
         <p class="bubble-note" data-testid="companion-bubble-note">
           {note}

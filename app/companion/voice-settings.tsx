@@ -193,7 +193,7 @@ function LocalEngineStatus(props: { voice: VoiceApi }) {
   );
 }
 
-function Check(props: {
+export function Check(props: {
   label: string;
   testid: string;
   checked: boolean;
@@ -225,8 +225,15 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
         <Check
           label={`Read aloud (${props.name}'s answers)`}
           testid="setting-voice-speak"
-          checked={settings.speakAnswers}
+          checked={settings.speakAnswers || settings.voiceMode}
+          disabled={settings.voiceMode}
           onChange={(speakAnswers) => onChange({ speakAnswers })}
+        />
+        <Check
+          label="Voice mode: say everything in the bubble aloud (answers as they stream, messages, questions, the quote of the day)"
+          testid="setting-voice-mode"
+          checked={settings.voiceMode}
+          onChange={(voiceMode) => onChange({ voiceMode })}
         />
         <label class="field">
           <span class="field-label">Voice engine</span>
