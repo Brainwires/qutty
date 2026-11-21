@@ -1,0 +1,4 @@
+/* Pixel Blob's bubble: an edge in the blob's own blue. */
+.bubble {
+  border-color: #2a5f7a;
+}

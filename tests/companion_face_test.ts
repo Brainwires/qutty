@@ -441,6 +441,9 @@ const REACTION_DEFAULTS = {
   reactMinS: 20,
   reactAnyCommand: false,
   reactBubble: true,
+  quoteOfDay: true,
+  encourage: false,
+  encourageEvery: "sometimes" as const,
 };
 
 Deno.test("settings: the companion's name: trimmed, capped, Companion when empty or not a string", () => {
@@ -482,6 +485,7 @@ Deno.test("settings: the companion's fields sanitise; the store reduces them", (
     ollamaModel: "",
     lively: true,
     ...REACTION_DEFAULTS,
+    look: "loopy",
   });
   assertEquals(
     sanitizeCompanion({
@@ -504,6 +508,7 @@ Deno.test("settings: the companion's fields sanitise; the store reduces them", (
       ollamaModel: "qwen3.8:27b-mlx",
       lively: false,
       ...REACTION_DEFAULTS,
+      look: "loopy",
     },
   );
   // The brain the hub is configured with: Claude Code's alias, or the Ollama model.

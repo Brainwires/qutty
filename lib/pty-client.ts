@@ -31,6 +31,9 @@ import type ollamaExtension from "../desktop/ollama.ts";
 import type linksExtension from "../desktop/links.ts";
 import type { LinkEditRequest, LinkOpenRequest, LinkTarget } from "./links.ts";
 import { createDemoLinks } from "./links-demo.ts";
+import type skinsExtension from "../desktop/skins.ts";
+import type { SkinsClient } from "./skins/skin.ts";
+import { createDemoSkins } from "./skins/demo.ts";
 import { fromSystemStats, type SysSample } from "./sysstats.ts";
 import { demoLoadCommand, demoSample } from "./sysstats-demo.ts";
 import {
@@ -89,6 +92,9 @@ import type {
   CompanionWindowState,
 } from "./companion/floating.ts";
 import type { CompanionKeyService } from "./companion/keys.ts";
+import type { LooksBackend } from "./companion/looks.ts";
+import { createDemoLooks, type DemoLooks } from "./companion/looks-demo.ts";
+import type looksExtension from "../desktop/companion-looks.ts";
 import type { KeyPresence } from "./secrets/api-keys.ts";
 import type { Launchables } from "./launcher.ts";
 import { baseName } from "./ssh-ui.ts";
@@ -251,6 +257,11 @@ export interface PtyBackend {
   /** Run an editor command template on a file. */
   linkEdit(request: LinkEditRequest): Promise<void>;
 
+  // --- Skins (desktop/skins.ts) --------------------------------------------------------------
+
+  /** The user's skins folder: list it, read one skin, copy a template in, open it. */
+  skins: SkinsClient;
+
   // --- The system monitor (Denext's `system.stats`, the `systemStats` capability) ------------
 
   /**
@@ -398,6 +409,11 @@ export interface PtyBackend {
   companionWindowReady(): Promise<boolean>;
   /** The floating companion gives the keyboard back to the workspace window used last. */
   companionRefocus(): Promise<void>;
+  /**
+   * The companion's looks (Settings → Companion → Look): the user's look folders
+   * (desktop/companion-looks.ts; the demo's, in memory: lib/companion/looks-demo.ts).
+   */
+  readonly looks: LooksBackend;
 
   // --- Agent tiles (lib/agent/sessions.ts, in the hub) ----------------------------------------
 
@@ -609,6 +625,8 @@ export function createDesktopBackend(
   const sandbox = desktopExtension<typeof sandboxExtension>("sandbox");
   const ollama = desktopExtension<typeof ollamaExtension>("ollama");
   const links = desktopExtension<typeof linksExtension>("links");
+  const skins = desktopExtension<typeof skinsExtension>("skins");
+  const looks = desktopExtension<typeof looksExtension>("looks");
   const stats = deps.system ?? system;
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
@@ -781,6 +799,12 @@ export function createDesktopBackend(
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors({}),
     linkEdit: (request) => links.edit(request),
+    skins: {
+      list: () => skins.list({}),
+      get: (id) => skins.get({ id }),
+      template: (request) => skins.template(request),
+      openFolder: () => skins.openFolder({}),
+    },
     sysSample: async () => fromSystemStats(await stats.stats()),
     onData: (id, cb) => {
       listen();
@@ -926,6 +950,12 @@ export function createDesktopBackend(
     },
     async companionRefocus() {
       await hub.companionRefocus({});
+    },
+    looks: {
+      list: () => looks.list({}),
+      get: (id) => looks.get({ id }),
+      create: () => looks.create({}),
+      openFolder: () => looks.openFolder({}),
     },
     async agentStart(req) {
       return await hub.agentStart(req) as AgentSnapshot;
@@ -1730,6 +1760,12 @@ export function createDemoBackend(): PtyBackend {
   const sandbox = createDemoSandbox();
   const ollama = createDemoOllama();
   const links = createDemoLinks();
+  const skins = createDemoSkins();
+  const demoLooks: DemoLooks = createDemoLooks();
+  // The e2e suite adds the looks it read from disk through desktop/companion-looks.ts.
+  if (pageParam("test") === "1") {
+    (globalThis as { __e2eLooks?: DemoLooks }).__e2eLooks = demoLooks;
+  }
   // `?peers=<name>`: pages of the demo move tiles to each other (lib/demo-windows.ts).
   const peerName = pageParam("peers");
   const session = createDemoSession(
@@ -1884,6 +1920,7 @@ export function createDemoBackend(): PtyBackend {
     linkOpen: (request) => links.open(request),
     linkEditors: () => links.editors(),
     linkEdit: (request) => links.edit(request),
+    skins,
     sysSample: () => Promise.resolve(demoSample()),
     info(id) {
       return attempt(() => {
@@ -1941,6 +1978,7 @@ export function createDemoBackend(): PtyBackend {
     onCompanionWindow: () => () => {},
     companionWindowReady: () => Promise.resolve(false),
     companionRefocus: () => Promise.resolve(),
+    looks: demoLooks,
     agentStart: (req) =>
       attempt(() => {
         // A resumed session's history from its "transcript file", as the desktop reads Claude

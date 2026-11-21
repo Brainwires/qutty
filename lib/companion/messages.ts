@@ -48,6 +48,13 @@ export interface CompanionMessage {
   readonly kind?: "say" | "reply" | "ask";
   /** Qutty: who it is from (a tile's hub name), shown above the text. */
   readonly from?: string;
+  /** Qutty: who said it (the quote of the day's author), shown under the text. */
+  readonly cite?: string;
+  /**
+   * Qutty: voice mode reads only a short summary of it (an agent's mail turn, an error), not the
+   * whole text (lib/voice/bubble-speech.ts).
+   */
+  readonly brief?: boolean;
 }
 
 /** The longest message. */

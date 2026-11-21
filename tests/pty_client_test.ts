@@ -146,6 +146,8 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "sandbox",
     "ollama",
     "links",
+    "skins",
+    "looks",
     "session",
   ]);
   assertEquals(bridge.calls, []);
@@ -165,6 +167,41 @@ Deno.test("desktop: the links methods go to the links extension as they are", as
     { method: "open", args: { kind: "reveal", path: "/p" } },
     { method: "editors", args: {} },
     { method: "edit", args: { command: "zed {file}", file: "/p/a", line: 2 } },
+  ]);
+});
+
+Deno.test("desktop: the skins methods go to the skins extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.skins.list();
+  await backend.skins.get("neon");
+  const template = {
+    id: "my-classic",
+    name: "My Classic",
+    from: "classic",
+    manifest: "{}",
+    css: "a{}",
+  };
+  await backend.skins.template(template);
+  await backend.skins.openFolder();
+  assertEquals(bridge.calls, [
+    { method: "list", args: {} },
+    { method: "get", args: { id: "neon" } },
+    { method: "template", args: template },
+    { method: "openFolder", args: {} },
+  ]);
+});
+
+Deno.test("desktop: the companion looks go to the looks extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.looks.list();
+  await backend.looks.get("pixel-blob");
+  await backend.looks.create();
+  await backend.looks.openFolder();
+  assertEquals(bridge.calls, [
+    { method: "list", args: {} },
+    { method: "get", args: { id: "pixel-blob" } },
+    { method: "create", args: {} },
+    { method: "openFolder", args: {} },
   ]);
 });
 

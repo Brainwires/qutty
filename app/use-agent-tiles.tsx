@@ -17,7 +17,8 @@ import type {
   WorkspaceState,
 } from "../lib/workspace/store.ts";
 import { terminalFontOptions } from "../lib/workspace/fonts.ts";
-import { themeById } from "../lib/workspace/themes.ts";
+import type { ColorTheme } from "../lib/workspace/themes.ts";
+import { withSkinFont } from "../lib/skins/skin.ts";
 import { agentDefaultName, type AgentKind } from "../lib/agent/adapter.ts";
 import { type AgentStore, type AgentSummary, useAgents } from "./use-agents.ts";
 import { AgentLaunchDialog, type AgentTileHooks } from "./agent-tile.tsx";
@@ -59,6 +60,10 @@ export function useAgentTiles(o: {
   closeTile(id: string): void;
   /** The keyboard goes back to the focused tile (a dialog closed). */
   refocus(): void;
+  /** The colour theme shown (the user's, or the skin's: lib/skins/skin.ts). */
+  theme: ColorTheme;
+  /** The skin's terminal font, ahead of the chosen one. */
+  skinFont?: string;
   dictation?: AgentTileHooks["dictation"];
   speech?: AgentTileHooks["speech"];
   capture?: AgentTileHooks["capture"];
@@ -118,7 +123,7 @@ export function useAgentTiles(o: {
 
   const { fontFamily, fontFamilyCustom, fontSize, lineHeight, fontWeight } =
     state.settings;
-  const themeId = state.settings.theme;
+  const { theme, skinFont } = o;
   const { run, openTile, openUrl, closeTile } = o;
   const hooks = useMemo<AgentTileHooks | undefined>(() => {
     if (!store) return undefined;
@@ -129,11 +134,11 @@ export function useAgentTiles(o: {
       lineHeight,
       fontWeight,
     });
-    const term = themeById(themeId).terminal;
+    const term = theme.terminal;
     return {
       store,
       font: {
-        family: font.fontFamily,
+        family: withSkinFont(font.fontFamily, skinFont),
         size: font.fontSize,
         lineHeight: font.lineHeight,
       },
@@ -195,7 +200,8 @@ export function useAgentTiles(o: {
     fontSize,
     lineHeight,
     fontWeight,
-    themeId,
+    theme,
+    skinFont,
     openUrl,
     openTile,
     closeTile,

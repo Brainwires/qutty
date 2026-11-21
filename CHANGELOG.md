@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+## 0.7.2 — 2026-11-21
+
+- Skins. A theme sets the colours; a skin changes how the chrome is drawn:
+  fonts, borders and bevels, tile title bars and window buttons, button and
+  scrollbar shapes, menus, dialogs, the switcher bar. Settings → Appearance →
+  Skin has two built in. "Qutty" is the app's own look. "Classic" is a late-90s
+  desktop: grey bevelled frames, every tile a child window with a gradient title
+  bar and square Minimize, Maximize and Close buttons, a toolbar for the bar,
+  flat menus and wide scrollbars, drawn entirely in CSS with a light grey colour
+  set of its own ("Use the skin's colours" turns that off, so it takes your
+  theme).
+- Your own skins: a folder with a `skin.json` and a `skin.css` in the skins
+  folder (Settings has Open skins folder and Reload skins; on macOS it is
+  `~/Library/Application Support/org.qutty.Qutty/skins/`). "Start from Classic"
+  copies the Classic skin there as a template. A skin can bring colours, a
+  terminal font, fonts and images of its own. Skins never run code and never
+  reach the network: `@import`, remote `url()`s and anything else that could
+  load something are refused, and a skin's images and fonts are read from its
+  own folder only. A skin that fails a check shows the reason in Settings and
+  Qutty's own look is used. docs/skins.md has the format and the list of parts a
+  skin can style.
+- Tile frame options, under any skin: Settings → Appearance → Skin → "Frame
+  buttons" puts each tile's Minimize, Maximize and Close buttons on the left or
+  the right of its header, and "Title" aligns the title left, center or right.
+  Each can follow the skin's default. (The window's own buttons on macOS are the
+  system's and stay where they are.)
+- Companion looks: Settings → Companion → Look picks what the companion looks
+  like. Loopy is the built-in look; a look of your own is a folder of pictures
+  (SVG, PNG, WebP or GIF), one per mood, of which only `idle` is required: a
+  missing mood uses a related one, then `idle`. Optional mouth frames make it
+  talk, and an optional `look.css` restyles its bubble. Open looks folder,
+  Reload looks and Create a look… (a starter look with a README listing every
+  mood) are beside the picker, and the floating companion wears the same look.
+  Pictures reach the page as data: URLs; looks run no scripts. The procedure is
+  in docs/companion-looks.md.
+- A quote of the day. At startup the companion shows a short quote with its
+  author in its bubble, with an Another button. If Qutty stays open past
+  midnight, the next day's quote comes with your first click, key press or
+  window focus after midnight. It shows once a day in one place, the floating
+  companion when it floats, and every window gets the same quote for the same
+  date. The 217 quotes are public domain: Marcus Aurelius, Seneca, Thoreau,
+  Dickinson, Shakespeare, Franklin and other writers who died long ago, with
+  disputed attributions left out. On by default; Settings → Companion →
+  Messages.
+- Encouragement, off by default: now and then the companion says a short kind or
+  inspiring line (90 of them, none repeated until all have been said). You
+  choose how often: rarely, sometimes or often (about every 2–4 hours, 45–90
+  minutes or 20–40 minutes of use). It never shows over a question or another
+  message, while you type, while the companion sleeps, or while the companion is
+  off.
+- Voice mode: Settings → Voice (or Settings → Companion, or the new speaker
+  button beside the mic) reads everything in the companion's bubble aloud.
+  Answers are read sentence by sentence as they stream in. Messages, agents'
+  questions with their buttons, the quote of the day with its author, and
+  encouragement are read too. Agents' notes and errors get a short summary.
+  Code, markdown and links are left out ("code omitted"). It uses the system
+  voice unless you picked a cloud voice, with your voice, speed and volume. A
+  new bubble cuts off the old one, closing a bubble stops its speech, and
+  talking stops it. With several windows open only one speaks: the floating
+  companion, or else the window you used last. That also applies to "Read aloud"
+  answers, which before could be read once per window.
+
 ## 0.7.1 — Denext 4.20.1, a Dock menu, a floating companion
 
 - Denext 4.20.1 (runtime 3.0.0-denext.27): fixes and security updates, among

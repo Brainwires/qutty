@@ -137,7 +137,7 @@ Deno.test("speakable text: markdown, code and links are not read out", () => {
     speakableText(
       "## Status\n- **claude** runs `npm test`\n- see [the docs](https://x.y)\n```sh\nrm -rf\n```\nDone: https://example.com/a",
     ),
-    "Status claude runs npm test see the docs (code) Done: a link",
+    "Status claude runs npm test see the docs code omitted. Done: a link",
   );
   const long = "This sentence is short. ".repeat(40);
   const cut = speakableText(long);

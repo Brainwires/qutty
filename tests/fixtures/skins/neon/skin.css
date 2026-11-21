@@ -1,0 +1,22 @@
+/* Neon: a test skin (tests/skins_store_test.ts). One asset, by a relative path. */
+:root[data-skin="neon"] [data-part="tile"] {
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--accent);
+}
+:root[data-skin="neon"] [data-part="tile-head"] {
+  background-image: url("assets/dot.png");
+  text-transform: uppercase;
+}
+:root[data-skin="neon"] .menu {
+  border-color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-skin="neon"] [data-part="tile"].is-focused {
+    animation: neon-pulse 2s ease-in-out infinite;
+  }
+}
+@keyframes neon-pulse {
+  50% {
+    box-shadow: 0 0 20px var(--accent);
+  }
+}
