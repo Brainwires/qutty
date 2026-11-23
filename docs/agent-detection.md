@@ -118,6 +118,10 @@ The first matcher that fires decides the state. The state goes into the same
 status that the tile badges, the overlay and the companion use: working is
 **busy**, blocked is **waiting**, idle is **idle**.
 
+Every tile whose agent is **waiting** counts on the app icon's badge (the Dock
+on macOS): the number of terminals, in every window, with an agent waiting for
+you. Settings → Agents → Waiting agents turns it off.
+
 The screen is read only for a tile whose foreground process is a known agent, or
 whose hub harness is one (for example `ollama launch claude`, which is `ollama`
 to the OS). It is read on output, at most four times a second. When the agent

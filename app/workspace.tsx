@@ -124,6 +124,7 @@ import { useLinks } from "./use-links.ts";
 import { LinkMenu } from "./link-menu.tsx";
 import { useLauncher } from "./use-launcher.ts";
 import { useHub } from "./use-hub.ts";
+import { useDockBadge } from "./use-dock-badge.ts";
 import { isResumable } from "../lib/agent/resume.ts";
 import { useShellsLost } from "./shells-lost.tsx";
 import { AskDialog } from "./ask-dialog.tsx";
@@ -392,6 +393,7 @@ function WorkspaceView() {
     state.settings.tileTitle,
     hubIdOfAgent,
   );
+  useDockBadge(managerRef.current, state.settings.dockBadge);
 
   const closeTerminal = useCallback((id: string) => {
     // An agent tile's session ends with it.
@@ -1658,6 +1660,7 @@ function WorkspaceView() {
           onActivity={(patch) => run({ type: "setActivity", patch })}
           onTileTitle={(tileTitle) => run({ type: "setTileTitle", tileTitle })}
           onHarnessOverlay={(on) => run({ type: "setHarnessOverlay", on })}
+          onDockBadge={(on) => run({ type: "setDockBadge", on })}
           onFont={(patch) => run({ type: "setFont", patch })}
           onZoomTogether={(on) => run({ type: "setZoomTogether", on })}
           onTheme={(theme) => run({ type: "setTheme", theme })}

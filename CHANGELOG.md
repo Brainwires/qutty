@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The app icon shows how many terminals have an agent waiting for you, as iTerm2
+  does: a badge on the Dock icon on macOS. On Linux it is a count on the
+  launcher where the dock reads launcher badges, else a "(N) " in front of the
+  window titles. An agent counts while it waits on a permission prompt, a
+  question or anything else it needs you for (Claude Code's notifications,
+  Codex's approval prompts, an approval prompt read off the screen), not once it
+  has finished and sits at its prompt. Terminals in every window count, and the
+  badge goes when none is waiting. Settings → Agents → Waiting agents turns it
+  off.
 - Downloads in web tiles. A download still opens the save panel, and then a
   small bar in the tile shows its name and progress, with Pause and Resume where
   the system supports them, Cancel, and Show in Finder once it is done.

@@ -104,6 +104,8 @@ export interface SettingsPanelProps {
   onFocusToMain(on: boolean): void;
   /** Settings → Tiles → "Show a GUI around agent harnesses". */
   onHarnessOverlay(on: boolean): void;
+  /** Settings → Agents → "Badge the app icon with waiting agents". */
+  onDockBadge(on: boolean): void;
   /** Settings → Tiles. */
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
@@ -713,6 +715,26 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <>
         <SettingsGroup title="Agent integration" testid="integration-section">
           <AgentIntegration backend={props.backend} />
+        </SettingsGroup>
+        <SettingsGroup title="Waiting agents" testid="dock-badge-section">
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              data-testid="setting-dock-badge"
+              checked={settings.dockBadge}
+              onChange={(e) =>
+                props.onDockBadge((e.target as HTMLInputElement).checked)}
+            />
+            <span class="field-label">
+              Badge the app icon with waiting agents
+            </span>
+          </label>
+          <span class="field-hint">
+            The app's icon (the Dock on macOS) shows how many terminals have an
+            agent waiting for you: a permission prompt, a question, or a status
+            of waiting. An agent that finished its turn and sits at its prompt
+            is not counted. Every window's terminals count.
+          </span>
         </SettingsGroup>
         <SettingsGroup title="Presets" testid="presets-section">
           <AgentPresetsSection

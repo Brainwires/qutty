@@ -2,7 +2,7 @@
 // badge on a tile launched from the `+` picker (name, busy → idle, unread messages from `/msg`),
 // `ask_user` questions answered from the card while the companion is Off (the demo agent prints
 // the answer it got) and queued, and Settings → Agent integration showing what Install changes
-// and toggling it.
+// and toggling it; the app icon's badge of waiting agents (`window.__e2e.badges`).
 
 import { assert, assertEquals, assertMatch } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
@@ -36,6 +36,15 @@ function waitBadge(app: App, id: string, attr: string, value: string) {
     5000,
     `${id}'s badge ${attr}=${value}`,
   );
+}
+
+/** The last app icon badge count the page set (`window.__e2e.badges`; `null`: none yet). */
+function lastAppBadge(app: App) {
+  return app.eval(() => {
+    const badges = (globalThis as { __e2e?: { badges?: number[] } }).__e2e
+      ?.badges;
+    return badges && badges.length > 0 ? badges[badges.length - 1] : null;
+  });
 }
 
 /** The question on the card (`null`: no card). */
@@ -151,6 +160,50 @@ suite("agent hub", (test) => {
     await waitFor(() => app.exists(ASK), 3000, "the question");
     await app.typeInTerminal(codex, "/exit\n");
     await waitFor(async () => !(await app.exists(ASK)), 3000, "closed");
+  });
+
+  test("app badge: counts the agents waiting for the user; Settings → Agents turns it off", async (app) => {
+    await app.openSettings("companion");
+    await app.click('[data-testid=setting-companion-mode][data-value="off"]');
+    await app.closeSettings();
+    const badgeIs = (n: number) =>
+      waitFor(
+        async () => (await lastAppBadge(app)) === n,
+        3000,
+        `app badge ${n}`,
+      );
+    const claude = await launchAgent(app, "claude");
+    const codex = await launchAgent(app, "codex");
+    await badgeIs(0);
+    // Two agents wait (their badges say `waiting`): the app icon counts both.
+    await app.typeInTerminal(claude, "/ask First?\n");
+    await waitBadge(app, claude, "data-status", "waiting");
+    await badgeIs(1);
+    await app.typeInTerminal(codex, "/ask Second?\n");
+    await waitBadge(app, codex, "data-status", "waiting");
+    await badgeIs(2);
+    await app.click('[data-testid=ask-action][data-action="Yes"]');
+    await waitBadge(app, claude, "data-status", "idle");
+    await badgeIs(1);
+
+    // Off: no badge, though codex still waits; on again: back.
+    await app.openSettings("agents");
+    assertEquals(
+      await app.eval(
+        (s: string) => document.querySelector<HTMLInputElement>(s)?.checked,
+        "[data-testid=setting-dock-badge]",
+      ),
+      true,
+    );
+    await app.click("[data-testid=setting-dock-badge]");
+    await badgeIs(0);
+    await app.click("[data-testid=setting-dock-badge]");
+    await badgeIs(1);
+    await app.closeSettings();
+
+    await app.click('[data-testid=ask-action][data-action="No"]');
+    await waitBadge(app, codex, "data-status", "idle");
+    await badgeIs(0);
   });
 
   test("integration: under Settings → Agents; shows what Install changes; Install / Uninstall toggle", async (app) => {
