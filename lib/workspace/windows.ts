@@ -32,12 +32,19 @@ const NEW_WINDOW_SIZE = { width: 1400, height: 900 };
 /**
  * The window that shows workspace `key`. A new workspace (`fresh`) gets a size; a known one gets
  * none, so denext restores the frame it last had (an explicit size would win over the saved one).
+ * `query` (`?worktree=…`) tells a new window's page what to open first (lib/scm/worktrees.ts).
  */
 export function workspaceWindow(
   key: string,
   fresh = false,
+  query = "",
 ): WorkspaceWindowOptions {
-  return { url: "/", key, title: "Qutty", ...(fresh ? NEW_WINDOW_SIZE : {}) };
+  return {
+    url: `/${query}`,
+    key,
+    title: "Qutty",
+    ...(fresh ? NEW_WINDOW_SIZE : {}),
+  };
 }
 
 /**

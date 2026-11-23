@@ -233,6 +233,10 @@ const DARWIN_SYMBOLS = {
     parameters: ["i32", "i32", "u64", "buffer", "i32"],
     result: "i32",
   },
+  sysctl: {
+    parameters: ["buffer", "u32", "buffer", "buffer", "pointer", "usize"],
+    result: "i32",
+  },
 } as const;
 
 const LIBC_PATH = IS_DARWIN ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
@@ -499,6 +503,8 @@ export interface PtyTaps {
   } | undefined;
   /** Output, as the page gets it (decoded, coalesced). */
   data?(id: string, data: string): void;
+  /** The terminal's foreground process group changed (a program started or quit). */
+  foreground?(id: string): void;
   resized?(id: string, cols: number, rows: number): void;
   /** The terminal ended (or its spawn failed after `spawning`). */
   ended?(id: string): void;
@@ -900,6 +906,21 @@ export class PtyHost {
     return { id, pid: t.pid, process, ...(cwd ? { cwd } : {}) };
   }
 
+  /**
+   * Terminal `id`'s foreground process: its name and first arguments (the hub's agent detection,
+   * desktop/hub.ts), or `undefined` (none yet, ended, or the OS will not say).
+   */
+  async foreground(
+    id: string,
+  ): Promise<{ name: string; argv?: string[] } | undefined> {
+    const t = this.#terms.get(id);
+    if (!t || t.finalized) return undefined;
+    const fg = await foregroundOf(t.pid);
+    if (!fg) return undefined;
+    const argv = await processArgv(fg.pid);
+    return { name: fg.process, ...(argv ? { argv } : {}) };
+  }
+
   /** Whether terminal `id` is still running (not ended, not unknown). */
   isRunning(id: string): boolean {
     const t = this.#terms.get(id);
@@ -1012,6 +1033,8 @@ export class PtyHost {
       if (now !== undefined && now !== t.fg) {
         if (t.fg !== undefined) fg = now;
         t.fg = now;
+        // The hub's screen detection looks the new foreground process up (desktop/hub.ts).
+        if (taps?.foreground) tap("foreground", () => taps.foreground!(t.id));
       }
     }
     this.#safeEmit("data", {
@@ -1081,6 +1104,63 @@ async function foregroundOf(
   } catch {
     return undefined;
   }
+}
+
+/** How many of a process's arguments {@linkcode processArgv} keeps (enough to see a script). */
+const ARGV_KEPT = 3;
+/** `sysctl` names: `CTL_KERN`, `KERN_ARGMAX`, `KERN_PROCARGS2` (`<sys/sysctl.h>`). */
+const CTL_KERN = 1;
+const KERN_ARGMAX = 8;
+const KERN_PROCARGS2 = 49;
+let argMax: number | undefined;
+
+/**
+ * The first arguments of process `pid` (`["node", "/opt/homebrew/bin/gemini"]`: a CLI that runs
+ * as a script is its interpreter to the OS), best-effort: `/proc/<pid>/cmdline` on Linux,
+ * `sysctl(KERN_PROCARGS2)` on macOS.
+ */
+async function processArgv(pid: number): Promise<string[] | undefined> {
+  try {
+    if (IS_DARWIN) return darwinArgv(pid);
+    const args = (await Deno.readTextFile(`/proc/${pid}/cmdline`)).split("\0");
+    if (args.at(-1) === "") args.pop();
+    return args.length > 0 ? args.slice(0, ARGV_KEPT) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `KERN_PROCARGS2`: `argc` (i32), the executable's path, NUL padding, then the arguments. */
+function darwinArgv(pid: number): string[] | undefined {
+  const c = darwinLibc();
+  if (argMax === undefined) {
+    const out = new Int32Array(1);
+    const len = new BigUint64Array([4n]);
+    const mib = new Int32Array([CTL_KERN, KERN_ARGMAX]);
+    if (c.sysctl(mib, 2, out, len, null, 0n) !== 0 || out[0] <= 0) {
+      return undefined;
+    }
+    argMax = out[0];
+  }
+  const buf = new Uint8Array(argMax);
+  const len = new BigUint64Array([BigInt(argMax)]);
+  const mib = new Int32Array([CTL_KERN, KERN_PROCARGS2, pid]);
+  if (c.sysctl(mib, 3, buf, len, null, 0n) !== 0) return undefined;
+  const n = Math.min(Number(len[0]), buf.length);
+  if (n < 4) return undefined;
+  const argc = new DataView(buf.buffer).getInt32(0, true);
+  let i = 4;
+  while (i < n && buf[i] !== 0) i++;
+  while (i < n && buf[i] === 0) i++;
+  const decoder = new TextDecoder();
+  const args: string[] = [];
+  while (args.length < Math.min(argc, ARGV_KEPT) && i < n) {
+    const end = buf.indexOf(0, i);
+    const stop = end < 0 || end > n ? n : end;
+    args.push(decoder.decode(buf.subarray(i, stop)));
+    i = stop + 1;
+  }
+  return args;
 }
 
 /**
@@ -1283,6 +1363,9 @@ export default defineDesktopExtension({
         appSupportDir: h.appSupportDir,
         confirm: (o) => h.confirm(o),
       }));
+      // A clean exit removes the live session record; a crash or power loss leaves it for the
+      // next launch to restore from.
+      globalThis.addEventListener("unload", () => keeper.cleanExit());
       if (Deno.env.get("QUTTY_PTY_SELFTEST") === "persist") {
         runSelfTest("persist", () => persistSelfTest(sessions, keeper));
       }

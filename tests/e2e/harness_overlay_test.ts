@@ -1,10 +1,12 @@
 // The harness overlay (app/harness-overlay.tsx) against the demo backend: a demo Claude Code from
 // the `+` picker (a demo agent turns bracketed paste on and says when a line came in a paste,
 // lib/pty-client.ts) gets the header card, the prompt box and the side rail around its terminal;
-// a plain shell does not. Sending types into the terminal; Interrupt sends Esc; the terminal
-// refits as the prompt box grows; the tile's menus and Settings → Tiles turn it off and on, and
-// the xterm is never remounted by it. A screenshot of each theme goes to tests/e2e/__screenshots__
-// (and `HARNESS_SHOT_DIR` when set).
+// a plain shell does not. Sending types into the terminal; Interrupt (shown only while the
+// harness is busy) sends Esc; the terminal refits as the prompt box grows; the tile's menus and
+// Settings → Tiles turn it off and on, and the xterm is never remounted by it; the companion keeps
+// off the prompt box and the rail. Screenshots (each theme, focused with text, busy, an agent
+// tile's prompt box, the companion beside the prompt box) go to tests/e2e/__screenshots__ (and
+// `HARNESS_SHOT_DIR` when set).
 
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
@@ -12,6 +14,7 @@ import { type App, ROOT, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
 import { rightClick } from "./link_helpers.ts";
+import { press } from "./pointer_helpers.ts";
 
 const SHOT_DIRS = [
   join(ROOT, "tests/e2e/__screenshots__"),
@@ -90,6 +93,47 @@ async function headMenu(app: App, id: string, item: string): Promise<void> {
   );
 }
 
+type Box = { left: number; top: number; right: number; bottom: number };
+
+/** The client box of the first element matching `selector` (null: none, or not drawn). */
+function boxOf(app: App, selector: string): Promise<Box | null> {
+  return app.eval((s: string) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  }, selector);
+}
+
+const intersects = (a: Box, b: Box) =>
+  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+const COMPANION = "[data-testid=companion-overlay]";
+/** The companion itself: its face and the buttons beside it. */
+const COMPANION_STAGE = `${COMPANION} .stage`;
+
+/** Wait until the companion's box (eased into place) is clear of every box in `others`. */
+function companionClear(app: App, others: string[], what: string) {
+  return waitFor(
+    async () => {
+      const c = await boxOf(app, COMPANION_STAGE);
+      if (!c) return false;
+      for (const o of others) {
+        const b = await boxOf(app, o);
+        if (!b || intersects(c, b)) return false;
+      }
+      // Settled: the same box a moment later (the move eases).
+      await new Promise((r) => setTimeout(r, 300));
+      const again = await boxOf(app, COMPANION_STAGE);
+      return again !== null && Math.abs(again.top - c.top) < 0.5 &&
+        Math.abs(again.left - c.left) < 0.5;
+    },
+    5000,
+    what,
+  );
+}
+
 async function shot(app: App, name: string): Promise<void> {
   for (const dir of SHOT_DIRS) {
     await Deno.mkdir(dir, { recursive: true });
@@ -127,6 +171,16 @@ suite("harness overlay", (test) => {
       3000,
       "idle",
     );
+    // The prompt box: a short placeholder by the harness's name; no Interrupt while idle.
+    assertEquals(
+      await app.attr(inTile(claude, "harness-input"), "placeholder"),
+      "Ask Claude…",
+    );
+    assertEquals(
+      await app.attr(inTile(claude, "harness-prompt"), "data-part"),
+      "composer",
+    );
+    assert(!(await app.exists(inTile(claude, "harness-interrupt"))));
     // The terminal is the harness's own and still has the keyboard.
     assert(await app.xtermHasFocus(claude), "the terminal keeps focus");
     await app.typeInTerminal(claude, "typed in the terminal\n");
@@ -198,6 +252,20 @@ suite("harness overlay", (test) => {
     await app.page.keyboard.type("again");
     await app.click(inTile(claude, "harness-send"));
     await app.waitForText(claude, "claude heard (pasted): again");
+    // Busy now: Interrupt shows, and sends Esc to the harness.
+    await waitFor(
+      () => app.exists(inTile(claude, "harness-interrupt")),
+      3000,
+      "Interrupt while busy",
+    );
+    await app.click(inTile(claude, "harness-interrupt"));
+    await app.waitForText(claude, "(demo) interrupted");
+    // Idle again: no Interrupt.
+    await waitFor(
+      async () => !(await app.exists(inTile(claude, "harness-interrupt"))),
+      3000,
+      "Interrupt gone once idle",
+    );
     // ↑ brings the last prompt back.
     await clickPrompt(app, claude);
     await app.press("ArrowUp");
@@ -208,9 +276,6 @@ suite("harness overlay", (test) => {
       ),
       "again",
     );
-    // Interrupt: Esc to the harness.
-    await app.click(inTile(claude, "harness-interrupt"));
-    await app.waitForText(claude, "(demo) interrupted");
     // A click in the terminal gives it the keyboard back.
     await app.click(inTile(claude, "tile-body"));
     await waitFor(() => app.xtermHasFocus(claude), 2000, "terminal focus");
@@ -312,6 +377,10 @@ suite("harness overlay", (test) => {
     await app.openSettings("appearance");
     await app.click('[data-testid=setting-theme][data-value="cloud"]');
     await app.closeSettings();
+    assertEquals(
+      await app.attr(inTile(claude, "harness-input"), "placeholder"),
+      "Message Codex…",
+    );
     await clickPrompt(app, claude);
     await app.page.keyboard.type("explain the failing test");
     assertEquals(
@@ -322,5 +391,168 @@ suite("harness overlay", (test) => {
       "Codex",
     );
     await shot(app, "harness-overlay-light.png");
+  });
+
+  test("screenshots: focused with text, and busy with Interrupt", async (app) => {
+    const claude = await launchAgent(app, "claude");
+    await waitOverlay(app, claude, true);
+    await clickPrompt(app, claude);
+    await app.page.keyboard.type("Refactor the parser so tokens carry spans,");
+    await app.page.keyboard.down("Shift");
+    await app.press("Enter");
+    await app.page.keyboard.up("Shift");
+    await app.page.keyboard.type("then update the tests that compare them.");
+    await app.page.mouse.move(1000, 400);
+    await shot(app, "harness-overlay-focused.png");
+    await app.press("Enter");
+    await waitFor(
+      () => app.exists(inTile(claude, "harness-interrupt")),
+      3000,
+      "Interrupt while busy",
+    );
+    await app.page.mouse.move(1000, 400);
+    await shot(app, "harness-overlay-busy.png");
+  });
+
+  test("the companion keeps off the prompt box and the rail, at rest and when dropped on them", async (app) => {
+    const claude = await launchAgent(app, "claude");
+    await waitOverlay(app, claude, true);
+    await waitFor(() => app.exists(COMPANION_STAGE), 3000, "the companion");
+    const composer = inTile(claude, "harness-prompt");
+    const rail = inTile(claude, "harness-rail");
+    // Maximized, the tile fills the area: the companion's bottom-right corner is over the prompt
+    // box and the rail, so it rests above the one and beside the other.
+    await app.click(inTile(claude, "harness-maximize"));
+    await waitFor(
+      async () =>
+        (await app.attr(tileSel(claude), "data-maximized")) === "true",
+      3000,
+      "maximized",
+    );
+    await companionClear(
+      app,
+      [composer, rail],
+      "the companion off the prompt box and the rail",
+    );
+    // It still sits in the bottom-right, just above the prompt box.
+    const c = (await boxOf(app, COMPANION_STAGE))!;
+    const p = (await boxOf(app, composer))!;
+    assert(c.bottom <= p.top, `above the prompt box: ${c.bottom} ${p.top}`);
+    assert(p.top - c.bottom < 40, `right above it: ${p.top - c.bottom}`);
+    // The prompt box grows: the companion moves up with it.
+    await clickPrompt(app, claude);
+    for (let i = 0; i < 5; i++) {
+      await app.page.keyboard.type(`line ${i + 1}`);
+      await app.page.keyboard.down("Shift");
+      await app.press("Enter");
+      await app.page.keyboard.up("Shift");
+    }
+    await companionClear(app, [composer, rail], "clear of the taller box");
+    await app.page.mouse.move(400, 300);
+    await shot(app, "harness-overlay-companion.png");
+    // Dragged and dropped onto the prompt box on the left: it snaps to the bottom-left corner and
+    // settles above the box.
+    const face =
+      (await boxOf(app, `${COMPANION} [data-testid=companion-poke]`))!;
+    const from = {
+      x: (face.left + face.right) / 2,
+      y: (face.top + face.bottom) / 2,
+    };
+    const hand = press(app, from.x, from.y);
+    await hand.down();
+    await hand.moveTo(p.left + 60, (p.top + p.bottom) / 2, 10);
+    await hand.up();
+    await waitFor(
+      async () => (await app.attr(COMPANION, "data-corner")) === "bottom-left",
+      3000,
+      "dropped in the bottom-left corner",
+    );
+    await companionClear(
+      app,
+      [composer, rail],
+      "settled beside the prompt box",
+    );
+  });
+
+  test("an agent tile's prompt box: the same composer", async (app) => {
+    await app.click("[data-testid=bar-new-menu]");
+    await app.click("[data-testid=launch-agent-chat]");
+    await waitFor(
+      () => app.exists("[data-testid=agent-launch-cwd]"),
+      3000,
+      "the folder question",
+    );
+    await app.click("[data-testid=agent-launch-open]");
+    const input =
+      "[data-testid=tile][data-agent-tile=true] [data-testid=agent-input]";
+    await waitFor(
+      () =>
+        app.eval((s: string) => {
+          const el = document.querySelector<HTMLTextAreaElement>(s);
+          return !!el && !el.disabled;
+        }, input),
+      5000,
+      "the agent's prompt box",
+    );
+    assertEquals(await app.attr(input, "placeholder"), "Ask Claude…");
+    assertEquals(
+      await app.attr(
+        "[data-testid=tile][data-agent-tile=true] [data-testid=agent-prompt]",
+        "data-part",
+      ),
+      "composer",
+    );
+    await app.click(input);
+    await app.page.keyboard.type("Summarize what changed in notes.md");
+    await app.page.mouse.move(1000, 400);
+    await shot(app, "agent-composer.png");
+  });
+
+  test("the prompt box is in the UI font, scales with the tile's zoom, and squares up under Classic", async (app) => {
+    const claude = await launchAgent(app, "claude");
+    await waitOverlay(app, claude, true);
+    const input = inTile(claude, "harness-input");
+    const look = () =>
+      app.eval((s: string) => {
+        const el = document.querySelector<HTMLElement>(s)!;
+        const box = el.closest<HTMLElement>("[data-part=composer]")!;
+        return {
+          family: getComputedStyle(el).fontFamily,
+          mono: getComputedStyle(document.documentElement).getPropertyValue(
+            "--mono",
+          ),
+          // The card's drawn height (a Chromium before 128, without `currentCSSZoom`, measures a
+          // zoomed element in its own zoomed px).
+          height: box.getBoundingClientRect().height *
+            ("currentCSSZoom" in box
+              ? 1
+              : parseFloat(getComputedStyle(box).zoom) || 1),
+          radius: getComputedStyle(box).borderTopLeftRadius,
+        };
+      }, input);
+    const base = await look();
+    assert(!base.family.includes("Mono"), base.family);
+    assertEquals(base.radius, "16px");
+    // Mod+= twice: 125%, and the prompt box grows with the tile.
+    await app.focusTerminalInput(claude);
+    await app.shortcut("Equal");
+    await app.shortcut("Equal", { shift: true });
+    await waitFor(
+      async () => (await look()).height > base.height * 1.15,
+      3000,
+      "the prompt box zoomed with the tile",
+    );
+    await app.shortcut("Digit0");
+    // Classic: a square, raised prompt box.
+    await app.openSettings("appearance");
+    await app.click('[data-testid=setting-skin][data-value="classic"]');
+    await app.closeSettings();
+    await waitFor(
+      async () => (await look()).radius === "0px",
+      3000,
+      "squared under Classic",
+    );
+    await app.page.mouse.move(1000, 400);
+    await shot(app, "harness-overlay-classic.png");
   });
 });

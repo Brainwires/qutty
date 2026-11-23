@@ -1,0 +1,25 @@
+{
+  "//": "Kimi Code CLI (MoonshotAI/kimi-code; the older Python kimi-cli is archived). Approval strings from tui/components/dialogs/approval-panel.ts (Run this command?, Write this file?, Apply these edits?, ↵ confirm); working from components/messages/thinking.ts and the moon spinner. Its idle prompt is unverified.",
+  "id": "kimi",
+  "label": "Kimi Code CLI",
+  "confidence": "high",
+  "process": {
+    "names": ["kimi"],
+    "argv": ["(^|/)kimi(\\.js|\\.mjs)?$", "/kimi-code/dist/main\\.mjs$"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    {
+      "id": "approval-panel",
+      "regex": "^\\s*(Run this command|Write this file|Apply these edits)\\?"
+    },
+    { "id": "approval-footer", "all": ["↵ confirm", " choose"] },
+    { "id": "legacy-approval", "all": ["approve once", "reject"] }
+  ],
+  "working": [
+    { "id": "moon-spinner", "regex": "[🌕🌖🌗🌘🌑🌒🌓🌔]", "flags": "u" },
+    { "id": "thinking", "regex": "^\\s*\\S?\\s*(Thinking|Working)…" }
+  ],
+  "idle": []
+}

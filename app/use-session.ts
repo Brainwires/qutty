@@ -99,7 +99,9 @@ export function useSession(opts: {
       // agent tile gets its saved transcript back (app/use-agents.ts opens its session).
       for (const t of plan.tiles) {
         if ("chat" in t) o.chat?.restored(t.id, t.rows);
-        else if (!("web" in t)) m.adopt(t.id, t.profile, t.pty, t.home);
+        else if (!("web" in t) && !("scm" in t)) {
+          m.adopt(t.id, t.profile, t.pty, t.home);
+        }
       }
       o.seqRef.current = Math.max(o.seqRef.current, plan.seq);
       o.dispatch({
@@ -111,6 +113,7 @@ export function useSession(opts: {
         previousPattern: plan.previousPattern,
         view: plan.view,
         freeform: plan.freeform,
+        ...(plan.worktree ? { worktree: plan.worktree } : {}),
       });
       const focused = shownFocus(plan.terminals, plan.mru);
       if (focused) o.focus(focused);

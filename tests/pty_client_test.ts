@@ -149,6 +149,7 @@ Deno.test("desktop: kind, extension name, and no bridge traffic at creation", ()
     "skins",
     "looks",
     "session",
+    "scm",
   ]);
   assertEquals(bridge.calls, []);
   assertEquals(bridge.subscribeCount, 0, "subscribes lazily");
@@ -188,6 +189,22 @@ Deno.test("desktop: the skins methods go to the skins extension", async () => {
     { method: "get", args: { id: "neon" } },
     { method: "template", args: template },
     { method: "openFolder", args: {} },
+  ]);
+});
+
+Deno.test("desktop: the Source Control methods go to the scm extension", async () => {
+  const { bridge, backend } = setup();
+  await backend.scm.status("/r");
+  await backend.scm.diff({ root: "/r", path: "a", kind: "changes" });
+  await backend.scm.log("/r", 50);
+  await backend.scm.cancel("op-1");
+  await backend.scm.worktreeRemove({ root: "/r", path: "/w" });
+  assertEquals(bridge.calls, [
+    { method: "status", args: { root: "/r" } },
+    { method: "diff", args: { root: "/r", path: "a", kind: "changes" } },
+    { method: "log", args: { root: "/r", limit: 50 } },
+    { method: "cancel", args: { opId: "op-1" } },
+    { method: "worktreeRemove", args: { root: "/r", path: "/w" } },
   ]);
 });
 

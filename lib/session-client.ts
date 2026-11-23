@@ -22,6 +22,7 @@ import type {
 } from "../desktop/session.ts";
 import type { DragOver, MoveRequest } from "../desktop/tile-move.ts";
 import type { JoinedPty } from "./workspace/session.ts";
+import type { LostShells as ShellsLost } from "./ptyd/live.ts";
 import { foldReplay, type ReplayExit } from "./workspace/replay.ts";
 import {
   isFreshMenuEvent,
@@ -97,8 +98,11 @@ export interface SessionBackend {
   list(): Promise<WorkspaceInfo[]>;
   /** Show detached workspace `id` in a window of its own. */
   reopen(id: string): Promise<void>;
-  /** A new, empty workspace in a new window (as Cmd+N). */
-  newWindow(): Promise<void>;
+  /**
+   * A new, empty workspace in a new window (as Cmd+N). `query` (`?worktree=…`) opens it as a
+   * worktree's workspace (lib/scm/worktrees.ts).
+   */
+  newWindow(query?: string): Promise<void>;
   /** End workspace `id` for real: its terminals are killed (and its sandbox stopped). */
   end(id: string): Promise<void>;
   /**
@@ -128,6 +132,23 @@ export interface SessionBackend {
   keepShells(): Promise<boolean>;
   /** Change it; resolves to the setting now. */
   setKeepShells(on: boolean): Promise<boolean>;
+  /**
+   * Settings → Tiles → "Resume agents after restart": whether a launch whose kept shells did not
+   * survive (a reboot) resumes the coding agents that ran in them (desktop/kept-shells.ts).
+   */
+  resumeAgents(): Promise<boolean>;
+  /** Change it; resolves to the setting now. */
+  setResumeAgents(on: boolean): Promise<boolean>;
+  /**
+   * The PTY daemon died while the app ran and took this window's shells (`ptys`, the ended
+   * terminals' ids) with it; `agents` of them can have their agent resumed.
+   */
+  onShellsLost(cb: (lost: ShellsLost) => void): () => void;
+  /**
+   * A fresh shell (`newId`) started in the tile whose terminal the daemon took (`oldId`): resume
+   * its agent. Whether one is resumed.
+   */
+  resumeLost(oldId: string, newId: string): Promise<boolean>;
   onChanged(cb: (workspaces: WorkspaceInfo[]) => void): () => void;
   /** The Dock menu's commands for this window (absent: no Dock menu, the demo). */
   readonly dockCommands?: DockCommands;
@@ -231,8 +252,10 @@ export function createDesktopSession(deps: {
     async reopen(id) {
       await deps.window.openWindow(workspaceWindow(id));
     },
-    async newWindow() {
-      await deps.window.openWindow(workspaceWindow(newWorkspaceId(), true));
+    async newWindow(query) {
+      await deps.window.openWindow(
+        workspaceWindow(newWorkspaceId(), true, query ?? ""),
+      );
     },
     async end(id) {
       await ext.end({ id });
@@ -251,6 +274,11 @@ export function createDesktopSession(deps: {
     focus: () => ext.focus({}),
     keepShells: () => ext.keepShells({}),
     setKeepShells: (on) => ext.setKeepShells({ on }),
+    resumeAgents: () => ext.resumeAgents({}),
+    setResumeAgents: (on) => ext.setResumeAgents({ on }),
+    onShellsLost: (cb) =>
+      deps.onDesktopEvent<ShellsLost>("session", "shellsLost", cb),
+    resumeLost: (oldId, newId) => ext.resumeLost({ oldId, newId }),
     onChanged: (cb) =>
       deps.onDesktopEvent<{ workspaces: WorkspaceInfo[] }>(
         "session",
@@ -319,6 +347,7 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
   const records = new Map<string, DemoRecord>();
   let snapshot: unknown = null;
   let keepShells = true;
+  let resumeAgents = true;
   const none = () => () => {};
   return {
     multiWindow: false,
@@ -347,6 +376,14 @@ export function createDemoSession(moves?: DemoTileMoves): SessionBackend & {
     setKeepShells(on) {
       keepShells = on;
       return Promise.resolve(keepShells);
+    },
+    // The demo has no daemon to lose.
+    onShellsLost: none,
+    resumeLost: () => Promise.resolve(false),
+    resumeAgents: () => Promise.resolve(resumeAgents),
+    setResumeAgents(on) {
+      resumeAgents = on;
+      return Promise.resolve(resumeAgents);
     },
     onChanged: none,
     recordSpawn(id, cols, rows) {

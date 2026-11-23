@@ -67,6 +67,7 @@ export interface SwitcherBarProps {
     | "agentPresets"
     | "onBookmarks"
     | "onHistory"
+    | "onSourceControl"
   >;
   /** The picker opened (the workspace refreshes its entries). */
   onLaunchOpen(): void;
@@ -499,6 +500,14 @@ export function SwitcherBar(props: SwitcherBarProps) {
               },
             }
             : {})}
+          {...(props.launch.onSourceControl
+            ? {
+              onSourceControl: (show?: "worktrees") => {
+                setMenu("none");
+                props.launch.onSourceControl?.(show);
+              },
+            }
+            : {})}
           {...(props.launch.ollama
             ? {
               ollama: {
@@ -758,6 +767,21 @@ export function SwitcherBar(props: SwitcherBarProps) {
                 tiles={menuTiles}
                 onPick={pickItem}
               />
+              {props.launch.onSourceControl && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="menu-item"
+                  data-testid="view-source-control"
+                  onClick={() => {
+                    setMenu("none");
+                    props.launch.onSourceControl?.();
+                  }}
+                >
+                  <span class="menu-check" aria-hidden="true" />
+                  <span class="menu-label">Source Control</span>
+                </button>
+              )}
               {!freeform && <div class="menu-sep" role="separator" />}
               {!freeform && PATTERNS.map((p) => (
                 <button

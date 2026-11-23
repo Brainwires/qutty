@@ -614,6 +614,37 @@
     extension, the folder button and `data:` fonts under the desktop CSP
     (`font-src 'self' data:` allows them on paper).
 
+- [x] **Source Control tile** (VS Code's view, a subset) and **worktrees as
+      workspaces**: docs/source-control.md.
+  - Open: "Open as Workspace" needs several windows (the desktop app); the demo
+    opens a terminal tile instead. The native window list (Window menu) still
+    titles a worktree workspace "Workspace N"; only the switcher bar and the
+    Workspaces menu show its "⑂ branch". On Linux the desktop app's Ctrl+Enter
+    accelerator (Maximize Tile) may win over the commit box's Ctrl+Enter. No
+    line-level staging (hunks only), no inline blame, no merge editor. Not tried
+    in the packaged app yet (the `scm` extension, `Deno.watchFs` under the
+    desktop runtime, a new window opened with `?worktree=`).
+
+## From the Herdr comparison (later)
+
+Ideas from [Herdr](https://herdr.dev), a Rust agent multiplexer. Its agent
+resume and screen-based state detection are done (CHANGELOG, Unreleased;
+docs/agent-detection.md).
+
+- [ ] **Remote machines** (next up after the current batch). Qutty on SSH hosts:
+      a remote helper on each host, its tiles and agents in the same workspace,
+      and a combined agent view across machines, like VS Code Remote-SSH.
+- [ ] **Agent scripting.**
+  - `prompt --wait`: send a prompt and wait for the turn, atomically.
+  - `wait_for_output`: wait for a pattern on a tile's screen.
+  - An event stream: status changes, output, tiles opening and closing.
+  - Layout export and apply, as data.
+  - Expose them as hub tools plus a small `qutty` CLI.
+- [ ] **Notifications.** Per-agent sounds for "done" and "needs you", and a
+      delivery choice: in-app toast, system notification, or off.
+- [ ] **Plugins.** A manifest-based plugin system: startup hooks, actions,
+      panes, link handlers.
+
 ## Pending
 
 - [x] Name: **Qutty** (reads "cutie", Q for quantum, hidden tty; Kazakh құтты =
@@ -653,6 +684,9 @@
 - [x] v0.7.2: skins (Classic, user skins, tile frame button and title options),
       companion looks (user look folders), quote of the day, encouragement,
       voice mode.
+- [x] v0.7.3: Source Control tile, worktrees as workspaces, agents resume after
+      restart or crash, screen-based agent state, the redesigned composer, chat
+      tile and harness overlay.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

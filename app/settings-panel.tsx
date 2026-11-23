@@ -78,6 +78,8 @@ import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
 import { Modal } from "./modal.tsx";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
+import { ScmSettingsSection } from "./scm-settings.tsx";
+import type { ScmSettings } from "../lib/scm/worktrees.ts";
 import { WindowSettingsSection } from "./window-settings.tsx";
 import { TileSettingsSection } from "./tile-settings.tsx";
 import { SettingsGroup, SettingsNav } from "./settings-ui.tsx";
@@ -138,6 +140,8 @@ export interface SettingsPanelProps {
   onAgentPresets(presets: AgentPreset[]): void;
   /** Settings → System monitor. */
   onMonitor(patch: Partial<MonitorSettings>): void;
+  /** Settings → Source Control. */
+  onScm(patch: Partial<ScmSettings>): void;
   /**
    * Settings → General → Windows: what the close button does. Left out where the window's close
    * is not held (the demo, an older runtime).
@@ -162,6 +166,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   companion: "Companion",
   voice: "Voice",
   monitor: "System monitor",
+  scm: "Source Control",
 };
 
 const SHORTCUTS: [string, string][] = [
@@ -748,6 +753,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         />
       </SettingsGroup>
     ),
+    scm: <ScmSettingsSection settings={settings.scm} onChange={props.onScm} />,
   };
 
   return (

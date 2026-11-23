@@ -188,7 +188,7 @@ export function buildToolRegistry(core: HubCore): McpToolRegistry {
   );
   add(
     "list_peers",
-    "Every tile in this Qutty window (id, name, harness, title, cwd, busy/idle/waiting, unread " +
+    "Every tile in this Qutty window (id, name, harness, title, cwd, git worktree and branch, busy/idle/waiting, unread " +
       'messages), plus the companion. Address them by name or id; "companion" is the window\'s assistant. ' +
       'A web tile (kind: "web", id web-1) shows a page: its url, and its title as the label.',
     obj({}),

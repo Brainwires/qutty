@@ -1,0 +1,11 @@
+ ╭─ Run command ──────────────────────────────────╮
+ │ gh issue list --label bug                      │
+ │                                                │
+ │ Do you want to run this command?               │
+ │ ❯ 1. Yes                                       │
+ │   2. Yes, and approve gh for the rest of the   │
+ │      running session                           │
+ │   3. No, and tell Copilot what to do           │
+ │      differently (Esc)                         │
+ ╰────────────────────────────────────────────────╯
+   ↑↓ to navigate · enter to select · esc to cancel

@@ -1,0 +1,37 @@
+{
+  "//": "Claude Code (closed source). Strings from its live UI as documented by Herdr's manifest (2026-10) and Claude Code's own docs.",
+  "id": "claude",
+  "label": "Claude Code",
+  "confidence": "high",
+  "process": {
+    "names": ["claude"],
+    "argv": ["(^|/)claude(\\.js|\\.mjs)?$", "/@anthropic-ai/claude-code/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    {
+      "id": "proceed",
+      "regex": "Do you want to (proceed|make this edit|create|allow)"
+    },
+    { "id": "waiting-for-permission", "text": "Waiting for permission" },
+    { "id": "form-confirm", "all": ["enter to confirm", "esc to cancel"] },
+    {
+      "id": "form-select",
+      "all": ["enter to select", "to navigate", "esc to cancel"]
+    },
+    { "id": "mcp-input", "regex": "MCP server \".+\" requests your input" }
+  ],
+  "working": [
+    { "id": "esc-to-interrupt", "text": "esc to interrupt" },
+    { "id": "spinner", "regex": "^\\s*[*·✢✳✶✻✽]\\s+\\S.*…\\s*\\(\\d+[smh]" },
+    {
+      "id": "background-agents",
+      "regex": "Waiting for [1-9]\\d* background agents? to finish"
+    }
+  ],
+  "idle": [
+    { "id": "prompt", "regex": "^\\s*[│|]?\\s*[>❯]\\s" },
+    { "id": "shortcuts", "text": "? for shortcuts" }
+  ]
+}

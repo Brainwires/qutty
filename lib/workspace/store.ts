@@ -56,6 +56,14 @@ import { DEFAULT_LINKS, type LinkSettings, sanitizeLinks } from "../links.ts";
 import { type AgentPreset, sanitizePresets } from "../agent/presets.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
+import { sanitizeScmTile, type ScmTile, scmTitle } from "../scm/tile.ts";
+import {
+  DEFAULT_SCM_SETTINGS,
+  sanitizeScmSettings,
+  sanitizeWorktreeMark,
+  type ScmSettings,
+  type WorktreeMark,
+} from "../scm/worktrees.ts";
 import {
   DEFAULT_MONITOR,
   type MonitorSettings,
@@ -131,7 +139,8 @@ export type SettingsTab =
   | "agents"
   | "companion"
   | "voice"
-  | "monitor";
+  | "monitor"
+  | "scm";
 /** Every Settings tab, top to bottom. */
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   "general",
@@ -144,6 +153,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "companion",
   "voice",
   "monitor",
+  "scm",
 ];
 /** Every pattern, in the order `cyclePattern` walks them. */
 export const PATTERNS: readonly LayoutPattern[] = Object.keys(
@@ -181,6 +191,8 @@ export interface TerminalEntry extends TileSignals {
    * agent's hub name.
    */
   chat?: AgentChat;
+  /** Set for a Source Control tile (app/scm-tile.tsx): the repository it shows, no PTY. */
+  scm?: ScmTile;
   /** The foreground process, from the last `info` poll (`claude`, `zsh`; harness detection). */
   process?: string;
   /**
@@ -244,6 +256,8 @@ export interface Settings extends FontSettings {
   links: LinkSettings;
   /** Settings → System monitor (the bar meter, the hot companion; lib/sysstats.ts). */
   monitor: MonitorSettings;
+  /** Settings → Source Control (where new worktrees go; lib/scm/worktrees.ts). */
+  scm: ScmSettings;
   /** Settings → Windows: what a window's close button does (lib/workspace/windows.ts). */
   windowClose: WindowClose;
   /** Settings → Tiles: the activity indicators (lib/workspace/activity.ts). */
@@ -301,6 +315,11 @@ export interface WorkspaceState {
    * while tiled, so switching back gives every tile its place; the focused tile is on top.
    */
   freeform: FreeformState;
+  /**
+   * The git worktree this workspace was opened for (lib/scm/worktrees.ts): the bar shows
+   * "⑂ branch", and new agent tiles start in its folder. Absent for an ordinary workspace.
+   */
+  worktree?: WorktreeMark;
 }
 
 /** Everything the UI can do to the workspace. */
@@ -317,6 +336,8 @@ export type WorkspaceAction =
     web?: WebPage;
     /** An agent tile (no PTY). */
     chat?: AgentChat;
+    /** A Source Control tile (no PTY). */
+    scm?: ScmTile;
   }
   | { type: "remove"; id: string }
   /**
@@ -334,6 +355,8 @@ export type WorkspaceAction =
   | { type: "webPage"; id: string; page: WebPage }
   /** An agent tile's session changed (its id, model, mode, a finished turn). */
   | { type: "chatMeta"; id: string; patch: Partial<AgentChat> }
+  /** A Source Control tile's repository or its "follow the focused terminal" changed. */
+  | { type: "scmTile"; id: string; patch: Partial<ScmTile> }
   | { type: "focus"; id: string; now: number }
   | { type: "focusPrevious"; now: number }
   | { type: "focusOrdinal"; ordinal: number; now: number }
@@ -408,6 +431,9 @@ export type WorkspaceAction =
   /** Settings → Agents → Presets: the whole list. */
   | { type: "setAgentPresets"; presets: unknown }
   | { type: "setMonitor"; patch: Partial<MonitorSettings> }
+  | { type: "setScm"; patch: Partial<ScmSettings> }
+  /** This workspace was opened for a worktree (`null`: it is an ordinary one). */
+  | { type: "setWorktree"; mark: WorktreeMark | null }
   | { type: "setWindowClose"; windowClose: WindowClose }
   | { type: "launched"; entryId: string }
   | { type: "setSettingsTab"; tab: SettingsTab }
@@ -426,6 +452,8 @@ export type WorkspaceAction =
     view?: ViewMode;
     /** Its free-form geometry (sanitized against its tiles). */
     freeform?: unknown;
+    /** The worktree it was opened for. */
+    worktree?: WorktreeMark;
   };
 
 /** The defaults a fresh workspace starts from. */
@@ -446,6 +474,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollama: { ...DEFAULT_OLLAMA, recents: [] },
   links: { ...DEFAULT_LINKS },
   monitor: { ...DEFAULT_MONITOR },
+  scm: { ...DEFAULT_SCM_SETTINGS },
   windowClose: DEFAULT_WINDOW_CLOSE,
   activity: { ...DEFAULT_ACTIVITY },
   tileTitle: "program",
@@ -484,6 +513,7 @@ function cloneSettings(s: Settings): Settings {
     skin: { ...s.skin },
     links: { ...s.links },
     monitor: { ...s.monitor },
+    scm: { ...s.scm },
     activity: { ...s.activity },
     agentPresets: s.agentPresets.map((p) => ({
       ...p,
@@ -614,6 +644,7 @@ export function sanitizeSettings(
   if (r.monitor !== undefined) {
     out.monitor = sanitizeMonitor(r.monitor, out.monitor);
   }
+  if (r.scm !== undefined) out.scm = sanitizeScmSettings(r.scm, out.scm);
   if (r.windowClose !== undefined) {
     out.windowClose = sanitizeWindowClose(r.windowClose);
   }
@@ -1038,10 +1069,17 @@ function reduceCore(
       if (state.terminals.some((t) => t.id === action.id)) return state;
       const web = sanitizeWebPage(action.web);
       const chat = web ? undefined : sanitizeChat(action.chat);
+      const scm = web || chat ? undefined : sanitizeScmTile(action.scm);
       const entry: TerminalEntry = {
         id: action.id,
         title: action.title ?? action.ssh?.label ?? action.agent?.name ??
-          (web ? webTitle(web) : chat ? "claude" : "shell"),
+          (web
+            ? webTitle(web)
+            : chat
+            ? "claude"
+            : scm
+            ? scmTitle(scm)
+            : "shell"),
         createdAt: action.now,
         lastUsedAt: action.now,
         exited: false,
@@ -1052,6 +1090,7 @@ function reduceCore(
         ...(action.sandbox ? { sandbox: true } : {}),
         ...(web ? { web } : {}),
         ...(chat ? { chat } : {}),
+        ...(scm ? { scm } : {}),
       };
       return {
         ...state,
@@ -1148,7 +1187,9 @@ function reduceCore(
       // An SSH tile keeps its host label (the foreground process there is always `ssh`); a web
       // tile's title is its page's.
       if (
-        state.terminals.some((t) => t.id === action.id && (t.ssh || t.web))
+        state.terminals.some((t) =>
+          t.id === action.id && (t.ssh || t.web || t.scm)
+        )
       ) {
         return state;
       }
@@ -1196,6 +1237,15 @@ function reduceCore(
         return state;
       }
       return updateTerminal(state, action.id, { chat });
+    }
+    case "scmTile": {
+      const entry = state.terminals.find((t) => t.id === action.id);
+      const scm = entry?.scm &&
+        sanitizeScmTile({ ...entry.scm, ...action.patch });
+      if (!scm || JSON.stringify(scm) === JSON.stringify(entry.scm)) {
+        return state;
+      }
+      return updateTerminal(state, action.id, { scm, title: scmTitle(scm) });
     }
     case "activity":
       if (action.id === state.focusedId) return state;
@@ -1390,6 +1440,22 @@ function reduceCore(
       }
       return { ...state, settings: { ...state.settings, monitor } };
     }
+    case "setScm": {
+      const scm = sanitizeScmSettings(
+        { ...state.settings.scm, ...action.patch },
+        state.settings.scm,
+      );
+      if (JSON.stringify(scm) === JSON.stringify(state.settings.scm)) {
+        return state;
+      }
+      return { ...state, settings: { ...state.settings, scm } };
+    }
+    case "setWorktree": {
+      const mark = sanitizeWorktreeMark(action.mark);
+      if (JSON.stringify(mark) === JSON.stringify(state.worktree)) return state;
+      const { worktree: _w, ...rest } = state;
+      return mark ? { ...rest, worktree: mark } : rest;
+    }
     case "launched": {
       if (!isEntryId(action.entryId)) return state;
       // An Ollama pair also goes first in the recent pairs.
@@ -1456,6 +1522,9 @@ function reduceCore(
           ? state.freeform
           : sanitizeFreeform(action.freeform, ids),
         previousPattern: action.previousPattern,
+        ...(sanitizeWorktreeMark(action.worktree)
+          ? { worktree: sanitizeWorktreeMark(action.worktree) }
+          : {}),
         settings: action.layout
           ? {
             ...state.settings,

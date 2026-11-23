@@ -2,6 +2,82 @@
 
 ## Unreleased
 
+## 0.7.3 — 2026-11-21
+
+- Source Control, a tile like VS Code's Source Control view for one git
+  repository (or worktree). Open it from `+` → Source Control, View → Source
+  Control, or a terminal header's right-click menu → "Source Control for This
+  Folder". It shows the branch picker (switch, with a warning when the tree is
+  dirty; create), ahead / behind, and Fetch / Pull / Push / Sync with progress
+  and Cancel. It has a commit box (⌘↩ in the box commits; Commit Staged, Commit
+  All, Amend; with nothing staged it offers to stage everything), and the Merge
+  / Staged / Changes / Untracked groups with stage, unstage and discard per file
+  and per group. Discards ask first, and untracked files go to the Trash where
+  there is one. A diff view (unified or side by side) stages, unstages and
+  discards single hunks. Below that are the history with a graph lane and each
+  commit's files and diffs, stashes (push with a message, apply, pop, drop), and
+  worktrees. The tile refreshes on file changes, focus, its own actions and
+  agents' finished turns. Files an agent tile changed carry an "agent" badge.
+  "Follow focused terminal" re-targets it. Git runs in hidden PTYs (no new
+  permissions). Credentials are git's own helpers and ssh-agent; Qutty never
+  handles a password. docs/source-control.md has the details.
+- Worktrees as workspaces: New Worktree (an existing or new branch) checks out
+  to `<repo-parent>/.qutty-worktrees/<repo>/<branch>` (or under Settings →
+  Source Control → Worktree folder) and opens it as a workspace of its own, a
+  window with a terminal in the worktree. Open as Workspace does the same for
+  any listed worktree. Remove runs `git worktree remove`: it asks before
+  `--force` on a dirty checkout and never deletes the branch. Worktree
+  workspaces wear a "⑂ branch" badge with their repository's name in the bar,
+  and are grouped by repository in the Workspaces menu (which gains
+  "Worktrees…"). New agent tiles there start in the worktree. The agent hub's
+  `list_peers` / `whoami` give each tile's worktree folder and branch.
+- Agents resume after a restart. Kept shells survive quitting Qutty but not a
+  reboot or the loss of the PTY daemon. Now each tile's agent session is
+  recorded at the quit: the Claude Code or Codex session id that the hub's hooks
+  report. When the shells did not survive, the restored tile's fresh shell `cd`s
+  to the agent's folder and runs `claude --resume <id>` or `codex resume <id>`,
+  with the flags Qutty normally adds (MCP server, hooks). An agent tile from the
+  `+` picker comes back for this too. The resumes are staggered. With more than
+  eight, Qutty asks first: Resume 8, Resume All, or Don't Resume. A tile whose
+  kept shell survived is never resumed into, because its agent is still running.
+  Neither is an agent that had already quit to its shell. A resumed tile shows
+  "resumed" in its header until the agent's first turn. Settings → Tiles →
+  "Resume agents after restart" (on by default) turns this off, and a tile's
+  header menu (right click) has "Don't resume this agent". Other agents give
+  Qutty no session id, so they are not resumed.
+- Agents also come back after a crash, a kernel panic or a power loss.
+  - **The live record:** Qutty keeps a record of the session as it changes, in
+    `live-session.json` in the app folder. It holds each workspace's tiles and
+    layout, and each terminal's folder and agent session. It is written
+    atomically, with changes gathered for a second before each write. An agent
+    that quits back to its shell drops out of the record. A clean quit removes
+    the file.
+  - **After an unclean exit:** the next launch finds the file. It brings back
+    the workspaces' tiles and layout (shells in their folders) and resumes the
+    agents, the same way as after a quit that kept the shells. Before this, such
+    a launch got the layout settings back, but only one fresh shell.
+  - **When the shell keeper dies mid-session:** if the PTY daemon dies while
+    Qutty runs, the window offers "Restart shells and resume N agents" in a
+    strip at the bottom. It does not block anything: Dismiss leaves the tiles
+    ended.
+- Screen-based agent state. Qutty now tells working / waiting for you / idle for
+  agents without hooks, by reading the bottom of the tile's screen against
+  per-agent detection manifests. Manifests are bundled for Claude Code, Codex,
+  Gemini CLI, opencode, aider, GitHub Copilot CLI, Cursor Agent, Amp, Qwen Code,
+  Kimi Code CLI and Droid. The state feeds the same status as the badges, the
+  overlay and the companion.
+  - Hooks stay authoritative. For a hooked agent, the screen only adds an
+    approval prompt the hooks did not report.
+  - "Waiting" needs a matched approval UI. Qutty never guesses it.
+  - The foreground process's name and arguments now also identify the agent, so
+    the harness overlay turns on for these agents, including Node and Python
+    CLIs such as `node …/gemini`.
+  - Your own manifests, JSON or TOML, go in `agent-detection/` in Qutty's app
+    folder and always win.
+  - In the devtools, `qutty.agentDetection()` shows what was detected for the
+    focused tile, which matcher fired, and the state.
+  - docs/agent-detection.md has the format.
+
 ## 0.7.2 — 2026-11-21
 
 - Skins. A theme sets the colours; a skin changes how the chrome is drawn:

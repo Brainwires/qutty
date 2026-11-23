@@ -1,0 +1,6 @@
+  ┃  △ Permission required
+  ┃  $ bun test --watch
+  ┃
+  ┃  Allow once   Always allow   Reject
+
+  ⇆ select  enter confirm  esc dismiss

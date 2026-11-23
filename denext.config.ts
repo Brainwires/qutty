@@ -128,6 +128,10 @@ export default {
         // app-support folder's `companions/`, read and checked, their pictures sent to the page
         // as data: URLs; opening that folder runs through a hidden PTY like the links.
         "./desktop/companion-looks.ts",
+        // Source Control (`desktop/scm.ts`): git for the Source Control tile, run in hidden PTYs
+        // like the links (an argv under a small sh wrapper that keeps its output exact), and a
+        // debounced `Deno.watchFs` of the repositories the tiles show (reads only).
+        "./desktop/scm.ts",
       ],
       // The lite system monitor: CPU, GPU and memory figures for the bar meter and the companion's
       // hot face, from `system.stats()` (app/use-sysstats.ts asks only while one of them is on). It

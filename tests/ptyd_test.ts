@@ -16,6 +16,7 @@ import {
   ReplayRing,
 } from "../lib/ptyd/protocol.ts";
 import { parseKept, respawnPlan, retarget } from "../lib/ptyd/kept.ts";
+import { LIVE_FILE } from "../lib/ptyd/live.ts";
 import { PtyDaemon } from "../desktop/ptyd.ts";
 import { PtydClient } from "../desktop/ptyd-client.ts";
 import {
@@ -689,6 +690,103 @@ Deno.test("keeper: with the daemon gone, the shell tiles start again in their fo
   }
 });
 
+/** A kept record of `n` shell tiles, each of which ran Claude Code on session `s<i>`. */
+function agentRecord(n: number) {
+  const ids = Array.from({ length: n }, (_, i) => i + 1);
+  return {
+    v: 1,
+    savedAt: 1,
+    workspaces: [{
+      id: "ws-a",
+      name: "Workspace 1",
+      snapshot: {
+        v: 1,
+        tiles: Object.fromEntries(
+          ids.map((i) => [`t${i}`, {
+            ptyId: `pty-${i}`,
+            profile: { kind: "shell" },
+          }]),
+        ),
+      },
+      terms: ids.map((i) => ({
+        ptyId: `pty-${i}`,
+        shell: "/bin/sh",
+        cwd: "/tmp",
+        cols: 80,
+        rows: 24,
+        agent: { harness: "claude", session: `s${i}`, cwd: `/repo${i}` },
+      })),
+    }],
+  };
+}
+
+/** A launch whose keeper resumes agents into a recorder (no hub, no real typing). */
+function resumingLaunch(
+  record: unknown,
+  answers: number[] = [],
+  file = KEPT_FILE,
+) {
+  const files = memoryFiles({ [`/app/${file}`]: JSON.stringify(record) });
+  const app = launch(undefined, files, answers);
+  const typed: [string, string][] = [];
+  const resumed: string[] = [];
+  const asked: string[] = [];
+  const deps: KeeperDeps = {
+    ...app.deps,
+    agents: () => ({
+      agentOf: () => undefined,
+      hubArgs: () => ["--hub"],
+      resumed: (id) => void resumed.push(id),
+    }),
+    write: (id, text) => {
+      typed.push([id, text]);
+      return Promise.resolve();
+    },
+    later: (fn) => fn(),
+    confirm: (o) => {
+      asked.push(o.message);
+      return Promise.resolve(answers.shift() ?? 0);
+    },
+  };
+  return { app, files, deps, typed, resumed, asked };
+}
+
+Deno.test("keeper: after a restart each fresh shell resumes the agent that ran in it", async () => {
+  const r = resumingLaunch(agentRecord(2));
+  await r.app.keeper.start(r.deps);
+  await until("the resumes", () => r.resumed.length === 2);
+  const ptys = r.app.workspaces.ptysOf("ws-a");
+  assertEquals(r.typed.map(([id]) => id), ptys);
+  assertEquals(r.typed[0][1], "cd -- /repo1 && claude --hub --resume s1\r");
+  assertEquals(r.resumed, ptys);
+  assertEquals(r.asked, []);
+  await r.app.sessions.disposeAll();
+});
+
+Deno.test("keeper: more than eight agents ask first; the setting off resumes none", async () => {
+  // "Resume All".
+  const all = resumingLaunch(agentRecord(10), [1]);
+  await all.app.keeper.start(all.deps);
+  await until("the resumes", () => all.typed.length === 10);
+  assertEquals(all.asked, [
+    "10 coding agents were running when Qutty last quit",
+  ]);
+  await all.app.sessions.disposeAll();
+  // "Resume 8": the other two shells still come back, without their agent.
+  const eight = resumingLaunch(agentRecord(10), [0]);
+  await eight.app.keeper.start(eight.deps);
+  await until("the resumes", () => eight.typed.length === 8);
+  assertEquals(eight.app.workspaces.ptysOf("ws-a").length, 10);
+  await eight.app.sessions.disposeAll();
+  // The setting off.
+  const off = resumingLaunch(agentRecord(2));
+  off.files.files.set(`/app/${PREFS_FILE}`, '{"resumeAgents":false}');
+  await off.app.keeper.start(off.deps);
+  assertEquals(off.app.workspaces.ptysOf("ws-a").length, 2);
+  assertEquals(off.typed, []);
+  await off.app.sessions.disposeAll();
+});
+
 /** The respawned workspace: its snapshot on the new PTY, its dimmed history, the record used up. */
 async function restoredWorkspace(
   app: ReturnType<typeof launch>,
@@ -707,7 +805,7 @@ async function restoredWorkspace(
       ) === true,
   );
   assertEquals(app.workspaces.list()[0].name, "Workspace 3");
-  assertEquals(files.size, 0);
+  assertEquals(files.has(`/app/${KEPT_FILE}`), false);
   await app.sessions.disposeAll();
 }
 
@@ -729,7 +827,16 @@ Deno.test("keeper: the setting is saved, and off means shells run in the app", a
   assertEquals(app.sessions.host.isRemote(t.id), false);
   assertEquals(app.keeper.keepable(), 0);
   app.keeper.setKeepShells(true);
-  assertEquals(files.files.get(`/app/${PREFS_FILE}`), '{"keepShells":true}');
+  assertEquals(
+    files.files.get(`/app/${PREFS_FILE}`),
+    '{"keepShells":true,"resumeAgents":true}',
+  );
+  app.keeper.setResumeAgents(false);
+  assertEquals(app.keeper.resumeAgents, false);
+  assertEquals(
+    files.files.get(`/app/${PREFS_FILE}`),
+    '{"keepShells":true,"resumeAgents":false}',
+  );
   await app.sessions.disposeAll();
   await app.fake.quit();
 });
@@ -760,4 +867,77 @@ Deno.test("quit: the keep question, its default and its three answers", async ()
     assertEquals(keptCalls, kept);
     off();
   }
+});
+
+Deno.test("keeper: after an unclean exit (no quit, no daemon) the live record brings the tiles and their agents back", async () => {
+  // A crash or power loss: no quit wrote kept-shells.json; the live record is there.
+  const r = resumingLaunch(agentRecord(2), [], LIVE_FILE);
+  await r.app.keeper.start(r.deps);
+  await until("the resumes", () => r.resumed.length === 2);
+  const ptys = r.app.workspaces.ptysOf("ws-a");
+  assertEquals(ptys.length, 2);
+  assertEquals(r.typed[1][1], "cd -- /repo2 && claude --hub --resume s2\r");
+  // The workspace's layout is back: its snapshot, on the fresh shells.
+  const snap = r.app.workspaces.snapshotOf("ws-a") as {
+    tiles: Record<string, { ptyId: string }>;
+  };
+  assertEquals(Object.values(snap.tiles).map((t) => t.ptyId), ptys);
+  // The live record now follows this session (its terminals, no agent known to the hub yet).
+  await until("the live record", () => {
+    const text = r.files.files.get(`/app/${LIVE_FILE}`);
+    return text !== undefined && text.includes(ptys[0]) &&
+      !text.includes('"s1"');
+  });
+  // A clean exit removes it: the next launch is not taken for a crash.
+  r.app.keeper.cleanExit();
+  assertEquals(r.files.files.has(`/app/${LIVE_FILE}`), false);
+  await r.app.sessions.disposeAll();
+});
+
+Deno.test("keeper: the live record is written as agents change, and an exited agent's entry goes", async () => {
+  const files = memoryFiles();
+  const app = launch(undefined, files);
+  const pending: (() => void)[] = [];
+  const sessions = new Map<string, string>();
+  let changed: () => void = () => {};
+  const deps: KeeperDeps = {
+    ...app.deps,
+    agents: () => ({
+      agentOf: (id) =>
+        sessions.has(id)
+          ? { harness: "claude", session: sessions.get(id), cwd: "/repo" }
+          : {},
+      hubArgs: () => [],
+      resumed: () => {},
+    }),
+    write: () => Promise.resolve(),
+    later: (fn) => void pending.push(fn),
+    watchAgents: (fn) => void (changed = fn),
+  };
+  await app.keeper.start(deps);
+  app.workspaces.join("main", "ws-a");
+  const t = await app.sessions.spawn(
+    { cols: 80, rows: 24, shell: "/bin/sh" },
+    { id: "main" },
+  );
+  const live = () =>
+    JSON.parse(files.files.get(`/app/${LIVE_FILE}`) ?? "null") as {
+      workspaces: { terms: { ptyId: string; agent?: { session: string } }[] }[];
+    } | null;
+  // A page save and a SessionStart in the same moment: one write.
+  app.workspaces.save("ws-a", SNAPSHOT_FOR(t.id));
+  sessions.set(t.id, "sess-1");
+  changed();
+  changed();
+  assertEquals(pending.length, 1, "the changes are coalesced");
+  pending.shift()!();
+  assertEquals(live()!.workspaces[0].terms[0].agent?.session, "sess-1");
+  // The agent quits back to its shell (the hub forgets its session): its entry goes.
+  sessions.delete(t.id);
+  changed();
+  pending.shift()!();
+  assertEquals(live()!.workspaces[0].terms[0].ptyId, t.id);
+  assertEquals(live()!.workspaces[0].terms[0].agent, undefined);
+  await app.sessions.disposeAll();
+  await app.fake.quit();
 });

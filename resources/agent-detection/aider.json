@@ -1,0 +1,29 @@
+{
+  "//": "aider. Strings from Aider-AI/aider: io.py confirm_ask (<question> (Y)es/(N)o[/(A)ll/(S)kip all][/(D)on't ask again] [Yes]:), waiting.py (Waiting for LLM / Waiting for <model>), io.py get_input (the > prompt, with an edit-format prefix such as architect>). A Python script: argv[1] is the aider entry point. Ctrl+C stops a reply.",
+  "id": "aider",
+  "label": "aider",
+  "confidence": "high",
+  "process": {
+    "names": ["aider"],
+    "argv": ["(^|/)aider$"]
+  },
+  "lines": 15,
+  "interrupt": "ctrl-c",
+  "blocked": [
+    {
+      "id": "confirm-ask",
+      "regex": "\\(Y\\)es/\\(N\\)o.*\\[(Yes|No)\\]:\\s*$",
+      "lines": 3
+    }
+  ],
+  "working": [
+    {
+      "id": "waiting-for-llm",
+      "regex": "Waiting for (LLM|[\\w./:-]+)",
+      "lines": 3
+    }
+  ],
+  "idle": [
+    { "id": "prompt", "regex": "^([\\w-]+)?>\\s?$", "lines": 2 }
+  ]
+}

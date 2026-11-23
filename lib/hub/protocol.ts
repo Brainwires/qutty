@@ -43,6 +43,11 @@ export interface TileInfo {
   label?: string;
   /** Its working directory, when known. */
   cwd?: string;
+  /**
+   * The git checkout its working directory is in (lib/scm/worktree-info.ts): the checkout's
+   * folder, its branch, and whether it is a linked worktree (`git worktree add`).
+   */
+  worktree?: { path: string; branch?: string; linked: boolean };
   status: TileStatus;
   /** It runs in the window's shared Docker sandbox (its cwd is a path inside the container). */
   sandbox?: boolean;
@@ -50,6 +55,44 @@ export interface TileInfo {
   note?: string;
   /** Messages waiting for this tile (not yet handed to it). */
   unread: number;
+  /**
+   * Its agent was resumed after a restart (a fresh shell ran `claude --resume <id>`, …;
+   * desktop/kept-shells.ts), until the agent first gets busy.
+   */
+  resumed?: boolean;
+  /** The user chose "Don't resume this agent" (its tile's header menu): a restart leaves it be. */
+  noResume?: boolean;
+}
+
+/**
+ * The agent detection debug command's answer for one terminal (lib/hub/screen-detect.ts): which
+ * agent was detected and how, which manifest matcher fired on its screen, and the state.
+ */
+export interface AgentDetectionInfo {
+  tileId: string;
+  /** The foreground process, as last seen. */
+  process?: string;
+  /** Its first arguments. */
+  argv?: string[];
+  /** The agent its screen is read as (none: nothing is read). */
+  agent?: string;
+  /** How it was recognised: its process, or the harness the hub already had. */
+  via?: "process" | "harness";
+  /** Where its manifest came from: `bundled`, or the user file's path. */
+  manifest?: string;
+  confidence?: "high" | "low";
+  /** The last read of its screen (`matcher: null`: nothing matched, so idle). */
+  verdict?: {
+    state: "working" | "blocked" | "idle";
+    matcher: string | null;
+    line?: string;
+  };
+  /** A hook of the current agent has fired: the hooks own the status. */
+  hooked: boolean;
+  /** The hub status now. */
+  status?: TileStatus;
+  /** User manifests that were refused, and why. */
+  errors: { path: string; error: string }[];
 }
 
 /** The companion's address (`send_message({ to: "companion" })`). */

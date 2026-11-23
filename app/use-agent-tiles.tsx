@@ -7,7 +7,8 @@
 // (Settings → Agents) with the folder question, and the lookups the hub badges, the companion and
 // dictation need.
 
-import { useCallback, useEffect, useMemo, useState } from "denext";
+import { useCallback, useEffect, useMemo, useRef, useState } from "denext";
+import { isInside } from "../lib/agent/changes.ts";
 import type { ReactNode } from "denext";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
@@ -68,8 +69,14 @@ export function useAgentTiles(o: {
   speech?: AgentTileHooks["speech"];
   capture?: AgentTileHooks["capture"];
   openInEditor?: AgentTileHooks["openInEditor"];
+  /** An agent finished a turn (Source Control tiles refresh). */
+  turnEnded?: () => void;
+  /** This is a worktree workspace: new agent tiles start in its folder (lib/scm/worktrees.ts). */
+  worktree?: string;
 }): AgentTilesView {
   const { dispatch } = o;
+  const turnEndedRef = useRef(o.turnEnded);
+  turnEndedRef.current = o.turnEnded;
   const { store, summaries } = useAgents({
     backend: o.backend,
     terminals: o.state.terminals,
@@ -77,13 +84,15 @@ export function useAgentTiles(o: {
     events: {
       meta: (id, patch) => dispatch({ type: "chatMeta", id, patch }),
       named: (id, title) => dispatch({ type: "title", id, title }),
-      turnEnded: (id, ok) =>
+      turnEnded: (id, ok) => {
         dispatch({
           type: "commandDone",
           id,
           exitCode: ok ? 0 : 1,
           now: Date.now(),
-        }),
+        });
+        turnEndedRef.current?.();
+      },
       output: (id) => dispatch({ type: "activity", id }),
     },
   });
@@ -91,14 +100,19 @@ export function useAgentTiles(o: {
   const [asking, setAsking] = useState<
     { cwd: string; agent?: AgentKind; preset?: string } | null
   >(null);
-  const { manager, state } = o;
+  const { manager, state, worktree } = o;
   const openLaunch = useCallback((agent?: AgentKind, preset?: string) => {
-    const ask = (cwd: string) =>
+    // In a worktree workspace a folder outside the worktree gives way to the worktree's.
+    const ask = (asked: string) => {
+      const cwd = worktree && !isInside(asked, worktree) && asked !== worktree
+        ? worktree
+        : asked;
       setAsking({
         cwd,
         ...(agent && agent !== "claude" ? { agent } : {}),
         ...(preset ? { preset } : {}),
       });
+    };
     // The folder of the focused tile when it is known (shell marks, OSC 7, the process's), else
     // the home folder.
     const focused = state.terminals.find((t) => t.id === state.focusedId);
@@ -108,7 +122,7 @@ export function useAgentTiles(o: {
       (cwd) => ask(cwd ?? "~"),
       () => ask("~"),
     );
-  }, [manager, state.terminals, state.focusedId]);
+  }, [manager, state.terminals, state.focusedId, worktree]);
 
   const [apiKey, setApiKey] = useState(false);
   const { backend } = o;

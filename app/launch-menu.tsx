@@ -54,6 +54,11 @@ export interface LaunchMenuProps {
   onBookmarks?(): void;
   /** "History…": the pages web tiles visited (app/history-dialog.tsx). */
   onHistory?(): void;
+  /**
+   * "Source Control": a Source Control tile for the focused terminal's repository; "Worktrees…"
+   * (`show`): the same at its worktrees (app/scm-tile.tsx).
+   */
+  onSourceControl?(show?: "worktrees"): void;
   /** The "Run in sandbox" toggle (absent while the sandbox is off). */
   sandbox?: { on: boolean; onToggle(): void };
   /**
@@ -350,6 +355,32 @@ export function LaunchMenu(props: LaunchMenuProps) {
               <span class="menu-label">Web page</span>
             </button>
           )}
+          {props.onSourceControl && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                class="menu-item launch-item"
+                data-testid="launch-source-control"
+                title="Source Control for the focused terminal's repository"
+                onClick={() => props.onSourceControl?.()}
+              >
+                <LaunchIcon kind="scm" />
+                <span class="menu-label">Source Control</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="menu-item launch-item"
+                data-testid="launch-worktrees"
+                title="New Worktree, Open Worktree as a workspace, Remove Worktree"
+                onClick={() => props.onSourceControl?.("worktrees")}
+              >
+                <LaunchIcon kind="scm" />
+                <span class="menu-label">Worktrees…</span>
+              </button>
+            </>
+          )}
           {props.onBookmarks && (
             <button
               type="button"
@@ -402,7 +433,8 @@ function LaunchIcon(
       | "web"
       | "bookmarks"
       | "history"
-      | "chat";
+      | "chat"
+      | "scm";
   },
 ) {
   const common = {
@@ -488,6 +520,15 @@ function LaunchIcon(
         <svg {...common}>
           <circle cx="8" cy="8" r="5.5" {...stroke} />
           <path d="M8 5.5v5M5.5 8h5" {...stroke} />
+        </svg>
+      );
+    case "scm":
+      return (
+        <svg {...common}>
+          <circle cx="5" cy="3.8" r="1.6" {...stroke} />
+          <circle cx="5" cy="12.2" r="1.6" {...stroke} />
+          <circle cx="11" cy="6" r="1.6" {...stroke} />
+          <path d="M5 5.4v5.2M11 7.6c0 2.4-6 1.8-6 3" {...stroke} />
         </svg>
       );
     case "chat":

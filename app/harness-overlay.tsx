@@ -11,9 +11,10 @@
 //   button stay beside it.
 // - The prompt box (app/prompt-box.tsx, the agent tile's): Enter sends, Shift+Enter is a new line,
 //   ↑ / ↓ walk the history; attach text files (typed after the prompt), saved prompts, history,
-//   hold-to-dictate (with the companion), Interrupt and Send. Sending types the prompt into the
-//   terminal as a paste of it would arrive (bracketed when the harness turned that mode on), then
-//   presses Enter; Interrupt sends the harness's interrupt key (Esc, or Ctrl+C for aider).
+//   hold-to-dictate (with the companion), Interrupt (while the harness is busy or waiting for you)
+//   and Send. Sending types the prompt into the terminal as a paste of it would arrive (bracketed
+//   when the harness turned that mode on), then presses Enter; Interrupt sends the harness's
+//   interrupt key (Esc, or Ctrl+C for aider).
 // - The side rail, beside the terminal: jump to the top of its scrollback, jump to the latest,
 //   maximize / restore the tile, and read the screen aloud in the companion's voice.
 //
@@ -28,6 +29,7 @@ import type { TileInfo, TileStatus } from "../lib/hub/protocol.ts";
 import type { TerminalManager } from "../lib/terminal-manager.ts";
 import {
   type HarnessSpec,
+  promptPlaceholder,
   speakableScreen,
   withFiles,
 } from "../lib/workspace/harness.ts";
@@ -118,6 +120,11 @@ function Icon(props: { children: ReactNode; size?: number }) {
   );
 }
 
+/** What the overlay shows of the harness: the hub's word, else busy while its process runs. */
+function harnessStatus(entry: TerminalEntry, view: HarnessView): TileStatus {
+  return view.hub?.status ?? (entry.running ? "busy" : "idle");
+}
+
 const MAIL = <path d="M2 4.25h12v8.5H2zM2.25 4.5 8 9l5.75-4.5" />;
 
 /** The header card's controls (after the tile's title, which CSS hides). */
@@ -130,7 +137,7 @@ export function HarnessHead(
   const [menu, setMenu] = useState(false);
   const anchor = useRef<HTMLSpanElement | null>(null);
   useDismiss(menu, anchor, () => setMenu(false));
-  const status: TileStatus = hub?.status ?? (entry.running ? "busy" : "idle");
+  const status = harnessStatus(entry, view);
   const unread = hub?.unread ?? 0;
   return (
     <span
@@ -276,7 +283,11 @@ function HarnessRail(
   useDismiss(help, helpRef, () => setHelp(false));
   const interruptKey = view.spec.interrupt === "\x03" ? "Ctrl+C" : "Esc";
   return (
-    <div class="harness-rail" data-testid="harness-rail">
+    <div
+      class="harness-rail"
+      data-testid="harness-rail"
+      data-companion-avoid=""
+    >
       <div class="harness-rail-group">
         <RailButton
           testid="harness-maximize"
@@ -406,6 +417,8 @@ export function HarnessControls(
     void manager.sendPrompt(id, typed);
   };
   const interruptKey = view.spec.interrupt === "\x03" ? "Ctrl+C" : "Esc";
+  // Interrupt only while there is a turn to stop (busy, or asking you something).
+  const stoppable = harnessStatus(entry, view) !== "idle";
   return (
     <>
       <HarnessRail
@@ -420,19 +433,23 @@ export function HarnessControls(
         testPrefix="harness"
         class="harness-prompt"
         disabled={false}
-        placeholder={`Ask ${view.spec.label} anything…`}
-        hint="Enter sends · Shift+Enter new line · ↑↓ history"
+        placeholder={promptPlaceholder(view.spec)}
+        hint="Enter to send, Shift+Enter for a new line"
         sendLabel="Send"
-        sendTitle="Send: type it into the terminal and press Enter"
+        sendTitle="Send (Enter): types it into the terminal and presses Enter"
         images={false}
         own={() => sent.current}
         onSend={send}
-        stop={{
-          label: "Interrupt",
-          title: `Interrupt ${view.spec.label} (sends ${interruptKey})`,
-          testid: "harness-interrupt",
-          run: () => manager.sendKeys(id, view.spec.interrupt),
-        }}
+        {...(stoppable
+          ? {
+            stop: {
+              label: "Interrupt",
+              title: `Interrupt ${view.spec.label} (sends ${interruptKey})`,
+              testid: "harness-interrupt",
+              run: () => manager.sendKeys(id, view.spec.interrupt),
+            },
+          }
+          : {})}
         onInsert={onInsert}
         {...(hooks.dictation ? { dictation: hooks.dictation } : {})}
         dropZone=".harness-frame"

@@ -74,6 +74,12 @@ export const ITEM = {
   agentChat: "qutty:launch-agent-chat",
   agentChatCodex: "qutty:launch-agent-chat:codex",
   ollama: "qutty:launch-ollama",
+  /** View → Source Control (app/scm-tile.tsx). */
+  sourceControl: "qutty:view:source-control",
+  /** New Tile With → Source Control (the same action as View's). */
+  launchSourceControl: "qutty:launch-source-control",
+  /** New Tile With → Worktrees… (Source Control at its worktrees: new, open, remove). */
+  worktrees: "qutty:launch-worktrees",
   nextLayout: "qutty:layout:next",
   minimizeTile: "qutty:tile:minimize",
   maximizeTile: "qutty:tile:maximize",
@@ -248,6 +254,8 @@ export interface LaunchMenuInput {
    * tile (app/agent-tile.tsx).
    */
   agentChat?: boolean;
+  /** "Source Control" and "Worktrees…" (app/scm-tile.tsx). */
+  sourceControl?: boolean;
 }
 
 /** Whether `text` is something Denext takes as an id or label (no control characters). */
@@ -288,6 +296,12 @@ function launchItems(
   }
   const extras: DesktopMenuItemSpec[] = [
     ...(launch?.webPage ? [item(ITEM.webPage, "Web Page")] : []),
+    ...(launch?.sourceControl
+      ? [
+        item(ITEM.launchSourceControl, "Source Control"),
+        item(ITEM.worktrees, "Worktrees…"),
+      ]
+      : []),
     item(ITEM.connections, "Connections…"),
   ];
   return [...out, ...(out.length > 0 ? [SEP] : []), ...extras];
@@ -380,6 +394,9 @@ export function viewMenuSpec(platform: KeyPlatform): DesktopMenuUpdate {
       item(ITEM.zoomOut, "Zoom Out"),
       item(ITEM.actualSize, "Actual Size"),
       item(ITEM.zoomTogether, "Zoom All Tiles Together", { type: "checkbox" }),
+      SEP,
+      // A Source Control tile for the focused terminal's repository (app/scm-tile.tsx).
+      item(ITEM.sourceControl, "Source Control"),
       SEP,
       // The focused web tile's (its keys, ⌘F and ⌥⌘I, are the page's: no accelerators here, so a
       // terminal keeps Ctrl+F where the window's accelerators win).
@@ -617,6 +634,8 @@ export type MenuAction =
   | { kind: "agentChat"; agent?: "codex" }
   /** View → "Zoom All Tiles Together" on / off. */
   | { kind: "zoomTogether" }
+  /** Source Control for the focused terminal (`show`: at its worktrees). */
+  | { kind: "sourceControl"; show?: "worktrees" }
   /** A browser command for the focused web tile (app/web-tile.tsx `runWebCommand`). */
   | { kind: "web"; command: WebKeyCommand };
 
@@ -659,6 +678,12 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.agentChat) return { kind: "agentChat" };
   if (id === ITEM.agentChatCodex) return { kind: "agentChat", agent: "codex" };
   if (id === ITEM.zoomTogether) return { kind: "zoomTogether" };
+  if (id === ITEM.sourceControl || id === ITEM.launchSourceControl) {
+    return { kind: "sourceControl" };
+  }
+  if (id === ITEM.worktrees) {
+    return { kind: "sourceControl", show: "worktrees" };
+  }
   if (id === ITEM.findInPage) return { kind: "web", command: { kind: "find" } };
   if (id === ITEM.devTools) {
     return { kind: "web", command: { kind: "devTools" } };

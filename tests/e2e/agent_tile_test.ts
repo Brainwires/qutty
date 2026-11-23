@@ -473,16 +473,18 @@ suite("agent tile", (test) => {
     assert(!(await app.exists("[data-testid=bar-agents]")));
   });
 
-  test("the prompt box: two lines, ↑/↓ history, the history menu, saved prompts", async (app) => {
+  test("the prompt box: one line that grows, ↑/↓ history, the history menu, saved prompts", async (app) => {
     const id = await openAgent(app);
     const input = `${tileSel(id)} [data-testid=agent-input]`;
-    // Two lines tall before anything is typed.
-    const tall = await app.eval((s: string) => {
-      const el = document.querySelector<HTMLTextAreaElement>(s)!;
-      const lh = parseFloat(getComputedStyle(el).lineHeight);
-      return el.clientHeight >= lh * 1.9;
-    }, input);
-    assert(tall, "the box is two lines tall");
+    /** The text area's height in lines. */
+    const lines = () =>
+      app.eval((s: string) => {
+        const el = document.querySelector<HTMLTextAreaElement>(s)!;
+        return el.clientHeight / parseFloat(getComputedStyle(el).lineHeight);
+      }, input);
+    // One line tall before anything is typed.
+    const empty = await lines();
+    assert(empty > 0.9 && empty < 1.5, `one line: ${empty}`);
     // The iframe engine cannot picture a page: no screenshot button.
     assert(
       !(await app.exists(`${tileSel(id)} [data-testid=agent-screenshot]`)),
@@ -518,6 +520,8 @@ suite("agent tile", (test) => {
     await app.press("Enter");
     await app.page.keyboard.up("Shift");
     await app.page.keyboard.type("line two");
+    // It grew to two lines.
+    await waitFor(async () => (await lines()) > 1.8, 2000, "two lines tall");
     await app.press("ArrowUp");
     assertEquals(await value(), "my draft\nline two");
     // The history menu: newest first; a click puts it in the box.

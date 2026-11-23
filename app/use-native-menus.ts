@@ -97,6 +97,8 @@ export interface NativeMenuHandlers {
   moveTile(to: string): void;
   /** "Claude Code (chat)": a new agent tile. */
   openAgentChat(agent?: "codex"): void;
+  /** View → Source Control, New Tile With → Source Control / Worktrees… */
+  openSourceControl(show?: "worktrees"): void;
   /** View → "Zoom All Tiles Together" on / off. */
   toggleZoomTogether(): void;
   /** A browser command for web tile `id` (Find in Page…, Developer Tools). */
@@ -120,6 +122,8 @@ export interface NativeMenusOptions {
   webDialogs: boolean;
   /** "Claude Code (chat)" in the launch submenu. */
   agentChat: boolean;
+  /** "Source Control" and "Worktrees…" in the launch submenu. */
+  sourceControl?: boolean;
   /** A modal dialog has the keyboard. */
   modalOpen: boolean;
   /** Where tiles can move ("Move Tile to" in the Window menu); absent where they cannot. */
@@ -229,6 +233,7 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         webPage: opts.webPage,
         webDialogs: opts.webDialogs,
         agentChat: opts.agentChat,
+        sourceControl: opts.sourceControl === true,
       }),
     [
       platform,
@@ -237,6 +242,7 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
       opts.webPage,
       opts.webDialogs,
       opts.agentChat,
+      opts.sourceControl,
     ],
   );
   const shellKey = JSON.stringify(shell);
@@ -329,6 +335,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
           return h.openAgentChat(action.agent);
         case "zoomTogether":
           return h.toggleZoomTogether();
+        case "sourceControl":
+          return h.openSourceControl(action.show);
         case "web":
           if (focused) h.webCommand(focused, action.command);
           return;

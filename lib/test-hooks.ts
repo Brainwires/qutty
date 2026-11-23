@@ -173,6 +173,7 @@ export function withBackendSpy(
       return backend.linkEdit(request);
     },
     skins: backend.skins,
+    scm: backend.scm,
     sysSample: () => backend.sysSample(),
     onData: (id, cb) => backend.onData(id, cb),
     onExit: (id, cb) => backend.onExit(id, cb),
@@ -196,6 +197,8 @@ export function withBackendSpy(
     hubAnswer: (id, action) => backend.hubAnswer(id, action),
     hubSetLabel: (ptyId, label) => backend.hubSetLabel(ptyId, label),
     hubRename: (ptyId, name) => backend.hubRename(ptyId, name),
+    hubSetNoResume: (ptyId, on) => backend.hubSetNoResume(ptyId, on),
+    hubDetection: (ptyId, reload) => backend.hubDetection(ptyId, reload),
     hubWebTiles: (tiles) => backend.hubWebTiles(tiles),
     onHubTiles: (cb) => backend.onHubTiles(cb),
     onHubAsk: (cb) => backend.onHubAsk(cb),

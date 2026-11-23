@@ -820,3 +820,26 @@ Deno.test("native menus: Claude Code's and Codex's entries have their (chat) twi
     }).items[1].items!.some((i) => i.id === ITEM.agentChat),
   );
 });
+
+Deno.test("native menus: Source Control in the View menu and New Tile With, with Worktrees…", () => {
+  const view = flat(viewMenuSpec("mac").items);
+  assert(view.some((i) => i.id === ITEM.sourceControl));
+  const sub = shellMenu("mac", {
+    sections: [],
+    ollama: false,
+    webPage: false,
+    sourceControl: true,
+  }).items[1].items!;
+  assertEquals(sub.map((i) => i.label), [
+    "Source Control",
+    "Worktrees…",
+    "Connections…",
+  ]);
+  assertEquals(menuAction(ITEM.sourceControl), { kind: "sourceControl" });
+  assertEquals(menuAction(ITEM.launchSourceControl), { kind: "sourceControl" });
+  assertEquals(menuAction(ITEM.worktrees), {
+    kind: "sourceControl",
+    show: "worktrees",
+  });
+  assert(!menuActionAllowed({ kind: "sourceControl" }, true));
+});

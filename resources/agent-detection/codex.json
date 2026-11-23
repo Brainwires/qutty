@@ -1,0 +1,42 @@
+{
+  "//": "OpenAI Codex CLI. Strings from openai/codex codex-rs/tui: status_indicator_widget.rs (Working (0s • esc to interrupt)), bottom_pane/approval_overlay.rs (the approval questions and options), chatwidget.rs (the composer placeholder).",
+  "id": "codex",
+  "label": "Codex",
+  "confidence": "high",
+  "process": {
+    "names": ["codex"],
+    "argv": ["(^|/)codex(\\.js)?$", "/@openai/codex/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    {
+      "id": "would-you-like",
+      "regex": "Would you like to (run the following command|make the following edits|grant these permissions)\\?"
+    },
+    {
+      "id": "approval-options",
+      "all": ["yes, proceed", "tell codex what to do differently"]
+    },
+    {
+      "id": "confirm-or-cancel",
+      "text": "press enter to confirm or esc to cancel"
+    },
+    { "id": "submit-answer", "text": "enter to submit answer" },
+    {
+      "id": "trust-folder",
+      "regex": "Do you trust the contents of this directory\\?|Trust this folder\\?"
+    }
+  ],
+  "working": [
+    {
+      "id": "esc-to-interrupt",
+      "regex": "\\(\\d+[smh]?[^)]*esc to interrupt\\)"
+    },
+    { "id": "esc-to-interrupt-plain", "text": "esc to interrupt" }
+  ],
+  "idle": [
+    { "id": "placeholder", "text": "Ask Codex to do anything" },
+    { "id": "composer", "regex": "^\\s*›\\s" }
+  ]
+}

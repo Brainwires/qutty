@@ -1,0 +1,26 @@
+{
+  "//": "Gemini CLI. Strings from google-gemini/gemini-cli packages/cli/src/ui: LoadingIndicator.tsx ((esc to cancel, 12s)), ToolConfirmationMessage.tsx (Apply this change?, Allow execution of …?, Do you want to proceed?, Allow once), InputPrompt.tsx (Type your message or @path/to/file). A node script: argv[1] is the gemini bin.",
+  "id": "gemini",
+  "label": "Gemini CLI",
+  "confidence": "high",
+  "process": {
+    "names": ["gemini"],
+    "argv": ["(^|/)gemini(\\.js)?$", "/@google/gemini-cli/"]
+  },
+  "lines": 15,
+  "interrupt": "esc",
+  "blocked": [
+    { "id": "apply-change", "text": "Apply this change?" },
+    { "id": "allow-execution", "regex": "Allow execution of .*\\?" },
+    { "id": "proceed", "all": ["do you want to proceed?", "allow once"] },
+    { "id": "allow-options", "all": ["allow once", "allow for this session"] }
+  ],
+  "working": [
+    { "id": "esc-to-cancel", "regex": "\\(esc to cancel, \\d+[smh]" },
+    { "id": "esc-to-cancel-plain", "text": "esc to cancel" }
+  ],
+  "idle": [
+    { "id": "placeholder", "text": "Type your message or @path/to/file" },
+    { "id": "prompt", "regex": "^\\s*[│|]?\\s*>\\s" }
+  ]
+}

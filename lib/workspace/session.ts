@@ -24,6 +24,8 @@ import {
 } from "./store.ts";
 import { sanitizeWebPage, type WebPage, webTitle } from "../web/url.ts";
 import { type AgentChat, sanitizeChat } from "../agent/tile.ts";
+import { sanitizeScmTile, type ScmTile, scmTitle } from "../scm/tile.ts";
+import { type WorktreeMark, worktreeMarkOf } from "../scm/worktrees.ts";
 import { type Row, sanitizeRows, savedRows } from "../agent/transcript.ts";
 import { sanitizeOrder } from "./tile-order.ts";
 import { sanitizeTileZoom } from "./tile-zoom.ts";
@@ -55,11 +57,17 @@ export interface ChatTileSnapshot {
   rows: Row[];
 }
 
-/** One tile as saved: a terminal, a web tile or an agent tile. */
+/** A Source Control tile: the repository it shows (no PTY; restoring it shows it again). */
+export interface ScmTileSnapshot {
+  scm: ScmTile;
+}
+
+/** One tile as saved: a terminal, a web tile, an agent tile or a Source Control tile. */
 export type TileSnapshot =
   | TerminalTileSnapshot
   | WebTileSnapshot
-  | ChatTileSnapshot;
+  | ChatTileSnapshot
+  | ScmTileSnapshot;
 
 /** What the page saves of its workspace. */
 export interface WorkspaceSnapshot {
@@ -77,6 +85,8 @@ export interface WorkspaceSnapshot {
   view?: ViewMode;
   /** The free-form rects, z-order and maximized tile (kept while tiled too). */
   freeform?: FreeformState;
+  /** The worktree a worktree workspace was opened for (lib/scm/worktrees.ts). */
+  worktree?: WorktreeMark;
 }
 
 /** A terminal the backend handed to this window (desktop/terminal-sessions.ts `PtyReplay`). */
@@ -108,11 +118,18 @@ export interface RestoredChatTile {
   rows: Row[];
 }
 
+/** One Source Control tile to rebuild (its repository is in its entry). */
+export interface RestoredScmTile {
+  id: string;
+  scm: ScmTile;
+}
+
 /** One tile to rebuild. */
 export type RestoredTile =
   | RestoredTerminalTile
   | RestoredWebTile
-  | RestoredChatTile;
+  | RestoredChatTile
+  | RestoredScmTile;
 
 /** How to rebuild a workspace. */
 export interface RestorePlan {
@@ -127,6 +144,8 @@ export interface RestorePlan {
   view: ViewMode;
   /** Only the rebuilt tiles' entries. */
   freeform: FreeformState;
+  /** The worktree a worktree workspace was opened for. */
+  worktree?: WorktreeMark;
 }
 
 /**
@@ -145,6 +164,8 @@ export function snapshotOf(
       ? { web: { ...t.web } }
       : t.chat
       ? { chat: { ...t.chat }, rows: savedRows(chatRows(t.id)) }
+      : t.scm
+      ? { scm: { ...t.scm } }
       : tile(t.id);
     if (s) tiles[t.id] = s;
   }
@@ -165,6 +186,7 @@ export function snapshotOf(
       z: [...state.freeform.z],
       maximized: state.freeform.maximized,
     },
+    ...(state.worktree ? { worktree: { ...state.worktree } } : {}),
   };
 }
 
@@ -220,6 +242,8 @@ function tileSnapshotOf(t: unknown): TileSnapshot | undefined {
   if (web) return { web };
   const chat = sanitizeChat(t.chat);
   if (chat) return { chat, rows: sanitizeRows(t.rows) };
+  const scm = t.scm === undefined ? undefined : sanitizeScmTile(t.scm);
+  if (scm) return { scm };
   const profile = profileOf(t.profile);
   if (!profile) return undefined;
   return {
@@ -260,6 +284,7 @@ function parseSnapshot(raw: unknown): WorkspaceSnapshot | undefined {
     tiles,
     view: sanitizeViewMode(raw.view),
     freeform: raw.freeform as FreeformState | undefined,
+    ...(worktreeMarkOf(raw) ? { worktree: worktreeMarkOf(raw) } : {}),
   };
 }
 
@@ -305,6 +330,27 @@ export function planRestore(
       tiles.push({ id: entry.id, chat: tile.chat, rows: tile.rows });
       continue;
     }
+    if ("scm" in tile) {
+      // A Source Control tile shows its repository again; it has no PTY either.
+      const {
+        ssh: _s,
+        agent: _a,
+        sandbox: _b,
+        exitMessage: _m,
+        chat: _c,
+        web: _w,
+        ...rest
+      } = entry;
+      terminals.push({
+        ...rest,
+        scm: tile.scm,
+        title: scmTitle(tile.scm),
+        exited: false,
+        exitCode: null,
+      });
+      tiles.push({ id: entry.id, scm: tile.scm });
+      continue;
+    }
     if ("web" in tile) {
       // A web tile reopens at its last page; it has no PTY, so it never ended.
       const {
@@ -330,7 +376,7 @@ export function planRestore(
     if (pty) claimed.add(pty.id);
     const exit = pty ? pty.exit : undefined;
     // A terminal's entry never carries a page (a web tile is known by its tile snapshot).
-    const { web: _web, chat: _chat, ...term } = entry;
+    const { web: _web, chat: _chat, scm: _scm, ...term } = entry;
     terminals.push(
       pty && !exit ? { ...term, exited: false, exitCode: null } : {
         ...term,
@@ -379,6 +425,7 @@ export function planRestore(
     tiles,
     view: snap?.view ?? "tiled",
     freeform: sanitizeFreeform(snap?.freeform, ids),
+    ...(snap?.worktree ? { worktree: snap.worktree } : {}),
   };
 }
 
@@ -416,12 +463,16 @@ export function movedTileOf(raw: unknown): MovedTile | undefined {
   const tile = tileSnapshotOf(raw.tile);
   // An agent tile's session belongs to its window's hub: it does not move.
   if (!entry || !tile || "chat" in tile || entry.chat) return undefined;
-  const { minimized: _m, web: _w, ...rest } = entry;
+  const { minimized: _m, web: _w, scm: _c, ...rest } = entry;
   const size = isObject(raw.size) && isSize(raw.size.w) && isSize(raw.size.h)
     ? { size: { w: Math.round(raw.size.w), h: Math.round(raw.size.h) } }
     : {};
   return {
-    entry: "web" in tile ? { ...rest, web: tile.web } : rest,
+    entry: "web" in tile
+      ? { ...rest, web: tile.web }
+      : "scm" in tile
+      ? { ...rest, scm: tile.scm }
+      : rest,
     tile,
     ...size,
   };

@@ -1,0 +1,9 @@
+ QWEN
+
+> refactor utils.ts into smaller modules
+
+⠴ Thinking about it… (6s · esc to cancel)
+
+╭──────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file           │
+╰──────────────────────────────────────────────────╯
