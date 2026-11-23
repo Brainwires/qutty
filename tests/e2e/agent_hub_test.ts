@@ -162,7 +162,7 @@ suite("agent hub", (test) => {
     await waitFor(async () => !(await app.exists(ASK)), 3000, "closed");
   });
 
-  test("app badge: counts the agents waiting for the user; Settings → Agents turns it off", async (app) => {
+  test("app badge: counts the agents waiting for the user and unseen finished turns; Settings → Agents turns it off", async (app) => {
     await app.openSettings("companion");
     await app.click('[data-testid=setting-companion-mode][data-value="off"]');
     await app.closeSettings();
@@ -203,6 +203,20 @@ suite("agent hub", (test) => {
 
     await app.click('[data-testid=ask-action][data-action="No"]');
     await waitBadge(app, codex, "data-status", "idle");
+    await badgeIs(0);
+
+    // A finished turn in a tile the user is not looking at counts until it gets the focus.
+    await app.typeInTerminal(claude, "hello\n");
+    await waitBadge(app, claude, "data-status", "busy");
+    await app.focusChip(codex);
+    await waitBadge(app, claude, "data-status", "idle");
+    await badgeIs(1);
+    await app.focusChip(claude);
+    await badgeIs(0);
+    // One that finishes in the focused tile is seen at once.
+    await app.typeInTerminal(claude, "again\n");
+    await waitBadge(app, claude, "data-status", "busy");
+    await waitBadge(app, claude, "data-status", "idle");
     await badgeIs(0);
   });
 

@@ -49,6 +49,13 @@ export interface TileInfo {
    */
   worktree?: { path: string; branch?: string; linked: boolean };
   status: TileStatus;
+  /**
+   * Its agent finished a turn (busy → idle, or Claude Code's `idle_prompt` notification) and sits
+   * at its prompt for the user, who has not looked at the tile since: the app icon's badge counts
+   * it (lib/hub/badge.ts). The page clears it when the tile has the focus in the front window
+   * (the hub's `seen`); the agent getting busy again, or the tile closing, clears it too.
+   */
+  attention?: boolean;
   /** It runs in the window's shared Docker sandbox (its cwd is a path inside the container). */
   sandbox?: boolean;
   /** How its last `set_status` went ("build failed"), until its status changes again. */

@@ -393,7 +393,11 @@ function WorkspaceView() {
     state.settings.tileTitle,
     hubIdOfAgent,
   );
-  useDockBadge(managerRef.current, state.settings.dockBadge);
+  useDockBadge(
+    managerRef.current,
+    state.settings.dockBadge,
+    state.focusedId ? hubTileOf(state.focusedId) : undefined,
+  );
 
   const closeTerminal = useCallback((id: string) => {
     // An agent tile's session ends with it.

@@ -1160,6 +1160,10 @@ const noResumeInput = objectSchema<{ id: string; on: boolean }>(
   },
 );
 
+const seenInput = objectSchema<{ id: string }>((v, issues) => ({
+  id: str(v, "id", issues, 64),
+}));
+
 const detectionInput = objectSchema<{ id: string; reload: boolean }>(
   (v, issues) => ({ id: str(v, "id", issues, 64), reload: v.reload === true }),
 );
@@ -1404,6 +1408,17 @@ export default defineDesktopExtension({
       handler: (args: unknown): void => {
         const { id, on } = args as { id: string; on: boolean };
         requireService().core.registry.setNoResume(id, on);
+      },
+    },
+    /**
+     * The user saw terminal `id` (it has the focus in the front window): its agent's finished turn
+     * no longer counts on the app icon's badge (lib/hub/badge.ts).
+     */
+    seen: {
+      input: seenInput,
+      handler: (args: unknown): void => {
+        const { id } = args as { id: string };
+        requireService().core.registry.setAttention(id, false);
       },
     },
     /**

@@ -731,9 +731,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </label>
           <span class="field-hint">
             The app's icon (the Dock on macOS) shows how many terminals have an
-            agent waiting for you: a permission prompt, a question, or a status
-            of waiting. An agent that finished its turn and sits at its prompt
-            is not counted. Every window's terminals count.
+            agent waiting for you: a permission prompt, a question, a status of
+            waiting, or a finished turn you have not looked at yet (it stops
+            counting once the tile has the focus). Every window's terminals
+            count.
           </span>
         </SettingsGroup>
         <SettingsGroup title="Presets" testid="presets-section">

@@ -368,6 +368,11 @@ export function createDemoHub(
       registry.setNoResume(id, on);
       return Promise.resolve();
     },
+    /** The user saw tile `id` (focused in the front window): its finished turn is noticed. */
+    seen(id: string): Promise<void> {
+      registry.setAttention(id, false);
+      return Promise.resolve();
+    },
     /** Mark tile `id` resumed after a restart (the demo agent's `/resumed`). */
     setResumed(id: string): void {
       registry.setResumed(id, true);

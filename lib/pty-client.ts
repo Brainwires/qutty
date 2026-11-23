@@ -347,6 +347,11 @@ export interface PtyBackend {
   /** Terminal `ptyId`'s "Don't resume this agent" (its tile's header menu). */
   hubSetNoResume(ptyId: string, on: boolean): Promise<void>;
   /**
+   * The user saw hub tile `id` (it has the focus in the front window): its agent's finished turn
+   * stops counting on the app icon's badge (`TileInfo.attention`).
+   */
+  hubSeen(id: string): Promise<void>;
+  /**
    * The agent detection debug command for terminal `ptyId` (`qutty.agentDetection()` in the
    * devtools): the agent detected, the matcher that fired, the state. `reload` reads the user's
    * manifests again first.
@@ -914,6 +919,9 @@ export function createDesktopBackend(
     },
     async hubSetNoResume(ptyId, on) {
       await hub.setNoResume({ id: ptyId, on });
+    },
+    async hubSeen(id) {
+      await hub.seen({ id });
     },
     async hubDetection(ptyId, reload = false) {
       return await hub.detection({ id: ptyId, reload });
@@ -2014,6 +2022,7 @@ export function createDemoBackend(): PtyBackend {
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
     hubRename: (ptyId, name) => attempt(() => hub.rename(ptyId, name.trim())),
     hubSetNoResume: (ptyId, on) => hub.setNoResume(ptyId, on),
+    hubSeen: (id) => hub.seen(id),
     hubDetection: (ptyId) => hub.detection(ptyId),
     hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
