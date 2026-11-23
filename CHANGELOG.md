@@ -11,6 +11,9 @@
   the answer sticks for that site and that permission. Settings → Links → Site
   permissions lists what you remembered, with Forget per entry and Clear all.
   Before, every such request was refused.
+- The macOS apps and the Linux packages now ship the voice audio library
+  (on-device push-to-talk and playback), built for each architecture and signed
+  with the app on macOS, so voice works without installing it by hand.
 - Built on Denext 4.22 (runtime 3.0.0-denext.28):
   - The Dock menu uses Denext's own backend Dock menu. Items and behaviour are
     the same. New Terminal and the chats go to the window Denext names as

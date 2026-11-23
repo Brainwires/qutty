@@ -87,12 +87,14 @@
     Stop buttons and the review box on the companion, Settings → Voice.
   - Voice, done (Denext 4.22): `desktop.bundle.libraries` declares
     `librullama_audio_ffi` per target (optional), and the app finds it with
-    `bundledLibraryPath`. Open: the release jobs must build it into
-    `native/<target>/` (`deno task audio:lib --native`) before packaging. Until
-    they do, releases ship without it, and `deno task audio:lib` still installs
-    one into the app-support folder. The OS recognizer (`SFSpeechRecognizer`)
-    waits on the Denext proposal in the same doc. ElevenLabs text to speech
-    needs `output_format` sent as a query parameter in
+    `bundledLibraryPath`. Done: the release jobs (macOS and Linux) build it from
+    a pinned Rullama commit (`RULLAMA_REF` in release.yml; move it to a tag once
+    one has the crate) into `native/<target>/` (`deno task audio:lib --native`)
+    before packaging, fail if it does not build, and check that each package
+    carries it (signed with the app on macOS). `deno task audio:lib` still
+    installs one into the app-support folder for development. The OS recognizer
+    (`SFSpeechRecognizer`) waits on the Denext proposal in the same doc.
+    ElevenLabs text to speech needs `output_format` sent as a query parameter in
     `@rullama/provider-speech` (it is ignored today, so the reply is mp3, which
     the library cannot play); Deepgram Aura is used instead. OpenAI Realtime
     (the voice of Denext's example companion on `feat/loopy-voice-tools`) can be

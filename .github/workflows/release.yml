@@ -19,6 +19,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/package-linux.ts
+      - scripts/build-audio-lib.ts
       - denext.config.ts
   workflow_dispatch:
 
@@ -27,6 +28,11 @@ permissions:
 
 env:
   DENO_VERSION: 2.9.8
+  # The Rullama commit whose `rullama-audio-ffi` (the voice audio library, bundled through
+  # desktop.bundle.libraries) each build compiles. No release tag has the crate yet (it landed
+  # after v0.12.0): move to a tag once one does. Its rust-toolchain.toml pins Rust 1.91.
+  RULLAMA_REPO: https://github.com/Brainwires/rullama-framework.git
+  RULLAMA_REF: 1bf343c7ac52eef35635299f8576412e1b7cf976
 
 jobs:
   # Each job's runner: our self-hosted pool while it has a free slot, else the GitHub image at
@@ -84,6 +90,37 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - run: deno task test
+
+      # The voice audio library, built for this arch into native/darwin-<arch>/, where the package
+      # script copies it into Contents/Frameworks and signs it with the app. The library is
+      # optional to the packager, so a failed build here fails the job rather than shipping an
+      # app without it.
+      - name: Check out Rullama (the audio library's source)
+        run: |
+          set -eu
+          # Outside the workspace (so Qutty's own tasks never see it), fresh each job.
+          RULLAMA_DIR="$RUNNER_TEMP/rullama-framework"
+          rm -rf "$RULLAMA_DIR"
+          echo "RULLAMA_DIR=$RULLAMA_DIR" >> "$GITHUB_ENV"
+          git init -q "$RULLAMA_DIR"
+          git -C "$RULLAMA_DIR" fetch -q --depth 1 "$RULLAMA_REPO" "$RULLAMA_REF"
+          git -C "$RULLAMA_DIR" checkout -q FETCH_HEAD
+      - uses: dtolnay/rust-toolchain@1.91
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.RULLAMA_DIR }} -> target
+          key: rullama-audio-ffi
+      - name: Build the audio library (rullama-audio-ffi)
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          # whisper-rs builds whisper.cpp with cmake: GitHub's images have it, a self-hosted
+          # runner may not.
+          command -v cmake > /dev/null || brew install cmake
+          deno task audio:lib --native
+          LIB="native/darwin-${ARCH/x86_64/x64}/librullama_audio_ffi.dylib"
+          lipo -archs "$LIB" | tee /dev/stderr | grep -qw "$ARCH"
 
       - name: Import the signing certificate and notary key
         env:
@@ -147,6 +184,10 @@ jobs:
           xcrun stapler validate "dist/Qutty.app"
           EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' dist/Qutty.app/Contents/Info.plist)"
           lipo -archs "dist/Qutty.app/Contents/MacOS/$EXE" | tee /dev/stderr | grep -qw "$ARCH"
+          # The audio library: bundled, signed with the app's identity, for this arch.
+          AUDIO="dist/Qutty.app/Contents/Frameworks/librullama_audio_ffi.dylib"
+          codesign --verify --strict -vv "$AUDIO"
+          lipo -archs "$AUDIO" | tee /dev/stderr | grep -qw "$ARCH"
           mkdir -p release
           cp "dist/Qutty.dmg" "release/Qutty-${VERSION}-${ARCH}.dmg"
           (cd release && shasum -a 256 "Qutty-${VERSION}-${ARCH}.dmg" > "Qutty-${VERSION}-${ARCH}.dmg.sha256")
@@ -211,6 +252,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             libwebkit2gtk-4.1-0 libgtk-3-0 xvfb xauth desktop-file-utils
+          # The audio library's build: whisper.cpp (cmake, a C/C++ compiler, libclang for
+          # bindgen) and cpal's ALSA headers.
+          sudo apt-get install -y -qq --no-install-recommends \
+            build-essential cmake clang libclang-dev pkg-config libasound2-dev
           # appimagetool, pinned by hash, run without FUSE by a wrapper. The AppImage runtime it
           # embeds is denext's pin (type2-runtime 20251108, SHA-256-checked by the package script
           # and passed as --runtime-file).
@@ -227,6 +272,32 @@ jobs:
 
       - if: github.event_name == 'push'
         run: deno task test
+
+      # The voice audio library, built into native/linux-<label>/, where the package script copies
+      # it into the bundle's lib/. Optional to the packager, so a failed build fails the job here.
+      - name: Check out Rullama (the audio library's source)
+        run: |
+          set -eu
+          # Outside the workspace (so Qutty's own tasks never see it), fresh each job.
+          RULLAMA_DIR="$RUNNER_TEMP/rullama-framework"
+          rm -rf "$RULLAMA_DIR"
+          echo "RULLAMA_DIR=$RULLAMA_DIR" >> "$GITHUB_ENV"
+          git init -q "$RULLAMA_DIR"
+          git -C "$RULLAMA_DIR" fetch -q --depth 1 "$RULLAMA_REPO" "$RULLAMA_REF"
+          git -C "$RULLAMA_DIR" checkout -q FETCH_HEAD
+      - uses: dtolnay/rust-toolchain@1.91
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.RULLAMA_DIR }} -> target
+          key: rullama-audio-ffi
+      - name: Build the audio library (rullama-audio-ffi)
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -eu
+          deno task audio:lib --native
+          test -s "native/linux-${LABEL}/librullama_audio_ffi.so"
+          ls -la "native/linux-${LABEL}"
 
       - name: Package (AppImage, .deb, tarball)
         run: deno task desktop:package:linux --format tar.gz,deb,appimage
@@ -260,6 +331,7 @@ jobs:
           echo "::group::.deb"
           dpkg-deb -I "dist/Qutty-${LABEL}.deb"
           dpkg-deb -c "dist/Qutty-${LABEL}.deb" | grep -v ' \./usr/lib/'
+          dpkg-deb -c "dist/Qutty-${LABEL}.deb" | grep '/librullama_audio_ffi\.so$'
           dpkg-deb -f "dist/Qutty-${LABEL}.deb" Maintainer | grep -qxF 'Brainwires <155631428+Brainwires@users.noreply.github.com>'
           DEB="$RUNNER_TEMP/deb"
           dpkg-deb -x "dist/Qutty-${LABEL}.deb" "$DEB"
@@ -271,6 +343,7 @@ jobs:
           TGZ="$RUNNER_TEMP/tgz"
           mkdir -p "$TGZ"
           tar -xzf "dist/Qutty-${LABEL}-linux.tar.gz" -C "$TGZ"
+          find "$TGZ" -name librullama_audio_ffi.so | grep .
           check_entry "$TGZ/Qutty-${LABEL}/${ID}.desktop"
           test -f "$TGZ/Qutty-${LABEL}/${ID}.png"
           echo "::endgroup::"
@@ -280,6 +353,7 @@ jobs:
           mkdir -p "$APPDIR"
           (cd "$APPDIR" && "$GITHUB_WORKSPACE/dist/Qutty-${LABEL}.AppImage" --appimage-extract > /dev/null)
           ls -la "$APPDIR/squashfs-root"
+          find "$APPDIR/squashfs-root" -name librullama_audio_ffi.so | grep .
           check_entry "$APPDIR/squashfs-root/${ID}.desktop"
           check_metainfo "$APPDIR/squashfs-root/usr/share/metainfo/${ID}.metainfo.xml"
           grep -q 'libwebkit2gtk-4.1' "$APPDIR/squashfs-root/usr/share/metainfo/${ID}.metainfo.xml"
