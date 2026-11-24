@@ -6,7 +6,7 @@
 // -------------------------------------------
 // Every PTY (a tile's shell, and the hidden ones desktop/ssh.ts, sandbox.ts, voice.ts, ollama.ts,
 // links.ts, shell-agent.ts and companion-brain.ts run their helpers in) is opened by denext's Deno
-// runtime (`Deno.openPty`, runtime 3.0.0-denext.12 and later; Denext 4.20.1 pins 3.0.0-denext.27):
+// runtime (`Deno.openPty`, runtime 3.0.0-denext.12 and later; Denext 4.22.0 pins 3.0.0-denext.28):
 // the program, its arguments, its environment (`clearEnv`, so a parent terminal's variables are
 // really gone), its folder and its size; `readable` / `writable` streams for the master, `resize`,
 // `kill(signal)` and the exit `status`. It is the same runtime API Denext's own `pty` capability
@@ -17,9 +17,14 @@
 // Under stock Deno (no `Deno.openPty`) a spawn answers `unsupported`; the tests run on denext's
 // toolchain (`deno task test`).
 //
-// The foreground process and its folder (`info`, the tile's title) come from the OS: `/proc` on
-// Linux; `proc_pidinfo` over libc FFI on macOS (the runtime's PTY exposes no master fd, so there
-// is no `tcgetpgrp`: the shell's `e_tpgid` names the foreground group instead).
+// The foreground process, its folder and arguments (`info`, the tile's title) come from the
+// runtime's `Deno.Pty.foreground()` (runtime 3.0.0-denext.28, the call Denext 4.22's `ptyInfo`
+// is built on; Denext's `ptyInfo` itself serves its own `pty` capability's terminals, which
+// Qutty does not use). Where the runtime has none, and for the daemon's terminals (reached by
+// pid), they come from the OS: `/proc` on Linux; `proc_pidinfo` over libc FFI on macOS (the
+// runtime's PTY exposes no master fd, so there is no `tcgetpgrp`: the shell's `e_tpgid` names the
+// foreground group instead). The per-flush foreground-group check stays on the OS readers: one
+// cheap query, where `foreground()` also reads the process's arguments and folder.
 //
 // Output coalescing: each terminal's output is buffered and emitted every ~8 ms, or at once when
 // 64 KiB are pending, so the page sees a sane number of events. Each `data` event carries a
@@ -119,6 +124,10 @@ export interface PtyInfo {
   process: string;
   /** The foreground process's working directory (falls back to the shell's), if it can be read. */
   cwd?: string;
+  /** The foreground process's arguments, the program first (runtime `foreground()` only). */
+  argv?: string[];
+  /** The terminal device (`/dev/ttys004`; runtime `ttyName` only). */
+  tty?: string;
 }
 
 /** The `data` event: coalesced output. `seq` increases by 1 per event per terminal. */
@@ -379,9 +388,30 @@ export interface DenoPtyStatus {
   readonly signal: string | null;
 }
 
+/**
+ * What `Deno.Pty.foreground()` answers (runtime 3.0.0-denext.28, Denext 4.22's `ptyInfo`): the
+ * process in the terminal's foreground, asked of the OS at each call.
+ */
+export interface DenoPtyForeground {
+  /** The terminal's foreground process group (`null` on Windows, which has none). */
+  readonly pgid: number | null;
+  /** The process described. */
+  readonly pid: number;
+  /** Its name. */
+  readonly name: string;
+  /** Its arguments, the program first (`null` when the OS refuses). */
+  readonly argv: string[] | null;
+  /** Its working directory (`null` when the OS refuses). */
+  readonly cwd: string | null;
+}
+
 /** `Deno.Pty`: the program's pid, the master's streams, its size, signals and its end. */
 export interface DenoPty {
   readonly pid: number;
+  /** The terminal device's path (`null` on Windows), where the runtime tells it (denext.28). */
+  readonly ttyName?: string | null;
+  /** The terminal's foreground process, where the runtime tells it (denext.28). */
+  foreground?(): DenoPtyForeground | null;
   readonly readable: ReadableStream<Uint8Array>;
   readonly writable: WritableStream<Uint8Array>;
   readonly status: Promise<DenoPtyStatus>;
@@ -896,6 +926,11 @@ export class PtyHost {
 
   async info(id: string): Promise<PtyInfo> {
     const t = this.#get(id);
+    const runtime = runtimeForeground(t.pty);
+    if (runtime !== undefined) {
+      return ptyInfoFromForeground(id, t.pid, t.shell, runtime, t.pty.ttyName);
+    }
+    // An older runtime, or a daemon terminal (desktop/ptyd-client.ts `RemotePty`): ask the OS.
     const fg = await foregroundOf(t.pid);
     // No foreground process group yet (the shell is still starting): the shell is what runs.
     let process = fg?.process || t.shell;
@@ -1084,8 +1119,53 @@ function signal(t: Term, name: string): void {
 }
 
 /**
+ * The runtime's own answer about `pty`'s foreground process (`Deno.Pty.foreground()`, runtime
+ * 3.0.0-denext.28: macOS, Linux and Windows; the call Denext 4.22's `ptyInfo` is built on):
+ * `undefined` where the runtime has no such call (then {@linkcode foregroundOf} asks the OS),
+ * `null` when it has one but nothing could be told (or it threw).
+ */
+export function runtimeForeground(
+  pty: Pick<DenoPty, "foreground">,
+): DenoPtyForeground | null | undefined {
+  if (typeof pty.foreground !== "function") return undefined;
+  try {
+    const fg = pty.foreground();
+    return fg !== null && typeof fg === "object" ? fg : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `info` from the runtime's {@linkcode DenoPtyForeground} (`null`: none yet, the shell is still
+ * starting, so the shell is what runs). The name is reduced as {@linkcode PtyHost.info} does for
+ * the OS readers (a path's last segment, a login shell's leading `-` dropped); a field the OS
+ * refused is left out.
+ */
+export function ptyInfoFromForeground(
+  id: string,
+  pid: number,
+  shell: string,
+  fg: DenoPtyForeground | null,
+  ttyName?: string | null,
+): PtyInfo {
+  let process = fg?.name || shell;
+  process = process.slice(process.lastIndexOf("/") + 1).replace(/^-/, "");
+  return {
+    id,
+    pid,
+    process,
+    ...(fg?.cwd ? { cwd: fg.cwd } : {}),
+    ...(fg?.argv && fg.argv.length > 0 ? { argv: fg.argv } : {}),
+    ...(typeof ttyName === "string" && ttyName !== "" ? { tty: ttyName } : {}),
+  };
+}
+
+/**
  * The foreground process of the terminal whose program is `pid`: its process group's leader and
  * name, or `undefined` while there is none (the shell is still starting) or the OS will not say.
+ * The fallback where the runtime's `Deno.Pty` has no `foreground()` ({@linkcode
+ * runtimeForeground}), and for the daemon's terminals, which the app reaches by pid only.
  */
 async function foregroundOf(
   pid: number,

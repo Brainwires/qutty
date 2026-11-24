@@ -181,11 +181,26 @@ export class Registry {
   setStatus(id: string, status: TileStatus, note?: string): void {
     const tile = this.#tiles.get(id);
     if (!tile || (tile.status === status && tile.note === note)) return;
+    const was = tile.status;
     tile.status = status;
     if (note === undefined) delete tile.note;
     else tile.note = note;
-    if (status === "busy") delete tile.resumed;
+    if (status === "busy") {
+      delete tile.resumed;
+      delete tile.attention;
+    } else if (was === "busy" && status === "idle" && tile.harness) {
+      // An agent's turn finished: it waits at its prompt until the user looks.
+      tile.attention = true;
+    }
     this.#onChange();
+  }
+
+  /**
+   * The tile's agent waits at its prompt for the user (Claude Code's `idle_prompt`), or the user
+   * has seen it (`false`: the page's `seen`).
+   */
+  setAttention(id: string, on: boolean): void {
+    this.#flag(id, "attention", on);
   }
 
   /** Mark the tile's agent as resumed after a restart, or not. */
@@ -198,7 +213,11 @@ export class Registry {
     this.#flag(id, "noResume", noResume);
   }
 
-  #flag(id: string, key: "resumed" | "noResume", on: boolean): void {
+  #flag(
+    id: string,
+    key: "resumed" | "noResume" | "attention",
+    on: boolean,
+  ): void {
     const tile = this.#tiles.get(id);
     if (!tile || (tile[key] === true) === on) return;
     if (on) tile[key] = true;

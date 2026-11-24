@@ -27,6 +27,16 @@
 // shows a snapshot of its page instead (`setOccluded`); for what stays over the tile (the
 // companion itself) it leaves a strip of the body free instead (`inset`).
 //
+// Downloads and permission prompts, where the engine hands them over (`capabilities.downloads`,
+// `permissionRequests`: the native engine on a runtime with Denext's `downloads: "app"` /
+// `permissions: "app"`): each download step comes as a `download` event into the tile's list
+// (lib/web/downloads.ts), which the download bar under the header shows; "Show in Finder" reveals
+// the saved file through the backend (`revealFile`, desktop/links.ts), never the item's own
+// `reveal()` (a page may not reveal a file saved through the save panel). Each permission request
+// is answered from what the site was always allowed or denied (lib/web/site-permissions.ts, the
+// synced `sitePermissionsStore`), else it waits in the permission bar until Allow or Deny; a page
+// load and the view closing drop what still waits (refused).
+//
 // The browser around the page: the bookmarks bar (app/bookmarks-bar.tsx), the star, the address
 // field's suggestions, the find bar, page zoom (remembered per site), the page's right-click menu
 // and the Back / Forward lists live in app/web-chrome.tsx; the browser keys (⌘L, ⌘R, ⌘[ …) come
@@ -36,9 +46,19 @@ import { useCallback, useEffect, useRef, useState } from "denext";
 import type {
   WebEngine,
   WebLoadState,
+  WebPermissionRequest,
   WebViewEventMap,
   WebViewHandle,
 } from "../lib/web/engine.ts";
+import {
+  applyDownload,
+  dismissDownload,
+  type DownloadAction,
+  downloadOver,
+  revealLabel,
+  type WebDownload,
+} from "../lib/web/downloads.ts";
+import { decideRequest, rememberChoice } from "../lib/web/site-permissions.ts";
 import {
   followUrl,
   startHistory,
@@ -48,7 +68,7 @@ import { recordVisit, titleVisit } from "../lib/web/visits.ts";
 import { ownSiteZoom, setSiteZoom, stepZoom } from "../lib/web/zoom.ts";
 import { pageZoom, stepTileZoom } from "../lib/workspace/tile-zoom.ts";
 import type { WebKeyCommand } from "../lib/workspace/keys.ts";
-import { visitsStore, zoomStore } from "./web-stores.ts";
+import { sitePermissionsStore, visitsStore, zoomStore } from "./web-stores.ts";
 import type { OpenWhere } from "./bookmarks-bar.tsx";
 import {
   areaOverlays,
@@ -93,6 +113,10 @@ export interface WebTileHooks {
   setSharedZoom?(zoom: number): void;
   /** Copy text to the clipboard (the page menu's Copy link, Copy). */
   copy?(text: string): void;
+  /** Show a saved download in Finder (the file manager): the backend's `linkOpen` `reveal`. */
+  revealFile?(path: string): void;
+  /** The OS, for the words the tile uses ("Show in Finder"). */
+  platform?: "mac" | "other";
 }
 
 /** Where a web tile is, as its frame knows it (app/tile-cluster.tsx). */
@@ -178,6 +202,18 @@ export interface WebTileView {
   insertText(text: string): void;
   /** Give the keyboard back to the tile's page. */
   focusPage(): void;
+  /** The page's downloads (the download bar), newest last. */
+  downloads: readonly WebDownload[];
+  /** The engine pauses and resumes downloads. */
+  downloadPause: boolean;
+  /** A download bar button on download `id`. */
+  downloadAction(id: number, action: DownloadAction): void;
+  /** What the button that shows a saved download says ("Show in Finder" on macOS). */
+  revealLabel: string;
+  /** The permission request the permission bar asks about (the first waiting), or `null`. */
+  permissionPrompt: WebPermissionRequest | null;
+  /** Answer it (`remember`: the site keeps the answer for each permission it asked for). */
+  answerPermission(allow: boolean, remember: boolean): void;
 }
 
 /** The find bar's state. */
@@ -395,6 +431,11 @@ export function useWebTile(
   const [find, setFindState] = useState<FindState>(NO_FIND);
   const [starOpen, setStarOpen] = useState(false);
   const [pageMenu, setPageMenu] = useState<PageMenu | null>(null);
+  const [downloads, setDownloads] = useState<readonly WebDownload[]>([]);
+  // The permission requests waiting for an answer, oldest first (the bar asks about the first).
+  const [prompts, setPrompts] = useState<readonly WebPermissionRequest[]>([]);
+  const promptsRef = useRef(prompts);
+  promptsRef.current = prompts;
   // The tile's own copy of the view's back/forward list (the native view keeps its own and
   // tells only whether it can go back): what the Back and Forward menus list.
   const [trail, setTrail] = useState<WebHistory>(() =>
@@ -461,6 +502,8 @@ export function useWebTile(
         }),
         v.on("load", (e) => {
           setView((s) => ({ ...s, load: e.state }));
+          // A new page: what the old one asked for is refused (the runtime does so too).
+          if (e.state === "loading") dropPrompts(v);
           if (e.state === "complete" && e.url) {
             visitsStore.set(
               recordVisit(visitsStore.get(), { url: e.url }, Date.now()),
@@ -495,6 +538,23 @@ export function useWebTile(
           }
         }),
         v.on("keyup", (e) => replayForwardedKey(e, "keyup", true)),
+        v.on(
+          "download",
+          (d) => setDownloads((list) => applyDownload(list, d)),
+        ),
+        v.on("permission-request", (req) => {
+          const said = decideRequest(
+            sitePermissionsStore.get(),
+            req.origin,
+            req.permissions,
+          );
+          if (said !== "ask") v.answerPermission?.(req.id, said === "allow");
+          else setPrompts((list) => [...list, req]);
+        }),
+        v.on(
+          "permission-cancelled",
+          (e) => setPrompts((list) => list.filter((r) => r.id !== e.id)),
+        ),
         v.on("new-window", (e) => {
           // A popup opens beside the tile, in a tile of its own; a page that asks for many
           // gets one a second.
@@ -532,6 +592,17 @@ export function useWebTile(
       live = false;
       for (const off of offs) off();
       zoomRef.current = 1;
+      // The view closes: its waiting requests are refused and its downloads end.
+      setPrompts([]);
+      setDownloads((list) =>
+        list.reduce(
+          (acc, d) =>
+            downloadOver(d)
+              ? acc
+              : applyDownload(acc, { ...d, state: "cancelled", paused: false }),
+          list,
+        )
+      );
       if (viewRef.current) hooksRef.current?.onView?.(id, null);
       void viewRef.current?.close();
       viewRef.current = null;
@@ -566,6 +637,56 @@ export function useWebTile(
   useEffect(() => {
     viewRef.current?.relayout();
   }, [layout.key]);
+
+  /** Refuse every waiting permission request of view `v` (its page left), and drop the bar. */
+  function dropPrompts(v: WebViewHandle): void {
+    for (const req of promptsRef.current) v.answerPermission?.(req.id, false);
+    promptsRef.current = [];
+    setPrompts([]);
+  }
+
+  /**
+   * Answer the first waiting request; remembered, the others the answer now covers are answered
+   * too (the same site asking again for what was just allowed or denied).
+   */
+  const answerPermission = (allow: boolean, remember: boolean) => {
+    const [req, ...rest] = promptsRef.current;
+    const v = viewRef.current;
+    if (!req) return;
+    v?.answerPermission?.(req.id, allow);
+    let stored = sitePermissionsStore.get();
+    if (remember) {
+      stored = rememberChoice(
+        stored,
+        req.origin,
+        req.permissions,
+        allow ? "allow" : "deny",
+      );
+      sitePermissionsStore.set(stored);
+    }
+    const left = rest.filter((r) => {
+      const said = decideRequest(stored, r.origin, r.permissions);
+      if (said === "ask") return true;
+      v?.answerPermission?.(r.id, said === "allow");
+      return false;
+    });
+    promptsRef.current = left;
+    setPrompts(left);
+  };
+
+  const downloadAction = (id: number, action: DownloadAction) => {
+    if (action === "dismiss") {
+      return setDownloads((list) => dismissDownload(list, id));
+    }
+    if (action === "reveal") {
+      const path = downloads.find((d) => d.id === id)?.path;
+      if (path) hooksRef.current?.revealFile?.(path);
+      return;
+    }
+    void viewRef.current?.controlDownload?.(id, action).catch((err) =>
+      console.warn(`web tile: the download did not ${action}`, err)
+    );
+  };
 
   const navigate = useCallback((input: string): boolean => {
     // The native view shows any site, so words that are not an address become a search.
@@ -780,6 +901,12 @@ export function useWebTile(
     goBy,
     copy,
     insertText: (text) => void viewRef.current?.insertText(text),
+    downloads,
+    downloadPause: !!engine?.capabilities.downloadPause,
+    downloadAction,
+    revealLabel: revealLabel(hooks?.platform ?? "mac"),
+    permissionPrompt: prompts[0] ?? null,
+    answerPermission,
     focusPage: () => {
       const v = viewRef.current;
       if (v && wantsPageRef.current) void v.focus();

@@ -4,13 +4,17 @@
 // Closed Window ▸ with the detached workspaces that still run terminals. macOS adds Options, Show All Windows, Hide and
 // Quit below it.
 //
-// It is the app process's (desktop.ts installs it), not a page's: Denext's page-side Dock menu
-// (`setQuickActions` / `onQuickAction` in `denext/mobile`) takes titles only (no separators,
-// checks or submenus), and delivers a click to every open window's page and to none when no
-// window is open, which is when the Dock menu matters most here. So the menu goes straight to the
-// runtime's `Deno.dock` (`setMenu`, its `"menuclick"` event), which also outlives every page
-// reload. Denext's own Dock-menu clicks only go to pages for ids a page set, so the two never
-// meet. Where there is no `Deno.dock.setMenu` (Linux, Windows, an older runtime) nothing is set.
+// It is the app process's (desktop.ts installs it), not a page's: Denext 4.22's backend Dock menu
+// (`setDockMenu` / `onDockMenuItem` on `runDesktop`'s result) takes separators, checks and
+// submenus, outlives every page reload, and hands each click to the backend once, with the key
+// window, and with no window open too, which is when the Dock menu matters most here. (Before
+// 4.22 Qutty set the runtime's `Deno.dock` menu itself; the page-side `setQuickActions` took
+// titles only.) Off macOS `setDockMenu` is a no-op, and desktop.ts installs nothing there.
+//
+// Reopen Closed Window lists the windows Denext remembers the user closed (`windows.closed()`,
+// most recent first, keyed by workspace id) whose workspace is still detached with terminals
+// running; a detached workspace Denext does not list (closed before a relaunch, say) follows,
+// the most recently detached first.
 //
 // What a window does (New Terminal, the agent chats) goes to the frontmost window's page as a
 // command it pulls (`session` extension: the `dockCommand` signal and `takeDockCommands`), so a
@@ -21,8 +25,14 @@
 // The menu follows the workspaces (desktop/workspace-host.ts `onChanged`) and the focus (the
 // `session` extension's `focus`, {@linkcode DockMenu.refresh}). The pure parts (`dockMenu`,
 // `dockMenuAction`, `nativeDockMenu`), {@linkcode DockCommandQueue} and {@linkcode DockMenu} over
-// a fake dock are tested without a window (tests/dock_menu_test.ts).
+// a fake host are tested without a window (tests/dock_menu_test.ts).
 
+import type {
+  DesktopAppMenusApi,
+  DesktopClosedWindow,
+  DesktopDockMenuItem,
+  DesktopWindowMenuItemContext,
+} from "denext/desktop";
 import type { WorkspaceInfo, WorkspaceRegistry } from "./workspace-host.ts";
 import { terminals } from "./tray.ts";
 
@@ -34,12 +44,6 @@ export type DockMenuEntry =
   | "separator"
   | { id: string; label: string; checked?: boolean }
   | { label: string; children: DockMenuEntry[] };
-
-/** A native menu entry as `Deno.dock.setMenu` takes it (`Deno.MenuItem`). */
-export type DockNativeItem =
-  | { item: { label: string; id: string; enabled: boolean; checked?: boolean } }
-  | { submenu: { label: string; items: DockNativeItem[] } }
-  | "separator";
 
 /** The Dock menu's item ids. */
 export const DOCK_NEW_WINDOW = "qutty:dock:new-window";
@@ -62,6 +66,11 @@ export interface DockMenuInput {
   agentChat: boolean;
   /** "Codex (chat)": Codex is installed (as the `+` menu offers it). */
   codexChat?: boolean;
+  /**
+   * The windows the user closed, most recent first (`windows.closed()`): Reopen Closed Window's
+   * order. A detached workspace not in it follows, the most recently detached first.
+   */
+  closed?: readonly Pick<DesktopClosedWindow, "key">[];
 }
 
 /** Workspace names in a stable order: "Workspace 2" before "Workspace 10". */
@@ -82,9 +91,16 @@ export function dockMenu(input: DockMenuInput): DockMenuEntry[] {
       label: w.name,
       ...(w.id === input.active ? { checked: true } : {}),
     }));
+  const rank = new Map<string, number>();
+  for (const [i, w] of (input.closed ?? []).entries()) {
+    if (!rank.has(w.key)) rank.set(w.key, i);
+  }
   const closed = input.workspaces
     .filter((w) => w.state === "detached" && w.running > 0)
-    .sort((a, b) => (b.detachedAt ?? 0) - (a.detachedAt ?? 0))
+    .sort((a, b) =>
+      (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
+      (b.detachedAt ?? 0) - (a.detachedAt ?? 0)
+    )
     .slice(0, DOCK_MAX_REOPEN)
     .map((w): DockMenuEntry => ({
       id: DOCK_REOPEN + w.id,
@@ -132,22 +148,19 @@ export function dockMenuAction(id: string): DockMenuAction | undefined {
   return undefined;
 }
 
-/** The menu in the runtime's shape (`Deno.MenuItem`). */
+/** The menu in Denext's shape (`setDockMenu`'s {@linkcode DesktopDockMenuItem}s). */
 export function nativeDockMenu(
   entries: readonly DockMenuEntry[],
-): DockNativeItem[] {
-  return entries.map((e): DockNativeItem => {
-    if (e === "separator") return e;
+): DesktopDockMenuItem[] {
+  return entries.map((e): DesktopDockMenuItem => {
+    if (e === "separator") return { type: "separator" };
     if ("children" in e) {
-      return { submenu: { label: e.label, items: nativeDockMenu(e.children) } };
+      return { label: e.label, submenu: nativeDockMenu(e.children) };
     }
     return {
-      item: {
-        label: e.label,
-        id: e.id,
-        enabled: true,
-        ...(e.checked ? { checked: true } : {}),
-      },
+      id: e.id,
+      label: e.label,
+      ...(e.checked ? { checked: true } : {}),
     };
   });
 }
@@ -202,30 +215,22 @@ export class DockCommandQueue {
   }
 }
 
-/** `Deno.dock`, as far as the Dock menu uses it. */
-export interface DockLike {
-  setMenu(menu: DockNativeItem[] | null): void;
-  addEventListener(type: "menuclick", listener: (event: Event) => void): void;
-  removeEventListener(
-    type: "menuclick",
-    listener: (event: Event) => void,
-  ): void;
-}
+/** What the Dock menu is set through: `runDesktop`'s result (Denext 4.22's backend Dock menu). */
+export type DockMenuHost = Pick<
+  DesktopAppMenusApi,
+  "setDockMenu" | "onDockMenuItem"
+>;
 
-/** The runtime's `Deno.dock` when it can take a Dock menu (macOS), else `undefined`. */
-export function runtimeDock(os: string = Deno.build.os): DockLike | undefined {
-  if (os !== "darwin") return undefined;
-  const dock = (Deno as unknown as { dock?: Partial<DockLike> }).dock;
-  return typeof dock?.setMenu === "function" &&
-      typeof dock.addEventListener === "function" &&
-      typeof dock.removeEventListener === "function"
-    ? dock as DockLike
-    : undefined;
+/** The keyed windows the user closed (`runDesktop`'s `windows.closed()`). */
+export interface ClosedWindowsLike {
+  closed(): readonly Pick<DesktopClosedWindow, "key">[];
 }
 
 /** What the Dock menu drives. */
 export interface DockMenuDeps {
-  dock: DockLike;
+  dock: DockMenuHost;
+  /** Reopen Closed Window's order (absent: the most recently detached first). */
+  windows?: ClosedWindowsLike;
   registry: Pick<
     WorkspaceRegistry,
     "list" | "onChanged" | "activeWindow" | "workspaceOfWindow"
@@ -259,7 +264,7 @@ export class DockMenu {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #off: (() => void)[] = [];
 
-  /** Whether the Dock menu is set (macOS with a dock that takes one). */
+  /** Whether the Dock menu is set (macOS). */
   get installed(): boolean {
     return this.#deps !== undefined;
   }
@@ -268,13 +273,8 @@ export class DockMenu {
   install(deps: DockMenuDeps): () => void {
     this.uninstall();
     this.#deps = deps;
-    const onClick = (e: Event) => {
-      const id = (e as CustomEvent<{ id?: unknown } | null>).detail?.id;
-      if (typeof id === "string") this.menuItem(id);
-    };
-    deps.dock.addEventListener("menuclick", onClick);
     this.#off.push(
-      () => deps.dock.removeEventListener("menuclick", onClick),
+      deps.dock.onDockMenuItem((id, ctx) => this.menuItem(id, ctx)),
       deps.registry.onChanged(() => this.refresh()),
     );
     this.#apply();
@@ -289,7 +289,7 @@ export class DockMenu {
     this.#timer = undefined;
     if (this.#deps && this.#menu !== "") {
       try {
-        this.#deps.dock.setMenu(null);
+        this.#deps.dock.setDockMenu(null);
       } catch { /* the runtime is going away */ }
     }
     this.#deps = undefined;
@@ -314,16 +314,21 @@ export class DockMenu {
     const active = window === undefined
       ? undefined
       : deps.registry.workspaceOfWindow(window);
+    let closed: readonly Pick<DesktopClosedWindow, "key">[] = [];
+    try {
+      closed = deps.windows?.closed() ?? [];
+    } catch { /* no window store: the detach order alone */ }
     const menu = nativeDockMenu(dockMenu({
       workspaces: deps.registry.list(),
       ...(active !== undefined ? { active } : {}),
       agentChat: this.#agentChat,
       codexChat: this.#codexChat,
+      closed,
     }));
     const json = JSON.stringify(menu);
     if (json === this.#menu) return;
     try {
-      deps.dock.setMenu(menu);
+      deps.dock.setDockMenu(menu);
       this.#menu = json;
     } catch (err) {
       console.error("dock menu: could not set the menu", err);
@@ -351,17 +356,20 @@ export class DockMenu {
     }, (err) => console.warn("dock menu: could not look for Codex", err));
   }
 
-  /** A Dock menu item was chosen. */
-  menuItem(id: string): void {
+  /**
+   * A Dock menu item was chosen (`onDockMenuItem`, with the key window Denext names). A command
+   * goes to {@linkcode commandTarget}'s window.
+   */
+  menuItem(
+    id: string,
+    ctx: Partial<DesktopWindowMenuItemContext> = {},
+  ): void {
     const deps = this.#deps;
     const action = dockMenuAction(id);
     if (!deps || !action) return;
     if (action.kind === "workspace") return deps.showWorkspace(action.id);
     if (action.kind === "newWindow") return void deps.newWindow();
-    const window = deps.registry.activeWindow();
-    const workspace = window === undefined
-      ? undefined
-      : deps.registry.workspaceOfWindow(window);
+    const { window, workspace } = commandTarget(deps.registry, ctx.keyWindow);
     if (window !== undefined && workspace !== undefined) {
       deps.showWorkspace(workspace);
       deps.commands.push(window, action.command);
@@ -373,6 +381,28 @@ export class DockMenu {
       deps.commands.push(opened, action.command);
     }
   }
+}
+
+/**
+ * The window a Dock command goes to: the key window Denext names when it shows a workspace (not
+ * the floating companion's window), else the workspace window focused last (`activeWindow`);
+ * none with no workspace window open.
+ */
+export function commandTarget(
+  registry: Pick<WorkspaceRegistry, "activeWindow" | "workspaceOfWindow">,
+  keyWindow: DesktopWindowMenuItemContext["keyWindow"] | undefined,
+): { window?: string; workspace?: string } {
+  if (keyWindow) {
+    const workspace = registry.workspaceOfWindow(keyWindow.id);
+    if (workspace !== undefined) return { window: keyWindow.id, workspace };
+  }
+  const window = registry.activeWindow();
+  const workspace = window === undefined
+    ? undefined
+    : registry.workspaceOfWindow(window);
+  return window === undefined || workspace === undefined
+    ? {}
+    : { window, workspace };
 }
 
 const MENU_KEY = Symbol.for("qutty.dockMenu");

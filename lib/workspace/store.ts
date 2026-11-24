@@ -280,6 +280,11 @@ export interface Settings extends FontSettings {
   sharedZoom: number;
   /** Settings → Agents → Presets: agent tile roles, picked in the `+` menu (lib/agent/presets.ts). */
   agentPresets: AgentPreset[];
+  /**
+   * Settings → Agents → Waiting agents: the app icon's badge (the Dock on macOS) counts the tiles
+   * whose agent waits for the user (lib/hub/badge.ts).
+   */
+  dockBadge: boolean;
 }
 
 /** The whole workspace. */
@@ -375,6 +380,8 @@ export type WorkspaceAction =
   /** Tile `id`'s header menu: the harness overlay on or off for it (`undefined`: as Settings say). */
   | { type: "setGuiOverlay"; id: string; on: boolean | undefined }
   | { type: "setHarnessOverlay"; on: boolean }
+  /** Settings → Agents: the app icon's badge of waiting agents on or off. */
+  | { type: "setDockBadge"; on: boolean }
   | { type: "activity"; id: string }
   /** A bell rang in tile `id` (or its agent started waiting for the user). */
   | { type: "bell"; id: string }
@@ -483,6 +490,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zoomTogether: false,
   sharedZoom: 1,
   agentPresets: [],
+  dockBadge: true,
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -625,6 +633,7 @@ export function sanitizeSettings(
   if (typeof r.harnessOverlay === "boolean") {
     out.harnessOverlay = r.harnessOverlay;
   }
+  if (typeof r.dockBadge === "boolean") out.dockBadge = r.dockBadge;
   if (typeof r.zoomTogether === "boolean") out.zoomTogether = r.zoomTogether;
   if (r.sharedZoom !== undefined) {
     out.sharedZoom = sanitizeTileZoom(r.sharedZoom) ?? 1;
@@ -1206,6 +1215,12 @@ function reduceCore(
       return withSettings(state, {
         ...state.settings,
         harnessOverlay: action.on === true,
+      });
+    case "setDockBadge":
+      if (state.settings.dockBadge === action.on) return state;
+      return withSettings(state, {
+        ...state.settings,
+        dockBadge: action.on === true,
       });
     case "webPage": {
       const entry = state.terminals.find((t) => t.id === action.id);

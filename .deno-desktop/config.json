@@ -87,6 +87,21 @@
         }
       }
     ],
+    "bundle": {
+      "libraries": [
+        {
+          "name": "rullama_audio_ffi",
+          "files": {
+            "darwin-arm64": "native/darwin-arm64/librullama_audio_ffi.dylib",
+            "darwin-x64": "native/darwin-x64/librullama_audio_ffi.dylib",
+            "linux-arm64": "native/linux-arm64/librullama_audio_ffi.so",
+            "linux-x64": "native/linux-x64/librullama_audio_ffi.so",
+            "windows-x64": "native/windows-x64/rullama_audio_ffi.dll"
+          },
+          "optional": true
+        }
+      ]
+    },
     "secureStore": {
       "legacy": false
     },
@@ -104,5 +119,8 @@
         "api.anthropic.com"
       ]
     }
+  },
+  "bundledLibraries": {
+    "targets": {}
   }
 }

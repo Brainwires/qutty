@@ -30,9 +30,21 @@
     prompt. `QUTTY_PTY_SELFTEST=persist` checks it in the packaged app.
   - Open: kept agent tiles keep their old `QUTTY_SOCK` / hub env (the hub's
     per-launch socket folder is gone): their hub integration needs a restart.
-    Sandboxed tiles are not kept. Denext has no supported way to run a process
-    that outlives the app (sidecars end with it), so the daemon is a detached
-    `spawnSelf` child; a Denext "detached sidecar" would make it first-class.
+    Sandboxed tiles are not kept. The daemon is still a detached `spawnSelf`
+    child. Denext 4.22's detached sidecars were checked and don't fit. A
+    full-app update stops them, which would end kept shells. There is one
+    instance per name, so a newer app replaces the old daemon, or with
+    `keepAcrossUpdates` reattaches to a daemon speaking another protocol. Qutty
+    instead runs daemons of two protocol versions side by side
+    (desktop/ptyd-sidecar.ts). Revisit if Denext adds keep-on-update and
+    per-version instances.
+  - Windows port, IPC: the hub's and the daemon's paths already come from
+    Denext's `localIpcPath` (named pipes on Windows, desktop/ipc.ts), and the
+    daemon client connects to a pipe through `connectLocalIpc`. Still open:
+    serving the hub and the daemon with `listenLocalIpc` on Windows. On macOS
+    and Linux they stay on libc, because `listenLocalIpc` needs `--allow-write`
+    and a `unix:<absolute path>` net grant, and neither can name a per-user
+    folder at package time.
   - Off macOS there is no Dock to come back through: closing the last window
     quits (through the same busy-agent question). Not tried on Linux yet.
 
@@ -73,17 +85,20 @@
     `desktop/voice.ts` (rullama-audio-ffi over `Deno.dlopen`, the Whisper model
     via `curl` in a hidden PTY, Deepgram / ElevenLabs), the mic / Summarize /
     Stop buttons and the review box on the companion, Settings → Voice.
-  - Voice, open: bundle `librullama_audio_ffi` per architecture in the app
-    (Denext's packager has no option for extra files yet: see
-    docs/denext-speech-recognition-proposal.md, "Related gap"); until then it is
-    installed into the app-support folder by `deno task audio:lib`. The OS
-    recognizer (`SFSpeechRecognizer`) waits on the Denext proposal in the same
-    doc. ElevenLabs text to speech needs `output_format` sent as a query
-    parameter in `@rullama/provider-speech` (it is ignored today, so the reply
-    is mp3, which the library cannot play); Deepgram Aura is used instead.
-    OpenAI Realtime (the voice of Denext's example companion on
-    `feat/loopy-voice-tools`) can be one more optional cloud engine behind the
-    same adapters.
+  - Voice, done (Denext 4.22): `desktop.bundle.libraries` declares
+    `librullama_audio_ffi` per target (optional), and the app finds it with
+    `bundledLibraryPath`. Done: the release jobs (macOS and Linux) build it from
+    a pinned Rullama commit (`RULLAMA_REF` in release.yml; move it to a tag once
+    one has the crate) into `native/<target>/` (`deno task audio:lib --native`)
+    before packaging, fail if it does not build, and check that each package
+    carries it (signed with the app on macOS). `deno task audio:lib` still
+    installs one into the app-support folder for development. The OS recognizer
+    (`SFSpeechRecognizer`) waits on the Denext proposal in the same doc.
+    ElevenLabs text to speech needs `output_format` sent as a query parameter in
+    `@rullama/provider-speech` (it is ignored today, so the reply is mp3, which
+    the library cannot play); Deepgram Aura is used instead. OpenAI Realtime
+    (the voice of Denext's example companion on `feat/loopy-voice-tools`) can be
+    one more optional cloud engine behind the same adapters.
   - Done (Denext 4.15): the cloud engines (Deepgram, ElevenLabs) are on. Their
     keys live in the voice extension's own secure store (`host.secureStore`,
     `org.qutty.Qutty/ext/voice` in the OS keychain), which no page can read;
@@ -687,6 +702,10 @@ docs/agent-detection.md).
 - [x] v0.7.3: Source Control tile, worktrees as workspaces, agents resume after
       restart or crash, screen-based agent state, the redesigned composer, chat
       tile and harness overlay.
+- [x] v0.8.0: Denext 4.22 (backend Dock menu, web downloads and site
+      permissions, foreground program from the PTY, real window order), the
+      bundled voice audio library, and the app icon badge for agents waiting on
+      you.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

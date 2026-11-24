@@ -3,7 +3,8 @@
 //
 // - The native audio library: rullama-hardware's audio as the `rullama-audio-ffi` cdylib (cpal
 //   capture, Whisper through whisper-rs, webrtc-vad, cpal playback), loaded with `Deno.dlopen`
-//   (`--allow-ffi` is already granted) from `QUTTY_AUDIO_LIB`, beside the app, or
+//   (`--allow-ffi` is already granted) from `QUTTY_AUDIO_LIB`, the app's bundled copy
+//   (`desktop.bundle.libraries`, found with Denext's `bundledLibraryPath`), or
 //   `<app support>/audio/` (lib/voice/ffi.ts `audioLibCandidates`). Without it, push-to-talk says
 //   so and the OS speech still reads answers aloud.
 // - The Whisper model: fetched on first use into `<app support>/models/`, its SHA-256 checked
@@ -24,7 +25,11 @@
 //
 // Nothing here may throw into the app's startup: the library and the model are found lazily.
 
-import { defineDesktopExtension, DesktopCapError } from "denext/desktop";
+import {
+  bundledLibraryPath,
+  defineDesktopExtension,
+  DesktopCapError,
+} from "denext/desktop";
 import { DeepgramClient } from "@rullama/provider-speech/deepgram";
 import { ElevenLabsClient } from "@rullama/provider-speech/elevenlabs";
 import {
@@ -40,6 +45,7 @@ import { ensureDir, renamePath, writeFileAtomic } from "./libc.ts";
 import type { PtyDataEvent, PtyExitEvent } from "./pty.ts";
 import { unlinkPath } from "./hub-socket.ts";
 import {
+  AUDIO_LIB_NAME,
   AUDIO_SYMBOLS,
   AudioLib,
   audioLibCandidates,
@@ -184,7 +190,7 @@ class VoiceService {
     const searched = audioLibCandidates({
       os: Deno.build.os,
       env: Deno.env.get("QUTTY_AUDIO_LIB") || undefined,
-      execPath: Deno.execPath(),
+      bundled: bundledLibraryPath(AUDIO_LIB_NAME),
       appSupportDir: this.#appSupportDir,
     });
     const errors: string[] = [];

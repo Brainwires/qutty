@@ -37,11 +37,7 @@ import {
   shareRuntimeWindows,
 } from "./desktop/windows.ts";
 import { trayIcons, trayMenu, trayMode } from "./desktop/tray.ts";
-import {
-  dockCommands,
-  dockMenuController,
-  runtimeDock,
-} from "./desktop/dock-menu.ts";
+import { dockCommands, dockMenuController } from "./desktop/dock-menu.ts";
 import { resolveProgram } from "./desktop/pty.ts";
 import { detachSelfTest } from "./desktop/selftest.ts";
 import { moveSelfTest } from "./desktop/move-selftest.ts";
@@ -66,11 +62,11 @@ if (!app.sidecarChild) {
   shareRuntimeWindows(app.windows);
   trayMode.install(app, workspaces);
   installNativeMenus(app);
-  // The Dock menu (macOS; desktop/dock-menu.ts): nothing where the runtime has none.
-  const dock = runtimeDock();
-  if (dock) {
+  // The Dock menu (macOS; desktop/dock-menu.ts): Denext's backend Dock menu (`setDockMenu`).
+  if (Deno.build.os === "darwin") {
     dockMenuController.install({
-      dock,
+      dock: app,
+      windows: app.windows,
       registry: workspaces,
       showWorkspace: (id) => trayMode.showWorkspace(id),
       newWindow: () => trayMode.newWindow(),

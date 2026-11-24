@@ -7,6 +7,7 @@
 // - `window.__e2e.resizes`: every PTY resize the backend was asked for, in order.
 // - `window.__e2e.links`: every link the backend was asked to open or edit, in order, and
 //   `window.__e2e.linkState(id)`: what terminal `id`'s pointer is over (lib/terminal-links.ts).
+// - `window.__e2e.badges`: every app badge count the page set (lib/hub/badge.ts), in order.
 // - `window.__e2e.setClock(ms | null)`: move the app's clock (`clockNow`), for the companion's
 // night.
 // - `window.dispatchEvent(new Event("qutty:encourage"))` (ENCOURAGE_EVENT): the companion's next
@@ -51,6 +52,8 @@ export interface BackendSpy {
   dockQueue: DockCommand[];
   /** The page's `dockCommands.onWaiting` subscribers. */
   dockWaiting: Set<() => void>;
+  /** Every app badge count the page set (`setAppBadge`; 0: none), in order. */
+  badges: number[];
 }
 
 /** An empty spy. */
@@ -63,6 +66,7 @@ export function newBackendSpy(): BackendSpy {
     closeGuards: new Set(),
     dockQueue: [],
     dockWaiting: new Set(),
+    badges: [],
   };
 }
 
@@ -198,9 +202,14 @@ export function withBackendSpy(
     hubSetLabel: (ptyId, label) => backend.hubSetLabel(ptyId, label),
     hubRename: (ptyId, name) => backend.hubRename(ptyId, name),
     hubSetNoResume: (ptyId, on) => backend.hubSetNoResume(ptyId, on),
+    hubSeen: (id) => backend.hubSeen(id),
     hubDetection: (ptyId, reload) => backend.hubDetection(ptyId, reload),
     hubWebTiles: (tiles) => backend.hubWebTiles(tiles),
     onHubTiles: (cb) => backend.onHubTiles(cb),
+    setAppBadge: (count) => {
+      spy.badges.push(count);
+      return backend.setAppBadge(count);
+    },
     onHubAsk: (cb) => backend.onHubAsk(cb),
     onHubAskClosed: (cb) => backend.onHubAskClosed(cb),
     integrationStatus: () => backend.integrationStatus(),
@@ -250,6 +259,7 @@ export function installE2eHooks(
     resizes: spy.resizes,
     links: spy.links,
     windowCalls: spy.windowCalls,
+    badges: spy.badges,
     dockCommand(command) {
       spy.dockQueue.push(command);
       for (const cb of [...spy.dockWaiting]) cb();

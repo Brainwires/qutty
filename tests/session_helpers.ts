@@ -132,6 +132,13 @@ export function fakeExtensionHost(open: WindowInfo[] = []) {
     notify: (): never => {
       throw new Error("unused");
     },
+    // Denext 4.22's: the backend's Dock menu and the menu read-back (unused by these tests).
+    setDockMenu: (): never => {
+      throw new Error("unused");
+    },
+    onDockMenuItem: () => () => {},
+    getApplicationMenu: () => null,
+    getDockMenu: () => null,
   };
   const fake = {
     host,

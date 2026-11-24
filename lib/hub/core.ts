@@ -16,6 +16,7 @@ import {
   type HubMessage,
   type HubSnapshot,
   type TileInfo,
+  type TileStatus,
   USER,
 } from "./protocol.ts";
 import {
@@ -133,6 +134,8 @@ interface OpenAsk {
   /** Who gets the answer as a message when nobody waits for it. */
   replyTo: HubIdentity;
   resolve?: (action: string | null) => void;
+  /** The asking tile's status before its question put it in `waiting`, given back after. */
+  before?: TileStatus;
 }
 
 /** The hub. */
@@ -329,6 +332,14 @@ export class HubCore {
       actions: actions.length > 0 ? [...actions] : ["OK"],
     };
     const open: OpenAsk = { request, replyTo: from };
+    // The asking tile waits for the user while its question is open (the badges, the app icon).
+    const asker = from.role === "tile"
+      ? this.registry.get(from.tileId)
+      : undefined;
+    if (asker && asker.kind !== "web") {
+      open.before = this.#askBefore(asker.id) ?? asker.status;
+      this.registry.setStatus(asker.id, "waiting");
+    }
     this.#asks.set(request.id, open);
     let answer: Promise<string | null> | null = null;
     if (opts.wait) {
@@ -350,6 +361,27 @@ export class HubCore {
     return { id: request.id, answer };
   }
 
+  /** The status an open question of tile `id` found it in (`undefined`: none open). */
+  #askBefore(id: string): TileStatus | undefined {
+    for (const a of this.#asks.values()) {
+      if (a.replyTo.role === "tile" && a.replyTo.tileId === id) return a.before;
+    }
+    return undefined;
+  }
+
+  /**
+   * A question closed: once the tile has none open, it gets back the status it had, unless
+   * something (a hook) has moved it on since.
+   */
+  #askDone(open: OpenAsk): void {
+    if (open.before === undefined || open.replyTo.role !== "tile") return;
+    const id = open.replyTo.tileId;
+    if (this.#askBefore(id) !== undefined) return;
+    if (this.registry.get(id)?.status === "waiting") {
+      this.registry.setStatus(id, open.before);
+    }
+  }
+
   /** The questions on screen (a page that reloads shows them again). */
   openAsks(): AskRequest[] {
     return [...this.#asks.values()].map((a) => ({ ...a.request }));
@@ -361,6 +393,7 @@ export class HubCore {
     if (!open) return false;
     this.#asks.delete(id);
     this.#env.askClosed(id);
+    this.#askDone(open);
     if (open.resolve) {
       open.resolve(action);
       return true;
@@ -509,6 +542,10 @@ export class HubCore {
       case "Notification": {
         const status = notificationStatus(input.notification_type);
         if (status) this.registry.setStatus(tileId, status);
+        // Idle at its prompt for a while: it waits for the user (the app icon's badge).
+        if (input.notification_type === "idle_prompt") {
+          this.registry.setAttention(tileId, true);
+        }
         return {};
       }
       // Codex: an approval prompt is about to show ({} leaves the decision to the user), or the

@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+## 0.8.0 — 2026-11-24
+
+- The app icon shows how many terminals have an agent waiting for you, as iTerm2
+  does: a badge on the Dock icon on macOS. On Linux it is a count on the
+  launcher where the dock reads launcher badges, else a "(N) " in front of the
+  window titles. An agent counts while it waits on a permission prompt, a
+  question (including an agent's `ask_user`) or anything else it needs you for
+  (Claude Code's notifications, Codex's approval prompts, an approval prompt
+  read off the screen). An agent that finished its turn, or that Claude Code
+  reports idle at its prompt, counts until you look at its tile (it has the
+  focus in the front window); one that finishes in the tile you are looking at
+  never counts. Terminals in every window count, and the badge goes when none is
+  waiting. Settings → Agents → Waiting agents turns it off.
+- Downloads in web tiles. A download still opens the save panel, and then a
+  small bar in the tile shows its name and progress, with Pause and Resume where
+  the system supports them, Cancel, and Show in Finder once it is done.
+- Site permission prompts in web tiles. When a site asks for the camera, the
+  microphone, your location, notifications or another permission, a bar in the
+  tile names the site and what it wants, with Allow and Deny. Tick Remember and
+  the answer sticks for that site and that permission. Settings → Links → Site
+  permissions lists what you remembered, with Forget per entry and Clear all.
+  Before, every such request was refused.
+- The macOS apps and the Linux packages now ship the voice audio library
+  (on-device push-to-talk and playback), built for each architecture and signed
+  with the app on macOS, so voice works without installing it by hand.
+- Built on Denext 4.22 (runtime 3.0.0-denext.28):
+  - The Dock menu uses Denext's own backend Dock menu. Items and behaviour are
+    the same. New Terminal and the chats go to the window Denext names as
+    frontmost, and Reopen Closed Window lists windows in the order you closed
+    them.
+  - A tile's title takes the foreground program, its folder and its arguments
+    from the runtime's own terminal query (`Deno.Pty.foreground()`) on every
+    system. The macOS and Linux readers stay as the fallback.
+  - Dragging a tile out of its window drops it on the window really in front
+    where windows overlap (the system's stacking order), not the one focused
+    last.
+  - The voice audio library can be bundled into the app per architecture
+    (`deno task audio:lib --native`), and the app finds the bundled copy first.
+  - The agent hub's and the shell daemon's socket paths come from Denext's local
+    IPC paths (a named pipe on Windows, for the Windows port). On macOS and
+    Linux the paths are unchanged, so `QUTTY_SOCK` and the shims work as before.
+  - The menus self-test reads the menu bar and the Dock menu back from the
+    system where the runtime can.
+
 ## 0.7.3 — 2026-11-21
 
 - Source Control, a tile like VS Code's Source Control view for one git

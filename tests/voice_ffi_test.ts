@@ -6,12 +6,14 @@
 
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
+  AUDIO_LIB_NAME,
   AUDIO_SYMBOLS,
   AudioCode,
   AudioError,
   AudioLib,
   audioLibCandidates,
   audioLibFile,
+  audioLibTarget,
   type AudioSymbols,
   CaptureState,
 } from "../lib/voice/ffi.ts";
@@ -162,7 +164,9 @@ Deno.test("audio FFI: where the library is looked for", () => {
     audioLibCandidates({
       os: "darwin",
       env: "/dev/lib.dylib",
-      execPath: "/Applications/Qutty.app/Contents/MacOS/Qutty",
+      // Denext's bundledLibraryPath("rullama_audio_ffi") in a packaged app.
+      bundled:
+        "/Applications/Qutty.app/Contents/Frameworks/librullama_audio_ffi.dylib",
       appSupportDir: "/Users/u/Library/Application Support/org.qutty.Qutty",
     }),
     [
@@ -171,17 +175,16 @@ Deno.test("audio FFI: where the library is looked for", () => {
       "/Users/u/Library/Application Support/org.qutty.Qutty/audio/librullama_audio_ffi.dylib",
     ],
   );
+  // No bundled copy for this target (`null`): the app-support build only.
   assertEquals(
-    audioLibCandidates({
-      os: "linux",
-      execPath: "/opt/qutty/qutty",
-      appSupportDir: "/d",
-    }),
-    [
-      "/opt/qutty/lib/librullama_audio_ffi.so",
-      "/d/audio/librullama_audio_ffi.so",
-    ],
+    audioLibCandidates({ os: "linux", bundled: null, appSupportDir: "/d" }),
+    ["/d/audio/librullama_audio_ffi.so"],
   );
+  assertEquals(AUDIO_LIB_NAME, "rullama_audio_ffi");
+  assertEquals(audioLibTarget("darwin", "aarch64"), "darwin-arm64");
+  assertEquals(audioLibTarget("linux", "x86_64"), "linux-x64");
+  assertEquals(audioLibTarget("windows", "x86_64"), "windows-x64");
+  assertEquals(audioLibTarget("freebsd", "x86_64"), undefined);
   assertEquals(
     appSupportDir("darwin", "/Users/u", () => undefined),
     "/Users/u/Library/Application Support/org.qutty.Qutty",

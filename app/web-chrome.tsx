@@ -11,6 +11,16 @@
 //   (app/bookmarks-bar.tsx), the find bar (⌘F, with the native engine: Enter / ⌘G next,
 //   Shift+Enter / ⌘⇧G previous, Escape closes), and the page's own right-click menu (the native
 //   engine hands it to the tile).
+// - Also under the header, where the engine hands them over: the permission bar (a site asks for
+//   the camera, the microphone, the location …: Allow / Deny, and Remember, which keeps the answer
+//   for that site: Settings → Links → Site permissions lists them) and the download bar (one row
+//   per download: its name, a progress bar, Pause / Resume where the runtime can, Cancel, Show in
+//   Finder once saved, and a dismiss once it is over).
+//
+// The bars are part of the tile's chrome, above the body, never over it: a native web view draws
+// above all HTML, so anything laid over the body would be hidden under the page. Each bar takes
+// its height from the body, whose view follows its element (lib/web/native-engine.ts), so the
+// page shrinks to make room instead.
 //
 // Everything that can show over the page (the menus, the suggestions, the popover) registers as
 // an HTML overlay, so a native view shows its snapshot meanwhile. No timers: the loading bar and
@@ -21,6 +31,13 @@ import { addBookmark, bookmarksFor } from "../lib/web/bookmarks.ts";
 import { hostLabel, parseWebUrl } from "../lib/web/url.ts";
 import { suggest, type Suggestion } from "../lib/web/visits.ts";
 import { zoomLabel } from "../lib/web/zoom.ts";
+import {
+  downloadButtons,
+  downloadFraction,
+  downloadStatus,
+  type WebDownload,
+} from "../lib/web/downloads.ts";
+import { permissionsLabel } from "../lib/web/site-permissions.ts";
 import { BookmarkPopover } from "./bookmark-popover.tsx";
 import { BookmarksBar } from "./bookmarks-bar.tsx";
 import { useHtmlOverlay } from "./use-html-overlay.ts";
@@ -443,7 +460,10 @@ function Suggestions(props: {
   );
 }
 
-/** Under the header: the loading bar, the bookmarks bar, the find bar, the page's menu. */
+/**
+ * Under the header: the loading bar, the bookmarks bar, the permission bar, the find bar, the
+ * download bar, the page's menu.
+ */
 export function WebChrome(props: { view: WebTileView }) {
   const { view } = props;
   return (
@@ -455,7 +475,11 @@ export function WebChrome(props: { view: WebTileView }) {
         aria-hidden="true"
       />
       {view.showBar && <BookmarksBar open={view.openUrl} />}
+      {view.permissionPrompt && (
+        <PermissionBar key={view.permissionPrompt.id} view={view} />
+      )}
       {view.find.open && <FindBar view={view} />}
+      {view.downloads.length > 0 && <DownloadBar view={view} />}
       {view.pageMenu && <PageContextMenu view={view} />}
     </div>
   );
@@ -535,6 +559,144 @@ function FindBar(props: { view: WebTileView }) {
       >
         <WebIcon name="close" size={12} />
       </button>
+    </div>
+  );
+}
+
+/** A site asks for permissions: who, what in plain words, Allow / Deny and Remember. */
+function PermissionBar(props: { view: WebTileView }) {
+  const { view } = props;
+  const req = view.permissionPrompt!;
+  const [remember, setRemember] = useState(false);
+  return (
+    <div
+      class="web-permission"
+      role="alertdialog"
+      aria-label="Permission request"
+      data-testid="web-permission"
+      data-origin={req.origin}
+    >
+      <WebIcon name="warn" size={12} />
+      <span class="web-permission-text" title={req.permissions.join(", ")}>
+        <strong>{hostLabel(req.origin)}</strong> wants to{" "}
+        {permissionsLabel(req.permissions)}.
+      </span>
+      <label class="web-permission-remember">
+        <input
+          type="checkbox"
+          data-testid="web-permission-remember"
+          checked={remember}
+          onChange={(e) => setRemember((e.target as HTMLInputElement).checked)}
+        />
+        Remember
+      </label>
+      <button
+        type="button"
+        class="web-bar-btn"
+        data-testid="web-permission-deny"
+        onClick={() => view.answerPermission(false, remember)}
+      >
+        Deny
+      </button>
+      <button
+        type="button"
+        class="web-bar-btn is-primary"
+        data-testid="web-permission-allow"
+        onClick={() => view.answerPermission(true, remember)}
+      >
+        Allow
+      </button>
+    </div>
+  );
+}
+
+/** The page's downloads, one small row each. */
+function DownloadBar(props: { view: WebTileView }) {
+  const { view } = props;
+  return (
+    <div class="web-downloads" data-testid="web-downloads">
+      {view.downloads.map((d) => (
+        <DownloadRow
+          key={d.id}
+          view={view}
+          item={d}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DownloadRow(props: { view: WebTileView; item: WebDownload }) {
+  const { view, item: d } = props;
+  const can = downloadButtons(d, view.downloadPause);
+  const fraction = downloadFraction(d);
+  const act = (action: Parameters<WebTileView["downloadAction"]>[1]) => () =>
+    view.downloadAction(d.id, action);
+  const text = (
+    testid: string,
+    label: string,
+    run: () => void,
+  ) => (
+    <button
+      type="button"
+      class="web-bar-btn"
+      data-testid={testid}
+      onClick={run}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div
+      class="web-download"
+      data-testid="web-download"
+      data-state={d.state}
+      data-paused={d.paused ? "true" : "false"}
+    >
+      <span class="web-download-name" title={d.path ?? d.filename}>
+        {d.filename || "download"}
+      </span>
+      {(d.state === "progressing" || d.state === "requested") && (
+        <span
+          class={`web-download-meter${
+            fraction === null ? " is-indeterminate" : ""
+          }`}
+          role="progressbar"
+          aria-label={`Downloading ${d.filename}`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={fraction === null
+            ? undefined
+            : Math.round(fraction * 100)}
+        >
+          <span
+            class="web-download-fill"
+            style={fraction === null
+              ? undefined
+              : { width: `${fraction * 100}%` }}
+          />
+        </span>
+      )}
+      <span class="web-download-status" data-testid="web-download-status">
+        {downloadStatus(d)}
+      </span>
+      {can.pause && text("web-download-pause", "Pause", act("pause"))}
+      {can.resume && text("web-download-resume", "Resume", act("resume"))}
+      {can.cancel && text("web-download-cancel", "Cancel", act("cancel"))}
+      {can.reveal &&
+        text("web-download-reveal", view.revealLabel, act("reveal"))}
+      {can.dismiss && (
+        <button
+          type="button"
+          class="web-btn"
+          data-testid="web-download-dismiss"
+          aria-label="Dismiss"
+          title="Dismiss"
+          onClick={act("dismiss")}
+        >
+          <WebIcon name="close" size={12} />
+        </button>
+      )}
     </div>
   );
 }

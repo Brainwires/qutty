@@ -138,6 +138,7 @@ import {
   setWindowTitle,
   windowCapabilities,
 } from "denext/desktop/window";
+import { appCapabilities, setBadge } from "denext/desktop/app";
 
 export type {
   SshCommand,
@@ -194,6 +195,10 @@ export interface PtyProcessInfo {
   process: string;
   /** The foreground process's working directory, when it could be read. */
   cwd?: string;
+  /** The foreground process's arguments, the program first (where the runtime tells them). */
+  argv?: string[];
+  /** The terminal device (where the runtime tells it). */
+  tty?: string;
 }
 
 /** How a terminal ended. `signal` is the terminating signal number, or `null`. */
@@ -342,6 +347,11 @@ export interface PtyBackend {
   /** Terminal `ptyId`'s "Don't resume this agent" (its tile's header menu). */
   hubSetNoResume(ptyId: string, on: boolean): Promise<void>;
   /**
+   * The user saw hub tile `id` (it has the focus in the front window): its agent's finished turn
+   * stops counting on the app icon's badge (`TileInfo.attention`).
+   */
+  hubSeen(id: string): Promise<void>;
+  /**
    * The agent detection debug command for terminal `ptyId` (`qutty.agentDetection()` in the
    * devtools): the agent detected, the matcher that fired, the state. `reload` reads the user's
    * manifests again first.
@@ -351,6 +361,11 @@ export interface PtyBackend {
   hubWebTiles(tiles: WebTileReport[]): Promise<void>;
   /** A full snapshot of the tiles after every change. */
   onHubTiles(cb: (snapshot: HubSnapshot) => void): () => void;
+  /**
+   * The app icon's badge (the Dock on macOS; lib/hub/badge.ts): `count`, or none for 0. A runtime
+   * that cannot show one ignores it, and so does the demo.
+   */
+  setAppBadge(count: number): Promise<void>;
   /** A new `ask_user` question (each id once, also when the event stream replays). */
   onHubAsk(cb: (request: AskRequest) => void): () => void;
   /** A question was answered (here or elsewhere) or its tile went away. */
@@ -615,6 +630,15 @@ export interface DesktopBridgeDeps {
   window?: SessionWindowDeps;
   /** The system monitor's figures (default `denext/desktop/client`'s `system`). */
   system?: Pick<SystemStatsClient, "stats">;
+  /** The app icon's badge (default `denext/desktop/app`'s `setBadge` and `appCapabilities`). */
+  badge?: AppBadgeDeps;
+}
+
+/** The `denext/desktop/app` calls behind {@linkcode PtyBackend.setAppBadge}. */
+export interface AppBadgeDeps {
+  setBadge(badge: number | null): Promise<void>;
+  /** Only its `badge` (whether `setBadge` works here) is read. */
+  appCapabilities(): Promise<{ badge: boolean }>;
 }
 
 /** A PTY event as the page receives it: the terminal's id and the event's own data. */
@@ -645,6 +669,9 @@ export function createDesktopBackend(
   const skins = desktopExtension<typeof skinsExtension>("skins");
   const looks = desktopExtension<typeof looksExtension>("looks");
   const stats = deps.system ?? system;
+  const badgeDeps = deps.badge ?? { setBadge, appCapabilities };
+  // Asked once; a runtime with no badge (or that fails to say) is left alone.
+  let badgeWorks: Promise<boolean> | undefined;
   const events = new PtyEvents();
   // The desktop event stream is at-least-once (a reconnect replays its buffer): drop repeats.
   const lastSeq = new Map<string, number>();
@@ -893,6 +920,9 @@ export function createDesktopBackend(
     async hubSetNoResume(ptyId, on) {
       await hub.setNoResume({ id: ptyId, on });
     },
+    async hubSeen(id) {
+      await hub.seen({ id });
+    },
     async hubDetection(ptyId, reload = false) {
       return await hub.detection({ id: ptyId, reload });
     },
@@ -902,6 +932,14 @@ export function createDesktopBackend(
     onHubTiles: (cb) => {
       listenHub();
       return hubTiles.on(cb);
+    },
+    async setAppBadge(count) {
+      badgeWorks ??= badgeDeps.appCapabilities().then(
+        (caps) => caps.badge === true,
+        () => false,
+      );
+      if (!(await badgeWorks)) return;
+      await badgeDeps.setBadge(count > 0 ? count : null).catch(() => {});
     },
     onHubAsk: (cb) => {
       listenHub();
@@ -1984,9 +2022,12 @@ export function createDemoBackend(): PtyBackend {
     hubSetLabel: (ptyId, label) => hub.setLabel(ptyId, label),
     hubRename: (ptyId, name) => attempt(() => hub.rename(ptyId, name.trim())),
     hubSetNoResume: (ptyId, on) => hub.setNoResume(ptyId, on),
+    hubSeen: (id) => hub.seen(id),
     hubDetection: (ptyId) => hub.detection(ptyId),
     hubWebTiles: (tiles) => hub.setWebTiles(tiles),
     onHubTiles: (cb) => hubTiles.on(cb),
+    // The browser has no app icon to badge.
+    setAppBadge: () => Promise.resolve(),
     onHubAsk: (cb) => hubAsks.on(cb),
     onHubAskClosed: (cb) => hubAskClosed.on(cb),
     integrationStatus: () => hub.integrationStatus(),

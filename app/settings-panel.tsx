@@ -76,6 +76,7 @@ import type { VoiceApi } from "./use-voice.ts";
 import type { PtyBackend } from "../lib/pty-client.ts";
 import type { LinkSettings } from "../lib/links.ts";
 import { LinksSettingsSection } from "./links-settings.tsx";
+import { SitePermissionsSection } from "./site-permissions-settings.tsx";
 import { Modal } from "./modal.tsx";
 import { MonitorSettingsSection } from "./monitor-settings.tsx";
 import { ScmSettingsSection } from "./scm-settings.tsx";
@@ -103,6 +104,8 @@ export interface SettingsPanelProps {
   onFocusToMain(on: boolean): void;
   /** Settings → Tiles → "Show a GUI around agent harnesses". */
   onHarnessOverlay(on: boolean): void;
+  /** Settings → Agents → "Badge the app icon with waiting agents". */
+  onDockBadge(on: boolean): void;
   /** Settings → Tiles. */
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
@@ -682,14 +685,22 @@ export function SettingsPanel(props: SettingsPanelProps) {
       />
     ),
     links: (
-      <SettingsGroup title="Links" testid="links-section">
-        <LinksSettingsSection
-          settings={settings.links}
-          backend={props.backend}
-          platform={props.platform}
-          onChange={props.onLinks}
-        />
-      </SettingsGroup>
+      <>
+        <SettingsGroup title="Links" testid="links-section">
+          <LinksSettingsSection
+            settings={settings.links}
+            backend={props.backend}
+            platform={props.platform}
+            onChange={props.onLinks}
+          />
+        </SettingsGroup>
+        <SettingsGroup
+          title="Site permissions"
+          testid="site-permissions-section"
+        >
+          <SitePermissionsSection />
+        </SettingsGroup>
+      </>
     ),
     sandbox: (
       <SettingsGroup title="Shared container" testid="sandbox-section">
@@ -704,6 +715,27 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <>
         <SettingsGroup title="Agent integration" testid="integration-section">
           <AgentIntegration backend={props.backend} />
+        </SettingsGroup>
+        <SettingsGroup title="Waiting agents" testid="dock-badge-section">
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              data-testid="setting-dock-badge"
+              checked={settings.dockBadge}
+              onChange={(e) =>
+                props.onDockBadge((e.target as HTMLInputElement).checked)}
+            />
+            <span class="field-label">
+              Badge the app icon with waiting agents
+            </span>
+          </label>
+          <span class="field-hint">
+            The app's icon (the Dock on macOS) shows how many terminals have an
+            agent waiting for you: a permission prompt, a question, a status of
+            waiting, or a finished turn you have not looked at yet (it stops
+            counting once the tile has the focus). Every window's terminals
+            count.
+          </span>
         </SettingsGroup>
         <SettingsGroup title="Presets" testid="presets-section">
           <AgentPresetsSection

@@ -53,7 +53,7 @@ import {
   type DockMenu,
   dockMenuController,
 } from "./dock-menu.ts";
-import { appWindowBounds, closeAppWindow } from "./windows.ts";
+import { appWindowBounds, appWindowOrder, closeAppWindow } from "./windows.ts";
 import { isCompanionWindow } from "./companion-window.ts";
 import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import type { PtyReplay } from "./terminal-sessions.ts";
@@ -424,6 +424,7 @@ export function createTileMover(
   >,
   bounds: (id: string) => ReturnType<typeof appWindowBounds> = appWindowBounds,
   close: (id: string) => void = closeAppWindow,
+  order: () => readonly string[] | null = appWindowOrder,
 ): TileMover {
   const m = new TileMover({
     workspaces,
@@ -432,6 +433,7 @@ export function createTileMover(
       host.emit(event, data, { window, retain: false }),
     windows: () => host.windows(),
     bounds,
+    order,
     openWindow: (options) => host.openWindow(options),
     closeWindow: close,
   });

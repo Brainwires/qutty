@@ -1,10 +1,13 @@
 // `QUTTY_PTY_SELFTEST=menus`: a check of the native menu bar in the packaged app (desktop.ts runs
-// it once the app is up). Denext has no call that reads a menu back, so it reads what Denext hands
-// the runtime: it wraps the main window's `setApplicationMenu` (and the app-level one, macOS), sets
-// the custom menus again (lib/workspace/menus.ts, as desktop/menus.ts did at launch), and waits
-// for the main window's page to add its own part (app/use-native-menus.ts: the app menu with
-// Settings…, the window's state and its tiles in the Window menu). Then it logs the main window's
-// menu bar as the runtime got it, checks the parts that matter, and the app exits (1 on failure).
+// it once the app is up). It sets the custom menus again (lib/workspace/menus.ts, as
+// desktop/menus.ts did at launch) and waits for the main window's page to add its own part
+// (app/use-native-menus.ts: the app menu with Settings…, the window's state and its tiles in the
+// Window menu). It reads the main window's bar back from the OS (Denext 4.22's
+// `getApplicationMenu("main")`, where the runtime has the read-back: `menuSnapshot`), and also
+// the Dock menu (`getDockMenu()`, macOS). On a runtime without the read-back it reads what Denext
+// hands the runtime instead, by wrapping the main window's `setApplicationMenu` (and the
+// app-level one, macOS). Then it logs the bar, checks the parts that matter, and the app exits (1
+// on failure).
 //
 // Run it headless under a temporary HOME, so no window shows and the user's app folder and saved
 // windows are untouched:
@@ -12,7 +15,7 @@
 //   HOME=$(mktemp -d) QUTTY_PTY_SELFTEST=menus DENEXT_DESKTOP_HEADLESS=1 LAUFEY_HEADLESS=1 \
 //     LAUFEY_ACTIVATION_POLICY=accessory Qutty.app/Contents/MacOS/laufey_webview
 
-import type { DesktopRuntime } from "denext/desktop";
+import type { DesktopRuntime, MenuSnapshotItem } from "denext/desktop";
 import { customMenus, ITEM } from "../lib/workspace/menus.ts";
 import { MDI_ITEM_IDS } from "../lib/workspace/mdi-menu.ts";
 
@@ -45,6 +48,40 @@ function capture(target: unknown, into: { bar?: NativeEntry[] }): boolean {
     return set.call(t, menu);
   };
   return true;
+}
+
+/**
+ * A menu read back from the OS (`getApplicationMenu`, `getDockMenu`: Denext's
+ * `MenuSnapshotItem`s) in the shape the checks read. An accelerator comes back canonical
+ * (`Super+T` for ⌘T on macOS, `Ctrl+T` elsewhere); hidden items are left out.
+ */
+export function snapshotEntries(
+  snapshot: readonly MenuSnapshotItem[],
+): NativeEntry[] {
+  return snapshot.filter((s) => s.visible !== false).map((s): NativeEntry => {
+    if (s.type === "separator") return "separator";
+    if (s.type === "submenu") {
+      return {
+        submenu: { label: s.label, items: snapshotEntries(s.submenu ?? []) },
+      };
+    }
+    if (s.role && !s.id) return { role: { role: s.role } };
+    return {
+      item: {
+        id: s.id ?? "",
+        label: s.label,
+        enabled: s.enabled,
+        checked: s.checked,
+        ...(s.accelerator ? { accelerator: s.accelerator } : {}),
+      },
+    };
+  });
+}
+
+/** Whether `accelerator` is ⌘T / Ctrl+T, as Denext is given it or as the OS reads it back. */
+export function isNewTileKey(accelerator: string | undefined): boolean {
+  return accelerator === "CmdOrCtrl+T" || accelerator === "Super+T" ||
+    accelerator === "Ctrl+T";
 }
 
 /** The bar as text, one entry per line (custom ids without Denext's prefixes). */
@@ -104,7 +141,7 @@ function problems(bar: readonly NativeEntry[], os: string): string[] {
   if (os === "darwin" && !all.some((i) => i.id === ITEM.settings)) {
     out.push("no Settings… in the app menu (the page's setAppMenu)");
   }
-  if (find(ITEM.newTile)?.accelerator !== "CmdOrCtrl+T") {
+  if (!isNewTileKey(find(ITEM.newTile)?.accelerator)) {
     out.push("New Tile has no ⌘T");
   }
   const tiled = find(MDI_ITEM_IDS.viewTiled);
@@ -149,13 +186,39 @@ export async function menusSelfTest(app: DesktopRuntime): Promise<void> {
   // The custom menus again (desktop/menus.ts set them at launch): the bars are built anew.
   const platform = Deno.build.os === "darwin" ? "mac" : "other";
   for (const { id, menu } of customMenus(platform)) app.setMenu(id, menu);
+  // The bar as the OS holds it, where the runtime reads it back; else as Denext handed it over.
+  const readBack = (): NativeEntry[] | undefined => {
+    try {
+      const snapshot = app.getApplicationMenu("main");
+      return snapshot ? snapshotEntries(snapshot) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   let left = ["no menu bar yet"];
+  let bar: NativeEntry[] | undefined;
+  let source = "as handed to the runtime";
   while (Date.now() < deadline) {
-    left = main.bar ? problems(main.bar, Deno.build.os) : left;
+    const read = readBack();
+    if (read) source = "read back from the OS";
+    bar = read ?? main.bar;
+    left = bar ? problems(bar, Deno.build.os) : left;
     if (left.length === 0) break;
     await sleep();
   }
-  log(`the main window's menu bar:\n${renderMenu(main.bar ?? []).join("\n")}`);
+  log(
+    `the main window's menu bar (${source}):\n${
+      renderMenu(bar ?? []).join("\n")
+    }`,
+  );
+  if (Deno.build.os === "darwin") {
+    const dock = app.getDockMenu();
+    log(
+      dock
+        ? `the Dock menu:\n${renderMenu(snapshotEntries(dock)).join("\n")}`
+        : "the Dock menu: no read-back on this runtime",
+    );
+  }
   if (appLevel.bar) {
     const tops = appLevel.bar.flatMap((e) =>
       typeof e === "object" && "submenu" in e ? [e.submenu.label] : []
