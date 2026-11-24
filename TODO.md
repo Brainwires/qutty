@@ -702,6 +702,10 @@ docs/agent-detection.md).
 - [x] v0.7.3: Source Control tile, worktrees as workspaces, agents resume after
       restart or crash, screen-based agent state, the redesigned composer, chat
       tile and harness overlay.
+- [x] v0.8.0: Denext 4.22 (backend Dock menu, web downloads and site
+      permissions, foreground program from the PTY, real window order), the
+      bundled voice audio library, and the app icon badge for agents waiting on
+      you.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

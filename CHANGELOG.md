@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 — 2026-11-24
+
 - The app icon shows how many terminals have an agent waiting for you, as iTerm2
   does: a badge on the Dock icon on macOS. On Linux it is a count on the
   launcher where the dock reads launcher badges, else a "(N) " in front of the
