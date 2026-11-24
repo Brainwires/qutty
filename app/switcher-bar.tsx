@@ -264,8 +264,11 @@ export function SwitcherBar(props: SwitcherBarProps) {
   focusedRef.current = focusedId;
   const verticalRef = useRef(vertical);
   verticalRef.current = vertical;
-  /** Scroll toward the focused chip if it is wanted and not in view (`settled`: no scroll runs). */
-  const revealFocused = useRef((settled: boolean) => {
+  /**
+   * Scroll toward the focused chip if it is wanted and not in view: smoothly, or at once
+   * (`jump`) when a smooth scroll toward it stalled.
+   */
+  const revealFocused = useRef((jump = false) => {
     const r = reveal.current;
     const list = listRef.current;
     const id = focusedRef.current;
@@ -278,21 +281,28 @@ export function SwitcherBar(props: SwitcherBarProps) {
       r.aim = null;
       return;
     }
-    // On its way there already: asking again mid-scroll would only restart it.
+    // On its way there already (the stall watcher runs while it is): asking again would only
+    // restart the smooth scroll, and a restarted one stands still for a frame or more before it
+    // moves. Restarted by every settle (each chip's FLIP glide ending, a resize), on a loaded
+    // machine it did not move at all. One that stops short is the stall watcher's to see.
     if (
-      !settled && r.aim !== null && Math.abs(target - r.aim) <= 1 &&
-      Math.abs(scrollPos(list, v) - target) > 1
+      !jump && stallFrame.current !== 0 && r.aim !== null &&
+      Math.abs(target - r.aim) <= 1 && Math.abs(scrollPos(list, v) - target) > 1
     ) return;
     r.aim = target;
     r.at = scrollPos(list, v);
-    list.scrollTo(v ? { top: target } : { left: target });
+    // "auto": the strip's own `scroll-behavior` (smooth, or not under Reduce Motion).
+    const behavior: ScrollBehavior = jump ? "instant" : "auto";
+    list.scrollTo(v ? { top: target, behavior } : { left: target, behavior });
     watchStall();
   }).current;
   /**
    * While a reveal is pending, watch the strip frame by frame: a smooth scroll that stopped short
    * fires no event at all (no `scrollend`), so a strip that has not moved for
-   * {@linkcode STALL_FRAMES} frames is aimed again. Ends once the chip is in view or the reveal
-   * is dropped; a frame callback, not a timer, and nothing here touches the keyboard.
+   * {@linkcode STALL_FRAMES} frames jumps to the chip instead. Ends once the chip is in view or
+   * the reveal is dropped; a frame callback, not a timer, and nothing here touches the keyboard.
+   * One watcher at a time: the re-aim below finds it scheduled and starts no other (a second
+   * loop, with its own count of tries, used to start at every stall).
    */
   const stallFrame = useRef(0);
   const watchStall = () => {
@@ -307,21 +317,24 @@ export function SwitcherBar(props: SwitcherBarProps) {
       const pos = scrollPos(list, verticalRef.current);
       still = Math.abs(pos - last) < 0.5 ? still + 1 : 0;
       last = pos;
+      stallFrame.current = requestAnimationFrame(tick);
       if (still >= STALL_FRAMES) {
         still = 0;
         // A strip that cannot get there (it never moves) is not chased for ever.
-        if (++tries > STALL_TRIES) return void (reveal.current.want = false);
-        revealFocused(true);
-        if (!reveal.current.want) return;
+        if (++tries > STALL_TRIES) reveal.current.want = false;
+        else revealFocused(true);
+        if (!reveal.current.want) {
+          cancelAnimationFrame(stallFrame.current);
+          stallFrame.current = 0;
+        }
       }
-      stallFrame.current = requestAnimationFrame(tick);
     };
     stallFrame.current = requestAnimationFrame(tick);
   };
   useEffect(() => () => cancelAnimationFrame(stallFrame.current), []);
   useEffect(() => {
     reveal.current = { want: true, aim: null, at: 0 };
-    revealFocused(true);
+    revealFocused();
   }, [focusedId, orderKey]);
 
   // Which chips are scrolled out of view → the "+N" menu; and the focused chip's reveal, checked
@@ -330,11 +343,9 @@ export function SwitcherBar(props: SwitcherBarProps) {
     const list = listRef.current;
     if (!list) return;
     let frame = 0;
-    let settled = false;
     const measure = () => {
       frame = 0;
-      revealFocused(settled);
-      settled = false;
+      revealFocused();
       const box = list.getBoundingClientRect();
       const hidden: string[] = [];
       for (const id of ids) {
@@ -353,11 +364,10 @@ export function SwitcherBar(props: SwitcherBarProps) {
         : hidden)
       );
     };
-    const schedule = (still = true) => {
-      settled ||= still;
+    const schedule = () => {
       if (!frame) frame = requestAnimationFrame(measure);
     };
-    const settle = () => schedule(true);
+    const settle = () => schedule();
     const moving = () => {
       // A scroll away from the aim is someone else's: the reveal stands down.
       const r = reveal.current;
@@ -367,7 +377,7 @@ export function SwitcherBar(props: SwitcherBarProps) {
         Math.abs(pos - r.aim) > Math.abs(r.at - r.aim) + 1
       ) r.want = false;
       r.at = pos;
-      schedule(false);
+      schedule();
     };
     schedule();
     const ro = new ResizeObserver(settle);
