@@ -22,6 +22,10 @@ on:
         description: "Slow the e2e pages' CPU this many times (E2E_CPU_THROTTLE)"
         required: false
         default: ""
+      e2e_runner:
+        description: "Run the e2e job on this runner label (such as macos-15, GitHub's image) instead of the picked one"
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -107,7 +111,7 @@ jobs:
     name: End-to-end (Chromium)
     needs: runners
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').e2e || 'macos-15' }}
+    runs-on: ${{ inputs.e2e_runner || fromJSON(needs.runners.outputs.plan || '{}').e2e || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
