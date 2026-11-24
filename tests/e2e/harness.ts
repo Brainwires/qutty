@@ -13,7 +13,8 @@
 // own. Each case gets a fresh page with the origin's storage cleared, and fails if the page logs
 // a console error or throws. `E2E_FILTER=<substring>` runs only the matching cases.
 // `E2E_CPU_THROTTLE=<n>` slows the page's CPU n times (Chromium's throttling), to try a
-// timing-sensitive case the way a loaded CI runner runs it.
+// timing-sensitive case the way a loaded CI runner runs it. `deno task test:e2e` runs each file
+// in its own process with a time limit (tests/e2e/run.ts: E2E_ONLY, E2E_REPEAT, …).
 
 import { Browser, generateBinArgs, getBinary, type Page } from "@astral/astral";
 import { contentType } from "@std/media-types";
