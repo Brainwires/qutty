@@ -13,9 +13,10 @@
 // own. Each case gets a fresh page with the origin's storage cleared, and fails if the page logs
 // a console error or throws. `E2E_FILTER=<substring>` runs only the matching cases.
 // `E2E_CPU_THROTTLE=<n>` slows the page's CPU n times (Chromium's throttling), to try a
-// timing-sensitive case the way a loaded CI runner runs it.
+// timing-sensitive case the way a loaded CI runner runs it. `deno task test:e2e` runs each file
+// in its own process with a time limit (tests/e2e/run.ts: E2E_ONLY, E2E_REPEAT, …).
 
-import { type Browser, launch, type Page } from "@astral/astral";
+import { Browser, generateBinArgs, getBinary, type Page } from "@astral/astral";
 import { contentType } from "@std/media-types";
 import { copy } from "@std/fs";
 import { extname, fromFileUrl, join } from "@std/path";
@@ -460,6 +461,17 @@ export class App {
   }
 
   async boot(): Promise<void> {
+    // Every page call here is bounded: a page that stops answering fails the case in minutes.
+    await bounded(this.#setUp(), CALL_MS, "setting up the page");
+    await bounded(
+      this.page.goto(this.url, { waitUntil: "load" }),
+      CALL_MS,
+      "loading the app",
+    );
+    await this.waitReady();
+  }
+
+  async #setUp(): Promise<void> {
     await this.page.setViewportSize({
       width: this.opts.width ?? DEFAULT_W,
       height: this.opts.height ?? DEFAULT_H,
@@ -490,8 +502,6 @@ export class App {
     if (throttle > 1) {
       await this.cdp.Emulation.setCPUThrottlingRate({ rate: throttle });
     }
-    await this.page.goto(this.url, { waitUntil: "load" });
-    await this.waitReady();
   }
 
   /**
@@ -531,7 +541,11 @@ export class App {
   }
 
   async reload(): Promise<void> {
-    await this.page.reload({ waitUntil: "load" });
+    await bounded(
+      this.page.reload({ waitUntil: "load" }),
+      CALL_MS,
+      "reloading the app",
+    );
     await this.waitReady();
   }
 
@@ -889,24 +903,13 @@ export class App {
     let landed: string | null = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const pt = await this.#clickablePoint(selector);
-      const armed = await this.eval((s: string) => {
-        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
-        if (!g) return false;
-        g.selector = s;
-        g.landed = null;
-        return true;
-      }, selector);
+      const armed = await this.#armClickGuard(selector);
       if (this.pressDelayMs > 0) {
         await new Promise((r) => setTimeout(r, this.pressDelayMs));
       }
       await this.page.mouse.click(pt.x, pt.y);
       if (!armed) return;
-      landed = await this.eval(() => {
-        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
-        if (!g) return "ok";
-        g.selector = null;
-        return g.landed ?? "nothing";
-      });
+      landed = await this.#disarmClickGuard();
       if (landed === "ok") return;
       console.warn(
         `e2e: a click on ${selector} landed on ${landed}; aiming again`,
@@ -923,12 +926,53 @@ export class App {
    * same point. `click()` presses and releases at once, before anything can move.
    */
   async slowClick(selector: string, holdMs = 250): Promise<void> {
-    const pt = await this.#clickablePoint(selector);
+    // The press must land on `selector`, as `click`'s does: the element can move between the
+    // point check and the press (the chip strip's smooth scroll toward the focused chip starts a
+    // frame or more late), and a press that lands on something else is swallowed whole by the
+    // click guard and aimed again. What moves after the press is the case's own business.
     const mouse = this.page.mouse;
-    await mouse.move(pt.x, pt.y);
-    await mouse.down();
-    await new Promise((r) => setTimeout(r, holdMs));
-    await mouse.up();
+    let landed: string | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const pt = await this.#clickablePoint(selector);
+      await mouse.move(pt.x, pt.y);
+      const armed = await this.#armClickGuard(selector);
+      await mouse.down();
+      landed = armed ? await this.#disarmClickGuard() : "ok";
+      if (landed === "ok") {
+        await new Promise((r) => setTimeout(r, holdMs));
+        await mouse.up();
+        return;
+      }
+      // Swallowed (the guard drops the release too): let go and aim again.
+      await mouse.up();
+      console.warn(
+        `e2e: a held press on ${selector} landed on ${landed}; aiming again`,
+      );
+    }
+    throw new Error(
+      `pressing ${selector}: the press kept landing elsewhere (last on ${landed})`,
+    );
+  }
+
+  /** Arm the page's click guard for `selector` (false: the page has no guard). */
+  #armClickGuard(selector: string): Promise<boolean> {
+    return this.eval((s: string) => {
+      const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+      if (!g) return false;
+      g.selector = s;
+      g.landed = null;
+      return true;
+    }, selector);
+  }
+
+  /** Disarm the click guard and say where the press landed (`"ok"`: on the aimed element). */
+  #disarmClickGuard(): Promise<string> {
+    return this.eval(() => {
+      const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+      if (!g) return "ok";
+      g.selector = null;
+      return g.landed ?? "nothing";
+    });
   }
 
   /** Where to click `selector`: its centre, once it has stopped moving and nothing covers it. */
@@ -1339,32 +1383,148 @@ export class App {
 export type CaseFn = (app: App) => Promise<void>;
 
 /** How long one case may run, start to finish (scaled): a hang fails it, the suite goes on. */
-const CASE_MS = 300_000 * TIMEOUT_SCALE;
+const CASE_MS = 120_000 * TIMEOUT_SCALE;
 
-/** Chromium, launched within a bound; one that comes up after the bound is closed again. */
-function launchBrowser(): Promise<Browser> {
-  const profile = Deno.makeTempDirSync({ prefix: "gui-terminal-e2e-chrome-" });
-  const launching = launch({
+/** How long Chromium may take to come up and answer (scaled); it normally takes a second or two. */
+const LAUNCH_MS = 20_000 * TIMEOUT_SCALE;
+
+/**
+ * Set by the e2e runner (tests/e2e/run.ts) for each file it runs: every Chromium profile folder
+ * of that run carries it, so the runner can kill exactly that file's browsers after a timeout.
+ */
+const PROFILE_TAG = Deno.env.get("E2E_PROFILE_TAG") ?? "";
+
+/** A Chromium this harness launched: its process, profile folder and the tail of its stderr. */
+interface Launched {
+  child: Deno.ChildProcess;
+  profile: string;
+  stderr: string[];
+}
+
+const launched = new WeakMap<Browser, Launched>();
+
+/**
+ * Drain Chromium's stderr for as long as it runs (a pipe nobody reads fills up and blocks the
+ * browser's next write), keeping the last lines for a failure report. Resolves with the DevTools
+ * endpoint once Chromium prints it (null if it exits first).
+ */
+function drainStderr(
+  child: Deno.ChildProcess,
+  tail: string[],
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let buf = "";
+    let found = false;
+    const line = (l: string) => {
+      tail.push(l);
+      if (tail.length > 30) tail.shift();
+      const ws = l.match(/DevTools listening on (ws:\/\/\S+)/)?.[1];
+      if (ws && !found) {
+        found = true;
+        resolve(ws);
+      }
+    };
+    (async () => {
+      const decoder = new TextDecoder();
+      try {
+        for await (const chunk of child.stderr) {
+          buf += decoder.decode(chunk, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            line(buf.slice(0, nl).trimEnd());
+            buf = buf.slice(nl + 1);
+          }
+        }
+      } catch {
+        // The pipe closed under us (the browser was killed).
+      }
+      if (buf) line(buf.trimEnd());
+      if (!found) resolve(null);
+    })();
+  });
+}
+
+/** A WebSocket once it is open; rejects if it errors or closes first. */
+function openSocket(url: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    ws.onopen = () => resolve(ws);
+    ws.onerror = () => reject(new Error(`DevTools socket ${url} failed`));
+    ws.onclose = () => reject(new Error(`DevTools socket ${url} closed`));
+  });
+}
+
+/**
+ * Chromium, launched within a bound. Astral's `launch` stops reading the browser's stderr once it
+ * has the endpoint, and its steps (the wait for the endpoint, the `/json/version` fetch, the
+ * socket's open) have no bound of their own, so the harness starts the process itself and hands
+ * it to astral's `Browser`. A launch that does not come up is killed, and its error carries the
+ * browser's last stderr lines.
+ */
+async function launchBrowser(): Promise<Browser> {
+  // E2E_CHROME: a Chromium of the system's own (Astral downloads none for Linux on ARM).
+  const path = Deno.env.get("E2E_CHROME") || await getBinary("chrome");
+  const profile = Deno.makeTempDirSync({
+    prefix: `gui-terminal-e2e-chrome-${PROFILE_TAG ? `${PROFILE_TAG}-` : ""}`,
+  });
+  const args = generateBinArgs("chrome", {
     headless: true,
-    // E2E_CHROME: a Chromium of the system's own (Astral downloads none for Linux on ARM).
-    path: Deno.env.get("E2E_CHROME") || undefined,
     args: [
       MOTION_FLAG,
       `--user-data-dir=${profile}`,
       ...(Deno.env.get("E2E_CHROME") ? ["--no-sandbox"] : []),
     ],
-  }).then((b) => {
-    profiles.set(b, profile);
-    return b;
   });
-  return bounded(launching, 2 * CALL_MS, "launching Chromium").catch((e) => {
-    launching.then((late) => closeBrowser(late), () => {});
-    throw e;
-  });
+  const child = new Deno.Command(path, {
+    args,
+    stdin: "null",
+    stdout: "null",
+    stderr: "piped",
+  }).spawn();
+  const record: Launched = { child, profile, stderr: [] };
+  const endpoint = drainStderr(child, record.stderr);
+  const started = Date.now();
+  try {
+    return await bounded(
+      (async () => {
+        const ws = await endpoint;
+        if (!ws) throw new Error("Chromium exited before it listened");
+        const b = new Browser(await openSocket(ws), child, {
+          headless: true,
+          product: "chrome",
+        });
+        launched.set(b, record);
+        return b;
+      })(),
+      LAUNCH_MS,
+      "launching Chromium",
+    );
+  } catch (e) {
+    await killLaunched(record);
+    throw new Error(
+      `${e instanceof Error ? e.message : e} (after ${
+        Date.now() - started
+      }ms); Chromium's last stderr lines:\n    ${record.stderr.join("\n    ")}`,
+    );
+  }
 }
 
-/** Each launched browser's profile folder: its processes carry it, so a wedged one can be killed. */
-const profiles = new WeakMap<Browser, string>();
+/** Kill a launched Chromium (its renderers go with it) and remove its profile. */
+async function killLaunched(record: Launched): Promise<void> {
+  try {
+    record.child.kill("SIGKILL");
+  } catch {
+    // Exited already.
+  }
+  await bounded(record.child.status, 10_000, "Chromium exiting").catch(
+    () => {},
+  );
+  // Helpers that outlived the main process carry the profile path, which is this browser's alone.
+  await new Deno.Command("pkill", {
+    args: ["-9", "-f", `--user-data-dir=${record.profile}`],
+  }).output().catch(() => {});
+  await Deno.remove(record.profile, { recursive: true }).catch(() => {});
+}
 
 /** Close a browser that may not answer any more: bounded, then killed (with its renderers). */
 async function closeBrowser(browser: Browser): Promise<void> {
@@ -1373,13 +1533,10 @@ async function closeBrowser(browser: Browser): Promise<void> {
       console.error(`e2e: ${e instanceof Error ? e.message : e}; killing it`);
       return false;
     });
-  const profile = profiles.get(browser);
-  if (!ok && profile) {
-    await new Deno.Command("pkill", {
-      args: ["-9", "-f", `--user-data-dir=${profile}`],
-    }).output().catch(() => {});
-  }
-  if (profile) await Deno.remove(profile, { recursive: true }).catch(() => {});
+  const record = launched.get(browser);
+  if (!record) return;
+  if (!ok) await killLaunched(record);
+  else await Deno.remove(record.profile, { recursive: true }).catch(() => {});
 }
 
 interface Case {
@@ -1410,6 +1567,7 @@ export function suite(
       const dir = await buildSite();
       const server = await serve(dir);
       let browser: Browser | undefined;
+      let launchFailures = 0;
       try {
         for (const c of cases) {
           await t.step({
@@ -1418,54 +1576,18 @@ export function suite(
             sanitizeOps: false,
             sanitizeResources: false,
             fn: async () => {
-              browser ??= await launchBrowser();
-              let page: Page | undefined;
-              let ok = false;
+              const started = Date.now();
               try {
-                // A page that never opens is the browser's stall, not the app's: once, the case
-                // gets a fresh browser instead (a second stall fails it).
-                page = await bounded(
-                  browser.newPage(),
-                  CALL_MS,
-                  "opening a page",
-                ).catch(async (e) => {
-                  console.error(
-                    `e2e: ${e.message}; retrying in a fresh browser`,
-                  );
-                  const old = browser!;
-                  browser = undefined;
-                  await closeBrowser(old);
-                  browser = await launchBrowser();
-                  return bounded(
-                    browser.newPage(),
-                    CALL_MS,
-                    "opening a page (in a fresh browser)",
-                  );
-                });
-                const app = new App(page, server.origin, c.opts);
-                await bounded(
-                  (async () => {
-                    await app.boot();
-                    await c.fn(app);
-                  })(),
-                  CASE_MS,
-                  `case "${c.name}"`,
+                await runCase(c);
+              } catch (e) {
+                // Said at once, not only in the summary at the end: a job cancelled later (its
+                // time limit) would never print it.
+                console.error(
+                  `e2e: FAILED "${c.name}" after ${
+                    ((Date.now() - started) / 1000).toFixed(1)
+                  }s: ${e instanceof Error ? e.stack ?? e.message : e}`,
                 );
-                app.assertNoErrors();
-                ok = true;
-              } finally {
-                const closed = page !== undefined && await bounded(
-                  page.close(),
-                  CALL_MS,
-                  "closing the page",
-                ).then(() => true, () => false);
-                // After a failure (a stalled page) the next page could land in the same stuck
-                // renderer: start the next case in a fresh browser.
-                if (!ok || !closed) {
-                  const old = browser;
-                  browser = undefined;
-                  await closeBrowser(old);
-                }
+                throw e;
               }
             },
           });
@@ -1473,6 +1595,80 @@ export function suite(
       } finally {
         if (browser) await closeBrowser(browser);
         await server.close();
+      }
+
+      /**
+       * The suite's browser, launched if there is none (each case after a failure starts in a
+       * fresh one). A launch that fails is tried once more; once two in a row have failed, every
+       * later case fails at once instead of waiting out launches that will not come up either.
+       */
+      async function getBrowser(): Promise<Browser> {
+        if (browser) return browser;
+        if (launchFailures >= 2) {
+          throw new Error(
+            "Chromium failed to launch twice in a row earlier in this file (see above); not trying again",
+          );
+        }
+        for (;;) {
+          try {
+            browser = await launchBrowser();
+            launchFailures = 0;
+            return browser;
+          } catch (e) {
+            launchFailures++;
+            console.error(`e2e: ${e instanceof Error ? e.message : e}`);
+            if (launchFailures >= 2) throw e;
+          }
+        }
+      }
+
+      async function runCase(c: Case): Promise<void> {
+        let page: Page | undefined;
+        let ok = false;
+        try {
+          // A page that never opens is the browser's stall, not the app's: once, the case gets a
+          // fresh browser instead (a second stall fails it).
+          page = await bounded(
+            (await getBrowser()).newPage(),
+            CALL_MS,
+            "opening a page",
+          ).catch(async (e) => {
+            console.error(`e2e: ${e.message}; retrying in a fresh browser`);
+            const old = browser!;
+            browser = undefined;
+            await closeBrowser(old);
+            return bounded(
+              (await getBrowser()).newPage(),
+              CALL_MS,
+              "opening a page (in a fresh browser)",
+            );
+          });
+          const app = new App(page, server.origin, c.opts);
+          await bounded(
+            (async () => {
+              await app.boot();
+              await c.fn(app);
+            })(),
+            CASE_MS,
+            `case "${c.name}"`,
+          );
+          app.assertNoErrors();
+          ok = true;
+        } finally {
+          const closed = page !== undefined && await bounded(
+            page.close(),
+            CALL_MS,
+            "closing the page",
+          ).then(() => true, () => false);
+          // After a failure (a stalled page, a case still running after its bound) the next page
+          // could land in the same stuck renderer, or meet the failed case's leftovers: start the
+          // next case in a fresh browser.
+          if ((!ok || !closed) && browser) {
+            const old = browser;
+            browser = undefined;
+            await closeBrowser(old);
+          }
+        }
       }
     },
   });

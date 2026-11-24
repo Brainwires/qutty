@@ -5,6 +5,27 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Only these e2e files (E2E_ONLY, comma-separated name parts such as motion); skips the other jobs"
+        required: false
+        default: ""
+      filter:
+        description: "Only the e2e cases whose name contains this (E2E_FILTER)"
+        required: false
+        default: ""
+      repeat:
+        description: "Run the e2e selection this many times (E2E_REPEAT; stops at the first failure)"
+        required: false
+        default: "1"
+      cpu_throttle:
+        description: "Slow the e2e pages' CPU this many times (E2E_CPU_THROTTLE)"
+        required: false
+        default: ""
+      e2e_runner:
+        description: "Run the e2e job on this runner label (such as macos-15, GitHub's image) instead of the picked one"
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -43,7 +64,7 @@ jobs:
   checks:
     name: Lint, types, fallow
     needs: runners
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.only }}
     runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').checks || 'macos-15' }}
     # A hang fails in minutes, not at GitHub's 6 h job limit.
     timeout-minutes: 15
@@ -68,7 +89,7 @@ jobs:
   test:
     name: Unit tests (${{ matrix.arch }})
     needs: runners
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.only }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,7 +111,7 @@ jobs:
     name: End-to-end (Chromium)
     needs: runners
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').e2e || 'macos-15' }}
+    runs-on: ${{ inputs.e2e_runner || fromJSON(needs.runners.outputs.plan || '{}').e2e || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
@@ -98,9 +119,16 @@ jobs:
         with:
           deno-version: ${{ env.DENO_VERSION }}
           cache: true
+      # tests/e2e/run.ts: each file in its own process, killed after E2E_FILE_TIMEOUT_MIN, so one
+      # file that hangs can not take the job's whole time limit.
       - run: deno task test:e2e
         env:
           E2E_TIMEOUT_SCALE: "3"
+          E2E_FILE_TIMEOUT_MIN: "10"
+          E2E_ONLY: ${{ inputs.only }}
+          E2E_FILTER: ${{ inputs.filter }}
+          E2E_REPEAT: ${{ inputs.repeat }}
+          E2E_CPU_THROTTLE: ${{ inputs.cpu_throttle }}
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -114,7 +142,7 @@ jobs:
   site:
     name: Website (qutty.org)
     needs: runners
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.only }}
     runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').site || 'ubuntu-24.04' }}
     timeout-minutes: 15
     defaults:

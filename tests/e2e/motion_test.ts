@@ -84,6 +84,70 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/**
+ * Log what the chip strip does from now on (its scroll events, focus changes, scroll ends) in
+ * the page, for `stripReport` when a reveal does not arrive.
+ */
+function recordStrip(app: App): Promise<void> {
+  return app.eval(() => {
+    const g = globalThis as { __stripLog?: string[]; __stripOff?: () => void };
+    g.__stripOff?.();
+    const log: string[] = g.__stripLog = [];
+    const list = document.querySelector<HTMLElement>("[data-testid=chips]")!;
+    const t0 = performance.now();
+    const note = (what: string) => {
+      log.push(
+        `${(performance.now() - t0).toFixed(0)} ${what} @${
+          list.scrollLeft.toFixed(0)
+        }`,
+      );
+      if (log.length > 80) log.splice(0, log.length - 80);
+    };
+    const onScroll = () => note("scroll");
+    const onEnd = () => note("scrollend");
+    list.addEventListener("scroll", onScroll);
+    list.addEventListener("scrollend", onEnd);
+    const mo = new MutationObserver(() =>
+      note(
+        `focused ${
+          document.querySelector("[data-testid=app]")?.getAttribute(
+            "data-focused",
+          )
+        }`,
+      )
+    );
+    mo.observe(document.querySelector("[data-testid=app]")!, {
+      attributes: true,
+      attributeFilter: ["data-focused"],
+    });
+    g.__stripOff = () => {
+      list.removeEventListener("scroll", onScroll);
+      list.removeEventListener("scrollend", onEnd);
+      mo.disconnect();
+    };
+  });
+}
+
+/** The strip's state and its recorded log (`recordStrip`), for a failure message. */
+function stripReport(app: App, id: string): Promise<string> {
+  return app.eval((id: string) => {
+    const list = document.querySelector<HTMLElement>("[data-testid=chips]")!;
+    const chip = list.querySelector<HTMLElement>(
+      `[data-testid=chip][data-id="${id}"]`,
+    )!;
+    const a = list.getBoundingClientRect();
+    const b = chip.getBoundingClientRect();
+    const log = (globalThis as { __stripLog?: string[] }).__stripLog ?? [];
+    return `strip: scrollLeft ${list.scrollLeft.toFixed(1)} of ${
+      list.scrollWidth - list.clientWidth
+    }, box ${a.left.toFixed(0)}..${a.right.toFixed(0)}; chip ${id}: ${
+      b.left.toFixed(0)
+    }..${b.right.toFixed(0)}, offsetLeft ${chip.offsetLeft}, transform ${
+      getComputedStyle(chip).transform
+    }, animations ${chip.getAnimations().length}; log: ${log.join(" | ")}`;
+  }, id);
+}
+
 suite("motion", (test) => {
   // ---- Animation ----------------------------------------------------------------------------
 
@@ -375,6 +439,7 @@ suite("motion", (test) => {
         )!;
         list.scrollTo({ left: list.scrollWidth, behavior: "instant" });
       });
+      await recordStrip(app);
       await app.shortcut("Backquote");
       // Stop the strip where it is, for a few frames.
       await app.eval(() =>
@@ -400,7 +465,9 @@ suite("motion", (test) => {
         () => inView(before[1]),
         5000,
         `the focused chip ${before[1]} in view`,
-      );
+      ).catch(async (e) => {
+        throw new Error(`${e.message}\n  ${await stripReport(app, before[1])}`);
+      });
     }
   });
 
