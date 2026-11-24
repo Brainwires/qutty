@@ -902,24 +902,13 @@ export class App {
     let landed: string | null = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const pt = await this.#clickablePoint(selector);
-      const armed = await this.eval((s: string) => {
-        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
-        if (!g) return false;
-        g.selector = s;
-        g.landed = null;
-        return true;
-      }, selector);
+      const armed = await this.#armClickGuard(selector);
       if (this.pressDelayMs > 0) {
         await new Promise((r) => setTimeout(r, this.pressDelayMs));
       }
       await this.page.mouse.click(pt.x, pt.y);
       if (!armed) return;
-      landed = await this.eval(() => {
-        const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
-        if (!g) return "ok";
-        g.selector = null;
-        return g.landed ?? "nothing";
-      });
+      landed = await this.#disarmClickGuard();
       if (landed === "ok") return;
       console.warn(
         `e2e: a click on ${selector} landed on ${landed}; aiming again`,
@@ -936,12 +925,53 @@ export class App {
    * same point. `click()` presses and releases at once, before anything can move.
    */
   async slowClick(selector: string, holdMs = 250): Promise<void> {
-    const pt = await this.#clickablePoint(selector);
+    // The press must land on `selector`, as `click`'s does: the element can move between the
+    // point check and the press (the chip strip's smooth scroll toward the focused chip starts a
+    // frame or more late), and a press that lands on something else is swallowed whole by the
+    // click guard and aimed again. What moves after the press is the case's own business.
     const mouse = this.page.mouse;
-    await mouse.move(pt.x, pt.y);
-    await mouse.down();
-    await new Promise((r) => setTimeout(r, holdMs));
-    await mouse.up();
+    let landed: string | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const pt = await this.#clickablePoint(selector);
+      await mouse.move(pt.x, pt.y);
+      const armed = await this.#armClickGuard(selector);
+      await mouse.down();
+      landed = armed ? await this.#disarmClickGuard() : "ok";
+      if (landed === "ok") {
+        await new Promise((r) => setTimeout(r, holdMs));
+        await mouse.up();
+        return;
+      }
+      // Swallowed (the guard drops the release too): let go and aim again.
+      await mouse.up();
+      console.warn(
+        `e2e: a held press on ${selector} landed on ${landed}; aiming again`,
+      );
+    }
+    throw new Error(
+      `pressing ${selector}: the press kept landing elsewhere (last on ${landed})`,
+    );
+  }
+
+  /** Arm the page's click guard for `selector` (false: the page has no guard). */
+  #armClickGuard(selector: string): Promise<boolean> {
+    return this.eval((s: string) => {
+      const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+      if (!g) return false;
+      g.selector = s;
+      g.landed = null;
+      return true;
+    }, selector);
+  }
+
+  /** Disarm the click guard and say where the press landed (`"ok"`: on the aimed element). */
+  #disarmClickGuard(): Promise<string> {
+    return this.eval(() => {
+      const g = (globalThis as { __clickGuard?: ClickGuard }).__clickGuard;
+      if (!g) return "ok";
+      g.selector = null;
+      return g.landed ?? "nothing";
+    });
   }
 
   /** Where to click `selector`: its centre, once it has stopped moving and nothing covers it. */
