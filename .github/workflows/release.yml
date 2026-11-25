@@ -105,7 +105,7 @@ jobs:
           git init -q "$RULLAMA_DIR"
           git -C "$RULLAMA_DIR" fetch -q --depth 1 "$RULLAMA_REPO" "$RULLAMA_REF"
           git -C "$RULLAMA_DIR" checkout -q FETCH_HEAD
-      - uses: dtolnay/rust-toolchain@1.91
+      - uses: dtolnay/rust-toolchain@1.120
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
@@ -285,7 +285,7 @@ jobs:
           git init -q "$RULLAMA_DIR"
           git -C "$RULLAMA_DIR" fetch -q --depth 1 "$RULLAMA_REPO" "$RULLAMA_REF"
           git -C "$RULLAMA_DIR" checkout -q FETCH_HEAD
-      - uses: dtolnay/rust-toolchain@1.91
+      - uses: dtolnay/rust-toolchain@1.120
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
