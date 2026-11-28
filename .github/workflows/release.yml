@@ -109,7 +109,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
-          key: rullama-audio-ffi
+          # "-portable": builds from before SOURCE_DATE_EPOCH (scripts/build-audio-lib.ts) were tuned to
+          # their runner's CPU; a fresh cache keeps none of them.
+          key: rullama-audio-ffi-portable
       - name: Build the audio library (rullama-audio-ffi)
         env:
           ARCH: ${{ matrix.arch }}
@@ -289,7 +291,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
-          key: rullama-audio-ffi
+          # "-portable": builds from before SOURCE_DATE_EPOCH (scripts/build-audio-lib.ts) were tuned to
+          # their runner's CPU; a fresh cache keeps none of them.
+          key: rullama-audio-ffi-portable
       - name: Build the audio library (rullama-audio-ffi)
         env:
           LABEL: ${{ matrix.label }}
