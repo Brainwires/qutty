@@ -4819,6 +4819,19 @@ html[data-floating] body {
   flex: 1 1 140px;
   margin: 0;
 }
+/* Settings → Voice: the OS voice drop-down and its preview button. */
+.voice-picker-control {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.voice-picker-control .field-select {
+  width: clamp(160px, 34cqi, 280px);
+}
+.voice-preview {
+  flex: none;
+  min-width: 28px;
+}
 .voice-error {
   color: var(--red);
 }

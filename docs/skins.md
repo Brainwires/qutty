@@ -223,6 +223,9 @@ change without notice.
 | `.settings-dialog`               | The Settings dialog.                                                                                                                      |
 | `.settings-tab`                  | A category in the Settings sidebar; `.is-active` on the open one.                                                                         |
 | `[data-part="settings-group"]`   | A titled group of settings.                                                                                                               |
+| `[data-part="voice-picker"]`     | Settings → Voice: the OS voice row (the drop-down of voices grouped by language and region, its preview button, the hint).                |
+| `[data-part="voice-preview"]`    | The ▶ button that previews the picked OS voice (also a `.btn-quiet`).                                                                     |
+| `[data-part="voice-hint"]`       | On macOS, when no Premium or Enhanced voice speaks your language: where to download one.                                                  |
 | `.field-select`                  | A drop-down.                                                                                                                              |
 | `.btn-primary`                   | A primary button.                                                                                                                         |
 | `.btn-quiet`                     | A secondary button.                                                                                                                       |

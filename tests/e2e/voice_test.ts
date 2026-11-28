@@ -650,4 +650,142 @@ suite("voice", (test) => {
       "the dictate key greyed out in the hold-to-talk list",
     );
   });
+
+  test("Settings → Voice: the OS voices by language, best first; all languages, characters, preview, the hint", async (app) => {
+    // A voice saved by name (before ids were stored) moves over to its id.
+    await withVoice(app, { voice: "Samantha" });
+    await stubVoices(app, OS_VOICES);
+    await app.openSettings("voice");
+    const SELECT = "[data-testid=setting-voice-voice]";
+    await waitFor(() => app.exists(`${SELECT} optgroup`), 3000, "the voices");
+    await waitFor(
+      async () =>
+        (await app.settings()).voice.voice ===
+          "com.apple.voice.compact.en-US.Samantha",
+      2000,
+      "the voice saved by its id",
+    );
+    assertEquals(
+      await voiceGroups(app),
+      [
+        ["English (United States)", [
+          "Zoe — Premium · US English",
+          "Evan — Enhanced · US English",
+          "Fred — Standard · US English",
+          "Samantha — Standard · US English",
+        ]],
+        ["English (United Kingdom)", ["Daniel — Standard · UK English"]],
+      ],
+    );
+    assertEquals(
+      await app.eval(
+        (s: string) => document.querySelector<HTMLSelectElement>(s)!.value,
+        SELECT,
+      ),
+      "com.apple.voice.compact.en-US.Samantha",
+    );
+    // A Premium voice speaks English: no hint.
+    assert(!(await app.exists("[data-testid=setting-voice-hint]")));
+
+    // Every language, then the character voices (one group per language).
+    await app.click("[data-testid=setting-voice-all-languages]");
+    await app.click("[data-testid=setting-voice-characters]");
+    await waitFor(
+      async () =>
+        (await voiceGroups(app)).map((g) => g[0]).join(" / ") ===
+          "English (United States) / English (United Kingdom) / German / " +
+            "Character voices · English / Character voices · German",
+      2000,
+      "all languages and the character voices",
+    );
+
+    // Pick a voice: saved by its id; ▶ says a line in it, cutting off what is being said.
+    await app.eval((s: string) => {
+      const el = document.querySelector<HTMLSelectElement>(s)!;
+      el.value = "com.apple.voice.premium.en-US.Zoe";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, SELECT);
+    await waitFor(
+      async () =>
+        (await app.settings()).voice.voice ===
+          "com.apple.voice.premium.en-US.Zoe",
+      2000,
+      "the picked voice saved",
+    );
+    const before = (await script(app)).spoken.length;
+    await app.click("[data-testid=setting-voice-preview]");
+    await waitFor(
+      async () => (await script(app)).spoken.length > before,
+      3000,
+      "the preview said",
+    );
+    assertStringIncludes(
+      (await script(app)).spoken.at(-1)!,
+      "This is how I sound.",
+    );
+
+    // Only standard voices for the language: on macOS, where to get better ones.
+    await stubVoices(
+      app,
+      OS_VOICES.filter((v) => !/premium|enhanced/.test(v.voiceURI)),
+    );
+    await waitFor(
+      async () =>
+        (await app.exists("[data-testid=setting-voice-hint]")) ===
+          (app.platform === "mac"),
+      2000,
+      "the better-voices hint on macOS only",
+    );
+  });
 });
+
+/** OS voices as macOS's WebKit reports them (lib/voice/voices.ts). */
+const OS_VOICES = [
+  ["com.apple.voice.compact.en-US.Samantha", "Samantha", "en-US"],
+  ["com.apple.voice.super-compact.en-US.Samantha", "Samantha", "en-US"],
+  ["com.apple.voice.premium.en-US.Zoe", "Zoe (Premium)", "en-US"],
+  ["com.apple.voice.enhanced.en-US.Evan", "Evan (Enhanced)", "en-US"],
+  ["com.apple.speech.synthesis.voice.Fred", "Fred", "en-US"],
+  ["com.apple.speech.synthesis.voice.Zarvox", "Zarvox", "en-US"],
+  ["com.apple.eloquence.en-US.Eddy", "Eddy", "en-US"],
+  ["com.apple.eloquence.de-DE.Eddy", "Eddy", "de-DE"],
+  ["com.apple.voice.compact.en-GB.Daniel", "Daniel", "en-GB"],
+  ["com.apple.voice.compact.de-DE.Anna", "Anna", "de-DE"],
+].map(([voiceURI, name, lang]) => ({ voiceURI, name, lang }));
+
+/** The window's `speechSynthesis.getVoices()` returns `voices`, its language is US English. */
+async function stubVoices(
+  app: App,
+  voices: { voiceURI: string; name: string; lang: string }[],
+) {
+  await app.eval((list: typeof voices) => {
+    Object.defineProperty(Navigator.prototype, "language", {
+      configurable: true,
+      get: () => "en-US",
+    });
+    const synth = globalThis.speechSynthesis;
+    Object.defineProperty(synth, "getVoices", {
+      configurable: true,
+      value: () =>
+        list.map((v) => ({ ...v, default: false, localService: true })),
+    });
+    synth.dispatchEvent(new Event("voiceschanged"));
+  }, voices);
+}
+
+/** The voice drop-down's groups: each heading and its options' labels. */
+function voiceGroups(app: App): Promise<[string, string[]][]> {
+  return app.eval(() =>
+    [
+      ...document.querySelectorAll<HTMLOptGroupElement>(
+        "[data-testid=setting-voice-voice] optgroup",
+      ),
+    ].map((g) =>
+      [g.label, [...g.querySelectorAll("option")].map((o) => o.text)] as [
+        string,
+        string[],
+      ]
+    )
+  );
+}
