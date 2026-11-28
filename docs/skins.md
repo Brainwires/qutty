@@ -198,6 +198,7 @@ change without notice.
 | `[data-part="tile-body"]`        | A terminal tile's body (xterm draws inside it).                                                                                           |
 | `.tile-grip`                     | A free-form tile's resize grip (its edges and corners).                                                                                   |
 | `[data-part="agent-body"]`       | An agent tile's body: its transcript and prompt.                                                                                          |
+| `[data-part="scm-body"]`         | A Source Control tile's body: its panel and diff.                                                                                         |
 | `[data-part="agent-message"]`    | A message in an agent tile's transcript: `[data-type="user"]` (a bubble) or `[data-type="text"]` (the agent's).                           |
 | `[data-part="agent-tool"]`       | A tool call's card in an agent tile's transcript; `[data-status]`, `[data-open]` once expanded.                                           |
 | `[data-part="agent-permission"]` | A permission question's card (Allow, Allow always, Deny); `.is-open` until answered.                                                      |
