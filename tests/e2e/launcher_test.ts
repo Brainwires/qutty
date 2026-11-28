@@ -429,6 +429,10 @@ suite("launcher", (test) => {
       else assert(sub.right <= menu.x + 1, `${edge}: flipped to the left`);
       assert(sub.x >= 0 && sub.right <= vw, `${edge}: submenu inside`);
       assert(sub.y >= 0 && sub.bottom <= vh, `${edge}: submenu inside`);
+      // The first Escape closes the submenu, the second the menu.
+      await app.press("Escape");
+      assertEquals(await openSubId(app), null);
+      assert(await app.exists(MENU));
       await app.press("Escape");
       await waitFor(async () => !(await app.exists(MENU)), 2000, "closed");
     }
