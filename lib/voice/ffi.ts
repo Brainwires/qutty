@@ -1,9 +1,12 @@
 /**
  * The binding to rullama-hardware's audio, built as the `rullama-audio-ffi` cdylib in the Rullama
  * repo (crates/rullama-audio-ffi: cpal capture, Whisper through whisper-rs, webrtc-vad trimming,
- * cpal playback; its C header is include/rullama_audio.h). Loaded with `Deno.dlopen` by
- * desktop/voice.ts; the symbol table and the typed wrapper live here so they are tested against a
- * fake library where the real one is not built (Linux CI).
+ * cpal playback, Kokoro text-to-speech; its C header is include/rullama_audio.h). Loaded with
+ * `Deno.dlopen` by desktop/voice.ts; the symbol table and the typed wrapper live here so they are
+ * tested against a fake library where the real one is not built (Linux CI).
+ *
+ * The speech symbols (`rla_abi_version`, `rla_tts_*`: ABI version 2) are optional: a library built
+ * before them still loads and does everything else ({@linkcode AudioLib.ttsAvailable} says no).
  *
  * @module
  */
@@ -31,7 +34,48 @@ export const AUDIO_SYMBOLS = {
   rla_play_wav: { parameters: ["buffer"], result: "i32" },
   rla_play_stop: { parameters: [], result: "i32" },
   rla_playing: { parameters: [], result: "i32" },
+  // ABI version 2: Kokoro speech. Optional, so an older library still loads.
+  rla_abi_version: { parameters: [], result: "i32", optional: true },
+  rla_tts_available: { parameters: [], result: "i32", optional: true },
+  // Reads the ONNX model (hundreds of MB): on Deno's blocking pool.
+  rla_tts_load: {
+    parameters: ["buffer", "buffer"],
+    result: "i32",
+    nonblocking: true,
+    optional: true,
+  },
+  rla_tts_list_voices: {
+    parameters: ["buffer", "buffer", "usize"],
+    result: "i32",
+    optional: true,
+  },
+  rla_tts_free: { parameters: ["i32"], result: "i32", optional: true },
+  rla_tts_voices: {
+    parameters: ["i32", "buffer", "usize"],
+    result: "i32",
+    optional: true,
+  },
+  rla_tts_speak: {
+    parameters: ["i32", "buffer", "buffer", "f32", "f32"],
+    result: "i32",
+    optional: true,
+  },
+  rla_tts_cancel: { parameters: ["i32"], result: "i32", optional: true },
+  rla_tts_speaking: { parameters: ["i32"], result: "i32", optional: true },
 } as const satisfies Deno.ForeignLibraryInterface;
+
+/** The symbols a library has only from ABI version 2 on (all optional in the table). */
+export const TTS_SYMBOLS = [
+  "rla_abi_version",
+  "rla_tts_available",
+  "rla_tts_load",
+  "rla_tts_list_voices",
+  "rla_tts_free",
+  "rla_tts_voices",
+  "rla_tts_speak",
+  "rla_tts_cancel",
+  "rla_tts_speaking",
+] as const satisfies readonly (keyof typeof AUDIO_SYMBOLS)[];
 
 /** What `Deno.dlopen(path, AUDIO_SYMBOLS).symbols` gives (a fake implements the same). */
 export type AudioSymbols = Deno.DynamicLibrary<typeof AUDIO_SYMBOLS>["symbols"];
@@ -121,6 +165,9 @@ function bufText(buf: Uint8Array, len: number): string {
 
 /** The largest transcript read (64 KiB is ~10 minutes of speech). */
 const TEXT_CAP = 64 * 1024;
+
+/** What a library without the speech symbols says when asked to speak. */
+const NO_TTS = "this audio library has no text-to-speech";
 
 /** A failed library call, with its code and the library's message. */
 export class AudioError extends Error {
@@ -238,5 +285,102 @@ export class AudioLib {
 
   playing(): boolean {
     return this.#s.rla_playing() === 1;
+  }
+
+  /** The library's ABI version: 1 before `rla_abi_version` existed, 2 with speech. */
+  abiVersion(): number {
+    return this.#s.rla_abi_version?.() ?? 1;
+  }
+
+  /** Whether the library can speak: it has the `rla_tts_*` symbols and was built with Kokoro. */
+  ttsAvailable(): boolean {
+    const s = this.#s;
+    return TTS_SYMBOLS.every((name) => typeof s[name] === "function") &&
+      s.rla_tts_available?.() === 1;
+  }
+
+  /** A speech symbol, or an {@linkcode AudioError} when the library predates it. */
+  #tts<K extends typeof TTS_SYMBOLS[number]>(
+    name: K,
+  ): NonNullable<AudioSymbols[K]> {
+    const fn = this.#s[name];
+    if (!fn) throw new AudioError(AudioCode.error, NO_TTS);
+    return fn as NonNullable<AudioSymbols[K]>;
+  }
+
+  /**
+   * Load a Kokoro model and its voices (on Deno's blocking pool: about a second): the handle the
+   * other speech calls take.
+   */
+  async ttsLoad(modelPath: string, voicesPath: string): Promise<number> {
+    const load = this.#tts("rla_tts_load");
+    // Named, so the buffers live until the call settles.
+    const model = cString(modelPath);
+    const voices = cString(voicesPath);
+    return this.#check(await load(model, voices), "loading the voice model");
+  }
+
+  /** The voices of a voices file, as JSON, without loading a model. */
+  ttsListVoices(voicesPath: string): string {
+    const buf = new Uint8Array(TEXT_CAP);
+    const len = this.#check(
+      this.#tts("rla_tts_list_voices")(
+        cString(voicesPath),
+        buf,
+        BigInt(buf.length),
+      ),
+      "reading the voices",
+    );
+    return bufText(buf, len);
+  }
+
+  /** A loaded model's voices, as JSON. */
+  ttsVoices(handle: number): string {
+    const buf = new Uint8Array(TEXT_CAP);
+    const len = this.#check(
+      this.#tts("rla_tts_voices")(handle, buf, BigInt(buf.length)),
+      "reading the voices",
+    );
+    return bufText(buf, len);
+  }
+
+  /**
+   * Start saying `text` on the default output (returns at once; poll {@linkcode ttsSpeaking}),
+   * replacing whatever the handle is saying. `voice` `""` is the library's default; `speed` is
+   * 0.5–2, `volume` 0–1.
+   */
+  ttsSpeak(
+    handle: number,
+    text: string,
+    opts: { voice?: string; speed?: number; volume?: number } = {},
+  ): void {
+    this.#check(
+      this.#tts("rla_tts_speak")(
+        handle,
+        cString(text),
+        cString(opts.voice ?? ""),
+        opts.speed ?? 1,
+        opts.volume ?? 1,
+      ),
+      "speaking",
+    );
+  }
+
+  /** Whether the handle is still speaking; throws the error of a speech that failed (once). */
+  ttsSpeaking(handle: number): boolean {
+    return this.#check(
+      this.#tts("rla_tts_speaking")(handle),
+      "speaking",
+    ) === 1;
+  }
+
+  /** Stop what the handle is saying, now (barge-in). Never throws. */
+  ttsCancel(handle: number): void {
+    this.#s.rla_tts_cancel?.(handle);
+  }
+
+  /** Stop the handle and unload its model. Never throws. */
+  ttsFree(handle: number): void {
+    this.#s.rla_tts_free?.(handle);
   }
 }

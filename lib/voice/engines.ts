@@ -2,9 +2,11 @@
  * The page's speech engines behind the adapters (lib/voice/tts.ts `TtsEngine`, lib/voice/controller.ts
  * `SttEngine`):
  *
- * - TTS `system` (the default): `speak()` / `stopSpeaking()` from `denext/mobile`, the engine the
- *   companion in Denext's example uses — the window's Web Speech, else the OS's
- *   (`Deno.desktop.speech`).
+ * - TTS `kokoro` (the default): the Kokoro neural voice, synthesized and played on this machine
+ *   by the native library. Until its model is downloaded (or where the library has no speech) it
+ *   is the `system` engine that speaks.
+ * - TTS `system`: `speak()` / `stopSpeaking()` from `denext/mobile`, the engine the companion in
+ *   Denext's example uses — the window's Web Speech, else the OS's (`Deno.desktop.speech`).
  * - TTS `deepgram`: Deepgram Aura through the voice extension, played by the native library.
  * - STT `local` (the default): on-device Whisper in the native library (rullama-hardware).
  * - STT `deepgram` / `elevenlabs`: the native library records, the extension sends the audio.
@@ -29,6 +31,7 @@ import type {
 import type { SttEngine, SttUnavailable } from "./controller.ts";
 import type { SpeakOptions, TtsEngine } from "./tts.ts";
 import type { SttEngineId } from "./settings.ts";
+import { kokoroReady } from "./kokoro.ts";
 
 /**
  * The cloud keys as the page sees them: set, clear, and whether one is set. The key itself stays
@@ -60,6 +63,51 @@ export function systemTts(): TtsEngine {
         ...(o.volume !== undefined ? { volume: o.volume } : {}),
       }),
     stop: () => stopSpeaking(),
+  };
+}
+
+/**
+ * Kokoro, the on-device neural voice, with `fallback` (the OS's voice) standing in whenever
+ * Kokoro cannot speak: its model is not downloaded yet, the native library has no speech, or the
+ * speech failed before it was stopped. `kokoroVoice` names the voice now (`""`: the default).
+ */
+export function kokoroTts(
+  voice: VoiceBackend,
+  kokoroVoice: () => string,
+  fallback: TtsEngine = systemTts(),
+): TtsEngine {
+  /** Bumped by `stop`: a speech that fails after it was stopped is not said again. */
+  let stops = 0;
+  return {
+    id: "kokoro",
+    async speak(text: string, o: SpeakOptions) {
+      const turn = stops;
+      let ready = false;
+      try {
+        ready = kokoroReady(await voice.kokoroStatus());
+      } catch {
+        // No answer from the backend: the OS voice.
+      }
+      if (ready && turn === stops) {
+        try {
+          const picked = o.kokoroVoice ?? kokoroVoice();
+          return await voice.kokoroSpeak(text, {
+            ...(picked ? { voice: picked } : {}),
+            ...(o.rate !== undefined ? { speed: o.rate } : {}),
+            ...(o.volume !== undefined ? { volume: o.volume } : {}),
+          });
+        } catch (e) {
+          if (turn !== stops) return;
+          console.warn("voice: Kokoro failed, using the system voice", e);
+        }
+      }
+      if (turn !== stops) return;
+      await fallback.speak(text, o);
+    },
+    async stop() {
+      stops++;
+      await Promise.allSettled([voice.stopSpeaking(), fallback.stop()]);
+    },
   };
 }
 

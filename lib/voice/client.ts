@@ -2,7 +2,9 @@
  * The page's side of the voice extension (desktop/voice.ts): the native audio library's and the
  * Whisper model's status, the model download, push-to-talk capture with the on-device or a cloud
  * engine (with the microphone's level while it listens: lib/voice/level.ts), cloud speech played
- * on this machine, and the cloud services' API keys, which the extension keeps in the OS keychain
+ * on this machine, the on-device Kokoro voice (its files' status and download, its voices, and
+ * speech: lib/voice/kokoro.ts), and the cloud services' API keys, which the extension keeps in the
+ * OS keychain
  * (lib/secrets/api-keys.ts): the page sets or clears a key and asks whether one is set, and never
  * reads one back. In the browser demo a fake stands in, which the e2e suite scripts
  * (`window.__e2eVoice`); its keys live in memory only.
@@ -16,6 +18,7 @@ import { desktopExtension, onDesktopEvent } from "denext/desktop/client";
 import type voiceExtension from "../../desktop/voice.ts";
 import type { ModelState } from "./model.ts";
 import { formatSize, WHISPER_BASE_EN } from "./model.ts";
+import { KOKORO_FILES, type KokoroStatus, type KokoroVoice } from "./kokoro.ts";
 import { LEVEL_MS } from "./level.ts";
 import {
   ApiKeys,
@@ -26,6 +29,9 @@ import {
 
 /** How long the page waits for a transcript. */
 const TRANSCRIBE_WAIT_MS = 135_000;
+
+/** The bytes Kokoro's files take (what Settings says before the download). */
+export const KOKORO_BYTES = KOKORO_FILES.reduce((n, f) => n + f.sizeBytes, 0);
 
 /** The engines that capture through the native library. */
 export type CaptureEngine = "local" | "deepgram" | "elevenlabs";
@@ -74,13 +80,34 @@ export interface VoiceBackend {
   sttCancel(): Promise<void>;
   /** Cloud speech (Deepgram Aura) played here; settles when it has been said or stopped. */
   speak(text: string, opts: { model?: string }): Promise<void>;
+  /** Stop whatever this backend is saying (cloud speech and Kokoro). */
   stopSpeaking(): Promise<void>;
+  /** Whether Kokoro can speak: the library's speech support and its files. */
+  kokoroStatus(): Promise<KokoroStatus>;
+  /** Fetch Kokoro's files (progress through {@linkcode onKokoro}); the state it ends in. */
+  downloadKokoro(): Promise<ModelState>;
+  cancelKokoroDownload(): Promise<void>;
+  onKokoro(cb: (state: ModelState) => void): () => void;
+  /** The voices of the downloaded voices file (empty until it is there). */
+  kokoroVoices(): Promise<KokoroVoice[]>;
+  /** Say `text` with Kokoro on this machine; settles when it has been said or stopped. */
+  kokoroSpeak(text: string, opts: KokoroSpeakOptions): Promise<void>;
   /** Which cloud services have a key in the OS keychain (the keys themselves never come back). */
   keyStatus(): Promise<KeyPresence<CloudService>>;
   /** Keep `key` as `service`'s key in the OS keychain. */
   keySet(service: CloudService, key: string): Promise<void>;
   /** Remove `service`'s key from the OS keychain. */
   keyClear(service: CloudService): Promise<void>;
+}
+
+/** How Kokoro says something. */
+export interface KokoroSpeakOptions {
+  /** A voice id (`af_heart`); the library's default when absent. */
+  voice?: string;
+  /** 0.5–2, 1 is normal. */
+  speed?: number;
+  /** 0–1. */
+  volume?: number;
 }
 
 /** Subscribers to one of the extension's events, which is listened to once, on first use. */
@@ -122,6 +149,18 @@ export function createDesktopVoice(): VoiceBackend {
         ...(opts.model ? { model: opts.model } : {}),
       }, { timeoutMs: false }),
     stopSpeaking: () => voice.speakStop({}),
+    kokoroStatus: () => voice.kokoroStatus({}),
+    downloadKokoro: () => voice.kokoroDownload({}, { timeoutMs: false }),
+    cancelKokoroDownload: () => voice.kokoroCancel({}),
+    onKokoro: eventFanOut<ModelState>("kokoro"),
+    kokoroVoices: () => voice.kokoroVoices({}),
+    kokoroSpeak: (text, opts) =>
+      voice.kokoroSpeak({
+        text,
+        ...(opts.voice ? { voice: opts.voice } : {}),
+        ...(opts.speed !== undefined ? { speed: opts.speed } : {}),
+        ...(opts.volume !== undefined ? { volume: opts.volume } : {}),
+      }, { timeoutMs: false }),
     keyStatus: () => voice.keyStatus({}),
     keySet: async (service, key) => {
       await voice.keySet({ service, key });
@@ -218,6 +257,19 @@ export function createDemoVoice(
     },
     speak: () => Promise.reject(new Error("cloud voices need the desktop app")),
     stopSpeaking: () => Promise.resolve(),
+    // The demo has no native library: Kokoro is never there, and the OS voice speaks.
+    kokoroStatus: () =>
+      Promise.resolve({
+        available: false,
+        reason: "the on-device voice needs the desktop app",
+        files: { state: "missing", size: formatSize(KOKORO_BYTES) },
+      }),
+    downloadKokoro: () => Promise.resolve({ state: "missing" }),
+    cancelKokoroDownload: () => Promise.resolve(),
+    onKokoro: () => () => {},
+    kokoroVoices: () => Promise.resolve([]),
+    kokoroSpeak: () =>
+      Promise.reject(new Error("the on-device voice needs the desktop app")),
     keyStatus: () => keys.presence(),
     keySet: (service, key) => keys.set(service, key),
     keyClear: (service) => keys.clear(service),

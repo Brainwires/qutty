@@ -9,8 +9,11 @@
 //   deno task audio:lib --lib path/to/librullama_audio_ffi.dylib   # install a prebuilt one
 //   deno task audio:lib --native             # into native/<target>/ for packaging
 //
-// Needs cargo and cmake (whisper-rs builds whisper.cpp). The Whisper model is not handled here:
-// the app downloads it on first use (Settings → Voice), with its checksum checked.
+// Needs cargo and cmake (whisper-rs builds whisper.cpp), and the network once: the library's
+// Kokoro speech (its default `tts-kokoro` feature) links ONNX Runtime statically, and the `ort`
+// crate's build script downloads that runtime's prebuilt library for the target (on Linux the
+// build needs OpenSSL's headers, `libssl-dev`). The models are not handled here: the app downloads the
+// Whisper model and Kokoro's on first use (Settings → Voice), with their checksums checked.
 
 import { dirname, join } from "@std/path";
 import { audioLibFile, audioLibTarget } from "../lib/voice/ffi.ts";

@@ -1,8 +1,8 @@
 // The binding to rullama-hardware's audio library (lib/voice/ffi.ts): the symbol table against the
-// C header, the typed wrapper over a fake library (error codes, buffers, the async transcribe),
-// where the library is looked for — and, where the real library and the Whisper model are present
-// (a developer's Mac; not Linux CI), a real transcription of a `say`-generated WAV. No test opens
-// the microphone.
+// C header, the typed wrapper over a fake library (error codes, buffers, the async transcribe, the
+// optional speech calls and a library from before them), where the library is looked for — and,
+// where the real library and the Whisper model are present (a developer's Mac; not Linux CI), a
+// real transcription of a `say`-generated WAV. No test opens the microphone or plays a sound.
 
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
@@ -16,9 +16,11 @@ import {
   audioLibTarget,
   type AudioSymbols,
   CaptureState,
+  TTS_SYMBOLS,
 } from "../lib/voice/ffi.ts";
 import { WHISPER_BASE_EN } from "../lib/voice/model.ts";
 import { appSupportDir } from "../scripts/build-audio-lib.ts";
+import { audioLibProblem } from "../scripts/check-audio-lib.ts";
 
 /** rullama_audio.h's declarations, as (name, C result, C parameter types). */
 const HEADER: [string, string, string[]][] = [
@@ -38,6 +40,16 @@ const HEADER: [string, string, string[]][] = [
   ["rla_play_wav", "i32", ["buffer"]],
   ["rla_play_stop", "i32", []],
   ["rla_playing", "i32", []],
+  // ABI version 2 (speech).
+  ["rla_abi_version", "i32", []],
+  ["rla_tts_available", "i32", []],
+  ["rla_tts_load", "i32", ["buffer", "buffer"]],
+  ["rla_tts_list_voices", "i32", ["buffer", "buffer", "usize"]],
+  ["rla_tts_free", "i32", ["i32"]],
+  ["rla_tts_voices", "i32", ["i32", "buffer", "usize"]],
+  ["rla_tts_speak", "i32", ["i32", "buffer", "buffer", "f32", "f32"]],
+  ["rla_tts_cancel", "i32", ["i32"]],
+  ["rla_tts_speaking", "i32", ["i32"]],
 ];
 
 Deno.test("audio FFI: the symbol table matches the C ABI", () => {
@@ -50,10 +62,14 @@ Deno.test("audio FFI: the symbol table matches the C ABI", () => {
     assertEquals(sym.result, result, name);
     assertEquals([...sym.parameters], params, name);
   }
-  // Only Whisper on a file runs on the blocking pool.
+  // Only Whisper on a file and the speech model's load run on the blocking pool.
   const nonblocking = Object.entries(AUDIO_SYMBOLS)
     .filter(([, s]) => "nonblocking" in s && s.nonblocking).map(([n]) => n);
-  assertEquals(nonblocking, ["rla_transcribe_wav"]);
+  assertEquals(nonblocking, ["rla_transcribe_wav", "rla_tts_load"]);
+  // The speech symbols, and only they, are optional: an older library still loads.
+  const optional = Object.entries(AUDIO_SYMBOLS)
+    .filter(([, s]) => "optional" in s && s.optional).map(([n]) => n);
+  assertEquals(optional.sort(), [...TTS_SYMBOLS].sort());
 });
 
 /** Where the Rullama header is when the worktree is checked out next to Qutty. */
@@ -73,7 +89,11 @@ Deno.test("audio FFI: every symbol is declared in rullama_audio.h (when checked 
       fn: () => {},
     });
   }
+  // A checkout from before speech (no rla_abi_version) declares the version 1 set only.
+  const v2 = /\brla_abi_version\s*\(/.test(header);
+  const speech: readonly string[] = TTS_SYMBOLS;
   for (const [name] of HEADER) {
+    if (!v2 && speech.includes(name)) continue;
     assert(new RegExp(`\\b${name}\\s*\\(`).test(header), name);
   }
 });
@@ -107,6 +127,16 @@ function fakeLib(over: Partial<Record<keyof AudioSymbols, unknown>> = {}) {
     rla_play_wav: () => AudioCode.wrongState,
     rla_play_stop: () => (calls.push("play_stop"), 0),
     rla_playing: () => 1,
+    // Speech (ABI version 2): present, and failing unless a test scripts it.
+    rla_abi_version: () => 2,
+    rla_tts_available: () => 1,
+    rla_tts_load: () => Promise.resolve(-1),
+    rla_tts_list_voices: () => -1,
+    rla_tts_free: () => 0,
+    rla_tts_voices: () => -1,
+    rla_tts_speak: () => -1,
+    rla_tts_cancel: () => 0,
+    rla_tts_speaking: () => 0,
     ...over,
   };
   return {
@@ -155,6 +185,106 @@ Deno.test("audio FFI: a transcript longer than the buffer is cut, an async error
     AudioError,
     "no speech model",
   );
+});
+
+/** The text of a NUL-terminated buffer handed to the fake library. */
+const cText = (buf: Uint8Array) =>
+  new TextDecoder().decode(buf.subarray(0, buf.indexOf(0)));
+
+Deno.test("audio FFI: a library from before speech still works, and says it cannot speak", () => {
+  // `Deno.dlopen` gives `null` for an optional symbol the library lacks.
+  const none = Object.fromEntries(TTS_SYMBOLS.map((n) => [n, null]));
+  const { lib } = fakeLib(none);
+  assertEquals(lib.abiVersion(), 1);
+  assertEquals(lib.ttsAvailable(), false);
+  assertEquals(lib.version(), "VERSION");
+  assertEquals(lib.level(), 0.25);
+  const speak = assertThrows(() => lib.ttsSpeak(1, "hi"), AudioError);
+  assertEquals(speak.message, "this audio library has no text-to-speech");
+  assertThrows(() => lib.ttsListVoices("/v.bin"), AudioError);
+  assertThrows(() => lib.ttsSpeaking(1), AudioError);
+  // Stopping and freeing never throw (barge-in must not fail).
+  lib.ttsCancel(1);
+  lib.ttsFree(1);
+});
+
+Deno.test("audio FFI: speech calls pass their arguments and check their codes", async () => {
+  const voices = '[{"id":"af_heart","name":"Heart"}]';
+  const said: unknown[] = [];
+  const calls: string[] = [];
+  const speaking = [1, 0, -1];
+  const { lib } = fakeLib({
+    rla_abi_version: () => 2,
+    rla_tts_available: () => 1,
+    rla_tts_load: (model: Uint8Array, v: Uint8Array) => {
+      calls.push(`load ${cText(model)} ${cText(v)}`);
+      return Promise.resolve(3);
+    },
+    rla_tts_list_voices: (path: Uint8Array, buf: Uint8Array) => {
+      calls.push(`list ${cText(path)}`);
+      const bytes = enc.encode(voices);
+      buf.set(bytes);
+      buf[bytes.length] = 0;
+      return bytes.length;
+    },
+    rla_tts_voices: (handle: number, buf: Uint8Array) => {
+      calls.push(`voices ${handle}`);
+      const bytes = enc.encode(voices);
+      buf.set(bytes);
+      buf[bytes.length] = 0;
+      return bytes.length;
+    },
+    rla_tts_speak: (
+      handle: number,
+      text: Uint8Array,
+      voice: Uint8Array,
+      speed: number,
+      volume: number,
+    ) => {
+      said.push([handle, cText(text), cText(voice), speed, volume]);
+      return handle === 3 ? 0 : -1;
+    },
+    rla_tts_speaking: () => speaking.shift() ?? 0,
+    rla_tts_cancel: (handle: number) => (calls.push(`cancel ${handle}`), 0),
+    rla_tts_free: (handle: number) => (calls.push(`free ${handle}`), 0),
+  });
+  assertEquals(lib.abiVersion(), 2);
+  assert(lib.ttsAvailable());
+  assertEquals(await lib.ttsLoad("/m/kokoro.onnx", "/m/voices.bin"), 3);
+  assertEquals(lib.ttsListVoices("/m/voices.bin"), voices);
+  assertEquals(lib.ttsVoices(3), voices);
+  lib.ttsSpeak(3, "Héllo.", { voice: "af_heart", speed: 1.25, volume: 0.5 });
+  lib.ttsSpeak(3, "Defaults.");
+  assertEquals(said, [
+    [3, "Héllo.", "af_heart", 1.25, 0.5],
+    [3, "Defaults.", "", 1, 1],
+  ]);
+  // Speaking, then silent, then a speech that failed (the library's own message).
+  assertEquals(lib.ttsSpeaking(3), true);
+  assertEquals(lib.ttsSpeaking(3), false);
+  const failed = assertThrows(() => lib.ttsSpeaking(3), AudioError);
+  assertEquals(failed.message, "speaking: model file is corrupt");
+  assertThrows(() => lib.ttsSpeak(9, "x"), AudioError, "speaking:");
+  lib.ttsCancel(3);
+  lib.ttsFree(3);
+  assertEquals(calls, [
+    "load /m/kokoro.onnx /m/voices.bin",
+    "list /m/voices.bin",
+    "voices 3",
+    "cancel 3",
+    "free 3",
+  ]);
+  // A library with the symbols but built without Kokoro cannot speak.
+  assertEquals(
+    fakeLib({ rla_tts_available: () => 0 }).lib.ttsAvailable(),
+    false,
+  );
+});
+
+Deno.test("audio FFI: the release check wants a library that can speak", () => {
+  assertEquals(audioLibProblem(2, true), undefined);
+  assert(audioLibProblem(1, false)?.includes("before speech"));
+  assert(audioLibProblem(2, false)?.includes("tts-kokoro"));
 });
 
 Deno.test("audio FFI: where the library is looked for", () => {

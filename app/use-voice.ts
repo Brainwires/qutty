@@ -39,6 +39,7 @@ import {
   cloudTts,
   demoTts,
   type KeyStore,
+  kokoroTts,
   sttEngine,
   systemTts,
 } from "../lib/voice/engines.ts";
@@ -97,9 +98,10 @@ export interface VoiceApi {
   test(text: string): void;
   /**
    * Say `text` now in `voice` (an OS voice's id; the engine's default when `""`), cutting off
-   * whatever is being said (Settings' voice preview).
+   * whatever is being said (Settings' voice preview). The engine in use speaks: with Kokoro,
+   * `kokoroVoice` names its voice (else the one in Settings).
    */
-  preview(text: string, voice: string): void;
+  preview(text: string, voice: string, kokoroVoice?: string): void;
   /** Say `text` as an alert, after whatever is being said (the companion's reactions). */
   alert(text: string): void;
   /**
@@ -133,6 +135,15 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   }, [backend]);
   const keys = useMemo(() => voice ? backendKeys(voice) : undefined, [voice]);
 
+  // The on-device voice (desktop only): one engine, so a stop reaches the speech it started.
+  const kokoro = useMemo(
+    () =>
+      voice?.kind === "desktop"
+        ? kokoroTts(voice, () => optsRef.current.settings.kokoroVoice)
+        : undefined,
+    [voice],
+  );
+
   // Voice mode's speech, in order: a `replace` waits for the interrupt to settle first.
   const chainRef = useRef<Promise<void>>(Promise.resolve());
   const cutRef = useRef(0);
@@ -144,6 +155,8 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
         if (s.ttsEngine === "deepgram" && voice?.kind === "desktop" && keys) {
           return cloudTts(voice, keys);
         }
+        // The on-device voice; the OS's stands in until its model is downloaded.
+        if (s.ttsEngine === "kokoro" && kokoro) return kokoro;
         return systemTts();
       },
       options: () => {
@@ -156,7 +169,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       },
       onSpeaking: (on) => setSpeaking(on),
       onError: (e) => console.warn("voice: speech failed", e),
-    }), [voice, script, keys]);
+    }), [voice, script, keys, kokoro]);
 
   const controller = useMemo(() => {
     if (!voice || !backend || !keys) return undefined;
@@ -263,9 +276,12 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     test: (text) => {
       void queue.interrupt().then(() => queue.say(text, "alert"));
     },
-    preview: (text, voice) => {
+    preview: (text, voice, kokoroVoice) => {
       void queue.interrupt().then(() =>
-        queue.say(text, "alert", undefined, voice ? { voice } : {})
+        queue.say(text, "alert", undefined, {
+          ...(voice ? { voice } : {}),
+          ...(kokoroVoice ? { kokoroVoice } : {}),
+        })
       );
     },
     alert: (text) => queue.say(text, "alert"),

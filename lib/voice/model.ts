@@ -10,8 +10,8 @@
  * @module
  */
 
-/** A Whisper ggml model the app can fetch. */
-export interface WhisperModel {
+/** A model file the app can fetch (a Whisper ggml model, a Kokoro model or its voices). */
+export interface ModelFile {
   /** The file name (in `<app support>/models/`). */
   file: string;
   /** What Settings shows. */
@@ -21,6 +21,9 @@ export interface WhisperModel {
   /** Lower-case hex SHA-256 of the file (Hugging Face's LFS object id). */
   sha256: string;
 }
+
+/** A Whisper ggml model the app can fetch. */
+export type WhisperModel = ModelFile;
 
 /**
  * The default: Whisper base.en, 5-bit quantized (whisper.cpp's ggml build on Hugging Face). Small

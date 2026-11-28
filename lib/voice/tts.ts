@@ -16,6 +16,8 @@ import type { VoiceSettings } from "./settings.ts";
 export interface SpeakOptions {
   /** A voice name or id; the engine's default when absent. */
   voice?: string;
+  /** A Kokoro voice id for this item (a preview's), over the one in Settings. */
+  kokoroVoice?: string;
   /** 1 is normal. */
   rate?: number;
   /** 0–1. */

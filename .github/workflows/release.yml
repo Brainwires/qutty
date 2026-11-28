@@ -10,8 +10,9 @@ name: Release
 # Re-run the failed Linux job and the release job re-runs after it and adds the Linux files to
 # the published release.
 #
-# Dry runs, which build and check the Linux packages and publish nothing (no macOS build, no
-# release): a pull request that touches the Linux packaging, and workflow_dispatch.
+# Dry runs, which build and check the Linux packages and publish nothing (no macOS app, no
+# release): a pull request that touches the Linux packaging, and workflow_dispatch. A dry run
+# also builds the voice audio library on both Mac architectures and loads it (`audio_macos`).
 on:
   push:
     tags: ["v*"]
@@ -29,10 +30,12 @@ permissions:
 env:
   DENO_VERSION: 2.9.8
   # The Rullama commit whose `rullama-audio-ffi` (the voice audio library, bundled through
-  # desktop.bundle.libraries) each build compiles. No release tag has the crate yet (it landed
-  # after v0.12.0): move to a tag once one does. Its rust-toolchain.toml pins Rust 1.91.
+  # desktop.bundle.libraries) each build compiles: microphone capture, Whisper, playback and
+  # Kokoro speech (its default `tts-kokoro` feature; its build fetches a static ONNX Runtime).
+  # No release tag has the crate yet (it landed after v0.12.0): move to a tag once one does. Its
+  # rust-toolchain.toml pins Rust 1.91.
   RULLAMA_REPO: https://github.com/Brainwires/rullama-framework.git
-  RULLAMA_REF: 1bf343c7ac52eef35635299f8576412e1b7cf976
+  RULLAMA_REF: 30458c1cd77e7252407f8aba03e7b0c8094d843d
 
 jobs:
   # Each job's runner: our self-hosted pool while it has a free slot, else the GitHub image at
@@ -123,6 +126,12 @@ jobs:
           deno task audio:lib --native
           LIB="native/darwin-${ARCH/x86_64/x64}/librullama_audio_ffi.dylib"
           lipo -archs "$LIB" | tee /dev/stderr | grep -qw "$ARCH"
+          # Built with speech (Rullama's `tts-kokoro` feature, on by default): ONNX Runtime is
+          # linked in statically, so the one file is all the package carries. It loads here,
+          # and says it can speak.
+          grep -aq onnxruntime "$LIB"
+          ls -la "$LIB"
+          deno run --allow-ffi --allow-read scripts/check-audio-lib.ts "$LIB"
 
       - name: Import the signing certificate and notary key
         env:
@@ -204,6 +213,57 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
+  # Dry runs only: the audio library builds, loads and can speak on both Mac architectures. The
+  # macOS apps themselves are built on a tag alone (signing needs the release secrets), and a tag
+  # whose build fails costs a version, so the part of that build that compiles native code from
+  # another repository (whisper.cpp, and a static ONNX Runtime fetched for the target) is tried
+  # here first. GitHub's images: nothing is signed, and our Mac pool stays free.
+  audio_macos:
+    name: Audio library ${{ matrix.arch }} (dry run)
+    if: ${{ github.event_name != 'push' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, os: macos-15 }
+          - { arch: x86_64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+      - name: Check out Rullama (the audio library's source)
+        run: |
+          set -eu
+          RULLAMA_DIR="$RUNNER_TEMP/rullama-framework"
+          rm -rf "$RULLAMA_DIR"
+          echo "RULLAMA_DIR=$RULLAMA_DIR" >> "$GITHUB_ENV"
+          git init -q "$RULLAMA_DIR"
+          git -C "$RULLAMA_DIR" fetch -q --depth 1 "$RULLAMA_REPO" "$RULLAMA_REF"
+          git -C "$RULLAMA_DIR" checkout -q FETCH_HEAD
+      - uses: dtolnay/rust-toolchain@1.91
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.RULLAMA_DIR }} -> target
+          # GitHub's images, not the pool's: a cache of its own.
+          key: rullama-audio-ffi-portable-dry-run
+      - name: Build the audio library (rullama-audio-ffi)
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          command -v cmake > /dev/null || brew install cmake
+          deno task audio:lib --native
+          LIB="native/darwin-${ARCH/x86_64/x64}/librullama_audio_ffi.dylib"
+          lipo -archs "$LIB" | tee /dev/stderr | grep -qw "$ARCH"
+          grep -aq onnxruntime "$LIB"
+          ls -la "$LIB"
+          otool -L "$LIB"
+          deno run --allow-ffi --allow-read scripts/check-audio-lib.ts "$LIB"
+
   linux:
     name: Build Linux ${{ matrix.arch }}
     needs: runners
@@ -255,9 +315,10 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             libwebkit2gtk-4.1-0 libgtk-3-0 xvfb xauth desktop-file-utils
           # The audio library's build: whisper.cpp (cmake, a C/C++ compiler, libclang for
-          # bindgen) and cpal's ALSA headers.
+          # bindgen), cpal's ALSA headers, and OpenSSL's (the library's HTTP client, and the build
+          # script that fetches the static ONNX Runtime for Kokoro speech).
           sudo apt-get install -y -qq --no-install-recommends \
-            build-essential cmake clang libclang-dev pkg-config libasound2-dev
+            build-essential cmake clang libclang-dev pkg-config libasound2-dev libssl-dev
           # appimagetool, pinned by hash, run without FUSE by a wrapper. The AppImage runtime it
           # embeds is denext's pin (type2-runtime 20251108, SHA-256-checked by the package script
           # and passed as --runtime-file).
@@ -300,8 +361,27 @@ jobs:
         run: |
           set -eu
           deno task audio:lib --native
-          test -s "native/linux-${LABEL}/librullama_audio_ffi.so"
+          LIB="native/linux-${LABEL}/librullama_audio_ffi.so"
+          test -s "$LIB"
           ls -la "native/linux-${LABEL}"
+          # Rullama's release profile keeps debug information, which on Linux stays inside the
+          # library: tens of megabytes nobody reads (more since ONNX Runtime and the
+          # pronunciation dictionaries came with speech). The symbols themselves are kept.
+          strip --strip-debug "$LIB"
+          ls -la "native/linux-${LABEL}"
+          # Built with speech (Rullama's `tts-kokoro` feature, on by default): ONNX Runtime is
+          # linked in statically, so the one file is all the packages carry.
+          grep -aq onnxruntime "$LIB"
+          # What it needs of the system: no ONNX Runtime library, and the newest glibc symbols it
+          # uses (the oldest distribution the voice library loads on).
+          if objdump -p "$LIB" | grep -E 'NEEDED.*onnxruntime'; then
+            echo "::error::the audio library depends on an ONNX Runtime library the packages do not carry"
+            exit 1
+          fi
+          objdump -p "$LIB" | grep NEEDED
+          echo "newest glibc symbol version: $(objdump -T "$LIB" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+          # It loads here, and says it can speak.
+          deno run --allow-ffi --allow-read scripts/check-audio-lib.ts "$LIB"
 
       - name: Package (AppImage, .deb, tarball)
         run: deno task desktop:package:linux --format tar.gz,deb,appimage

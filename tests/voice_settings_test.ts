@@ -7,6 +7,7 @@ import { assert, assertEquals } from "@std/assert";
 import {
   DEFAULT_VOICE,
   isCloudEngine,
+  migrateStoredVoice,
   PTT_KEYS,
   sanitizeVoice,
 } from "../lib/voice/settings.ts";
@@ -29,7 +30,9 @@ import {
 Deno.test("voice settings: defaults are local and quiet", () => {
   assertEquals(DEFAULT_SETTINGS.voice, DEFAULT_VOICE);
   assertEquals(DEFAULT_VOICE.sttEngine, "local");
-  assertEquals(DEFAULT_VOICE.ttsEngine, "system");
+  // The on-device voice (the OS's stands in until its model is downloaded).
+  assertEquals(DEFAULT_VOICE.ttsEngine, "kokoro");
+  assertEquals(DEFAULT_VOICE.kokoroVoice, "");
   assertEquals(DEFAULT_VOICE.speakAnswers, false);
   assertEquals(DEFAULT_VOICE.review, true);
   assert(!isCloudEngine(DEFAULT_VOICE.sttEngine));
@@ -66,6 +69,13 @@ Deno.test("voice settings: each field checked, junk ignored", () => {
     DEFAULT_VOICE,
   );
   assertEquals(sanitizeVoice({ voice: "x".repeat(200) }).voice, "");
+  // The Kokoro voice is an id, kept apart from the OS voice's name.
+  const k = sanitizeVoice({ kokoroVoice: "bm_george", voice: "Samantha" });
+  assertEquals([k.kokoroVoice, k.voice], ["bm_george", "Samantha"]);
+  for (const bad of ["Heart!", "../x", "a".repeat(65), 7, null]) {
+    assertEquals(sanitizeVoice({ kokoroVoice: bad }).kokoroVoice, "");
+  }
+  assertEquals(sanitizeVoice({ ttsEngine: "system" }).ttsEngine, "system");
   assertEquals(sanitizeVoice(null), DEFAULT_VOICE);
 });
 
@@ -82,6 +92,37 @@ Deno.test("voice settings: the store patches, persists and skips no-ops", () => 
   // Old saved settings (before Voice) get the defaults.
   const { voice: _gone, ...old } = saved;
   assertEquals(sanitizeSettings(old).voice, DEFAULT_VOICE);
+});
+
+Deno.test("voice settings: settings saved before the on-device voice get it as the default", () => {
+  // Saved by a version without Kokoro: no `kokoroVoice`, the old default engine.
+  const { kokoroVoice: _new, ...before } = {
+    ...DEFAULT_VOICE,
+    ttsEngine: "system" as const,
+    voice: "Samantha",
+    speakAnswers: true,
+  };
+  assertEquals(migrateStoredVoice(before), { ...before, ttsEngine: "kokoro" });
+  const loaded = sanitizeSettings({ voice: before }).voice;
+  assertEquals(loaded.ttsEngine, "kokoro");
+  // What they had picked for the OS voice is kept: it speaks until the model is downloaded.
+  assertEquals([loaded.voice, loaded.speakAnswers], ["Samantha", true]);
+  // A cloud engine saved then stays.
+  assertEquals(
+    sanitizeSettings({ voice: { ...before, ttsEngine: "deepgram" } }).voice
+      .ttsEngine,
+    "deepgram",
+  );
+  // Saved since (it has `kokoroVoice`): `system` is a choice, and survives every reload.
+  const chosen = reduce(initialState(), {
+    type: "setVoice",
+    patch: { ttsEngine: "system" },
+  }).settings;
+  assertEquals(chosen.voice.ttsEngine, "system");
+  const again = sanitizeSettings(JSON.parse(JSON.stringify(chosen)));
+  assertEquals(again.voice.ttsEngine, "system");
+  assertEquals(migrateStoredVoice(null), null);
+  assertEquals(migrateStoredVoice("junk"), "junk");
 });
 
 const key = (code: string, mods: Partial<KeyLike> = {}): KeyLike => ({

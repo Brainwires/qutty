@@ -1,7 +1,8 @@
 // The page's engines behind the adapters (lib/voice/engines.ts) and the demo voice backend
 // (lib/voice/client.ts): why native push-to-talk cannot run (no library, no model, no key), cloud
 // keys that the page can set, clear and ask about but never read back, Web Speech only where it
-// exists, and the demo's timed TTS.
+// exists, the demo's timed TTS, and the on-device voice (Kokoro) with the OS voice standing in
+// whenever it cannot speak.
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
@@ -9,6 +10,7 @@ import {
   cloudTts,
   demoTts,
   type KeyStore,
+  kokoroTts,
   nativeStt,
   webRecognition,
   webSpeechStt,
@@ -20,6 +22,8 @@ import {
   type VoiceBackend,
   type VoiceStatus,
 } from "../lib/voice/client.ts";
+import type { KokoroStatus } from "../lib/voice/kokoro.ts";
+import type { SpeakOptions, TtsEngine } from "../lib/voice/tts.ts";
 import { memorySecureStore } from "./session_helpers.ts";
 
 const okStatus: VoiceStatus = {
@@ -150,6 +154,141 @@ Deno.test("cloud TTS: needs a saved Deepgram key, and sends no key with the text
   );
   await cloudTts(voice, keys("k")).speak("hello", { voice: "aura-luna-en" });
   assertEquals(said, [["hello", { model: "aura-luna-en" }]]);
+});
+
+const kokoroOk: KokoroStatus = {
+  available: true,
+  files: { state: "ready", size: "337 MB" },
+};
+
+/** A desktop backend whose Kokoro is scripted, and an OS voice that records what it says. */
+function kokoroRig(
+  status: KokoroStatus | Error,
+  speak: (text: string) => Promise<void> = () => Promise.resolve(),
+) {
+  const log: unknown[] = [];
+  const voice: VoiceBackend = {
+    ...createDemoVoice(),
+    kind: "desktop",
+    kokoroStatus: () =>
+      status instanceof Error
+        ? Promise.reject(status)
+        : Promise.resolve(status),
+    kokoroSpeak: (text, opts) => {
+      log.push(["kokoro", text, opts]);
+      return speak(text);
+    },
+    stopSpeaking: () => {
+      log.push("kokoro stop");
+      return Promise.resolve();
+    },
+  };
+  const system: TtsEngine = {
+    id: "system",
+    speak: (text: string, o: SpeakOptions) => {
+      log.push(["system", text, o]);
+      return Promise.resolve();
+    },
+    stop: () => {
+      log.push("system stop");
+      return Promise.resolve();
+    },
+  };
+  return { voice, system, log };
+}
+
+Deno.test("Kokoro TTS: speaks with the picked voice, the rate and the volume", async () => {
+  const { voice, system, log } = kokoroRig(kokoroOk);
+  let picked = "bf_emma";
+  const engine = kokoroTts(voice, () => picked, system);
+  assertEquals(engine.id, "kokoro");
+  // The OS voice's name (`voice`) is not Kokoro's: only the rate and the volume carry over.
+  await engine.speak("Hello.", { voice: "Samantha", rate: 1.2, volume: 0.8 });
+  picked = "";
+  await engine.speak("Default voice.", {});
+  // A preview names its own Kokoro voice, over the one in Settings.
+  picked = "bf_emma";
+  await engine.speak("Preview.", { kokoroVoice: "am_adam" });
+  assertEquals(log, [
+    ["kokoro", "Hello.", { voice: "bf_emma", speed: 1.2, volume: 0.8 }],
+    ["kokoro", "Default voice.", {}],
+    ["kokoro", "Preview.", { voice: "am_adam" }],
+  ]);
+});
+
+Deno.test("Kokoro TTS: the OS voice stands in until Kokoro can speak", async () => {
+  const o = { voice: "Samantha", rate: 1.5 };
+  const cases: [string, KokoroStatus | Error][] = [
+    ["not downloaded", {
+      available: true,
+      files: { state: "missing", size: "337 MB" },
+    }],
+    ["downloading", {
+      available: true,
+      files: { state: "downloading", received: 1, total: 9, size: "337 MB" },
+    }],
+    ["no speech in the library", {
+      available: false,
+      reason: "built without speech",
+      files: { state: "ready", size: "337 MB" },
+    }],
+    ["no answer", new Error("voice is not ready")],
+  ];
+  for (const [name, status] of cases) {
+    const { voice, system, log } = kokoroRig(status);
+    await kokoroTts(voice, () => "af_heart", system).speak("Hi.", o);
+    assertEquals(log, [["system", "Hi.", o]], name);
+  }
+});
+
+Deno.test("Kokoro TTS: a failure is said by the OS voice, a stopped speech is not", async () => {
+  // The model fails to load: the reply is still heard.
+  const broken = kokoroRig(
+    kokoroOk,
+    () => Promise.reject(new Error("speaking: cannot load the speech model")),
+  );
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await kokoroTts(broken.voice, () => "", broken.system).speak("Hi.", {});
+  } finally {
+    console.warn = warn;
+  }
+  assertEquals(broken.log, [["kokoro", "Hi.", {}], ["system", "Hi.", {}]]);
+
+  // Barge-in while Kokoro speaks: both are told to stop, and nothing is said again.
+  let fail!: (e: Error) => void;
+  const cut = kokoroRig(
+    kokoroOk,
+    () => new Promise<void>((_, reject) => (fail = reject)),
+  );
+  const engine = kokoroTts(cut.voice, () => "", cut.system);
+  const speaking = engine.speak("A long answer.", {});
+  await new Promise((r) => setTimeout(r, 0));
+  await engine.stop();
+  fail(new Error("stopped"));
+  await speaking;
+  assertEquals(cut.log, [
+    ["kokoro", "A long answer.", {}],
+    "kokoro stop",
+    "system stop",
+  ]);
+  // And the next thing is said as usual.
+  const again = kokoroRig(kokoroOk);
+  const next = kokoroTts(again.voice, () => "", again.system);
+  await next.stop();
+  await next.speak("Next.", {});
+  assertEquals(again.log.at(-1), ["kokoro", "Next.", {}]);
+});
+
+Deno.test("demo voice: no on-device voice, so the OS voice speaks", async () => {
+  const demo = createDemoVoice();
+  const status = await demo.kokoroStatus();
+  assertEquals([status.available, status.files.state], [false, "missing"]);
+  assertEquals(status.files.size, "337 MB");
+  assertEquals(await demo.kokoroVoices(), []);
+  assertEquals((await demo.downloadKokoro()).state, "missing");
+  await assertRejects(() => demo.kokoroSpeak("hi", {}), Error, "desktop app");
 });
 
 Deno.test("Web Speech: only where the window has it", async () => {
