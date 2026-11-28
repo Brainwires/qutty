@@ -54,7 +54,22 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function build(): Promise<string> {
+/**
+ * The build's environment. A library for packaging (`--native`) must run on every Mac or PC of its
+ * target, not only on the build machine: whisper.cpp's ggml tunes itself to the host CPU
+ * (`GGML_NATIVE`, e.g. Arm i8mm on an M2, which an M1 lacks) unless `SOURCE_DATE_EPOCH` is set,
+ * its reproducible-build switch. whisper-rs-sys passes no `GGML_*` define through, so this is the
+ * way to turn host tuning off. A developer's own build (no `--native`) keeps host tuning.
+ */
+export function buildEnv(
+  forPackaging: boolean,
+  env: Record<string, string>,
+): Record<string, string> {
+  if (!forPackaging || env.SOURCE_DATE_EPOCH) return {};
+  return { SOURCE_DATE_EPOCH: "0" };
+}
+
+async function build(forPackaging: boolean): Promise<string> {
   for (const dir of rullamaCandidates()) {
     if (!await exists(join(dir, "crates", "rullama-audio-ffi", "Cargo.toml"))) {
       continue;
@@ -63,6 +78,7 @@ async function build(): Promise<string> {
     const { code } = await new Deno.Command("cargo", {
       args: ["build", "-p", "rullama-audio-ffi", "--release"],
       cwd: dir,
+      env: buildEnv(forPackaging, Deno.env.toObject()),
       stdout: "inherit",
       stderr: "inherit",
     }).output();
@@ -91,7 +107,9 @@ export function nativeLibDest(
 
 if (import.meta.main) {
   const libArg = Deno.args.indexOf("--lib");
-  const lib = libArg >= 0 ? Deno.args[libArg + 1] : await build();
+  const lib = libArg >= 0
+    ? Deno.args[libArg + 1]
+    : await build(Deno.args.includes("--native"));
   if (!lib || !await exists(lib)) throw new Error(`no library at ${lib}`);
   const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
   const dest = Deno.args.includes("--native")

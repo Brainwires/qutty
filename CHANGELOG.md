@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.4 — 2026-11-28
+
 - Settings → Voice: the list of this computer's voices is easier to use. It used
   to be one long list of every voice the OS has, many of them for other
   languages. Now it shows the voices for your language: your region first, then
@@ -21,6 +23,17 @@
 - Skins: the voice row, its preview button and the hint are new parts:
   `[data-part="voice-picker"]`, `[data-part="voice-preview"]` and
   `[data-part="voice-hint"]` (docs/skins.md).
+
+## 0.8.3 — 2026-11-28
+
+- The bundled voice library (on-device push-to-talk) is built for every Mac or
+  PC of its kind, not tuned to the release machine's CPU. Before, whisper.cpp
+  optimized itself for the build runner's chip, so a library built on a newer
+  Apple chip could use instructions (such as Arm's i8mm) an M1 does not have,
+  and an Intel build could do the same for older Intel Macs. The 0.8.2 Apple
+  Silicon build failed on this; 0.8.0 and 0.8.1 may crash on older Macs when
+  voice input starts. Release builds now set `SOURCE_DATE_EPOCH`, whisper.cpp's
+  reproducible-build switch, and start from a fresh build cache.
 
 ## 0.8.2 — 2026-11-28
 
