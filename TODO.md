@@ -710,6 +710,7 @@ docs/agent-detection.md).
       runner.
 - [x] v0.8.2: chat text size and a wider column in agent tiles, "Jump to latest"
       clear of the companion, and the + menu as submenus.
+- [x] v0.8.3: portable voice library builds (no host CPU tuning).
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip
