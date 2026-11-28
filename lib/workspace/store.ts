@@ -121,6 +121,20 @@ export const INACTIVE_TILE_MODES: readonly InactiveTiles[] = [
   "scale",
 ];
 
+/**
+ * Settings → Appearance → Chat text: the type scale of agent tiles' transcripts and of every prompt
+ * box (an agent tile's, a harness overlay's). Not the terminal's font (Settings → Font). The app
+ * puts it on <html> as `data-chat-size`; public/styles.css turns it into `--chat-size` (13 / 15 /
+ * 17 px body text) and the sizes derived from it.
+ */
+export type ChatTextSize = "small" | "medium" | "large";
+/** Every chat text size, smallest first (the order the settings panel lists them). */
+export const CHAT_TEXT_SIZES: readonly ChatTextSize[] = [
+  "small",
+  "medium",
+  "large",
+];
+
 /** Every bar position, in the order `cycleBarPosition` walks them. */
 export const BAR_POSITIONS: readonly BarPosition[] = [
   "top",
@@ -285,6 +299,8 @@ export interface Settings extends FontSettings {
    * whose agent waits for the user (lib/hub/badge.ts).
    */
   dockBadge: boolean;
+  /** Settings → Appearance → Chat text: the agent chat's type scale ({@linkcode ChatTextSize}). */
+  chatTextSize: ChatTextSize;
 }
 
 /** The whole workspace. */
@@ -382,6 +398,8 @@ export type WorkspaceAction =
   | { type: "setHarnessOverlay"; on: boolean }
   /** Settings → Agents: the app icon's badge of waiting agents on or off. */
   | { type: "setDockBadge"; on: boolean }
+  /** Settings → Appearance → Chat text: the agent chat's type scale. */
+  | { type: "setChatTextSize"; size: ChatTextSize }
   | { type: "activity"; id: string }
   /** A bell rang in tile `id` (or its agent started waiting for the user). */
   | { type: "bell"; id: string }
@@ -491,6 +509,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sharedZoom: 1,
   agentPresets: [],
   dockBadge: true,
+  chatTextSize: "medium",
   ...DEFAULT_FONT_SETTINGS,
 };
 
@@ -634,6 +653,9 @@ export function sanitizeSettings(
     out.harnessOverlay = r.harnessOverlay;
   }
   if (typeof r.dockBadge === "boolean") out.dockBadge = r.dockBadge;
+  if (CHAT_TEXT_SIZES.includes(r.chatTextSize as ChatTextSize)) {
+    out.chatTextSize = r.chatTextSize as ChatTextSize;
+  }
   if (typeof r.zoomTogether === "boolean") out.zoomTogether = r.zoomTogether;
   if (r.sharedZoom !== undefined) {
     out.sharedZoom = sanitizeTileZoom(r.sharedZoom) ?? 1;
@@ -1221,6 +1243,15 @@ function reduceCore(
       return withSettings(state, {
         ...state.settings,
         dockBadge: action.on === true,
+      });
+    case "setChatTextSize":
+      if (
+        state.settings.chatTextSize === action.size ||
+        !CHAT_TEXT_SIZES.includes(action.size)
+      ) return state;
+      return withSettings(state, {
+        ...state.settings,
+        chatTextSize: action.size,
       });
     case "webPage": {
       const entry = state.terminals.find((t) => t.id === action.id);

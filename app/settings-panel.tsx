@@ -26,6 +26,8 @@ import {
   BAR_POSITIONS,
   type BarOrder,
   type BarPosition,
+  CHAT_TEXT_SIZES,
+  type ChatTextSize,
   INACTIVE_TILE_MODES,
   type InactiveTiles,
   LAYOUT_RANGES,
@@ -110,6 +112,8 @@ export interface SettingsPanelProps {
   onActivity(patch: Partial<ActivitySettings>): void;
   onTileTitle(tileTitle: TileTitle): void;
   onFont(patch: Partial<FontSettings>): void;
+  /** Settings → Appearance → Chat text: the agent chat's type scale. */
+  onChatTextSize(size: ChatTextSize): void;
   /** Settings → Appearance → Zoom (also View → "Zoom All Tiles Together"). */
   onZoomTogether(on: boolean): void;
   onTheme(theme: ThemeId): void;
@@ -170,6 +174,13 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   voice: "Voice",
   monitor: "System monitor",
   scm: "Source Control",
+};
+
+/** Settings → Appearance → Chat text's choices. */
+const CHAT_TEXT_LABELS: Record<ChatTextSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
 };
 
 const SHORTCUTS: [string, string][] = [
@@ -538,6 +549,36 @@ export function SettingsPanel(props: SettingsPanelProps) {
             }}
             onFont={props.onFont}
           />
+        </SettingsGroup>
+        <SettingsGroup title="Chat text" testid="chat-text-section">
+          <div class="field">
+            <span class="field-label">Chat text size</span>
+            <div
+              class="segmented"
+              role="radiogroup"
+              aria-label="Chat text size"
+            >
+              {CHAT_TEXT_SIZES.map((size) => (
+                <button
+                  type="button"
+                  key={size}
+                  role="radio"
+                  aria-checked={size === settings.chatTextSize}
+                  class={size === settings.chatTextSize ? "is-active" : ""}
+                  data-testid="setting-chat-text-size"
+                  data-value={size}
+                  onClick={() => props.onChatTextSize(size)}
+                >
+                  {CHAT_TEXT_LABELS[size]}
+                </button>
+              ))}
+            </div>
+            <span class="field-hint">
+              The text of agent tiles' transcripts and of every prompt box. Code
+              in them keeps the terminal's typeface (Font, above); the terminals
+              keep their own font size.
+            </span>
+          </div>
         </SettingsGroup>
         <SettingsGroup title="Zoom" testid="zoom-section">
           <label class="field field-check">

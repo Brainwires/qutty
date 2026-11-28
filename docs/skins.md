@@ -173,93 +173,77 @@ change without notice.
 | `data-frame-title="left"`, `"center"` or `"right"`                        | How a tile header's title is aligned.                                                                                                         |
 | `--frame-order-minimize`, `--frame-order-maximize`, `--frame-order-close` | Each window button's place in the group, 1 to 3 (the buttons' `order`).                                                                       |
 | The theme tokens (`--ink`, `--panel`, `--text`, `--accent`, …)            | The colours. Each of `--accent`, `--red`, `--hi`, `--text-2`, `--panel`, `--shadow` also has an `-rgb` form (`rgba(var(--accent-rgb), 0.2)`). |
+| `data-chat-size="small"`, `"medium"` or `"large"`                         | Settings → Appearance → Chat text: the agent chat's type scale (below).                                                                       |
 
 ### Parts
 
-| Selector                         | What it is                                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `[data-part="app"]`              | The window canvas, behind everything.                                                                           |
-| `[data-part="drag-strip"]`       | The strip the window is dragged by when the bar is not on top (desktop).                                        |
-| `[data-part="bar"]`              | The switcher bar: a toolbar on any edge of the window (`.bar-top`, `.bar-bottom`, `.bar-left`, `.bar-right`).   |
-| `.bar-btn`                       | A button in the bar (+, layout, settings, …); `.is-open` while its menu is open.                                |
-| `[data-part="chips"]`            | The strip of tile chips in the bar.                                                                             |
-| `[data-part="chip"]`             | One tile's chip (a tab); `.is-focused` on the focused tile's, `.is-minimized`, `.is-overflow`.                  |
-| `.chip-close`                    | A chip's close button.                                                                                          |
-| `[data-part="cluster"]`          | The area the tiles are laid out in.                                                                             |
-| `[data-part="tile"]`             | A tile's frame. States: `.is-focused`, `[data-maximized]`, `[data-web]`, `[data-agent-tile]`, `[data-harness]`. |
-| `[data-part="tile-head"]`        | A tile's header: its title bar.                                                                                 |
-| `[data-part="tile-title"]`       | The title in a tile's header.                                                                                   |
-| `.tile-badge`                    | A badge in a tile's header (SSH, SANDBOX).                                                                      |
-| `[data-part="tile-meta"]`        | The far side of a tile's header: age, recency rank, zoom.                                                       |
-| `[data-part="tile-zoom"]`        | The zoom pill of a tile that is not at 100%.                                                                    |
-| `[data-part="tile-buttons"]`     | The group of window buttons in a tile's header.                                                                 |
-| `[data-part="tile-button"]`      | One window button: `[data-button="minimize"]`, `"maximize"`, `"restore"` or `"close"`.                          |
-| `[data-part="tile-body"]`        | A terminal tile's body (xterm draws inside it).                                                                 |
-| `.tile-grip`                     | A free-form tile's resize grip (its edges and corners).                                                         |
-| `[data-part="agent-body"]`       | An agent tile's body: its transcript and prompt.                                                                |
-| `[data-part="scm-body"]`         | A Source Control tile's body: its panel and diff.                                                               |
-| `[data-part="web-toolbar"]`      | A web tile's toolbar, in its header.                                                                            |
-| `.web-btn`                       | A button in a web tile's toolbar.                                                                               |
-| `[data-part="web-address"]`      | A web tile's address field.                                                                                     |
-| `[data-part="web-chrome"]`       | A web tile's bars under its header (bookmarks, find).                                                           |
-| `.menu`                          | A menu or popover: the bar's menus, a tile's menus, context menus.                                              |
-| `.menu-item`                     | A row in a menu; `.is-active` when it is the current choice.                                                    |
-| `.menu-heading`                  | A heading inside a menu.                                                                                        |
-| `.menu-sep`                      | A separator inside a menu.                                                                                      |
-| `[data-part="dialog-backdrop"]`  | The dimmed layer behind a dialog.                                                                               |
-| `[data-part="dialog"]`           | A dialog (Settings, Connections, …).                                                                            |
-| `.settings-dialog`               | The Settings dialog.                                                                                            |
-| `.settings-tab`                  | A category in the Settings sidebar; `.is-active` on the open one.                                               |
-| `[data-part="settings-group"]`   | A titled group of settings.                                                                                     |
-| `.field-select`                  | A drop-down.                                                                                                    |
-| `.btn-primary`                   | A primary button.                                                                                               |
-| `.btn-quiet`                     | A secondary button.                                                                                             |
-| `.empty`                         | The message shown when no tile is open.                                                                         |
-| Selector                         | What it is                                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `[data-part="app"]`              | The window canvas, behind everything.                                                                           |
-| `[data-part="drag-strip"]`       | The strip the window is dragged by when the bar is not on top (desktop).                                        |
-| `[data-part="bar"]`              | The switcher bar: a toolbar on any edge of the window (`.bar-top`, `.bar-bottom`, `.bar-left`, `.bar-right`).   |
-| `.bar-btn`                       | A button in the bar (+, layout, settings, …); `.is-open` while its menu is open.                                |
-| `[data-part="chips"]`            | The strip of tile chips in the bar.                                                                             |
-| `[data-part="chip"]`             | One tile's chip (a tab); `.is-focused` on the focused tile's, `.is-minimized`, `.is-overflow`.                  |
-| `.chip-close`                    | A chip's close button.                                                                                          |
-| `[data-part="cluster"]`          | The area the tiles are laid out in.                                                                             |
-| `[data-part="tile"]`             | A tile's frame. States: `.is-focused`, `[data-maximized]`, `[data-web]`, `[data-agent-tile]`, `[data-harness]`. |
-| `[data-part="tile-head"]`        | A tile's header: its title bar.                                                                                 |
-| `[data-part="tile-title"]`       | The title in a tile's header.                                                                                   |
-| `.tile-badge`                    | A badge in a tile's header (SSH, SANDBOX).                                                                      |
-| `[data-part="tile-meta"]`        | The far side of a tile's header: age, recency rank, zoom.                                                       |
-| `[data-part="tile-zoom"]`        | The zoom pill of a tile that is not at 100%.                                                                    |
-| `[data-part="tile-buttons"]`     | The group of window buttons in a tile's header.                                                                 |
-| `[data-part="tile-button"]`      | One window button: `[data-button="minimize"]`, `"maximize"`, `"restore"` or `"close"`.                          |
-| `[data-part="tile-body"]`        | A terminal tile's body (xterm draws inside it).                                                                 |
-| `.tile-grip`                     | A free-form tile's resize grip (its edges and corners).                                                         |
-| `[data-part="agent-body"]`       | An agent tile's body: its transcript and prompt.                                                                |
-| `[data-part="agent-message"]`    | A message in an agent tile's transcript: `[data-type="user"]` (a bubble) or `[data-type="text"]` (the agent's). |
-| `[data-part="agent-tool"]`       | A tool call's card in an agent tile's transcript; `[data-status]`, `[data-open]` once expanded.                 |
-| `[data-part="agent-permission"]` | A permission question's card (Allow, Allow always, Deny); `.is-open` until answered.                            |
-| `[data-part="agent-welcome"]`    | An agent tile's empty state: the backend's avatar, what to ask, the folder.                                     |
-| `[data-part="composer"]`         | A prompt box: the composer card of an agent tile or a harness overlay. `[data-empty]` while nothing is typed.   |
-| `[data-part="composer-input"]`   | A prompt box's text field.                                                                                      |
-| `[data-part="composer-button"]`  | A button in a prompt box: `.agent-tool-btn` (attach, saved, history, dictate), `.agent-stop`, `.agent-send`.    |
-| `[data-part="web-toolbar"]`      | A web tile's toolbar, in its header.                                                                            |
-| `.web-btn`                       | A button in a web tile's toolbar.                                                                               |
-| `[data-part="web-address"]`      | A web tile's address field.                                                                                     |
-| `[data-part="web-chrome"]`       | A web tile's bars under its header (bookmarks, find).                                                           |
-| `.menu`                          | A menu or popover: the bar's menus, a tile's menus, context menus.                                              |
-| `.menu-item`                     | A row in a menu; `.is-active` when it is the current choice.                                                    |
-| `.menu-heading`                  | A heading inside a menu.                                                                                        |
-| `.menu-sep`                      | A separator inside a menu.                                                                                      |
-| `[data-part="dialog-backdrop"]`  | The dimmed layer behind a dialog.                                                                               |
-| `[data-part="dialog"]`           | A dialog (Settings, Connections, …).                                                                            |
-| `.settings-dialog`               | The Settings dialog.                                                                                            |
-| `.settings-tab`                  | A category in the Settings sidebar; `.is-active` on the open one.                                               |
-| `[data-part="settings-group"]`   | A titled group of settings.                                                                                     |
-| `.field-select`                  | A drop-down.                                                                                                    |
-| `.btn-primary`                   | A primary button.                                                                                               |
-| `.btn-quiet`                     | A secondary button.                                                                                             |
-| `.empty`                         | The message shown when no tile is open.                                                                         |
+| Selector                         | What it is                                                                                                                                |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `[data-part="app"]`              | The window canvas, behind everything.                                                                                                     |
+| `[data-part="drag-strip"]`       | The strip the window is dragged by when the bar is not on top (desktop).                                                                  |
+| `[data-part="bar"]`              | The switcher bar: a toolbar on any edge of the window (`.bar-top`, `.bar-bottom`, `.bar-left`, `.bar-right`).                             |
+| `.bar-btn`                       | A button in the bar (+, layout, settings, …); `.is-open` while its menu is open.                                                          |
+| `[data-part="chips"]`            | The strip of tile chips in the bar.                                                                                                       |
+| `[data-part="chip"]`             | One tile's chip (a tab); `.is-focused` on the focused tile's, `.is-minimized`, `.is-overflow`.                                            |
+| `.chip-close`                    | A chip's close button.                                                                                                                    |
+| `[data-part="cluster"]`          | The area the tiles are laid out in.                                                                                                       |
+| `[data-part="tile"]`             | A tile's frame. States: `.is-focused`, `[data-maximized]`, `[data-web]`, `[data-agent-tile]`, `[data-harness]`.                           |
+| `[data-part="tile-head"]`        | A tile's header: its title bar.                                                                                                           |
+| `[data-part="tile-title"]`       | The title in a tile's header.                                                                                                             |
+| `.tile-badge`                    | A badge in a tile's header (SSH, SANDBOX).                                                                                                |
+| `[data-part="tile-meta"]`        | The far side of a tile's header: age, recency rank, zoom.                                                                                 |
+| `[data-part="tile-zoom"]`        | The zoom pill of a tile that is not at 100%.                                                                                              |
+| `[data-part="tile-buttons"]`     | The group of window buttons in a tile's header.                                                                                           |
+| `[data-part="tile-button"]`      | One window button: `[data-button="minimize"]`, `"maximize"`, `"restore"` or `"close"`.                                                    |
+| `[data-part="tile-body"]`        | A terminal tile's body (xterm draws inside it).                                                                                           |
+| `.tile-grip`                     | A free-form tile's resize grip (its edges and corners).                                                                                   |
+| `[data-part="agent-body"]`       | An agent tile's body: its transcript and prompt.                                                                                          |
+| `[data-part="agent-message"]`    | A message in an agent tile's transcript: `[data-type="user"]` (a bubble) or `[data-type="text"]` (the agent's).                           |
+| `[data-part="agent-tool"]`       | A tool call's card in an agent tile's transcript; `[data-status]`, `[data-open]` once expanded.                                           |
+| `[data-part="agent-permission"]` | A permission question's card (Allow, Allow always, Deny); `.is-open` until answered.                                                      |
+| `[data-part="agent-welcome"]`    | An agent tile's empty state: the backend's avatar, what to ask, the folder.                                                               |
+| `[data-part="agent-jump"]`       | An agent tile's "Jump to latest" pill: centred over the bottom of the transcript, just above the prompt box (the companion keeps off it). |
+| `[data-part="composer"]`         | A prompt box: the composer card of an agent tile or a harness overlay. `[data-empty]` while nothing is typed.                             |
+| `[data-part="composer-input"]`   | A prompt box's text field.                                                                                                                |
+| `[data-part="composer-button"]`  | A button in a prompt box: `.agent-tool-btn` (attach, saved, history, dictate), `.agent-stop`, `.agent-send`.                              |
+| `[data-part="web-toolbar"]`      | A web tile's toolbar, in its header.                                                                                                      |
+| `.web-btn`                       | A button in a web tile's toolbar.                                                                                                         |
+| `[data-part="web-address"]`      | A web tile's address field.                                                                                                               |
+| `[data-part="web-chrome"]`       | A web tile's bars under its header (bookmarks, find).                                                                                     |
+| `.menu`                          | A menu or popover: the bar's menus, a tile's menus, context menus.                                                                        |
+| `.menu-item`                     | A row in a menu; `.is-active` when it is the current choice.                                                                              |
+| `.menu-heading`                  | A heading inside a menu.                                                                                                                  |
+| `.menu-sep`                      | A separator inside a menu.                                                                                                                |
+| `[data-part="dialog-backdrop"]`  | The dimmed layer behind a dialog.                                                                                                         |
+| `[data-part="dialog"]`           | A dialog (Settings, Connections, …).                                                                                                      |
+| `.settings-dialog`               | The Settings dialog.                                                                                                                      |
+| `.settings-tab`                  | A category in the Settings sidebar; `.is-active` on the open one.                                                                         |
+| `[data-part="settings-group"]`   | A titled group of settings.                                                                                                               |
+| `.field-select`                  | A drop-down.                                                                                                                              |
+| `.btn-primary`                   | A primary button.                                                                                                                         |
+| `.btn-quiet`                     | A secondary button.                                                                                                                       |
+| `.empty`                         | The message shown when no tile is open.                                                                                                   |
+
+### The agent chat's type scale
+
+An agent tile's transcript and every prompt box (an agent tile's, a harness
+overlay's) size their text from one property, `--chat-size`: 15px by default,
+13px or 17px when Settings → Appearance → Chat text is Small or Large
+(`data-chat-size` on the document element). From it, on
+`[data-part="agent-body"]` and `[data-part="composer"]`:
+
+| Property           | What it is                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `--chat-size`      | Body text: messages, the prompt box's text field (with `--chat-lh`, 1.6).                      |
+| `--chat-text-sm`   | Secondary text (13px at Medium): tool cards, thinking, footers, notices, buttons, the tabs.    |
+| `--chat-text-xs`   | Labels and pills (12px at Medium): attachments, the prompt box's key hint.                     |
+| `--chat-code-size` | Code blocks, tool output, diffs and permission previews (13px at Medium; the terminal's font). |
+
+Write sizes in your skin with these instead of fixed pixels, so the setting
+keeps working (Classic does, in its own typeface). A skin may also set
+`--chat-size` itself, on `:root[data-skin="my-skin"]`, to change the whole
+scale. The transcript's column is `--chat-col` wide at most (it grows with the
+tile, from 720px to 1120px), its prose `--chat-measure` (48em).
 
 Scrollbars are styled with the `::-webkit-scrollbar` pseudo-elements under your
 skin's root selector (`:root[data-skin="my-skin"] ::-webkit-scrollbar-thumb`).

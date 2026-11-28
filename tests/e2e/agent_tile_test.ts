@@ -653,6 +653,126 @@ suite("agent tile", (test) => {
     );
   });
 
+  test(
+    "a wide tile: the column grows, the prompt box lines up under it, Jump to latest sits centred above it, clear of the companion; Chat text size",
+    async (app) => {
+      const id = await openAgent(app);
+      await prompt(app, id, "change the greeting");
+      await waitForQuestion(app, id);
+      await app.click(`${tileSel(id)} [data-testid=agent-allow]`);
+      assertEquals(await waitForFooter(app, id), "done");
+      type R = { left: number; right: number; top: number; bottom: number };
+      const rects = () =>
+        app.eval((s: string) => {
+          const box = (q: string) => {
+            const el = document.querySelector(q);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              bottom: r.bottom,
+            };
+          };
+          return {
+            log: box(`${s} [data-testid=agent-log]`),
+            scroll: box(`${s} [data-testid=agent-scroll]`),
+            composer: box(`${s} [data-part=composer]`),
+            jump: box(`${s} [data-testid=agent-jump]`),
+            companion: box("[data-testid=companion-overlay] .stage"),
+          };
+        }, tileSel(id)) as Promise<Record<string, R | null>>;
+      const mid = (r: R) => (r.left + r.right) / 2;
+      const meets = (a: R, b: R) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom &&
+        b.top < a.bottom;
+
+      // ~1900px of tile: a column of 1120px (not a narrow strip), the composer as wide, both on the
+      // card's middle.
+      const wide = await rects();
+      const logW = wide.log!.right - wide.log!.left;
+      assert(logW > 1000 && logW <= 1121, `column ${logW}px`);
+      const boxW = wide.composer!.right - wide.composer!.left;
+      assert(Math.abs(boxW - logW) < 2, `composer ${boxW}px, column ${logW}px`);
+      assert(Math.abs(mid(wide.composer!) - mid(wide.log!)) < 2, "lined up");
+
+      // Scrolled up (the log padded so there is something to scroll): Jump to latest, centred
+      // over the transcript's bottom edge, just above the prompt box.
+      await app.eval((s: string) => {
+        document.querySelector<HTMLElement>(
+          `${s} [data-testid=agent-log]`,
+        )!.style.paddingTop = "3000px";
+        const el = document.querySelector<HTMLElement>(
+          `${s} [data-testid=agent-scroll]`,
+        )!;
+        el.scrollTop = 0;
+        el.dispatchEvent(new Event("scroll"));
+      }, tileSel(id));
+      await waitFor(
+        () => app.exists(`${tileSel(id)} [data-testid=agent-jump]`),
+        3000,
+        "Jump to latest",
+      );
+      const up = await rects();
+      const jump = up.jump!;
+      assert(Math.abs(mid(jump) - mid(up.log!)) < 2, "centred on the column");
+      assert(jump.bottom <= up.composer!.top, "above the prompt box");
+      assert(
+        jump.bottom <= up.scroll!.bottom &&
+          jump.bottom > up.scroll!.bottom - 40,
+        "on the transcript's bottom edge",
+      );
+      if (up.companion) {
+        assert(!meets(jump, up.companion), "clear of companion");
+      }
+
+      // A narrow tile: the companion keeps off the pill (it is one of the things it dodges).
+      await app.setViewport(420, 640);
+      await waitFor(
+        async () => {
+          const r = await rects();
+          return !!r.jump && (!r.companion || !meets(r.jump, r.companion));
+        },
+        4000,
+        "the companion clear of Jump to latest",
+      );
+      await app.setViewport(1920, 900);
+
+      // Settings → Appearance → Chat text: 15px by default, 17px at Large; the terminal font stays.
+      const size = () =>
+        app.eval((s: string) =>
+          getComputedStyle(
+            document.querySelector(
+              `${s} [data-testid=agent-row][data-type=user]`,
+            )!,
+          ).fontSize, tileSel(id));
+      assertEquals(await size(), "15px");
+      const termSize = (await app.settings()).fontSize;
+      await app.openSettings("appearance");
+      await app.click(
+        "[data-testid=setting-chat-text-size][data-value=large]",
+      );
+      await app.closeSettings();
+      assertEquals(await size(), "17px");
+      assertEquals(
+        await app.eval(() => document.documentElement.dataset.chatSize),
+        "large",
+      );
+      assertEquals((await app.settings()).chatTextSize, "large");
+      assertEquals((await app.settings()).fontSize, termSize);
+      // The composer follows it too.
+      assertEquals(
+        await app.eval((s: string) =>
+          getComputedStyle(
+            document.querySelector(`${s} [data-part=composer-input]`)!,
+          ).fontSize, tileSel(id)),
+        "17px",
+      );
+    },
+    { width: 1920, height: 900 },
+  );
+
   test("a link in a reply opens as Settings → Links says (a web tile, or the browser)", async (app) => {
     await withPages(async (pages) => {
       const id = await openAgent(app);

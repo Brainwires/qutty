@@ -66,6 +66,10 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   part("agent-permission", "A permission question's card (Allow / Deny)."),
   part("agent-welcome", "An agent tile's empty state (its avatar and folder)."),
   part(
+    "agent-jump",
+    "An agent tile's \"Jump to latest\" pill, over the transcript's bottom edge.",
+  ),
+  part(
     "composer",
     "A prompt box: the composer card of an agent tile or a harness overlay.",
   ),

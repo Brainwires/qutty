@@ -977,6 +977,13 @@ function WorkspaceView() {
     if (ready) managerRef.current?.setTheme(theme.terminal);
   }, [ready, theme]);
 
+  // Settings → Appearance → Chat text: `data-chat-size` on <html>, which public/styles.css turns
+  // into the agent chat's type scale (`--chat-size` and the sizes derived from it).
+  const chatTextSize = state.settings.chatTextSize;
+  useLayoutEffect(() => {
+    document.documentElement.dataset.chatSize = chatTextSize;
+  }, [chatTextSize]);
+
   useSandboxSettings(
     ready ? managerRef.current?.backend ?? null : null,
     state.settings.sandbox,
@@ -1666,6 +1673,7 @@ function WorkspaceView() {
           onHarnessOverlay={(on) => run({ type: "setHarnessOverlay", on })}
           onDockBadge={(on) => run({ type: "setDockBadge", on })}
           onFont={(patch) => run({ type: "setFont", patch })}
+          onChatTextSize={(size) => run({ type: "setChatTextSize", size })}
           onZoomTogether={(on) => run({ type: "setZoomTogether", on })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           skins={skins}
