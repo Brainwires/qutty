@@ -348,13 +348,21 @@ Deno.test({
         id,
         "clear; printf '\\033[1;31mRED\\033[0m plain\\n\\033[3;5Hxy\\n'\r",
       );
-      await rec.until("printf output", () => rec.text(id).includes("plain"));
-      await new Promise((r) => setTimeout(r, 200));
+      // The echoed command line also says "plain"; only the output has the real escape bytes.
+      await rec.until(
+        "printf output",
+        () => rec.text(id).includes("\x1b[1;31mRED\x1b[0m plain"),
+      );
       await connect(client, "hub", m[1]);
-      const screen = json(
-        await client.callTool("hub", "read_screen", { tile: id }),
-      ).screen
-        .split("\n");
+      // The mirror is fed asynchronously: read until it has caught up (bounded), not after a fixed sleep.
+      let screen: string[] = [];
+      for (const deadline = Date.now() + 10_000; Date.now() < deadline;) {
+        screen = json(
+          await client.callTool("hub", "read_screen", { tile: id }),
+        ).screen.split("\n");
+        if (screen[0] === "RED plain" && screen[2] === "    xy") break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
       assertEquals(screen[0], "RED plain");
       assertEquals(screen[2], "    xy");
       host.resize(id, 30, 6);
