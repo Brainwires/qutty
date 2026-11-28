@@ -10,6 +10,7 @@ import {
   isNewTileKey,
   renderMenu,
   snapshotEntries,
+  submenu,
 } from "../desktop/menus-selftest.ts";
 
 const item = (over: Partial<MenuSnapshotItem>): MenuSnapshotItem => ({
@@ -47,6 +48,38 @@ Deno.test("menus self-test: a read-back menu in the checked shape", () => {
     "  <close>",
     "  Restore  (disabled)  {r}",
   ]);
+});
+
+Deno.test("menus self-test: New Tile With's submenus are found at any level", () => {
+  const entries = snapshotEntries([
+    item({
+      type: "submenu",
+      label: "Shell",
+      submenu: [
+        item({
+          type: "submenu",
+          label: "New Tile With",
+          submenu: [
+            item({
+              type: "submenu",
+              label: "Shell",
+              submenu: [
+                item({
+                  id: "denext:menu:qutty:launch:shell:/bin/zsh",
+                  label: "zsh (default)",
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ]);
+  const newTileWith = submenu(entries, "New Tile With")!;
+  assertEquals(renderMenu(submenu(newTileWith, "Shell")!), [
+    "zsh (default)  {qutty:launch:shell:/bin/zsh}",
+  ]);
+  assertEquals(submenu(newTileWith, "SSH"), undefined);
 });
 
 Deno.test("menus self-test: ⌘T as Denext is given it and as the OS reads it back", () => {

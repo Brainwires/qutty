@@ -62,6 +62,7 @@ import {
   type LaunchEntry,
   type LaunchSection,
 } from "../lib/launcher.ts";
+import type { AgentKind } from "../lib/agent/adapter.ts";
 
 /**
  * Whether this page drives native menus: the desktop app on a runtime that sets per-window
@@ -95,8 +96,11 @@ export interface NativeMenuHandlers {
   openOllama(): void;
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   moveTile(to: string): void;
-  /** "Claude Code (chat)": a new agent tile. */
-  openAgentChat(agent?: "codex"): void;
+  /** New Tile With → Coding: a new agent tile (Claude Code with no `agent`), maybe a preset's. */
+  openAgentChat(
+    agent?: Exclude<AgentKind, "claude">,
+    presetId?: string,
+  ): void;
   /** View → Source Control, New Tile With → Source Control / Worktrees… */
   openSourceControl(show?: "worktrees"): void;
   /** View → "Zoom All Tiles Together" on / off. */
@@ -114,14 +118,18 @@ export interface NativeMenusOptions {
   state: WorkspaceState;
   broadcast: boolean;
   sections: readonly LaunchSection[];
-  /** "Ollama Models…" in the launch submenu. */
+  /** Coding → Ollama and "Ollama models…" in the launch submenu. */
   ollama: boolean;
-  /** "Web Page" in the launch submenu (the native web engine). */
+  /** Web Browser → Open in the launch submenu (the native web engine). */
   webPage: boolean;
-  /** "Bookmarks…" and "History…" in the Shell menu (a web engine). */
+  /** Web Browser → History and Bookmark Manager in the launch submenu (a web engine). */
   webDialogs: boolean;
-  /** "Claude Code (chat)" in the launch submenu. */
+  /** Coding's agent chats in the launch submenu. */
   agentChat: boolean;
+  /** Coding → Anthropic API (a key is saved). */
+  anthropic?: boolean;
+  /** Coding: Settings → Agents → Presets. */
+  presets?: readonly { id: string; name: string; agent?: AgentKind }[];
   /** "Source Control" and "Worktrees…" in the launch submenu. */
   sourceControl?: boolean;
   /** A modal dialog has the keyboard. */
@@ -233,6 +241,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         webPage: opts.webPage,
         webDialogs: opts.webDialogs,
         agentChat: opts.agentChat,
+        anthropic: opts.anthropic === true,
+        ...(opts.presets ? { presets: opts.presets } : {}),
         sourceControl: opts.sourceControl === true,
       }),
     [
@@ -242,6 +252,8 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
       opts.webPage,
       opts.webDialogs,
       opts.agentChat,
+      opts.anthropic,
+      opts.presets,
       opts.sourceControl,
     ],
   );
@@ -332,7 +344,7 @@ export function useNativeMenus(opts: NativeMenusOptions): boolean {
         case "moveTile":
           return h.moveTile(action.to);
         case "agentChat":
-          return h.openAgentChat(action.agent);
+          return h.openAgentChat(action.agent, action.presetId);
         case "zoomTogether":
           return h.toggleZoomTogether();
         case "sourceControl":

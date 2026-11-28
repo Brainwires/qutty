@@ -13,6 +13,7 @@ import { join } from "@std/path";
 import { type App, ROOT, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { launchAgent } from "./agent_helpers.ts";
+import { pickInSub } from "./launch_helpers.ts";
 import { rightClick } from "./link_helpers.ts";
 import { press } from "./pointer_helpers.ts";
 
@@ -475,8 +476,7 @@ suite("harness overlay", (test) => {
   });
 
   test("an agent tile's prompt box: the same composer", async (app) => {
-    await app.click("[data-testid=bar-new-menu]");
-    await app.click("[data-testid=launch-agent-chat]");
+    await pickInSub(app, "coding", "[data-testid=launch-agent-chat]");
     await waitFor(
       () => app.exists("[data-testid=agent-launch-cwd]"),
       3000,

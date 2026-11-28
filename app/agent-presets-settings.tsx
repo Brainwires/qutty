@@ -1,5 +1,5 @@
-// Settings → Agents → Presets: the agent tile roles the `+` menu offers under each backend's
-// "(chat)" item (lib/agent/presets.ts). A list (pick one to edit it, Add, Delete) and a small
+// Settings → Agents → Presets: the agent tile roles the `+` menu's Coding submenu offers under
+// each backend's row (lib/agent/presets.ts). A list (pick one to edit it, Add, Delete) and a small
 // editor: the name, the backend (Claude Code, Codex, Ollama, Anthropic API), the model (the
 // backend's aliases, or a name typed for Codex and Ollama, whose lists come from them), the
 // permission mode, the tools allowed without asking, and a system prompt added to
@@ -132,7 +132,7 @@ export function AgentPresetsSection(
         </div>
         <span class="field-hint">
           Roles for agent tiles: each shows in the <code>+</code>{" "}
-          menu under its agent's "(chat)" item. An open tile keeps what it
+          menu's Coding submenu, under its agent. An open tile keeps what it
           started with.
         </span>
       </div>

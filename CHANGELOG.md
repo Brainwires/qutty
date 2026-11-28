@@ -23,6 +23,21 @@
   `--chat-text-xs`, `--chat-code-size`), and the pill is a new part,
   `[data-part="agent-jump"]` (docs/skins.md). Classic's prompt box follows the
   chat text size.
+- The `+ ▾` menu is now a short list of submenus instead of one long scrolling
+  list: Web Browser (Open, History, Bookmark Manager), Shell (your default shell
+  first, then the others installed), SSH (Connections Manager, then your saved
+  hosts), Terminal (Claude Code, Codex, opencode and the other agent tools in a
+  terminal with Qutty's overlay, and your recent Ollama pairs) and Coding
+  (Qutty's chat view on Claude Code, Codex, Ollama and the Anthropic API, with
+  your presets, then Ollama models…). The "(chat)" suffixes are gone: the
+  submenu says it. Source Control and Worktrees… stay below. The submenus follow
+  the usual menu keys (↑/↓, → or Enter opens, ← or Escape closes), open when the
+  pointer rests on their row and stay open while it moves into them, and stay
+  inside the window near its edges. Every row's tooltip says what it opens.
+- Shell → New Tile With in the menu bar has the same submenus (History and
+  Bookmark Manager moved there from the Shell menu), and the Dock menu's agent
+  items are now Terminal ▸ and Coding ▸ submenus, with Claude Code and Codex in
+  a terminal as new choices.
 
 ## 0.8.1 — 2026-11-28
 

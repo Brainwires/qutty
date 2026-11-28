@@ -1,6 +1,6 @@
 // The Ollama helper against the demo backend (lib/ollama/demo.ts: Ollama 0.40.13 with
 // qwen3.8:27b-mlx (tools) and gemma3:4b (no tools), Claude Code, Codex and OpenCode installed,
-// a small library with mimo-v2.6): the `+` menu's Ollama section and dialog, launching a harness
+// a small library with mimo-v2.6): the `+` menu's Coding → Ollama models… dialog, launching a harness
 // on a model (title, agent badge, the remembered pair), the no-tools warning, Pull a model…, the
 // library's Pull & launch, and Settings → Ollama with "+ opens" naming a pair.
 
@@ -12,8 +12,8 @@ import {
   suite,
   waitFor,
 } from "./harness.ts";
+import { openSub, pickEntry, pickInSub } from "./launch_helpers.ts";
 
-const ARROW = "[data-testid=bar-new-menu]";
 const DIALOG = "[data-testid=ollama-dialog]";
 const model = (name: string) =>
   `[data-testid=ollama-model][data-name="${name}"]`;
@@ -21,15 +21,9 @@ const harness = (name: string) =>
   `[data-testid=ollama-harness][data-name="${name}"]`;
 const tileSel = (id: string) => `[data-testid=tile][data-id="${id}"]`;
 
-/** Open the `+` menu, then its "Ollama models…" item. */
+/** Open the `+` menu, then its Coding → "Ollama models…" item. */
 async function openDialog(app: App): Promise<void> {
-  await app.click(ARROW);
-  await waitFor(
-    () => app.exists("[data-testid=launch-ollama]"),
-    4000,
-    "the Ollama item",
-  );
-  await app.click("[data-testid=launch-ollama]");
+  await pickInSub(app, "coding", "[data-testid=launch-ollama]");
   await waitFor(() => app.exists(model("qwen3.8:27b-mlx")), 4000, "models");
 }
 
@@ -52,12 +46,23 @@ const names = (app: App, sel: string) =>
   );
 
 suite("ollama", (test) => {
-  test("menu: an Ollama section opens the dialog; models, capabilities, harnesses", async (app) => {
-    await app.click(ARROW);
+  test("menu: Coding → Ollama models… opens the dialog; models, capabilities, harnesses", async (app) => {
+    // Coding lists Ollama's chat and, after a separator, the dialog.
+    await openSub(app, "coding");
+    const rows = ["Claude Code", "Codex", "Ollama", "-", "Ollama models…"];
     await waitFor(
-      () => app.exists('[data-testid=launch-section][data-section="ollama"]'),
+      async () =>
+        (await app.eval(() =>
+          [...document.querySelectorAll<HTMLElement>(
+            "[data-testid=launch-submenu] > *",
+          )].map((el) =>
+            el.getAttribute("role") === "separator"
+              ? "-"
+              : el.querySelector(".menu-label")?.textContent
+          ).join()
+        )) === rows.join(),
       4000,
-      "the Ollama section",
+      `Coding's rows: ${rows.join(", ")}`,
     );
     await app.click("[data-testid=launch-ollama]");
     await waitFor(() => app.exists(DIALOG), 3000, "the dialog");
@@ -132,13 +137,9 @@ suite("ollama", (test) => {
       model: "qwen3.8:27b-mlx",
     }]);
     assertEquals(s.lastLaunch, "ollama:claude:qwen3.8:27b-mlx");
-    // The pair is now a menu entry.
-    await app.click(ARROW);
-    const entry =
-      '[data-testid=launch-item][data-id="ollama:claude:qwen3.8:27b-mlx"]';
-    await waitFor(() => app.exists(entry), 4000, "the pair entry");
+    // The pair is now a menu entry, under Terminal.
     const before2 = await chipIds(app);
-    await app.click(entry);
+    await pickEntry(app, "ollama:claude:qwen3.8:27b-mlx");
     const id2 = await newFocused(app, before2);
     await app.waitForText(id2, "claude · qwen3.8:27b-mlx", 5000);
     // `/exit` ends the demo agent, and its tile goes with it.

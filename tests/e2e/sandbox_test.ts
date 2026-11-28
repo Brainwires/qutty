@@ -5,11 +5,9 @@
 
 import { assert, assertEquals } from "@std/assert";
 import { type App, suite, waitFor } from "./harness.ts";
+import { ARROW, MENU, pickEntry, subRow } from "./launch_helpers.ts";
 
-const ARROW = "[data-testid=bar-new-menu]";
-const MENU = "[data-testid=launch-menu]";
 const TOGGLE = "[data-testid=launch-sandbox]";
-const item = (id: string) => `[data-testid=launch-item][data-id="${id}"]`;
 const tile = (id: string) => `[data-testid=tile][data-id="${id}"]`;
 
 /** Settings → Sandbox → Shared container (the section opened if folded). */
@@ -44,12 +42,10 @@ function newFocused(app: App, before: Set<string>): Promise<string> {
   );
 }
 
-/** Launch the bash entry from the picker; returns the new tile's id. */
+/** Launch the bash entry from the picker's Shell submenu; returns the new tile's id. */
 async function launchBash(app: App): Promise<string> {
   const before = await chipIds(app);
-  if (!(await app.exists(MENU))) await app.click(ARROW);
-  await waitFor(() => app.exists(item("shell:/bin/bash")), 3000, "picker");
-  await app.click(item("shell:/bin/bash"));
+  await pickEntry(app, "shell:/bin/bash");
   return await newFocused(app, before);
 }
 
@@ -127,7 +123,7 @@ suite("sandbox", (test) => {
 
   test("picker: no toggle while off; Run in sandbox / Run on host decide where a pick runs", async (app) => {
     await app.click(ARROW);
-    await waitFor(() => app.exists(item("shell:/bin/bash")), 3000, "picker");
+    await waitFor(() => app.exists(subRow("shell")), 3000, "picker");
     assertEquals(await app.exists(TOGGLE), false);
     await app.click(ARROW);
     await shareSandbox(app);

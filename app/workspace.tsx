@@ -1198,6 +1198,8 @@ function WorkspaceView() {
     webPage: webEngine?.capabilities.drawsAboveHtml === true,
     webDialogs: webEngine !== null,
     agentChat: true,
+    anthropic: agentTiles.apiKey,
+    presets: state.settings.agentPresets,
     sourceControl: true,
     modalOpen,
     ...(tileMove.enabled && managerRef.current?.backend.session.moves
@@ -1214,7 +1216,8 @@ function WorkspaceView() {
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
-      openAgentChat: (agent) => agentTiles.openLaunch(agent),
+      openAgentChat: (agent, presetId) =>
+        agentTiles.openLaunch(agent, presetId),
       openSourceControl: (show) => scmTiles.openForFocused(show),
       webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
@@ -1233,6 +1236,7 @@ function WorkspaceView() {
       newTerminal: () => runCommand({ kind: "newTerminal" }),
       agentChat: () => agentTiles.openLaunch(),
       codexChat: () => agentTiles.openLaunch("codex"),
+      agentTerminal: launcher.launchAgent,
     },
     modalOpen,
   });

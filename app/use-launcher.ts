@@ -194,6 +194,34 @@ export function useLauncher(opts: UseLauncherOptions) {
     );
   }, [launch]);
 
+  // A tool asked for by name (the Dock menu's Terminal → Claude Code) before the entries are in
+  // (a window the Dock menu just opened): started once they arrive, dropped if it is not there.
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+  const pendingAgent = useRef<string | null>(null);
+  const agentEntry = (name: string) =>
+    flatEntries(sectionsRef.current).find((e) =>
+      e.kind === "agent" && e.agent.name === name
+    );
+  const launchAgentEntry = useCallback((entry: LaunchEntry) => {
+    const s = sandboxDefaultRef.current;
+    launch(entry, true, s === null ? undefined : s);
+  }, [launch]);
+  /** Start agent tool `name` in a new terminal, as the `+` menu's Terminal submenu does. */
+  const launchAgent = useCallback((name: string) => {
+    const entry = agentEntry(name);
+    if (entry) return launchAgentEntry(entry);
+    pendingAgent.current = name;
+    refresh();
+  }, [launchAgentEntry, refresh]);
+  useEffect(() => {
+    const name = pendingAgent.current;
+    if (name === null || found === NONE) return;
+    pendingAgent.current = null;
+    const entry = agentEntry(name);
+    if (entry) launchAgentEntry(entry);
+  }, [found]);
+
   const sandboxChoice = sandboxDefault === null ? undefined : {
     on: inSandbox,
     onToggle: () => setInSandbox((v) => !v),
@@ -205,6 +233,7 @@ export function useLauncher(opts: UseLauncherOptions) {
     refresh,
     launch,
     launchFromMenu,
+    launchAgent,
     sandboxChoice,
     openPlus,
   };

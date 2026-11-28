@@ -215,6 +215,9 @@ change without notice.
 | `.menu-item`                     | A row in a menu; `.is-active` when it is the current choice.                                                                              |
 | `.menu-heading`                  | A heading inside a menu.                                                                                                                  |
 | `.menu-sep`                      | A separator inside a menu.                                                                                                                |
+| `[data-part="launch-menu"]`      | The `+` menu (also a `.menu`): its submenus' rows, then Run in sandbox, Source Control, Worktrees….                                       |
+| `[data-part="launch-group"]`     | A `+` menu row that opens a submenu (a `.menu-item`); `[data-sub]` names it, `.is-open` while it is open.                                 |
+| `[data-part="launch-submenu"]`   | A `+` menu submenu (a `.menu`), beside the menu; `[data-sub]` names it: `web`, `shell`, `ssh`, `terminal`, …                              |
 | `[data-part="dialog-backdrop"]`  | The dimmed layer behind a dialog.                                                                                                         |
 | `[data-part="dialog"]`           | A dialog (Settings, Connections, …).                                                                                                      |
 | `.settings-dialog`               | The Settings dialog.                                                                                                                      |
