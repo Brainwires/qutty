@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.2 — 2026-11-28
+
 - Agent tiles read like other chat apps. The transcript's text is 15px with a
   1.6 line height, and tool cards, thinking, footers, notices, buttons and code
   are 13px. Before, the body was 14px and the rest 12px or less. The prompt box
