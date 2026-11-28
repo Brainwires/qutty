@@ -96,6 +96,12 @@ export interface VoiceApi {
   stopSpeaking(): void;
   /** Say `text` now (Settings' "Test voice"). */
   test(text: string): void;
+  /**
+   * Say `text` now in `voice` (an OS voice's id; the engine's default when `""`), cutting off
+   * whatever is being said (Settings' voice preview). The engine in use speaks: with Kokoro,
+   * `kokoroVoice` names its voice (else the one in Settings).
+   */
+  preview(text: string, voice: string, kokoroVoice?: string): void;
   /** Say `text` as an alert, after whatever is being said (the companion's reactions). */
   alert(text: string): void;
   /**
@@ -269,6 +275,14 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
     },
     test: (text) => {
       void queue.interrupt().then(() => queue.say(text, "alert"));
+    },
+    preview: (text, voice, kokoroVoice) => {
+      void queue.interrupt().then(() =>
+        queue.say(text, "alert", undefined, {
+          ...(voice ? { voice } : {}),
+          ...(kokoroVoice ? { kokoroVoice } : {}),
+        })
+      );
     },
     alert: (text) => queue.say(text, "alert"),
     speak: (text, replace = false) => {

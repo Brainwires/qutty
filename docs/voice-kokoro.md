@@ -88,8 +88,10 @@ publishers; Qutty does not redistribute them.
 ## Checking it by hand
 
 - Settings → Voice → Voice engine → Kokoro: the hint says the model is not
-  downloaded and gives its size; Download shows progress, then "downloaded", and
-  the Kokoro voice list appears. Test voice speaks with the picked voice.
+  downloaded and gives its size, and the Voice list is this computer's (it
+  speaks until then). Download shows progress, then "downloaded", and the Voice
+  list becomes Kokoro's. ▶ and Test voice speak with the picked voice. Back on
+  "This computer's voice", the OS voice picked before is still picked.
 - `QUTTY_KOKORO_SELFTEST="The build finished. All tests passed."` on the
   packaged app logs the library's speech support, fetches the files if they are
   missing, lists the voices and says the sentence once (`kokoro self-test: ...`

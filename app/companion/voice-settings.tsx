@@ -1,8 +1,13 @@
 // Settings → Voice: the companion's voice layer (lib/voice/).
 //
 // - Speaking: read answers aloud, the engine (Kokoro, a neural voice run on this computer, with
-//   its model's first-use download and its own voice list; the OS's speech; or Deepgram Aura with
-//   your key), voice, rate, volume, a test button, and the spoken event alerts, one toggle each.
+//   its model's first-use download; the OS's speech; or Deepgram Aura with your key), voice,
+//   rate, volume, a test button, and the spoken event alerts, one toggle each. One voice list
+//   shows, the one that speaks: Kokoro's voices (by accent) when Kokoro is the engine and its
+//   model is downloaded, else the OS voices (lib/voice/voices.ts): the user's language first,
+//   best first, "Show all languages" and "Show character voices", and on macOS where to get
+//   better voices when none is installed for the language. Either list has a preview (▶), said
+//   by the engine in use.
 // - Listening: the speech-to-text engine (on-device Whisper by default; Deepgram or ElevenLabs
 //   with your key; the webview's Web Speech only where it exists), the native library's and the
 //   model's status with the first-use download (its size said before it starts), the hold-to-talk
@@ -19,12 +24,18 @@ import type { VoiceStatus } from "../../lib/voice/client.ts";
 import type { ModelState } from "../../lib/voice/model.ts";
 import {
   groupKokoroVoices,
+  kokoroReady,
   type KokoroStatus,
   type KokoroVoice,
   pickKokoroVoice,
 } from "../../lib/voice/kokoro.ts";
 import { webRecognition } from "../../lib/voice/engines.ts";
 import type { CloudService } from "../../lib/voice/client.ts";
+import {
+  classifyVoices,
+  type VoiceInfo,
+  voiceList,
+} from "../../lib/voice/voices.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
 import { SettingsGroup } from "../settings-ui.tsx";
 import {
@@ -74,20 +85,147 @@ const ALERTS: { key: keyof VoiceSettings; label: string }[] = [
   { key: "alertBuildFailed", label: "A build failed" },
 ];
 
-/** The page's speechSynthesis voices (names), where it has them. */
-function useSystemVoices(): string[] {
-  const [voices, setVoices] = useState<string[]>([]);
+/** The user's language (the window's). */
+function userLanguage(): string {
+  const nav = (globalThis as { navigator?: { language?: string } }).navigator;
+  return nav?.language || "en-US";
+}
+
+/** The page's speechSynthesis voices, classified (lib/voice/voices.ts), where it has them. */
+function useSystemVoices(): VoiceInfo[] {
+  const [voices, setVoices] = useState<VoiceInfo[]>([]);
   useEffect(() => {
     const synth = (globalThis as { speechSynthesis?: SpeechSynthesis })
       .speechSynthesis;
     if (typeof synth?.getVoices !== "function") return;
     const read = () =>
-      setVoices([...new Set(synth.getVoices().map((v) => v.name))].sort());
+      setVoices(
+        classifyVoices(
+          synth.getVoices().map((v) => ({
+            name: v.name,
+            voiceURI: v.voiceURI,
+            lang: v.lang,
+          })),
+          userLanguage(),
+        ),
+      );
     read();
     synth.addEventListener?.("voiceschanged", read);
     return () => synth.removeEventListener?.("voiceschanged", read);
   }, []);
   return voices;
+}
+
+/** Where macOS downloads its better voices. */
+const BETTER_VOICES_HINT =
+  "Better voices: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices.";
+
+/**
+ * The OS voice picker: the user's language by default (their region first, the best voices
+ * first), every language and the character voices on request, the stored voice always shown,
+ * a preview of the picked one, and where to get better voices on macOS.
+ */
+function SystemVoicePicker(props: {
+  voices: VoiceInfo[];
+  value: string;
+  name: string;
+  platform: KeyPlatform;
+  voice: VoiceApi | null;
+  onChange(voice: string): void;
+}) {
+  const { voices, value, onChange } = props;
+  const [showAll, setShowAll] = useState(false);
+  const [showCharacters, setShowCharacters] = useState(false);
+  const list = voiceList(voices, {
+    userLang: userLanguage(),
+    showAll,
+    showCharacters,
+    selected: value,
+  });
+  const selected = list.selected;
+  // A voice saved by name (before 0.8.3) is kept by its id from now on; it says the same.
+  useEffect(() => {
+    if (
+      selected && value && value !== selected.id && value === selected.rawName
+    ) {
+      onChange(selected.id);
+    }
+  }, [selected?.id, value]);
+  const current = selected?.id ?? (value ? value : "");
+  return (
+    <>
+      <div class="field" data-part="voice-picker">
+        <span class="field-label" id="setting-voice-voice-label">Voice</span>
+        <span class="voice-picker-control">
+          <select
+            class="field-select"
+            data-testid="setting-voice-voice"
+            aria-labelledby="setting-voice-voice-label"
+            value={current}
+            onChange={(e) => onChange((e.target as HTMLSelectElement).value)}
+          >
+            <option value="">Default</option>
+            {value && !selected && <option value={value}>{value}</option>}
+            {list.groups.map((g) => (
+              <optgroup label={g.heading} key={g.key} data-group={g.key}>
+                {g.voices.map((v) => (
+                  <option
+                    value={v.id}
+                    key={v.id}
+                    data-tier={v.tier}
+                    data-kind={v.kind}
+                  >
+                    {v.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            type="button"
+            class="btn-quiet voice-preview"
+            data-part="voice-preview"
+            data-testid="setting-voice-preview"
+            title="Preview this voice"
+            aria-label="Preview this voice"
+            disabled={!props.voice}
+            onClick={() =>
+              props.voice?.preview(
+                `Hi, I'm ${props.name}. This is how I sound.`,
+                current,
+              )}
+          >
+            ▶
+          </button>
+        </span>
+        {props.platform === "mac" && !list.hasBetterVoice && (
+          <span
+            class="field-hint"
+            data-part="voice-hint"
+            data-testid="setting-voice-hint"
+          >
+            {BETTER_VOICES_HINT}
+          </span>
+        )}
+      </div>
+      {list.otherLanguages > 0 && (
+        <Check
+          label={`Show all languages (${list.otherLanguages} more voices)`}
+          testid="setting-voice-all-languages"
+          checked={showAll}
+          onChange={setShowAll}
+        />
+      )}
+      {list.characters > 0 && (
+        <Check
+          label={`Show character voices (${list.characters})`}
+          testid="setting-voice-characters"
+          checked={showCharacters}
+          onChange={setShowCharacters}
+        />
+      )}
+    </>
+  );
 }
 
 /** The native library's and the model's status, the download's progress. */
@@ -254,9 +392,15 @@ function useKokoro(voice: VoiceApi | null) {
  * it starts), and the voice, grouped by accent.
  */
 function KokoroSettings(
-  props: { voice: VoiceApi; picked: string; onPick(id: string): void },
+  props: {
+    kokoro: ReturnType<typeof useKokoro>;
+    voice: VoiceApi;
+    name: string;
+    picked: string;
+    onPick(id: string): void;
+  },
 ) {
-  const { status, files, voices, download, cancel } = useKokoro(props.voice);
+  const { status, files, voices, download, cancel } = props.kokoro;
   if (!status) return <span class="field-hint">Checking…</span>;
   if (!status.available) {
     return (
@@ -269,6 +413,7 @@ function KokoroSettings(
   }
   const size = status.files.size;
   const groups = groupKokoroVoices(voices);
+  const current = pickKokoroVoice(props.picked, voices) ?? "";
   return (
     <div class="voice-local" data-testid="voice-kokoro-status">
       <span
@@ -313,24 +458,45 @@ function KokoroSettings(
         </button>
       )}
       {groups.length > 0 && (
-        <label class="field">
-          <span class="field-label">Kokoro voice</span>
-          <select
-            class="field-select"
-            data-testid="setting-voice-kokoro-voice"
-            value={pickKokoroVoice(props.picked, voices) ?? ""}
-            onChange={(e) =>
-              props.onPick((e.target as HTMLSelectElement).value)}
-          >
-            {groups.map((g) => (
-              <optgroup label={g.language} key={g.language}>
-                {g.voices.map((v) => (
-                  <option value={v.id} key={v.id}>{v.label}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
+        <div class="field" data-part="voice-picker">
+          <span class="field-label" id="setting-voice-kokoro-voice-label">
+            Voice
+          </span>
+          <span class="voice-picker-control">
+            <select
+              class="field-select"
+              data-testid="setting-voice-kokoro-voice"
+              aria-labelledby="setting-voice-kokoro-voice-label"
+              value={current}
+              onChange={(e) =>
+                props.onPick((e.target as HTMLSelectElement).value)}
+            >
+              {groups.map((g) => (
+                <optgroup label={g.language} key={g.language}>
+                  {g.voices.map((v) => (
+                    <option value={v.id} key={v.id}>{v.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button
+              type="button"
+              class="btn-quiet voice-preview"
+              data-part="voice-preview"
+              data-testid="setting-voice-kokoro-preview"
+              title="Preview this voice"
+              aria-label="Preview this voice"
+              onClick={() =>
+                props.voice.preview(
+                  `Hi, I'm ${props.name}. This is how I sound.`,
+                  "",
+                  current,
+                )}
+            >
+              ▶
+            </button>
+          </span>
+        </div>
       )}
     </div>
   );
@@ -362,6 +528,15 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
   const voices = useSystemVoices();
   const hasWebSpeech = webRecognition() !== undefined;
   const cloudTts = isCloudEngine(settings.ttsEngine);
+  // Kokoro's state, asked for only while it is the engine. One voice list shows, the one that
+  // speaks: Kokoro's once its model is there, else the OS's (which speaks until then).
+  const kokoroPicked = settings.ttsEngine === "kokoro";
+  const kokoro = useKokoro(kokoroPicked ? voice : null);
+  const kokoroSpeaks = kokoroPicked && kokoroReady(
+    kokoro.status && kokoro.files
+      ? { ...kokoro.status, files: { ...kokoro.files, size: "" } }
+      : undefined,
+  );
   return (
     <div class="voice-settings" data-testid="voice-settings">
       <SettingsGroup title="Speaking" testid="voice-section">
@@ -384,11 +559,14 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
             class="field-select"
             data-testid="setting-voice-tts"
             value={settings.ttsEngine}
-            onChange={(e) =>
-              onChange({
-                ttsEngine: (e.target as HTMLSelectElement).value as TtsEngineId,
-                voice: "",
-              })}
+            onChange={(e) => {
+              const ttsEngine = (e.target as HTMLSelectElement)
+                .value as TtsEngineId;
+              // A cloud engine's voice is a model's name, not an OS voice: start it over.
+              // Between Kokoro and the OS voice, the OS voice picked is kept (it stands in).
+              const reset = isCloudEngine(ttsEngine) || cloudTts;
+              onChange({ ttsEngine, ...(reset ? { voice: "" } : {}) });
+            }}
           >
             {TTS_ENGINES.map((t) => (
               <option value={t} key={t}>
@@ -402,9 +580,11 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
             </span>
           )}
         </label>
-        {settings.ttsEngine === "kokoro" && voice && (
+        {kokoroPicked && voice && (
           <KokoroSettings
+            kokoro={kokoro}
             voice={voice}
+            name={props.name}
             picked={settings.kokoroVoice}
             onPick={(kokoroVoice) => onChange({ kokoroVoice })}
           />
@@ -412,22 +592,20 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
         {cloudTts && voice && (
           <KeyField voice={voice} service="deepgram" platform={platform} />
         )}
-        <label class="field">
-          <span class="field-label">Voice</span>
-          {!cloudTts && voices.length > 0
-            ? (
-              <select
-                class="field-select"
-                data-testid="setting-voice-voice"
-                value={settings.voice}
-                onChange={(e) =>
-                  onChange({ voice: (e.target as HTMLSelectElement).value })}
-              >
-                <option value="">Default</option>
-                {voices.map((v) => <option value={v} key={v}>{v}</option>)}
-              </select>
-            )
-            : (
+        {kokoroSpeaks ? null : !cloudTts && voices.length > 0
+          ? (
+            <SystemVoicePicker
+              voices={voices}
+              value={settings.voice}
+              name={props.name}
+              platform={platform}
+              voice={voice}
+              onChange={(v) => onChange({ voice: v })}
+            />
+          )
+          : (
+            <label class="field">
+              <span class="field-label">Voice</span>
               <input
                 type="text"
                 class="font-custom"
@@ -438,8 +616,8 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
                 onChange={(e) =>
                   onChange({ voice: (e.target as HTMLInputElement).value })}
               />
-            )}
-        </label>
+            </label>
+          )}
         <label class="field">
           <span class="field-label">
             Rate <output>{settings.rate.toFixed(1)}×</output>

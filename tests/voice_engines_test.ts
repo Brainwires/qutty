@@ -206,9 +206,13 @@ Deno.test("Kokoro TTS: speaks with the picked voice, the rate and the volume", a
   await engine.speak("Hello.", { voice: "Samantha", rate: 1.2, volume: 0.8 });
   picked = "";
   await engine.speak("Default voice.", {});
+  // A preview names its own Kokoro voice, over the one in Settings.
+  picked = "bf_emma";
+  await engine.speak("Preview.", { kokoroVoice: "am_adam" });
   assertEquals(log, [
     ["kokoro", "Hello.", { voice: "bf_emma", speed: 1.2, volume: 0.8 }],
     ["kokoro", "Default voice.", {}],
+    ["kokoro", "Preview.", { voice: "am_adam" }],
   ]);
 });
 

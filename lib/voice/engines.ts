@@ -90,7 +90,7 @@ export function kokoroTts(
       }
       if (ready && turn === stops) {
         try {
-          const picked = kokoroVoice();
+          const picked = o.kokoroVoice ?? kokoroVoice();
           return await voice.kokoroSpeak(text, {
             ...(picked ? { voice: picked } : {}),
             ...(o.rate !== undefined ? { speed: o.rate } : {}),

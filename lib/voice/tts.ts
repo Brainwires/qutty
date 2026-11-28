@@ -16,6 +16,8 @@ import type { VoiceSettings } from "./settings.ts";
 export interface SpeakOptions {
   /** A voice name or id; the engine's default when absent. */
   voice?: string;
+  /** A Kokoro voice id for this item (a preview's), over the one in Settings. */
+  kokoroVoice?: string;
   /** 1 is normal. */
   rate?: number;
   /** 0–1. */
@@ -37,6 +39,8 @@ export type SpeechKind = "answer" | "alert";
 interface QueuedSpeech {
   text: string;
   kind: SpeechKind;
+  /** Over the queue's options for this item (Settings' voice preview). */
+  options?: SpeakOptions;
 }
 
 export interface SpeechQueueOptions {
@@ -77,9 +81,15 @@ export class SpeechQueue {
   }
 
   /**
-   * Queue `text`. `key` says each thing once (a turn's answer, even if its update is replayed).
+   * Queue `text`. `key` says each thing once (a turn's answer, even if its update is replayed);
+   * `options` override the queue's for this item (a voice preview's voice).
    */
-  say(text: string, kind: SpeechKind = "answer", key?: string): void {
+  say(
+    text: string,
+    kind: SpeechKind = "answer",
+    key?: string,
+    options?: SpeakOptions,
+  ): void {
     const clean = text.trim();
     if (!clean) return;
     if (key !== undefined) {
@@ -89,7 +99,9 @@ export class SpeechQueue {
         this.#said.delete(this.#said.values().next().value!);
       }
     }
-    this.#queue.push({ text: clean, kind });
+    this.#queue.push(
+      options ? { text: clean, kind, options } : { text: clean, kind },
+    );
     const max = this.#opts.maxQueued ?? 8;
     while (this.#queue.length > max) {
       const alert = this.#queue.findIndex((q) => q.kind === "alert");
@@ -133,7 +145,10 @@ export class SpeechQueue {
     this.#opts.onSpeaking?.(true, next.text);
     let done: Promise<void>;
     try {
-      done = engine.speak(next.text, this.#opts.options());
+      done = engine.speak(next.text, {
+        ...this.#opts.options(),
+        ...next.options,
+      });
     } catch (e) {
       done = Promise.reject(e);
     }
