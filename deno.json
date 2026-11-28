@@ -1,13 +1,13 @@
 {
   "//": "Denext comes from JSR. To dogfood a local checkout instead, add \"links\": [\"../denext\"].",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "license": "MIT",
   "tasks": {
     "dev": "deno run -A jsr:@denext/denext@^4.22.0/cli dev .",
     "build": "deno run -A jsr:@denext/denext@^4.22.0/cli build .",
     "start": "deno run --allow-net --allow-read --allow-env --allow-write=.denext jsr:@denext/denext@^4.22.0/cli start .",
     "test": "deno run -A jsr:@denext/denext@^4.22.0/cli deno test -A --ignore=tests/e2e tests/ lib/",
-    "test:e2e": "deno test -A tests/e2e/",
+    "test:e2e": "deno run -A tests/e2e/run.ts",
     "check": "deno check desktop.ts desktop/ lib/ app/ tests/",
     "export": "deno run -A jsr:@denext/denext@^4.22.0/cli export .",
     "desktop": "deno run -A jsr:@denext/denext@^4.22.0/cli desktop run .",

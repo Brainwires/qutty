@@ -706,6 +706,8 @@ docs/agent-detection.md).
       permissions, foreground program from the PTY, real window order), the
       bundled voice audio library, and the app icon badge for agents waiting on
       you.
+- [x] v0.8.1: switcher bar reveal fixes; e2e hang containment and a per-file e2e
+      runner.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

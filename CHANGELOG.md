@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.1 — 2026-11-28
+
+- Switcher bar: after a focus change the focused chip always scrolls fully into
+  view. The bar could take its own re-aimed scroll for yours and stop 2 px
+  short, and each stall started another watcher that restarted the scroll.
+- Tests: a failed end-to-end step no longer makes every later step wait out a
+  6-minute browser launch; each test file runs on its own with a time limit, and
+  failures print as they happen.
+
 ## 0.8.0 — 2026-11-24
 
 - The app icon shows how many terminals have an agent waiting for you, as iTerm2

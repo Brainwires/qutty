@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@astral/astral@0.5.6": "0.5.6",
     "jsr:@astral/astral@~0.5.3": "0.5.6",
     "jsr:@denext/avif@0.2": "0.2.0",
     "jsr:@denext/denext@^4.22.0": "4.22.0",
