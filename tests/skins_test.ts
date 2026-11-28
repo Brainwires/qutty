@@ -797,6 +797,11 @@ Deno.test("contract: every part is in the docs, the markup and the stylesheet", 
       "data-frame-buttons",
       "data-frame-title",
       "--frame-order-close",
+      "data-chat-size",
+      "--chat-size",
+      "--chat-text-sm",
+      "--chat-text-xs",
+      "--chat-code-size",
     ]
   ) {
     assertStringIncludes(docs, attr);

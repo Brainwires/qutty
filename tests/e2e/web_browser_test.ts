@@ -7,6 +7,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { type App, suite, waitFor, type WebPages } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
+import { pickInSub } from "./launch_helpers.ts";
 import { frameSrc, goTo, openPageA, shows, withPages } from "./web_helpers.ts";
 
 /** The titles on web tile `id`'s bookmarks bar. */
@@ -133,9 +134,8 @@ suite("web browser", (test) => {
     await withPages(async (pages) => {
       const { web } = await openPageA(app, pages);
       await star(app, web, "Page A");
-      // Bookmarks… in the + menu.
-      await app.click("[data-testid=bar-new-menu]");
-      await app.click("[data-testid=launch-bookmarks]");
+      // Web Browser → Bookmark Manager in the + menu.
+      await pickInSub(app, "web", "[data-testid=launch-bookmarks]");
       await waitFor(
         () => app.exists("[data-testid=bm-manager]"),
         3000,

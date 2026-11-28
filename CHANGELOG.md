@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+## 0.8.2 — 2026-11-28
+
+- Agent tiles read like other chat apps. The transcript's text is 15px with a
+  1.6 line height, and tool cards, thinking, footers, notices, buttons and code
+  are 13px. Before, the body was 14px and the rest 12px or less. The prompt box
+  uses the same sizes, in agent tiles and in the harness overlay. Settings →
+  Appearance → Chat text size picks Small (13px), Medium (15px, the default) or
+  Large (17px). The terminals keep their own font size.
+- A wide agent tile gives the transcript more room. The column is 62% of the
+  tile's width, at least 720px and at most 1120px, so a ~1900px tile gets a
+  1120px column where it used to get 760px. It goes by the tile's own width, so
+  split tiles size their columns separately. Paragraphs stop at about 90
+  characters to stay readable, while code blocks, tool cards and permission
+  questions use the whole column. The prompt box is the width of the column and
+  lines up under it.
+- "Jump to latest" now sits centred at the bottom of the transcript, just above
+  the prompt box. It used to sit in the bottom-right corner, where the companion
+  covered it. On a narrow tile, where the two can still meet, the companion
+  moves off the pill as it does for the prompt box.
+- Skins: the chat's sizes are CSS properties (`--chat-size`, `--chat-text-sm`,
+  `--chat-text-xs`, `--chat-code-size`), and the pill is a new part,
+  `[data-part="agent-jump"]` (docs/skins.md). Classic's prompt box follows the
+  chat text size.
+- The `+ ▾` menu is now a short list of submenus instead of one long scrolling
+  list: Web Browser (Open, History, Bookmark Manager), Shell (your default shell
+  first, then the others installed), SSH (Connections Manager, then your saved
+  hosts), Terminal (Claude Code, Codex, opencode and the other agent tools in a
+  terminal with Qutty's overlay, and your recent Ollama pairs) and Coding
+  (Qutty's chat view on Claude Code, Codex, Ollama and the Anthropic API, with
+  your presets, then Ollama models…). The "(chat)" suffixes are gone: the
+  submenu says it. Source Control and Worktrees… stay below. The submenus follow
+  the usual menu keys (↑/↓, → or Enter opens, ← or Escape closes), open when the
+  pointer rests on their row and stay open while it moves into them, and stay
+  inside the window near its edges. Every row's tooltip says what it opens.
+- Shell → New Tile With in the menu bar has the same submenus (History and
+  Bookmark Manager moved there from the Shell menu), and the Dock menu's agent
+  items are now Terminal ▸ and Coding ▸ submenus, with Claude Code and Codex in
+  a terminal as new choices.
+
 ## 0.8.1 — 2026-11-28
 
 - Switcher bar: after a focus change the focused chip always scrolls fully into

@@ -14,7 +14,11 @@
 //   diff, the command and its output, or the input and result; permission questions with Allow,
 //   Allow always and Deny, inside the tool call they are about; a footer per turn (done · tok/s ·
 //   time · cost). Empty, a centred intro: the backend's avatar, "Ask Claude anything", the folder.
-//   It sticks to the bottom unless you scrolled up ("Jump to latest").
+//   It sticks to the bottom unless you scrolled up ("Jump to latest": a pill centred over the
+//   transcript's bottom edge, just above the prompt box, in a zero-height dock between the two so
+//   it follows the box as it grows; the companion keeps off it, `data-companion-avoid`).
+//   The transcript is one column that grows with the tile (`--chat-col`, styles.css), the prompt
+//   box lined up under it; the text follows Settings → Appearance → Chat text (`--chat-size`).
 // - Once the session changed a file, tabs over the body: Transcript and Changes (the session's
 //   edits as one diff to accept, revert or open: app/agent-changes.tsx).
 // - The side rail: jump to the top, jump to the latest, maximize / restore the tile (the tile's
@@ -687,14 +691,18 @@ export function AgentBody(
         onMaximize={props.maximized ? props.onRestore : props.onMaximize}
       />
       {!stuck && !showChanges && (
-        <button
-          type="button"
-          class="agent-jump"
-          data-testid="agent-jump"
-          onClick={jump}
-        >
-          ↓ Jump to latest
-        </button>
+        <div class="agent-jump-dock">
+          <button
+            type="button"
+            class="agent-jump"
+            data-testid="agent-jump"
+            data-part="agent-jump"
+            data-companion-avoid=""
+            onClick={jump}
+          >
+            ↓ Jump to latest
+          </button>
+        </div>
       )}
       <Prompt
         id={id}

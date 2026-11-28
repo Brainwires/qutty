@@ -49,7 +49,7 @@ const FEATURES: Feature[] = [
     id: "chat-tiles",
     title: "Claude Code as a chat tile",
     lead:
-      "“Claude Code (chat)” in the + menu opens Claude Code as a chat tile that looks like a terminal.",
+      "Coding → Claude Code in the + menu opens Claude Code as a chat tile that looks like a terminal.",
     points: [
       "The transcript streams in the terminal's font and colours: your prompts, the answer's markdown with highlighted code, dimmed thinking, and each tool call as a compact row that opens to the diff, the command and its output.",
       "Claude Code asks before it edits or runs something: Allow, Allow always or Deny, right in the transcript.",

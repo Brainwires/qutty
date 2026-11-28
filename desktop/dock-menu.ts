@@ -1,8 +1,9 @@
 // The macOS Dock menu (a right click on Qutty's Dock icon), like iTerm2's: the open workspace
-// windows (the frontmost one checked; a click brings it forward), New Window, New Terminal,
-// "Claude Code (chat)" when Claude Code is installed, "Codex (chat)" when Codex is, and Reopen
-// Closed Window ▸ with the detached workspaces that still run terminals. macOS adds Options, Show All Windows, Hide and
-// Quit below it.
+// windows (the frontmost one checked; a click brings it forward), New Window, New Terminal, then
+// the `+` menu's agent submenus for the installed tools (app/launch-menu.tsx): Terminal ▸ (Claude
+// Code, Codex in a terminal, with Qutty's overlay) and Coding ▸ (Qutty's chat view on Claude Code,
+// Codex), and Reopen Closed Window ▸ with the detached workspaces that still run terminals. macOS
+// adds Options, Show All Windows, Hide and Quit below it.
 //
 // It is the app process's (desktop.ts installs it), not a page's: Denext 4.22's backend Dock menu
 // (`setDockMenu` / `onDockMenuItem` on `runDesktop`'s result) takes separators, checks and
@@ -36,8 +37,17 @@ import type {
 import type { WorkspaceInfo, WorkspaceRegistry } from "./workspace-host.ts";
 import { terminals } from "./tray.ts";
 
-/** What a Dock menu item asks the frontmost window's page to do. */
-export type DockCommand = "newTerminal" | "agentChat" | "codexChat";
+/**
+ * What a Dock menu item asks the frontmost window's page to do: New Terminal, Coding → Claude
+ * Code (`agentChat`) or Codex (`codexChat`), Terminal → Claude Code (`claudeTerminal`) or Codex
+ * (`codexTerminal`).
+ */
+export type DockCommand =
+  | "newTerminal"
+  | "agentChat"
+  | "codexChat"
+  | "claudeTerminal"
+  | "codexTerminal";
 
 /** A Dock menu entry before it goes to the runtime. */
 export type DockMenuEntry =
@@ -50,6 +60,8 @@ export const DOCK_NEW_WINDOW = "qutty:dock:new-window";
 export const DOCK_NEW_TERMINAL = "qutty:dock:new-terminal";
 export const DOCK_AGENT_CHAT = "qutty:dock:agent-chat";
 export const DOCK_CODEX_CHAT = "qutty:dock:codex-chat";
+export const DOCK_CLAUDE_TERMINAL = "qutty:dock:terminal:claude";
+export const DOCK_CODEX_TERMINAL = "qutty:dock:terminal:codex";
 const DOCK_WINDOW = "qutty:dock:window:";
 const DOCK_REOPEN = "qutty:dock:reopen:";
 
@@ -62,9 +74,9 @@ export interface DockMenuInput {
   workspaces: readonly WorkspaceInfo[];
   /** The workspace of the most recently focused window (checked). */
   active?: string;
-  /** "Claude Code (chat)": Claude Code is installed. */
+  /** Claude Code is installed: Terminal → Claude Code and Coding → Claude Code. */
   agentChat: boolean;
-  /** "Codex (chat)": Codex is installed (as the `+` menu offers it). */
+  /** Codex is installed: Terminal → Codex and Coding → Codex (as the `+` menu offers them). */
   codexChat?: boolean;
   /**
    * The windows the user closed, most recent first (`windows.closed()`): Reopen Closed Window's
@@ -80,8 +92,9 @@ const byName = (a: WorkspaceInfo, b: WorkspaceInfo) =>
 
 /**
  * The Dock menu: one line per open workspace window (sorted by name, so focusing one does not
- * reorder them; the active one checked), New Window, New Terminal, "Claude Code (chat)",
- * "Codex (chat)", then Reopen Closed Window ▸ with the detached workspaces that run terminals, newest first.
+ * reorder them; the active one checked), New Window, New Terminal, Terminal ▸ and Coding ▸ (Claude
+ * Code, Codex: the installed ones), then Reopen Closed Window ▸ with the detached workspaces that
+ * run terminals, newest first.
  */
 export function dockMenu(input: DockMenuInput): DockMenuEntry[] {
   const open = input.workspaces.filter((w) => w.state === "attached")
@@ -111,11 +124,31 @@ export function dockMenu(input: DockMenuInput): DockMenuEntry[] {
     ...(open.length > 0 ? ["separator" as const] : []),
     { id: DOCK_NEW_WINDOW, label: "New Window" },
     { id: DOCK_NEW_TERMINAL, label: "New Terminal" },
-    ...(input.agentChat
-      ? [{ id: DOCK_AGENT_CHAT, label: "Claude Code (chat)" }]
-      : []),
-    ...(input.codexChat
-      ? [{ id: DOCK_CODEX_CHAT, label: "Codex (chat)" }]
+    ...(input.agentChat || input.codexChat
+      ? [
+        {
+          label: "Terminal",
+          children: [
+            ...(input.agentChat
+              ? [{ id: DOCK_CLAUDE_TERMINAL, label: "Claude Code" }]
+              : []),
+            ...(input.codexChat
+              ? [{ id: DOCK_CODEX_TERMINAL, label: "Codex" }]
+              : []),
+          ],
+        },
+        {
+          label: "Coding",
+          children: [
+            ...(input.agentChat
+              ? [{ id: DOCK_AGENT_CHAT, label: "Claude Code" }]
+              : []),
+            ...(input.codexChat
+              ? [{ id: DOCK_CODEX_CHAT, label: "Codex" }]
+              : []),
+          ],
+        },
+      ]
       : []),
     ...(closed.length > 0
       ? [
@@ -140,6 +173,12 @@ export function dockMenuAction(id: string): DockMenuAction | undefined {
   }
   if (id === DOCK_AGENT_CHAT) return { kind: "command", command: "agentChat" };
   if (id === DOCK_CODEX_CHAT) return { kind: "command", command: "codexChat" };
+  if (id === DOCK_CLAUDE_TERMINAL) {
+    return { kind: "command", command: "claudeTerminal" };
+  }
+  if (id === DOCK_CODEX_TERMINAL) {
+    return { kind: "command", command: "codexTerminal" };
+  }
   for (const prefix of [DOCK_WINDOW, DOCK_REOPEN]) {
     if (id.startsWith(prefix) && id.length > prefix.length) {
       return { kind: "workspace", id: id.slice(prefix.length) };

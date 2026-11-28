@@ -17,9 +17,10 @@ import { type App, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { linkCalls } from "./link_helpers.ts";
 import { withPages } from "./web_helpers.ts";
+import { pickInSub } from "./launch_helpers.ts";
 
 /**
- * Open "Claude Code (chat)" (or `item`, another backend's) from the + menu in `cwd`; the new
+ * Open Coding → Claude Code (or `item`, another backend's) from the + menu in `cwd`; the new
  * tile's id, once focused.
  */
 async function openAgent(
@@ -27,8 +28,7 @@ async function openAgent(
   cwd = "~/project",
   item = "launch-agent-chat",
 ): Promise<string> {
-  await app.click("[data-testid=bar-new-menu]");
-  await app.click(`[data-testid=${item}]`);
+  await pickInSub(app, "coding", `[data-testid=${item}]`);
   await waitFor(
     () => app.exists("[data-testid=agent-launch-cwd]"),
     3000,
@@ -166,7 +166,7 @@ async function panelGroups(app: App): Promise<Record<string, string[]>> {
 }
 
 suite("agent tile", (test) => {
-  test("+ menu → Codex (chat): its JSON-RPC session streams rows, asks, applies the change", async (app) => {
+  test("+ menu → Coding → Codex: its JSON-RPC session streams rows, asks, applies the change", async (app) => {
     const id = await openAgent(app, "~/project", "launch-agent-chat-codex");
     assertEquals(
       await app.attr(`${tileSel(id)} [data-testid=agent-name]`, "value"),
@@ -653,6 +653,138 @@ suite("agent tile", (test) => {
     );
   });
 
+  test(
+    "a wide tile: the column grows, the prompt box lines up under it, Jump to latest sits centred above it, clear of the companion; Chat text size",
+    async (app) => {
+      const id = await openAgent(app);
+      await prompt(app, id, "change the greeting");
+      await waitForQuestion(app, id);
+      await app.click(`${tileSel(id)} [data-testid=agent-allow]`);
+      assertEquals(await waitForFooter(app, id), "done");
+      type R = { left: number; right: number; top: number; bottom: number };
+      const rects = () =>
+        app.eval((s: string) => {
+          const box = (q: string) => {
+            const el = document.querySelector(q);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              bottom: r.bottom,
+            };
+          };
+          return {
+            log: box(`${s} [data-testid=agent-log]`),
+            scroll: box(`${s} [data-testid=agent-scroll]`),
+            composer: box(`${s} [data-part=composer]`),
+            jump: box(`${s} [data-testid=agent-jump]`),
+            companion: box("[data-testid=companion-overlay] .stage"),
+          };
+        }, tileSel(id)) as Promise<Record<string, R | null>>;
+      const mid = (r: R) => (r.left + r.right) / 2;
+      const meets = (a: R, b: R) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom &&
+        b.top < a.bottom;
+
+      // Beside the first terminal (a ~950px tile): the 720px floor, nearly the whole card.
+      const split = await rects();
+      const splitW = split.log!.right - split.log!.left;
+      assert(splitW >= 690 && splitW <= 721, `split column ${splitW}px`);
+
+      // Maximized, ~1900px of tile: a column of 1120px (not a narrow strip), the composer as
+      // wide, both on the card's middle.
+      await app.click(`${tileSel(id)} [data-testid=agent-maximize]`);
+      await waitFor(
+        () => app.exists(`${tileSel(id)} [data-testid=tile-restore]`),
+        3000,
+        "maximized",
+      );
+      await app.settle();
+      const wide = await rects();
+      const logW = wide.log!.right - wide.log!.left;
+      assert(logW > 1000 && logW <= 1121, `column ${logW}px`);
+      const boxW = wide.composer!.right - wide.composer!.left;
+      assert(Math.abs(boxW - logW) < 2, `composer ${boxW}px, column ${logW}px`);
+      assert(Math.abs(mid(wide.composer!) - mid(wide.log!)) < 2, "lined up");
+
+      // Scrolled up (the log padded so there is something to scroll): Jump to latest, centred
+      // over the transcript's bottom edge, just above the prompt box.
+      await app.eval((s: string) => {
+        document.querySelector<HTMLElement>(
+          `${s} [data-testid=agent-log]`,
+        )!.style.paddingTop = "3000px";
+        const el = document.querySelector<HTMLElement>(
+          `${s} [data-testid=agent-scroll]`,
+        )!;
+        el.scrollTop = 0;
+        el.dispatchEvent(new Event("scroll"));
+      }, tileSel(id));
+      await waitFor(
+        () => app.exists(`${tileSel(id)} [data-testid=agent-jump]`),
+        3000,
+        "Jump to latest",
+      );
+      const up = await rects();
+      const jump = up.jump!;
+      assert(Math.abs(mid(jump) - mid(up.log!)) < 2, "centred on the column");
+      assert(jump.bottom <= up.composer!.top, "above the prompt box");
+      assert(
+        jump.bottom <= up.scroll!.bottom &&
+          jump.bottom > up.scroll!.bottom - 40,
+        "on the transcript's bottom edge",
+      );
+      if (up.companion) {
+        assert(!meets(jump, up.companion), "clear of companion");
+      }
+
+      // A narrow tile: the companion keeps off the pill (it is one of the things it dodges).
+      await app.setViewport(420, 640);
+      await waitFor(
+        async () => {
+          const r = await rects();
+          return !!r.jump && (!r.companion || !meets(r.jump, r.companion));
+        },
+        4000,
+        "the companion clear of Jump to latest",
+      );
+      await app.setViewport(1920, 900);
+
+      // Settings → Appearance → Chat text: 15px by default, 17px at Large; the terminal font stays.
+      const size = () =>
+        app.eval((s: string) =>
+          getComputedStyle(
+            document.querySelector(
+              `${s} [data-testid=agent-row][data-type=user]`,
+            )!,
+          ).fontSize, tileSel(id));
+      assertEquals(await size(), "15px");
+      const termSize = (await app.settings()).fontSize;
+      await app.openSettings("appearance");
+      await app.click(
+        "[data-testid=setting-chat-text-size][data-value=large]",
+      );
+      await app.closeSettings();
+      assertEquals(await size(), "17px");
+      assertEquals(
+        await app.eval(() => document.documentElement.dataset.chatSize),
+        "large",
+      );
+      assertEquals((await app.settings()).chatTextSize, "large");
+      assertEquals((await app.settings()).fontSize, termSize);
+      // The composer follows it too.
+      assertEquals(
+        await app.eval((s: string) =>
+          getComputedStyle(
+            document.querySelector(`${s} [data-part=composer-input]`)!,
+          ).fontSize, tileSel(id)),
+        "17px",
+      );
+    },
+    { width: 1920, height: 900 },
+  );
+
   test("a link in a reply opens as Settings → Links says (a web tile, or the browser)", async (app) => {
     await withPages(async (pages) => {
       const id = await openAgent(app);
@@ -904,9 +1036,12 @@ suite("agent tile", (test) => {
       "the preset saved",
     );
     await app.closeSettings();
-    // The + menu lists it under "Claude Code (chat)"; the folder question has it picked.
-    await app.click("[data-testid=bar-new-menu]");
-    await app.click("[data-testid=launch-agent-preset][data-id=p1]");
+    // The + menu lists it under Coding → Claude Code; the folder question has it picked.
+    await pickInSub(
+      app,
+      "coding",
+      "[data-testid=launch-agent-preset][data-id=p1]",
+    );
     await waitFor(
       () => app.exists("[data-testid=agent-launch-preset]"),
       3000,

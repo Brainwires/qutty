@@ -708,6 +708,8 @@ docs/agent-detection.md).
       you.
 - [x] v0.8.1: switcher bar reveal fixes; e2e hang containment and a per-file e2e
       runner.
+- [x] v0.8.2: chat text size and a wider column in agent tiles, "Jump to latest"
+      clear of the companion, and the + menu as submenus.
 - [x] Switcher bar: after a focus change the chip strip's smooth scroll often
       didn't run to the end, so the focused chip (first in the strip) could stay
       scrolled out of view on the left (seen while hardening the e2e chip

@@ -14,11 +14,42 @@ import {
   terminalFontOptions,
 } from "../lib/workspace/fonts.ts";
 import {
+  CHAT_TEXT_SIZES,
   DEFAULT_SETTINGS,
   initialState,
   reduce,
   sanitizeSettings,
 } from "../lib/workspace/store.ts";
+
+Deno.test("chat text size: Medium by default, persisted, sanitized; set through the store", () => {
+  assertEquals(CHAT_TEXT_SIZES, ["small", "medium", "large"]);
+  assertEquals(DEFAULT_SETTINGS.chatTextSize, "medium");
+  assertEquals(
+    sanitizeSettings({ chatTextSize: "large" }).chatTextSize,
+    "large",
+  );
+  assertEquals(
+    sanitizeSettings({ chatTextSize: "huge" }).chatTextSize,
+    "medium",
+  );
+  assertEquals(sanitizeSettings({ chatTextSize: 17 }).chatTextSize, "medium");
+  assertEquals(sanitizeSettings({}).chatTextSize, "medium");
+  let s = initialState();
+  assertStrictEquals(
+    reduce(s, { type: "setChatTextSize", size: "medium" }),
+    s,
+    "no change, same state",
+  );
+  s = reduce(s, { type: "setChatTextSize", size: "small" });
+  assertEquals(s.settings.chatTextSize, "small");
+  // The terminal's font is its own.
+  assertEquals(s.settings.fontSize, DEFAULT_SETTINGS.fontSize);
+  const junk = reduce(s, {
+    type: "setChatTextSize",
+    size: "tiny" as unknown as "small",
+  });
+  assertStrictEquals(junk, s, "an unknown size is ignored");
+});
 
 Deno.test("font: the curated list and defaults", () => {
   assertEquals(FONT_OPTIONS.map((f) => f.label), [

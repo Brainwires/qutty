@@ -425,6 +425,13 @@ export function SwitcherBar(props: SwitcherBarProps) {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // With a submenu of the + menu open, Escape in the menu closes just that submenu (the
+      // menu's own handler, app/launch-menu.tsx).
+      if (
+        menu === "launch" && e.target instanceof Element &&
+        e.target.closest(".launch-menu, [data-launch-submenu]") &&
+        document.querySelector("[data-launch-submenu]")
+      ) return;
       // Capture phase + stop: the Escape that closes a menu must not also reach the shell.
       e.preventDefault();
       e.stopPropagation();

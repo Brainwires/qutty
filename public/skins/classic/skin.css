@@ -403,7 +403,8 @@
 
 /* The prompt box (an agent tile's, a harness overlay's): a raised panel with a sunken white
    text field, square tool buttons that rise under the pointer and a square raised Send. No
-   translucency, no glow. */
+   translucency, no glow. Its text keeps the chat's type scale (`--chat-size` and the sizes
+   derived from it: Settings → Appearance → Chat text), in this skin's typeface. */
 :root[data-skin="classic"] [data-part="composer"] {
   --composer-radius: 0px;
   border: 0;
@@ -413,7 +414,7 @@
   backdrop-filter: none;
   box-shadow: var(--c-raised);
   color: var(--c-text);
-  font: 11px/1.35 var(--c-font);
+  font: var(--chat-text-sm) / 1.35 var(--c-font);
   transition: none;
 }
 :root[data-skin="classic"] [data-part="composer"]:focus-within {
@@ -426,7 +427,7 @@
 }
 :root[data-skin="classic"] [data-part="composer-input"] {
   min-height: 2.7em;
-  font: 12px/1.35 var(--c-font);
+  font: var(--chat-size) / 1.35 var(--c-font);
   caret-color: auto;
 }
 :root[data-skin="classic"] [data-part="composer-button"] {
@@ -458,7 +459,7 @@
   box-shadow: var(--c-pressed);
 }
 :root[data-skin="classic"] .agent-hint {
-  font: 11px/1 var(--c-font);
+  font: var(--chat-text-xs) / 1 var(--c-font);
 }
 
 /* A web tile: its buttons sit on the bar, its address field is a sunken white box. */

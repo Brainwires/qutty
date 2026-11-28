@@ -8,6 +8,7 @@ import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { type App, ROOT, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
+import { pickInSub } from "./launch_helpers.ts";
 
 const SHOT_DIRS = [
   join(ROOT, "tests/e2e/__screenshots__"),
@@ -25,8 +26,7 @@ async function shot(app: App, name: string): Promise<void> {
 
 /** A chat tile from the `+` menu, its session open; its id. */
 async function openChat(app: App): Promise<string> {
-  await app.click("[data-testid=bar-new-menu]");
-  await app.click("[data-testid=launch-agent-chat]");
+  await pickInSub(app, "coding", "[data-testid=launch-agent-chat]");
   await waitFor(
     () => app.exists("[data-testid=agent-launch-cwd]"),
     3000,

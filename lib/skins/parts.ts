@@ -66,6 +66,10 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   part("agent-permission", "A permission question's card (Allow / Deny)."),
   part("agent-welcome", "An agent tile's empty state (its avatar and folder)."),
   part(
+    "agent-jump",
+    "An agent tile's \"Jump to latest\" pill, over the transcript's bottom edge.",
+  ),
+  part(
     "composer",
     "A prompt box: the composer card of an agent tile or a harness overlay.",
   ),
@@ -85,6 +89,18 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   ),
   cls("menu-heading", "A heading inside a menu."),
   cls("menu-sep", "A separator inside a menu."),
+  part(
+    "launch-menu",
+    "The `+` menu (a `.menu`): its submenus' rows, then extras.",
+  ),
+  part(
+    "launch-group",
+    "A `+` menu row that opens a submenu; `[data-sub]` names it, `.is-open` while open.",
+  ),
+  part(
+    "launch-submenu",
+    "A `+` menu submenu (a `.menu` beside the menu); `[data-sub]` names it.",
+  ),
   part("dialog-backdrop", "The dimmed layer behind a dialog."),
   part("dialog", "A dialog (Settings, Connections, …)."),
   cls("settings-dialog", "The Settings dialog."),

@@ -125,6 +125,20 @@ function items(
   );
 }
 
+/** The entries of the first submenu labelled `label` in `entries` (any level). */
+export function submenu(
+  entries: readonly NativeEntry[],
+  label: string,
+): NativeEntry[] | undefined {
+  for (const e of entries) {
+    if (e === "separator" || !("submenu" in e)) continue;
+    if (e.submenu.label === label) return e.submenu.items;
+    const inner = submenu(e.submenu.items, label);
+    if (inner) return inner;
+  }
+  return undefined;
+}
+
 /** What is missing from the bar (empty: the page has added its part and it all checks out). */
 function problems(bar: readonly NativeEntry[], os: string): string[] {
   const all = items(bar);
@@ -154,6 +168,20 @@ function problems(bar: readonly NativeEntry[], os: string): string[] {
   }
   if (!all.some((i) => i.id.startsWith("denext:menu:qutty:launch:shell:"))) {
     out.push("no shell in New Tile With (the page's setMenu)");
+  }
+  // The `+` menu's submenus (lib/launcher.ts `launchTree`): the shells under New Tile With → Shell.
+  const newTileWith = submenu(bar, "New Tile With");
+  const shells = newTileWith && submenu(newTileWith, "Shell");
+  if (
+    !shells ||
+    !items(shells).some((i) =>
+      i.id.startsWith("denext:menu:qutty:launch:shell:")
+    )
+  ) {
+    out.push("no New Tile With → Shell submenu with the shells");
+  }
+  if (!newTileWith || !submenu(newTileWith, "SSH")) {
+    out.push("no New Tile With → SSH submenu");
   }
   if (!all.some((i) => i.id.startsWith("denext:window:app:") && i.checked)) {
     out.push(

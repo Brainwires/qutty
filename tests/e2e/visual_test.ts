@@ -229,14 +229,24 @@ suite("visual", (test) => {
     const open = async () => {
       await app.click("[data-testid=bar-new-menu]");
       await waitFor(
-        () => app.exists("[data-testid=launch-item][data-kind=ssh]"),
+        () => app.exists('[data-testid=launch-sub][data-sub="terminal"]'),
         3000,
-        "the picker with its hosts",
+        "the picker with its submenus",
       );
     };
     await open();
-    // The keyboard highlight on an agent entry.
-    for (let i = 0; i < 3; i++) await app.press("ArrowDown");
+    // The Terminal submenu open by key, the keyboard highlight on its first agent.
+    await app.eval(() =>
+      document.querySelector<HTMLElement>(
+        '[data-testid=launch-sub][data-sub="terminal"]',
+      )!.focus()
+    );
+    await app.press("ArrowRight");
+    await waitFor(
+      () => app.exists('[data-testid=launch-submenu][data-sub="terminal"]'),
+      3000,
+      "the Terminal submenu",
+    );
     await shot(app, "11-launch-menu");
     await app.press("Escape");
     await app.setBarPosition("left");

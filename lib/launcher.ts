@@ -18,6 +18,7 @@ import {
   pairTitle,
 } from "./ollama/settings.ts";
 import { harnessLabel } from "./ollama/harnesses.ts";
+import { type AgentKind, agentLabel } from "./agent/adapter.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Agent tools
@@ -300,6 +301,309 @@ export function launchSections(
   return sections.filter((s) =>
     s.entries.length > 0 || (s.id === "ollama" && ollama !== undefined)
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The menu's submenus
+// ---------------------------------------------------------------------------------------------
+
+/** The `+` menu's submenus, in menu order. */
+export type LaunchGroupId = "web" | "shell" | "ssh" | "terminal" | "coding";
+
+/** What a submenu row that is not a launch entry does. */
+export type LaunchCommand =
+  /** Web Browser → Open: a new web tile. */
+  | { kind: "webPage" }
+  /** Web Browser → History: the pages web tiles visited (app/history-dialog.tsx). */
+  | { kind: "webHistory" }
+  /** Web Browser → Bookmark Manager (app/bookmark-manager.tsx). */
+  | { kind: "webBookmarks" }
+  /** SSH → Connections Manager (app/connections-dialog.tsx). */
+  | { kind: "connections" }
+  /** Coding → an agent chat tile (app/agent-tile.tsx) on `agent`, with a preset's id or none. */
+  | { kind: "agentChat"; agent: AgentKind; presetId?: string }
+  /** Coding → "Ollama models…" (app/ollama-dialog.tsx). */
+  | { kind: "ollamaModels" };
+
+/** A submenu row that is not a launch entry. */
+export interface LaunchCommandNode {
+  type: "command";
+  /** Stable within the menu (the page's test id is made from it). */
+  id: string;
+  label: string;
+  /** Its tooltip: what it opens. */
+  detail: string;
+  command: LaunchCommand;
+  /** A preset, listed under its backend's row. */
+  preset?: boolean;
+}
+
+/** One row of a submenu. */
+export type LaunchNode =
+  /** A launch entry (a shell, an agent tool in a terminal, an SSH host, an Ollama pair). */
+  | { type: "entry"; entry: LaunchEntry; detail: string }
+  | LaunchCommandNode
+  | { type: "separator" };
+
+/** One submenu of the `+` menu. */
+export interface LaunchGroup {
+  id: LaunchGroupId;
+  title: string;
+  /** Its tooltip: what it holds. */
+  detail: string;
+  items: LaunchNode[];
+}
+
+/** What the submenus offer besides the backend's entries. */
+export interface LaunchTreeOptions {
+  /** Web Browser's rows: Open (the native web engine), History and Bookmark Manager (any engine). */
+  web?: { open?: boolean; history?: boolean; bookmarks?: boolean };
+  /** Agent chat tiles can open: Coding lists the installed backends. */
+  chat?: boolean;
+  /** Ollama is installed: Coding → Ollama and "Ollama models…". */
+  ollama?: boolean;
+  /** An Anthropic API key is saved: Coding → Anthropic API. */
+  anthropic?: boolean;
+  /** Settings → Agents → Presets, each under its backend's row (`agent` absent: Claude Code's). */
+  presets?: readonly { id: string; name: string; agent?: AgentKind }[];
+}
+
+/** A Coding row's tooltip. */
+function chatDetail(agent: AgentKind): string {
+  switch (agent) {
+    case "claude":
+      return "Qutty's chat view; Claude Code runs headless";
+    case "codex":
+      return "Qutty's chat view; Codex runs headless (app-server)";
+    case "ollama":
+      return "Qutty's chat view on a local Ollama model";
+    case "anthropic":
+      return "Qutty's chat view on the Anthropic API, with your saved key";
+  }
+}
+
+/** A launch entry's row, with the tooltip saying what it opens. */
+function entryNode(entry: LaunchEntry): LaunchNode {
+  const detail = entry.kind === "shell"
+    ? entry.shell.isDefault
+      ? `A terminal running ${entry.shell.path}, your default shell`
+      : `A terminal running ${entry.shell.path}`
+    : entry.kind === "agent"
+    ? `${entry.label} in a terminal, with Qutty's overlay`
+    : entry.kind === "ssh"
+    ? `ssh ${entry.label} in a new terminal`
+    : `${entry.detail}, in a terminal with Qutty's overlay`;
+  return { type: "entry", entry, detail };
+}
+
+/** The runs of rows, a separator between the non-empty ones. */
+function joinRuns(runs: readonly LaunchNode[][]): LaunchNode[] {
+  const out: LaunchNode[] = [];
+  for (const run of runs) {
+    if (run.length === 0) continue;
+    if (out.length > 0) out.push({ type: "separator" });
+    out.push(...run);
+  }
+  return out;
+}
+
+/** A command row. */
+const commandNode = (
+  id: string,
+  label: string,
+  detail: string,
+  command: LaunchCommand,
+  preset = false,
+): LaunchCommandNode => ({
+  type: "command",
+  id,
+  label,
+  detail,
+  command,
+  ...(preset ? { preset } : {}),
+});
+
+/** Coding's row for `agent`, then its presets. */
+function chatRows(
+  agent: AgentKind,
+  presets: LaunchTreeOptions["presets"],
+): LaunchNode[] {
+  return [
+    commandNode(
+      agent === "claude" ? "agent-chat" : `agent-chat-${agent}`,
+      agentLabel(agent),
+      chatDetail(agent),
+      { kind: "agentChat", agent },
+    ),
+    ...(presets ?? []).filter((p) => (p.agent ?? "claude") === agent).map((
+      p,
+    ) =>
+      commandNode(
+        `agent-preset:${p.id}`,
+        p.name,
+        `Qutty's chat view with the "${p.name}" preset (Settings → Agents)`,
+        { kind: "agentChat", agent, presetId: p.id },
+        true,
+      )
+    ),
+  ];
+}
+
+/** Web Browser's rows. */
+function webRows(web: LaunchTreeOptions["web"] = {}): LaunchNode[] {
+  return [
+    ...(web.open
+      ? [commandNode("web", "Open", "A web page in a new tile", {
+        kind: "webPage",
+      })]
+      : []),
+    ...(web.history
+      ? [commandNode("history", "History", "The pages web tiles visited", {
+        kind: "webHistory",
+      })]
+      : []),
+    ...(web.bookmarks
+      ? [commandNode(
+        "bookmarks",
+        "Bookmark Manager",
+        "Manage, import and export the web tiles' bookmarks",
+        { kind: "webBookmarks" },
+      )]
+      : []),
+  ];
+}
+
+/**
+ * The `+` menu as submenus, empty ones left out: Web Browser (Open, History, Bookmark Manager),
+ * Shell (the default shell first, then the rest), SSH (Connections Manager, then the saved
+ * hosts), Terminal (the agent tools, run in a terminal tile with Qutty's overlay, then the Ollama
+ * pairs) and Coding (an agent chat tile on each installed backend, each with its presets, then
+ * "Ollama models…"). The page's menu (app/launch-menu.tsx) and the native Shell → New Tile With
+ * (lib/workspace/menus.ts) both draw it.
+ */
+export function launchTree(
+  sections: readonly LaunchSection[],
+  opts: LaunchTreeOptions = {},
+): LaunchGroup[] {
+  const of = (id: LaunchSection["id"]) =>
+    sections.find((s) => s.id === id)?.entries ?? [];
+  const agents = of("agents");
+  const installed = (name: string) =>
+    agents.some((e) => e.kind === "agent" && e.agent.name === name);
+  const chats: AgentKind[] = opts.chat
+    ? (["claude", "codex", "ollama", "anthropic"] as const).filter((a) =>
+      a === "ollama"
+        ? opts.ollama === true
+        : a === "anthropic"
+        ? opts.anthropic === true
+        : installed(a)
+    )
+    : [];
+  const groups: LaunchGroup[] = [
+    {
+      id: "web",
+      title: "Web Browser",
+      detail: "Web tiles: a new page, the pages they visited, their bookmarks",
+      items: webRows(opts.web),
+    },
+    {
+      id: "shell",
+      title: "Shell",
+      detail: "A new terminal running a shell",
+      items: of("shells").map(entryNode),
+    },
+    {
+      id: "ssh",
+      title: "SSH",
+      detail: "The SSH Connections Manager and your saved hosts",
+      items: joinRuns([
+        [commandNode(
+          "connections",
+          "Connections Manager",
+          "Saved hosts, quick connect, port forwards",
+          { kind: "connections" },
+        )],
+        of("ssh").map(entryNode),
+      ]),
+    },
+    {
+      id: "terminal",
+      title: "Terminal",
+      detail: "Coding agents' own terminal apps, with Qutty's overlay",
+      items: joinRuns([agents.map(entryNode), of("ollama").map(entryNode)]),
+    },
+    {
+      id: "coding",
+      title: "Coding",
+      detail: "Qutty's chat view, with the agent running headless",
+      items: joinRuns([
+        chats.flatMap((a) => chatRows(a, opts.presets)),
+        opts.ollama
+          ? [commandNode(
+            "ollama",
+            "Ollama models…",
+            "Pick a harness and a local model, browse the Ollama library, pull a model",
+            { kind: "ollamaModels" },
+          )]
+          : [],
+      ]),
+    },
+  ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** How long the pointer rests on a submenu's row before the submenu opens (hover intent). */
+export const SUBMENU_OPEN_MS = 120;
+/**
+ * How long the pointer rests on another row before an open submenu gives way: long enough that
+ * a diagonal move from the row into the submenu, across its neighbours, keeps it open.
+ */
+export const SUBMENU_SWITCH_MS = 300;
+
+/** A box in viewport pixels. */
+export interface FlyoutBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Where a submenu of `size` goes beside row `row` of a menu whose box is `menu`, in a viewport of
+ * `view` with `margin` to spare: beside the menu on the `prefer` side (the right by default),
+ * flipped to the other side when it does not fit there, its top level with the row's and moved
+ * up when it would run off the bottom. When neither side fits it goes against the viewport's
+ * edge on the side with more room, over the menu.
+ */
+export function flyoutPosition(
+  row: FlyoutBox,
+  menu: FlyoutBox,
+  size: { width: number; height: number },
+  view: { width: number; height: number },
+  opts: { prefer?: "left" | "right"; margin?: number; gap?: number } = {},
+): { left: number; top: number; side: "left" | "right" } {
+  const margin = opts.margin ?? 8;
+  const gap = opts.gap ?? 2;
+  const right = menu.right + gap;
+  const left = menu.left - gap - size.width;
+  const fitsRight = right + size.width <= view.width - margin;
+  const fitsLeft = left >= margin;
+  let side = opts.prefer ?? "right";
+  if (side === "right" && !fitsRight && fitsLeft) side = "left";
+  if (side === "left" && !fitsLeft && fitsRight) side = "right";
+  let x = side === "right" ? right : left;
+  if (!fitsRight && !fitsLeft) {
+    side = menu.left > view.width - menu.right ? "left" : "right";
+    x = side === "left"
+      ? margin
+      : Math.max(margin, view.width - margin - size.width);
+  }
+  // The row's top, less the menu's padding, so the first item lines up with the row.
+  const top = Math.max(
+    margin,
+    Math.min(row.top - 5, view.height - margin - size.height),
+  );
+  return { left: Math.round(x), top: Math.round(top), side };
 }
 
 /** Every entry of the sections, top to bottom. */

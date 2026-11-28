@@ -1065,6 +1065,34 @@ kbd {
   font: 11px/1.3 var(--mono);
   color: var(--text-3);
 }
+/* A submenu's row: its chevron, and the row lit while its submenu is open. */
+.launch-group.is-open {
+  background: rgba(var(--hi-rgb), 0.06);
+  color: var(--text);
+}
+.launch-group .launch-chevron {
+  margin-left: auto;
+}
+.launch-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* A submenu flies out beside the menu, placed in the viewport (app/launch-menu.tsx), so the
+   menu's own scrolling never clips it. */
+.bar .menu.launch-submenu {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  z-index: 510;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .field-select {
   display: block;
   width: 100%;
@@ -6058,6 +6086,29 @@ html[data-floating] body {
    --agent-lh) and its ANSI colours (--agent-green, …, from the theme's terminal palette), set on
    the body by the workspace. Its card look, prose in the UI font, is "The agent tile's card look"
    below. */
+
+/* The agent chat's type scale: one size, `--chat-size` (Settings → Appearance → Chat text, as
+   `data-chat-size` on <html>: Small 13px, Medium 15px, Large 17px), and the sizes derived from it
+   on an agent tile's body and on every prompt box: body text at `--chat-size` / `--chat-lh`,
+   secondary text (tool cards, thinking, footers, notices, buttons) and code at `--chat-text-sm`
+   (13px at Medium), labels and pills at `--chat-text-xs` (12px). The terminal's own font is
+   Settings → Font's, and the tile's zoom scales all of it. A skin may set `--chat-size` itself. */
+:root {
+  --chat-size: 15px;
+}
+:root[data-chat-size="small"] {
+  --chat-size: 13px;
+}
+:root[data-chat-size="large"] {
+  --chat-size: 17px;
+}
+.agent-body,
+.agent-prompt {
+  --chat-lh: 1.6;
+  --chat-text-sm: calc(var(--chat-size) * 13 / 15);
+  --chat-text-xs: calc(var(--chat-size) * 12 / 15);
+  --chat-code-size: var(--chat-text-sm);
+}
 .tile.is-agent .tile-title,
 .tile.is-agent .tile-agent {
   display: none;
@@ -6770,11 +6821,20 @@ pre.agent-detail {
     transform: rotate(360deg);
   }
 }
+/* "Jump to latest": centred over the transcript's bottom edge, just above the prompt box. Its dock
+   is a zero-height row between the two, so the pill follows the box as it grows. */
+.agent-jump-dock {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  height: 0;
+}
 .agent-jump {
   position: absolute;
-  right: 40px;
-  bottom: 86px;
-  z-index: 2;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  white-space: nowrap;
   height: 22px;
   padding: 0 10px;
   border: 1px solid var(--line-2);
@@ -7016,14 +7076,24 @@ pre.agent-detail {
   right: 0;
 }
 
-/* The body: tabs, the transcript card and its rail, the composer. */
+/* The body: tabs, the transcript card and its rail, the composer.
+
+   The transcript is one column centred in the card, `--chat-col` wide at most: 62% of the tile's
+   body (a container, so a split tile measures its own width, not the window's), never under
+   720px (a medium tile uses nearly all of its width) nor over 1120px (a full-width ~1900px tile
+   gets a ~1120px column instead of a narrow strip). Prose inside it keeps a readable measure
+   (48em: ~720px, ~90 characters at Medium); code blocks, tool cards and permission questions use
+   the whole column. The prompt box is as wide as the column and centred under it. */
 .tile.is-agent .tile-body.agent-body {
   --agent-prose: var(--sans);
   --agent-code: var(--agent-font, var(--mono));
+  --chat-col: clamp(720px, 62cqi, 1120px);
+  --chat-measure: 48em;
+  container-type: inline-size;
   position: relative;
   padding: 10px 10px 12px;
   background: transparent;
-  font: 14px/1.6 var(--agent-prose);
+  font: var(--chat-size) / var(--chat-lh) var(--agent-prose);
 }
 .tile.is-agent .agent-scroll {
   margin-right: 42px;
@@ -7033,8 +7103,13 @@ pre.agent-detail {
   background: var(--tile);
   box-shadow: 0 8px 24px rgba(var(--shadow-rgb), calc(0.24 * var(--shadow-a)));
 }
+/* The composer under the column: the card's width less the rail's (`margin-right`, as the card's),
+   at most `--chat-col`, centred on the card's middle. */
 .tile.is-agent .agent-body > .agent-prompt {
-  margin: 10px 0 0;
+  align-self: center;
+  box-sizing: border-box;
+  width: min(100% - 42px, var(--chat-col));
+  margin: 10px 42px 0 0;
 }
 /* Transcript | Changes: a segmented control over the card. */
 .tile.is-agent .agent-tabs {
@@ -7047,11 +7122,11 @@ pre.agent-detail {
   background: color-mix(in srgb, var(--panel) 80%, transparent);
 }
 .tile.is-agent .agent-tab {
-  height: 26px;
+  height: calc(var(--chat-text-sm) * 2);
   padding: 0 12px;
   border: 0;
   border-radius: 9px;
-  font: 600 12.5px/1 var(--sans);
+  font: 600 var(--chat-text-sm) / 1 var(--sans);
 }
 .tile.is-agent .agent-tab[aria-selected="true"] {
   background: rgba(var(--hi-rgb), 0.1);
@@ -7061,7 +7136,7 @@ pre.agent-detail {
   min-width: 18px;
   padding: 2px 5px;
   border-radius: 9px;
-  font: 700 10.5px/1 var(--sans);
+  font: 700 calc(var(--chat-size) * 0.75) / 1 var(--sans);
 }
 /* The rail: the harness overlay's round buttons, down the card's right. */
 .tile.is-agent .agent-rail {
@@ -7103,21 +7178,28 @@ pre.agent-detail {
   background: color-mix(in srgb, var(--hc) 12%, var(--panel));
   color: var(--hc);
 }
+/* Over the card's bottom edge, on the column's middle (the card's: the rail's width off the right). */
+.tile.is-agent .agent-jump-dock {
+  margin-right: 42px;
+}
 .tile.is-agent .agent-jump {
-  right: 62px;
-  bottom: 104px;
-  height: 28px;
-  padding: 0 14px;
-  border-radius: 14px;
-  font: 600 12px/1 var(--sans);
+  bottom: 12px;
+  height: 2.3em;
+  padding: 0 1.1em;
+  border-radius: 1.15em;
+  font: 600 var(--chat-text-sm) / 1 var(--sans);
 }
 
-/* The transcript: one readable column. */
+/* The transcript: one column, growing with the tile (`--chat-col`, above). */
 .tile.is-agent .agent-log {
-  max-width: 760px;
+  max-width: var(--chat-col);
   min-height: 100%;
   margin: 0 auto;
-  gap: 14px;
+  gap: 1em;
+}
+/* Prose keeps a readable measure; code, tool cards and questions take the whole column. */
+.tile.is-agent .agent-text > :is(.md-p, .md-h, .md-list, .md-quote) {
+  max-width: var(--chat-measure);
 }
 .tile.is-agent .agent-row {
   padding-left: 0;
@@ -7142,8 +7224,8 @@ pre.agent-detail {
 .tile.is-agent .md-pre,
 .tile.is-agent .agent-detail,
 .tile.is-agent .agent-perm-preview {
-  font-size: var(--agent-size, 12.5px);
-  line-height: var(--agent-lh, 1.4);
+  font-size: var(--chat-code-size);
+  line-height: 1.5;
 }
 
 /* The empty state: the backend's avatar, what to do, where. */
@@ -7160,12 +7242,12 @@ pre.agent-detail {
 }
 .tile.is-agent .agent-welcome-title {
   color: var(--text);
-  font: 650 19px/1.3 var(--agent-prose);
+  font: 650 calc(var(--chat-size) * 1.35) / 1.3 var(--agent-prose);
   letter-spacing: -0.01em;
 }
 .agent-welcome-cwd {
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--chat-text-sm, 12.5px);
 }
 .tile.is-agent .agent-changes .agent-welcome {
   margin: 24px 0;
@@ -7175,9 +7257,9 @@ pre.agent-detail {
 /* The user's messages: tinted bubbles on the right. */
 .tile.is-agent .agent-user {
   align-self: flex-end;
-  max-width: min(85%, 600px);
+  max-width: min(85%, 44em);
   margin-top: 6px;
-  padding: 9px 14px;
+  padding: 0.6em 1em;
   border-radius: 18px 18px 6px 18px;
   background: color-mix(in srgb, var(--hc) 16%, var(--panel));
   color: var(--text);
@@ -7186,7 +7268,7 @@ pre.agent-detail {
   margin: 6px 6px 0 0;
   padding: 2px 8px;
   border-radius: 8px;
-  font: 500 12px/1.4 var(--sans);
+  font: 500 var(--chat-text-xs) / 1.4 var(--sans);
 }
 /* The assistant's messages: plain blocks. */
 .tile.is-agent .agent-text {
@@ -7202,13 +7284,13 @@ pre.agent-detail {
   letter-spacing: -0.005em;
 }
 .tile.is-agent .md-h1 {
-  font-size: 18px;
+  font-size: 1.3em;
 }
 .tile.is-agent .md-h2 {
-  font-size: 16px;
+  font-size: 1.15em;
 }
 .tile.is-agent .md-h3 {
-  font-size: 15px;
+  font-size: 1.05em;
 }
 .tile.is-agent .md-h:first-child {
   margin-top: 0;
@@ -7236,7 +7318,7 @@ pre.agent-detail {
 .tile.is-agent .agent-notice,
 .tile.is-agent .agent-footer,
 .tile.is-agent .agent-working {
-  font-size: 12.5px;
+  font-size: var(--chat-text-sm);
   line-height: 1.5;
 }
 .tile.is-agent .agent-thinking .agent-toggle {
@@ -7283,7 +7365,7 @@ pre.agent-detail {
   min-width: 0;
   margin: 0;
   padding: 0;
-  line-height: 22px;
+  line-height: calc(var(--chat-text-sm) * 1.7);
 }
 /* The status icon, drawn in place of the `●`: a check, a cross, a spinner ring, a dash. */
 .tile.is-agent .agent-tool-head > .agent-tool-dot {
@@ -7332,7 +7414,8 @@ pre.agent-detail {
 .tile.is-agent .agent-tool-name {
   flex: none;
   color: var(--text);
-  font: 600 13px/22px var(--agent-prose);
+  font: 600 var(--chat-text-sm) / calc(var(--chat-text-sm) * 1.7)
+    var(--agent-prose);
 }
 .tile.is-agent .agent-tool-head:hover .agent-tool-name {
   text-decoration: none;
@@ -7344,7 +7427,7 @@ pre.agent-detail {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--chat-text-sm);
 }
 .tile.is-agent .agent-tool-head > .agent-caret,
 .tile.is-agent .agent-change-head .agent-caret {
@@ -7364,7 +7447,7 @@ pre.agent-detail {
 .tile.is-agent .agent-tool-sum {
   padding-left: 26px;
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--chat-text-sm);
   line-height: 1.5;
 }
 .tile.is-agent .agent-tool.is-nested {
@@ -7390,7 +7473,7 @@ pre.agent-detail {
 }
 .tile.is-agent .agent-link-btn {
   margin-top: 6px;
-  font: 600 12px/1.4 var(--agent-prose);
+  font: 600 var(--chat-text-sm) / 1.4 var(--agent-prose);
 }
 
 /* Permission questions: a card with the question, what it would do, and clear answers. */
@@ -7413,7 +7496,7 @@ pre.agent-detail {
   align-items: center;
   gap: 8px;
   color: var(--text);
-  font: 600 13.5px/1.4 var(--agent-prose);
+  font: 600 calc(var(--chat-size) * 0.93) / 1.4 var(--agent-prose);
 }
 .tile.is-agent .agent-perm-q::before {
   content: "";
@@ -7443,10 +7526,10 @@ pre.agent-detail {
   margin-top: 10px;
 }
 .tile.is-agent .agent-btn {
-  height: 30px;
+  height: calc(var(--chat-text-sm) * 2.4);
   padding: 0 14px;
   border-radius: 9px;
-  font: 600 12.5px/1 var(--agent-prose);
+  font: 600 var(--chat-text-sm) / 1 var(--agent-prose);
 }
 .tile.is-agent .agent-perm-actions .btn-primary {
   border-color: transparent;
@@ -7467,15 +7550,15 @@ pre.agent-detail {
   margin-top: 4px;
   padding-left: 26px;
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--chat-text-sm);
 }
 
 /* The Changes tab: a card per file. */
 .tile.is-agent .agent-changes {
-  max-width: 760px;
+  max-width: var(--chat-col);
   margin: 0 auto;
   gap: 12px;
-  font-size: 13px;
+  font-size: var(--chat-text-sm);
 }
 .tile.is-agent .agent-change-file {
   padding: 10px 12px;
@@ -7484,12 +7567,12 @@ pre.agent-detail {
   background: rgba(var(--hi-rgb), 0.025);
 }
 .tile.is-agent .agent-change-name {
-  font: 600 13px/1.4 var(--agent-code);
+  font: 600 var(--chat-code-size) / 1.4 var(--agent-code);
 }
 .tile.is-agent .agent-change-new {
   padding: 2px 7px;
   border-radius: 8px;
-  font: 600 10.5px/1 var(--agent-prose);
+  font: 600 calc(var(--chat-size) * 0.75) / 1 var(--agent-prose);
 }
 .tile.is-agent .agent-changes-confirm {
   padding: 10px 12px;
@@ -7500,7 +7583,8 @@ pre.agent-detail {
    A translucent card in the UI font, floating over what is behind it: the text on top, one row of
    buttons under it (attach, saved prompts, history on the left; dictate, stop and the round Send
    on the right). Its colour is the harness's (`--harness`: Claude's orange, Codex's green; the
-   theme's accent otherwise): the focus ring and Send. Sizes are in px so the tile's zoom (the
+   theme's accent otherwise): the focus ring and Send. Its text follows the chat's type scale
+   (`--chat-size`, Settings → Appearance → Chat text); the rest is in px, so the tile's zoom (the
    `zoom` above) scales all of it. */
 .agent-prompt {
   --hc: var(--harness, var(--accent));
@@ -7520,7 +7604,7 @@ pre.agent-detail {
     0 1px 2px rgba(var(--shadow-rgb), calc(0.12 * var(--shadow-a))),
     0 12px 32px -10px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-a)));
   color: var(--text);
-  font: 14px/1.5 var(--sans);
+  font: var(--chat-size) / 1.5 var(--sans);
   transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
 .agent-prompt:focus-within {
@@ -7540,7 +7624,7 @@ pre.agent-detail {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--chat-text-sm);
 }
 .agent-queued {
   overflow: hidden;
@@ -7564,7 +7648,7 @@ pre.agent-detail {
   border-radius: 8px;
   background: rgba(var(--hi-rgb), 0.04);
   color: var(--text-2);
-  font: 500 12px/1 var(--sans);
+  font: 500 var(--chat-text-xs) / 1 var(--sans);
 }
 .agent-file-x {
   appearance: none;
@@ -7585,7 +7669,7 @@ pre.agent-detail {
 }
 .agent-note {
   color: var(--tint-yellow, var(--amber));
-  font-size: 12px;
+  font-size: var(--chat-text-xs);
 }
 .agent-input-row {
   display: flex;
@@ -7673,7 +7757,7 @@ textarea.agent-input::placeholder {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-3);
-  font: 12px/1 var(--sans);
+  font: var(--chat-text-xs) / 1 var(--sans);
   text-align: right;
   opacity: 0;
   transition: opacity 160ms var(--ease);

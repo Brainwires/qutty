@@ -189,7 +189,14 @@ suite("theme", (test) => {
         ),
       ].map((h) => h.textContent)
     );
-    assertEquals(groups, ["Theme", "Skin", "Font", "Zoom", "Inactive tiles"]);
+    assertEquals(groups, [
+      "Theme",
+      "Skin",
+      "Font",
+      "Chat text",
+      "Zoom",
+      "Inactive tiles",
+    ]);
     assert(
       await app.exists(
         "[data-testid=theme-section] [data-testid=setting-theme]",

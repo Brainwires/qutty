@@ -977,6 +977,13 @@ function WorkspaceView() {
     if (ready) managerRef.current?.setTheme(theme.terminal);
   }, [ready, theme]);
 
+  // Settings → Appearance → Chat text: `data-chat-size` on <html>, which public/styles.css turns
+  // into the agent chat's type scale (`--chat-size` and the sizes derived from it).
+  const chatTextSize = state.settings.chatTextSize;
+  useLayoutEffect(() => {
+    document.documentElement.dataset.chatSize = chatTextSize;
+  }, [chatTextSize]);
+
   useSandboxSettings(
     ready ? managerRef.current?.backend ?? null : null,
     state.settings.sandbox,
@@ -1191,6 +1198,8 @@ function WorkspaceView() {
     webPage: webEngine?.capabilities.drawsAboveHtml === true,
     webDialogs: webEngine !== null,
     agentChat: true,
+    anthropic: agentTiles.apiKey,
+    presets: state.settings.agentPresets,
     sourceControl: true,
     modalOpen,
     ...(tileMove.enabled && managerRef.current?.backend.session.moves
@@ -1207,7 +1216,8 @@ function WorkspaceView() {
       openWebPage: () => void openWebTile(stateRef.current.settings.links.home),
       openWebDialog: (kind) => openWebDialog({ kind }),
       openOllama: () => setOllamaOpen(true),
-      openAgentChat: (agent) => agentTiles.openLaunch(agent),
+      openAgentChat: (agent, presetId) =>
+        agentTiles.openLaunch(agent, presetId),
       openSourceControl: (show) => scmTiles.openForFocused(show),
       webCommand: (id, cmd) => void runWebCommand(id, cmd),
       moveTile: (to) => {
@@ -1226,6 +1236,7 @@ function WorkspaceView() {
       newTerminal: () => runCommand({ kind: "newTerminal" }),
       agentChat: () => agentTiles.openLaunch(),
       codexChat: () => agentTiles.openLaunch("codex"),
+      agentTerminal: launcher.launchAgent,
     },
     modalOpen,
   });
@@ -1666,6 +1677,7 @@ function WorkspaceView() {
           onHarnessOverlay={(on) => run({ type: "setHarnessOverlay", on })}
           onDockBadge={(on) => run({ type: "setDockBadge", on })}
           onFont={(patch) => run({ type: "setFont", patch })}
+          onChatTextSize={(size) => run({ type: "setChatTextSize", size })}
           onZoomTogether={(on) => run({ type: "setZoomTogether", on })}
           onTheme={(theme) => run({ type: "setTheme", theme })}
           skins={skins}
