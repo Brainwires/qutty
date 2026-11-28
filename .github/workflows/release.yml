@@ -112,7 +112,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
-          key: rullama-audio-ffi
+          # "-portable": builds from before SOURCE_DATE_EPOCH (scripts/build-audio-lib.ts) were tuned to
+          # their runner's CPU; a fresh cache keeps none of them.
+          key: rullama-audio-ffi-portable
       - name: Build the audio library (rullama-audio-ffi)
         env:
           ARCH: ${{ matrix.arch }}
@@ -246,7 +248,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
-          key: rullama-audio-ffi
+          # GitHub's images, not the pool's: a cache of its own.
+          key: rullama-audio-ffi-portable-dry-run
       - name: Build the audio library (rullama-audio-ffi)
         env:
           ARCH: ${{ matrix.arch }}
@@ -312,8 +315,8 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             libwebkit2gtk-4.1-0 libgtk-3-0 xvfb xauth desktop-file-utils
           # The audio library's build: whisper.cpp (cmake, a C/C++ compiler, libclang for
-          # bindgen), cpal's ALSA headers, and OpenSSL's for the build script that fetches the
-          # static ONNX Runtime (Kokoro speech; nothing of OpenSSL is linked into the library).
+          # bindgen), cpal's ALSA headers, and OpenSSL's (the library's HTTP client, and the build
+          # script that fetches the static ONNX Runtime for Kokoro speech).
           sudo apt-get install -y -qq --no-install-recommends \
             build-essential cmake clang libclang-dev pkg-config libasound2-dev libssl-dev
           # appimagetool, pinned by hash, run without FUSE by a wrapper. The AppImage runtime it
@@ -349,7 +352,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.RULLAMA_DIR }} -> target
-          key: rullama-audio-ffi
+          # "-portable": builds from before SOURCE_DATE_EPOCH (scripts/build-audio-lib.ts) were tuned to
+          # their runner's CPU; a fresh cache keeps none of them.
+          key: rullama-audio-ffi-portable
       - name: Build the audio library (rullama-audio-ffi)
         env:
           LABEL: ${{ matrix.label }}
@@ -359,13 +364,18 @@ jobs:
           LIB="native/linux-${LABEL}/librullama_audio_ffi.so"
           test -s "$LIB"
           ls -la "native/linux-${LABEL}"
+          # Rullama's release profile keeps debug information, which on Linux stays inside the
+          # library: tens of megabytes nobody reads (more since ONNX Runtime and the
+          # pronunciation dictionaries came with speech). The symbols themselves are kept.
+          strip --strip-debug "$LIB"
+          ls -la "native/linux-${LABEL}"
           # Built with speech (Rullama's `tts-kokoro` feature, on by default): ONNX Runtime is
           # linked in statically, so the one file is all the packages carry.
           grep -aq onnxruntime "$LIB"
-          # What it needs of the system: no ONNX Runtime or OpenSSL library, and the newest
-          # glibc symbols it uses (the oldest distribution the voice library loads on).
-          if objdump -p "$LIB" | grep -E 'NEEDED.*(onnxruntime|libssl|libcrypto)'; then
-            echo "::error::the audio library depends on a library the packages do not carry"
+          # What it needs of the system: no ONNX Runtime library, and the newest glibc symbols it
+          # uses (the oldest distribution the voice library loads on).
+          if objdump -p "$LIB" | grep -E 'NEEDED.*onnxruntime'; then
+            echo "::error::the audio library depends on an ONNX Runtime library the packages do not carry"
             exit 1
           fi
           objdump -p "$LIB" | grep NEEDED
