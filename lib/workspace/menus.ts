@@ -49,6 +49,13 @@ import {
 } from "./store.ts";
 import type { TileControl } from "./tile-controls.ts";
 import { CLOSE_AND_END_ITEM } from "./windows.ts";
+import {
+  type LaunchNode,
+  type LaunchSection,
+  launchTree,
+  type LaunchTreeOptions,
+} from "../launcher.ts";
+import { AGENT_KINDS, type AgentKind } from "../agent/adapter.ts";
 
 /** The custom top-level menus' ids (`setMenu`). */
 export const MENU_IDS = {
@@ -110,6 +117,10 @@ const LAYOUT_GROUP = "qutty:layout";
 const BAR_PREFIX = "qutty:bar:position:";
 const BAR_GROUP = "qutty:bar";
 const LAUNCH_PREFIX = "qutty:launch:";
+/** New Tile With → Coding → an agent chat on another backend than Claude Code: this and its kind. */
+const CHAT_PREFIX = `${ITEM.agentChat}:`;
+/** New Tile With → Coding → a preset: this, its backend, `:` and its id. */
+const PRESET_PREFIX = "qutty:launch-agent-preset:";
 /** Denext's longest item id and label. */
 const MAX_ID = 128;
 const MAX_LABEL = 256;
@@ -227,33 +238,22 @@ export function appMenu(platform: KeyPlatform): AppMenuItem[] | null {
   ];
 }
 
-/** One launchable entry of the `+` menu, as the native submenu lists it. */
-export interface LaunchMenuEntry {
-  id: string;
-  label: string;
-  /** The entry's kind and agent (an `"agent"` entry for `claude` gets its "(chat)" twin). */
-  kind?: string;
-  agent?: { name: string };
-}
-
-/** The `+` menu's entries (app/launch-menu.tsx) as the Shell menu's "New Tile With" submenu. */
+/** The `+` menu's input (app/launch-menu.tsx), for the Shell menu's "New Tile With" submenu. */
 export interface LaunchMenuInput {
-  sections: readonly {
-    id: string;
-    title: string;
-    entries: readonly LaunchMenuEntry[];
-  }[];
-  /** "Ollama models…" (Ollama installed). */
+  /** The backend's entries (the `+` menu's). */
+  sections: readonly LaunchSection[];
+  /** Ollama is installed: Coding → Ollama and "Ollama models…". */
   ollama: boolean;
-  /** "Web Page" (the native web engine). */
+  /** Web Browser → Open (the native web engine). */
   webPage: boolean;
-  /** "Bookmarks…" and "History…" (web tiles can be shown: any engine). */
+  /** Web Browser → History and Bookmark Manager (web tiles can be shown: any engine). */
   webDialogs?: boolean;
-  /**
-   * "Claude Code (chat)" after the Claude Code entry, "Codex (chat)" after Codex's: a new agent
-   * tile (app/agent-tile.tsx).
-   */
+  /** Coding: agent tiles (app/agent-tile.tsx) on the installed backends. */
   agentChat?: boolean;
+  /** Coding → Anthropic API (a key is saved). */
+  anthropic?: boolean;
+  /** Coding: Settings → Agents → Presets, under their backends. */
+  presets?: LaunchTreeOptions["presets"];
   /** "Source Control" and "Worktrees…" (app/scm-tile.tsx). */
   sourceControl?: boolean;
 }
@@ -264,52 +264,93 @@ function plain(text: string, max: number): boolean {
     ![...text].some((c) => c < " " || c === "\u007f");
 }
 
-/** The "New Tile With" submenu: each section (a greyed heading, its entries), then the extras. */
-function launchItems(
-  launch: LaunchMenuInput | undefined,
-): DesktopMenuItemSpec[] {
-  const out: DesktopMenuItemSpec[] = [];
-  for (const section of launch?.sections ?? []) {
-    const entries = section.entries.filter((e) =>
-      plain(launchItemId(e.id), MAX_ID) && plain(e.label, MAX_LABEL)
-    );
-    if (entries.length === 0 && section.id !== "ollama") continue;
-    if (out.length > 0) out.push(SEP);
-    out.push(
-      item(`qutty:launch-heading:${section.id}`, section.title, {
-        enabled: false,
-      }),
-    );
-    for (const e of entries) {
-      out.push(item(launchItemId(e.id), e.label));
-      if (launch?.agentChat && e.kind === "agent") {
-        if (e.agent?.name === "claude") {
-          out.push(item(ITEM.agentChat, `${e.label} (chat)`));
-        } else if (e.agent?.name === "codex") {
-          out.push(item(ITEM.agentChatCodex, `${e.label} (chat)`));
-        }
-      }
-    }
-    if (section.id === "ollama" && launch?.ollama) {
-      out.push(item(ITEM.ollama, "Ollama Models…"));
-    }
+/** The id and label of a `+` menu row as a native item. */
+function launchNodeItem(
+  node: Exclude<LaunchNode, { type: "separator" }>,
+): { id: string; label: string } {
+  if (node.type === "entry") {
+    const e = node.entry;
+    return {
+      id: launchItemId(e.id),
+      label: e.kind === "shell" && e.shell.isDefault
+        ? `${e.label} (default)`
+        : e.label,
+    };
   }
-  const extras: DesktopMenuItemSpec[] = [
-    ...(launch?.webPage ? [item(ITEM.webPage, "Web Page")] : []),
-    ...(launch?.sourceControl
-      ? [
-        item(ITEM.launchSourceControl, "Source Control"),
-        item(ITEM.worktrees, "Worktrees…"),
-      ]
-      : []),
-    item(ITEM.connections, "Connections…"),
-  ];
-  return [...out, ...(out.length > 0 ? [SEP] : []), ...extras];
+  const cmd = node.command;
+  switch (cmd.kind) {
+    case "webPage":
+      return { id: ITEM.webPage, label: node.label };
+    case "webHistory":
+      return { id: ITEM.history, label: node.label };
+    case "webBookmarks":
+      return { id: ITEM.bookmarks, label: node.label };
+    case "connections":
+      return { id: ITEM.connections, label: node.label };
+    case "ollamaModels":
+      return { id: ITEM.ollama, label: node.label };
+    case "agentChat":
+      return {
+        id: cmd.presetId !== undefined
+          ? `${PRESET_PREFIX}${cmd.agent}:${cmd.presetId}`
+          : cmd.agent === "claude"
+          ? ITEM.agentChat
+          : CHAT_PREFIX + cmd.agent,
+        label: node.label,
+      };
+  }
 }
 
 /**
- * The Shell menu (File's place): new tiles and windows, the web tiles' Bookmarks… and History…
- * (as in the `+` menu), closing, broadcast input.
+ * The "New Tile With" submenu: the `+` menu's submenus (lib/launcher.ts `launchTree`: Web
+ * Browser, Shell, SSH, Terminal, Coding), then Source Control and Worktrees….
+ */
+function launchItems(
+  launch: LaunchMenuInput | undefined,
+): DesktopMenuItemSpec[] {
+  const groups = launchTree(launch?.sections ?? [], {
+    web: {
+      open: launch?.webPage === true,
+      history: launch?.webDialogs === true,
+      bookmarks: launch?.webDialogs === true,
+    },
+    chat: launch?.agentChat === true,
+    ollama: launch?.ollama === true,
+    anthropic: launch?.anthropic === true,
+    ...(launch?.presets ? { presets: launch.presets } : {}),
+  });
+  const out: DesktopMenuItemSpec[] = [];
+  for (const group of groups) {
+    const items: DesktopMenuItemSpec[] = [];
+    for (const node of group.items) {
+      if (node.type === "separator") {
+        if (items.length > 0 && items.at(-1) !== SEP) items.push(SEP);
+        continue;
+      }
+      const { id, label } = launchNodeItem(node);
+      if (plain(id, MAX_ID) && plain(label, MAX_LABEL)) {
+        items.push(item(id, label));
+      }
+    }
+    if (items.at(-1) === SEP) items.pop();
+    if (items.length > 0) out.push({ label: group.title, items });
+  }
+  const extras: DesktopMenuItemSpec[] = launch?.sourceControl
+    ? [
+      item(ITEM.launchSourceControl, "Source Control"),
+      item(ITEM.worktrees, "Worktrees…"),
+    ]
+    : [];
+  return [
+    ...out,
+    ...(out.length > 0 && extras.length > 0 ? [SEP] : []),
+    ...extras,
+  ];
+}
+
+/**
+ * The Shell menu (File's place): new tiles (New Tile With: the `+` menu's submenus) and windows,
+ * closing, broadcast input.
  */
 export function shellMenu(
   platform: KeyPlatform,
@@ -322,13 +363,6 @@ export function shellMenu(
       item(ITEM.newTile, "New Tile"),
       { label: "New Tile With", items: launchItems(launch) },
       item(ITEM.newWindow, "New Window"),
-      ...(launch?.webDialogs
-        ? [
-          SEP,
-          item(ITEM.bookmarks, "Bookmarks…"),
-          item(ITEM.history, "History…"),
-        ]
-        : []),
       SEP,
       item(ITEM.closeTile, "Close Tile"),
       item(ITEM.closeAndEnd, "Close Window and End Its Shells"),
@@ -630,8 +664,15 @@ export type MenuAction =
   | { kind: "ollama" }
   /** Move the focused tile to window `to` (`"new"`: a new window). */
   | { kind: "moveTile"; to: string }
-  /** "Claude Code (chat)" (`agent` absent) or "Codex (chat)": a new agent tile. */
-  | { kind: "agentChat"; agent?: "codex" }
+  /**
+   * New Tile With → Coding: a new agent tile on Claude Code (`agent` absent) or another backend,
+   * with a preset (`presetId`) or none.
+   */
+  | {
+    kind: "agentChat";
+    agent?: Exclude<AgentKind, "claude">;
+    presetId?: string;
+  }
   /** View → "Zoom All Tiles Together" on / off. */
   | { kind: "zoomTogether" }
   /** Source Control for the focused terminal (`show`: at its worktrees). */
@@ -662,6 +703,13 @@ const TILE_ITEMS: Record<string, TileControl> = {
 
 const VIEW_IDS = new Set<string>(Object.values(MDI_ITEM_IDS));
 
+/** `kind` as an agent chat's backend other than Claude Code (`undefined`: not one). */
+function chatAgent(kind: string): Exclude<AgentKind, "claude"> | undefined {
+  return AGENT_KINDS.find((k): k is Exclude<AgentKind, "claude"> =>
+    k !== "claude" && k === kind
+  );
+}
+
 /**
  * What a click on item `id` asks the page to do, or `null` for an item the page leaves alone (the
  * backend's New Window, Close Window and End Its Shells, Help; a heading; an unknown id).
@@ -676,7 +724,19 @@ export function menuAction(id: string): MenuAction | null {
   if (id === ITEM.bookmarks) return { kind: "webDialog", dialog: "bookmarks" };
   if (id === ITEM.history) return { kind: "webDialog", dialog: "history" };
   if (id === ITEM.agentChat) return { kind: "agentChat" };
-  if (id === ITEM.agentChatCodex) return { kind: "agentChat", agent: "codex" };
+  if (id.startsWith(CHAT_PREFIX)) {
+    const agent = chatAgent(id.slice(CHAT_PREFIX.length));
+    return agent ? { kind: "agentChat", agent } : null;
+  }
+  if (id.startsWith(PRESET_PREFIX)) {
+    const rest = id.slice(PRESET_PREFIX.length);
+    const colon = rest.indexOf(":");
+    const kind = AGENT_KINDS.find((k) => k === rest.slice(0, colon));
+    const presetId = rest.slice(colon + 1);
+    if (colon < 0 || !kind || presetId === "") return null;
+    const agent = chatAgent(kind);
+    return { kind: "agentChat", ...(agent ? { agent } : {}), presetId };
+  }
   if (id === ITEM.zoomTogether) return { kind: "zoomTogether" };
   if (id === ITEM.sourceControl || id === ITEM.launchSourceControl) {
     return { kind: "sourceControl" };

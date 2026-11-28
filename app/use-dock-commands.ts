@@ -1,7 +1,8 @@
 // The Dock menu's commands, the page's half (desktop/dock-menu.ts has the app process's): New
-// Terminal, "Claude Code (chat)" and "Codex (chat)" chosen in the Dock menu reach the frontmost window's page,
-// which takes them once it is up (a window the Dock menu just opened included) and whenever it is
-// told more wait. Each command is taken once, so a reload never runs one again.
+// Terminal, Terminal → Claude Code / Codex and Coding → Claude Code / Codex chosen in the Dock
+// menu reach the frontmost window's page, which takes them once it is up (a window the Dock menu
+// just opened included) and whenever it is told more wait. Each command is taken once, so a
+// reload never runs one again.
 
 import { useEffect, useRef } from "denext";
 import type { DockCommand, DockCommands } from "../lib/session-client.ts";
@@ -10,10 +11,12 @@ import type { DockCommand, DockCommands } from "../lib/session-client.ts";
 export interface DockCommandHandlers {
   /** New Terminal: what ⌘T does. */
   newTerminal(): void;
-  /** "Claude Code (chat)": a new agent tile (its folder asked first). */
+  /** Coding → Claude Code: a new agent tile (its folder asked first). */
   agentChat(): void;
-  /** "Codex (chat)": a new agent tile on Codex (its folder asked first). */
+  /** Coding → Codex: a new agent tile on Codex (its folder asked first). */
   codexChat(): void;
+  /** Terminal → Claude Code or Codex: the tool in a new terminal, as the `+` menu starts it. */
+  agentTerminal(name: "claude" | "codex"): void;
 }
 
 /**
@@ -30,6 +33,8 @@ export function runDockCommands(
     if (command === "newTerminal") handlers.newTerminal();
     else if (command === "agentChat") handlers.agentChat();
     else if (command === "codexChat") handlers.codexChat();
+    else if (command === "claudeTerminal") handlers.agentTerminal("claude");
+    else if (command === "codexTerminal") handlers.agentTerminal("codex");
   }
 }
 

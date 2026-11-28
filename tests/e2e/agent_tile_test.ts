@@ -17,9 +17,10 @@ import { type App, suite, waitFor } from "./harness.ts";
 import { tileSel } from "./ssh_helpers.ts";
 import { linkCalls } from "./link_helpers.ts";
 import { withPages } from "./web_helpers.ts";
+import { pickInSub } from "./launch_helpers.ts";
 
 /**
- * Open "Claude Code (chat)" (or `item`, another backend's) from the + menu in `cwd`; the new
+ * Open Coding → Claude Code (or `item`, another backend's) from the + menu in `cwd`; the new
  * tile's id, once focused.
  */
 async function openAgent(
@@ -27,8 +28,7 @@ async function openAgent(
   cwd = "~/project",
   item = "launch-agent-chat",
 ): Promise<string> {
-  await app.click("[data-testid=bar-new-menu]");
-  await app.click(`[data-testid=${item}]`);
+  await pickInSub(app, "coding", `[data-testid=${item}]`);
   await waitFor(
     () => app.exists("[data-testid=agent-launch-cwd]"),
     3000,
@@ -166,7 +166,7 @@ async function panelGroups(app: App): Promise<Record<string, string[]>> {
 }
 
 suite("agent tile", (test) => {
-  test("+ menu → Codex (chat): its JSON-RPC session streams rows, asks, applies the change", async (app) => {
+  test("+ menu → Coding → Codex: its JSON-RPC session streams rows, asks, applies the change", async (app) => {
     const id = await openAgent(app, "~/project", "launch-agent-chat-codex");
     assertEquals(
       await app.attr(`${tileSel(id)} [data-testid=agent-name]`, "value"),
@@ -904,9 +904,12 @@ suite("agent tile", (test) => {
       "the preset saved",
     );
     await app.closeSettings();
-    // The + menu lists it under "Claude Code (chat)"; the folder question has it picked.
-    await app.click("[data-testid=bar-new-menu]");
-    await app.click("[data-testid=launch-agent-preset][data-id=p1]");
+    // The + menu lists it under Coding → Claude Code; the folder question has it picked.
+    await pickInSub(
+      app,
+      "coding",
+      "[data-testid=launch-agent-preset][data-id=p1]",
+    );
     await waitFor(
       () => app.exists("[data-testid=agent-launch-preset]"),
       3000,

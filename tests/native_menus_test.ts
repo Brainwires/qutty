@@ -48,6 +48,7 @@ import {
 import { CLOSE_AND_END_ITEM } from "../lib/workspace/windows.ts";
 import { installNativeMenus } from "../desktop/menus.ts";
 import { renderMenu } from "../desktop/menus-selftest.ts";
+import { type Launchables, launchSections } from "../lib/launcher.ts";
 
 const PLATFORMS: KeyPlatform[] = ["mac", "other"];
 
@@ -69,30 +70,31 @@ function flatApp(
   );
 }
 
+const SHELLS = [
+  { path: "/bin/zsh", label: "zsh", isDefault: true },
+  { path: "/bin/bash", label: "bash", isDefault: false },
+];
+
 const LAUNCH: LaunchMenuInput = {
-  sections: [
-    {
-      id: "shells",
-      title: "Shells",
-      entries: [
-        { id: "shell:/bin/zsh", label: "zsh" },
-        { id: "shell:/bin/bash", label: "bash" },
-      ],
-    },
-    { id: "agents", title: "Agents", entries: [] },
-    {
-      id: "ssh",
-      title: "SSH hosts",
-      entries: [
-        { id: "ssh:web", label: "web" },
-        { id: "ssh:bad\nalias", label: "bad" },
-        { id: `ssh:${"x".repeat(200)}`, label: "long" },
-      ],
-    },
-  ],
+  sections: launchSections({ shells: SHELLS, agents: [] }, [
+    { alias: "web" },
+    { alias: "bad\nalias" },
+    { alias: "x".repeat(200) },
+  ]),
   ollama: false,
   webPage: true,
 };
+
+/** A submenu's rows as labels: separators "-", a submenu `{ "Label ▸": [rows] }`. */
+function tree(items: readonly DesktopMenuItemSpec[]): unknown[] {
+  return items.map((i) =>
+    i.type === "separator"
+      ? "-"
+      : i.items
+      ? { [`${i.label} ▸`]: tree(i.items) }
+      : i.label
+  );
+}
 
 /** Every menu the bar has for `platform`, the Shell menu with launch entries. */
 function allMenus(platform: KeyPlatform): DesktopMenuUpdate[] {
@@ -172,20 +174,12 @@ Deno.test("native menus: the Shell menu, macOS and elsewhere", () => {
     "separator",
     ITEM.broadcast,
   ]);
-  // With a web engine: Bookmarks… and History… after New Window, as in the `+` menu.
-  assertEquals(ids(shellMenu("mac", { ...LAUNCH, webDialogs: true })), [
-    ITEM.newTile,
-    "New Tile With",
-    ITEM.newWindow,
-    "separator",
-    ITEM.bookmarks,
-    ITEM.history,
-    "separator",
-    ITEM.closeTile,
-    CLOSE_AND_END_ITEM,
-    "separator",
-    ITEM.broadcast,
-  ]);
+  // With a web engine the same: History and Bookmark Manager are in New Tile With → Web Browser,
+  // as in the `+` menu.
+  assertEquals(
+    ids(shellMenu("mac", { ...LAUNCH, webDialogs: true })),
+    ids(mac),
+  );
   const other = shellMenu("other", LAUNCH);
   assertEquals(ids(other).slice(-2), ["separator", ITEM.settings]);
   // ⌘, is the macOS standard only.
@@ -196,43 +190,53 @@ Deno.test("native menus: the Shell menu, macOS and elsewhere", () => {
   );
 });
 
-Deno.test("native menus: New Tile With lists the + menu's entries by section, then Web Page and Connections…", () => {
-  const sub = shellMenu("mac", LAUNCH).items[1].items!;
+Deno.test("native menus: New Tile With has the + menu's submenus: Web Browser, Shell, SSH", () => {
+  const sub = shellMenu("mac", { ...LAUNCH, webDialogs: true }).items[1]
+    .items!;
+  // Hosts whose id Denext would not take are left out.
+  assertEquals(tree(sub), [
+    { "Web Browser ▸": ["Open", "History", "Bookmark Manager"] },
+    { "Shell ▸": ["zsh (default)", "bash"] },
+    { "SSH ▸": ["Connections Manager", "-", "web"] },
+  ]);
+  assertEquals(sub[0].items!.map((i) => i.id), [
+    ITEM.webPage,
+    ITEM.history,
+    ITEM.bookmarks,
+  ]);
+  assertEquals(sub[1].items![0].id, launchItemId("shell:/bin/zsh"));
+  // Connections Manager keeps its id and ⌘⇧O.
+  assertEquals(sub[2].items![0].id, ITEM.connections);
+  assertEquals(sub[2].items![0].accelerator, "CmdOrCtrl+Shift+O");
+  // Without a web engine: no Web Browser.
   assertEquals(
-    sub.map((i) =>
-      i.type === "separator"
-        ? "-"
-        : `${i.label}${i.enabled === false ? " (heading)" : ""}`
-    ),
-    [
-      "Shells (heading)",
-      "zsh",
-      "bash",
-      "-",
-      "SSH hosts (heading)",
-      "web",
-      "-",
-      "Web Page",
-      "Connections…",
-    ],
+    tree(shellMenu("mac", { ...LAUNCH, webPage: false }).items[1].items!)
+      .length,
+    2,
   );
-  assertEquals(sub[1].id, launchItemId("shell:/bin/zsh"));
-  // Before the page has its entries (the backend's menu at launch): Connections… alone.
-  assertEquals(
-    shellMenu("mac").items[1].items!.map((i) => i.id),
-    [ITEM.connections],
-  );
-  // Ollama installed: "Ollama Models…" under its section, even with no pair to list.
-  const withOllama = shellMenu("mac", {
-    sections: [{ id: "ollama", title: "Ollama", entries: [] }],
-    ollama: true,
-    webPage: false,
-  }).items[1].items!;
-  assertEquals(withOllama.map((i) => i.id ?? "-"), [
-    "qutty:launch-heading:ollama",
-    ITEM.ollama,
-    "-",
-    ITEM.connections,
+  // Before the page has its entries (the backend's menu at launch): SSH → Connections Manager.
+  assertEquals(tree(shellMenu("mac").items[1].items!), [
+    { "SSH ▸": ["Connections Manager"] },
+  ]);
+  // Ollama installed: Coding → "Ollama models…", even with no pair to list; with agent tiles,
+  // Ollama's chat above it.
+  const ollama = (agentChat: boolean) =>
+    tree(
+      shellMenu("mac", {
+        sections: [],
+        ollama: true,
+        webPage: false,
+        agentChat,
+      })
+        .items[1].items!,
+    );
+  assertEquals(ollama(false), [
+    { "SSH ▸": ["Connections Manager"] },
+    { "Coding ▸": ["Ollama models…"] },
+  ]);
+  assertEquals(ollama(true), [
+    { "SSH ▸": ["Connections Manager"] },
+    { "Coding ▸": ["Ollama", "-", "Ollama models…"] },
   ]);
 });
 
@@ -440,6 +444,11 @@ Deno.test("native menus: clicks map to what the page does", () => {
       patternItemId("nope" as never),
       barItemId("middle" as never),
       "qutty:launch:",
+      "qutty:launch-agent-chat:nope",
+      "qutty:launch-agent-chat:claude",
+      "qutty:launch-agent-preset:claude",
+      "qutty:launch-agent-preset:claude:",
+      "qutty:launch-agent-preset:nope:p1",
       tileItemId(""),
       "nope",
     ]
@@ -762,62 +771,81 @@ Deno.test("native menus: the Window menu's Move Tile to items, and their clicks"
   assert(!one.some((i) => i.id === moveItemId("new")));
 });
 
-Deno.test("native menus: Claude Code's and Codex's entries have their (chat) twins, as in the + menu", () => {
+const AGENTS: Launchables = {
+  shells: [],
+  agents: [
+    { name: "claude", label: "Claude Code", path: "/u/bin/claude" },
+    { name: "codex", label: "Codex", path: "/u/bin/codex" },
+  ],
+};
+
+Deno.test("native menus: Terminal has the agent tools, Coding their chat tiles, as in the + menu", () => {
   const sub = shellMenu("mac", {
-    sections: [{
-      id: "agents",
-      title: "Agents",
-      entries: [
-        {
-          id: "agent:claude",
-          label: "Claude Code",
-          kind: "agent",
-          agent: { name: "claude" },
-        },
-        {
-          id: "agent:codex",
-          label: "Codex",
-          kind: "agent",
-          agent: { name: "codex" },
-        },
-      ],
-    }],
-    ollama: false,
+    sections: launchSections(AGENTS, []),
+    ollama: true,
     webPage: false,
     agentChat: true,
+    anthropic: true,
+    presets: [{ id: "p1", name: "Reviewer" }, {
+      id: "p2",
+      name: "Local",
+      agent: "ollama",
+    }],
   }).items[1].items!;
-  assertEquals(sub.map((i) => i.label ?? "-"), [
-    "Agents",
-    "Claude Code",
-    "Claude Code (chat)",
-    "Codex",
-    "Codex (chat)",
-    "-",
-    "Connections…",
+  assertEquals(tree(sub), [
+    { "SSH ▸": ["Connections Manager"] },
+    { "Terminal ▸": ["Claude Code", "Codex"] },
+    {
+      "Coding ▸": [
+        "Claude Code",
+        "Reviewer",
+        "Codex",
+        "Ollama",
+        "Local",
+        "Anthropic API",
+        "-",
+        "Ollama models…",
+      ],
+    },
   ]);
-  assertEquals(sub[2].id, ITEM.agentChat);
-  assertEquals(menuAction(ITEM.agentChat), { kind: "agentChat" });
-  assertEquals(sub[4].id, ITEM.agentChatCodex);
-  assertEquals(menuAction(ITEM.agentChatCodex), {
-    kind: "agentChat",
-    agent: "codex",
-  });
-  // Without agent tiles: no twin.
-  assert(
-    !shellMenu("mac", {
-      sections: [{
-        id: "agents",
-        title: "Agents",
-        entries: [{
-          id: "agent:claude",
-          label: "Claude Code",
-          kind: "agent",
-          agent: { name: "claude" },
-        }],
-      }],
-      ollama: false,
-      webPage: false,
-    }).items[1].items!.some((i) => i.id === ITEM.agentChat),
+  assertEquals(sub[1].items!.map((i) => i.id), [
+    launchItemId("agent:claude"),
+    launchItemId("agent:codex"),
+  ]);
+  const coding = sub[2].items!.map((i) => i.id ?? "-");
+  assertEquals(coding, [
+    ITEM.agentChat,
+    "qutty:launch-agent-preset:claude:p1",
+    ITEM.agentChatCodex,
+    "qutty:launch-agent-chat:ollama",
+    "qutty:launch-agent-preset:ollama:p2",
+    "qutty:launch-agent-chat:anthropic",
+    "-",
+    ITEM.ollama,
+  ]);
+  assertEquals(coding.map((id) => menuAction(id)), [
+    { kind: "agentChat" },
+    { kind: "agentChat", presetId: "p1" },
+    { kind: "agentChat", agent: "codex" },
+    { kind: "agentChat", agent: "ollama" },
+    { kind: "agentChat", agent: "ollama", presetId: "p2" },
+    { kind: "agentChat", agent: "anthropic" },
+    null,
+    { kind: "ollama" },
+  ]);
+  // Without agent tiles: no Coding chats (the tools still run in a terminal).
+  assertEquals(
+    tree(
+      shellMenu("mac", {
+        sections: launchSections(AGENTS, []),
+        ollama: false,
+        webPage: false,
+      }).items[1].items!,
+    ),
+    [
+      { "SSH ▸": ["Connections Manager"] },
+      { "Terminal ▸": ["Claude Code", "Codex"] },
+    ],
   );
 });
 
@@ -830,10 +858,11 @@ Deno.test("native menus: Source Control in the View menu and New Tile With, with
     webPage: false,
     sourceControl: true,
   }).items[1].items!;
-  assertEquals(sub.map((i) => i.label), [
+  assertEquals(tree(sub), [
+    { "SSH ▸": ["Connections Manager"] },
+    "-",
     "Source Control",
     "Worktrees…",
-    "Connections…",
   ]);
   assertEquals(menuAction(ITEM.sourceControl), { kind: "sourceControl" });
   assertEquals(menuAction(ITEM.launchSourceControl), { kind: "sourceControl" });
