@@ -688,8 +688,20 @@ suite("agent tile", (test) => {
         a.left < b.right && b.left < a.right && a.top < b.bottom &&
         b.top < a.bottom;
 
-      // ~1900px of tile: a column of 1120px (not a narrow strip), the composer as wide, both on the
-      // card's middle.
+      // Beside the first terminal (a ~950px tile): the 720px floor, nearly the whole card.
+      const split = await rects();
+      const splitW = split.log!.right - split.log!.left;
+      assert(splitW >= 690 && splitW <= 721, `split column ${splitW}px`);
+
+      // Maximized, ~1900px of tile: a column of 1120px (not a narrow strip), the composer as
+      // wide, both on the card's middle.
+      await app.click(`${tileSel(id)} [data-testid=agent-maximize]`);
+      await waitFor(
+        () => app.exists(`${tileSel(id)} [data-testid=tile-restore]`),
+        3000,
+        "maximized",
+      );
+      await app.settle();
       const wide = await rects();
       const logW = wide.log!.right - wide.log!.left;
       assert(logW > 1000 && logW <= 1121, `column ${logW}px`);
