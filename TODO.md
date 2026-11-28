@@ -94,6 +94,16 @@
     carries it (signed with the app on macOS). `deno task audio:lib` still
     installs one into the app-support folder for development. The OS recognizer
     (`SFSpeechRecognizer`) waits on the Denext proposal in the same doc.
+  - Voice, done: Kokoro, the on-device neural voice (docs/voice-kokoro.md).
+    Rullama's `rullama-audio-ffi` synthesizes and plays it (`rla_tts_*`, ABI
+    version 2, optional symbols in lib/voice/ffi.ts so an older library still
+    loads); lib/voice/kokoro.ts pins the model and the voices and downloads them
+    as one set; `kokoroTts` (lib/voice/engines.ts) is the default engine, with
+    the OS voice standing in until the model is there. Open: never heard in the
+    real app (`QUTTY_KOKORO_SELFTEST="a sentence"` says one from the packaged
+    app, fetching the files if needed); only English (the phonemizer has no
+    other language yet); the library is 47 MB larger for it (ONNX Runtime and
+    the pronunciation dictionaries); the model holds about 0.8 GB while loaded.
     ElevenLabs text to speech needs `output_format` sent as a query parameter in
     `@rullama/provider-speech` (it is ignored today, so the reply is mp3, which
     the library cannot play); Deepgram Aura is used instead. OpenAI Realtime

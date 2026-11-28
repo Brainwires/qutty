@@ -5,7 +5,8 @@
  * a transcript is shown for review before it is sent, and the "Dictate into focused tile" mode.
  *
  * Nothing goes to a cloud service unless the user picks a cloud engine here: the defaults are the
- * OS's speech (`speak()` in `denext/mobile`) and the on-device Whisper engine.
+ * on-device Kokoro voice (the OS's speech, `speak()` in `denext/mobile`, until its model is
+ * downloaded) and the on-device Whisper engine.
  *
  * Client-safe and pure.
  *
@@ -13,12 +14,18 @@
  */
 
 /**
- * Who reads answers aloud: the OS (`speak()` from denext/mobile), or Deepgram Aura (cloud, your
- * key), played on this Mac through the native audio library.
+ * Who reads answers aloud: Kokoro (a neural voice run on this computer by the native audio
+ * library; the OS's voice stands in until its model is downloaded, or where the library has no
+ * speech), the OS (`speak()` from denext/mobile), or Deepgram Aura (cloud, your key), played on
+ * this Mac through the native audio library.
  */
-export type TtsEngineId = "system" | "deepgram";
+export type TtsEngineId = "kokoro" | "system" | "deepgram";
 /** Every TTS engine, as Settings lists them. */
-export const TTS_ENGINES: readonly TtsEngineId[] = ["system", "deepgram"];
+export const TTS_ENGINES: readonly TtsEngineId[] = [
+  "kokoro",
+  "system",
+  "deepgram",
+];
 
 /**
  * Who turns speech into text: on-device Whisper (rullama-hardware through FFI), Deepgram or
@@ -70,6 +77,8 @@ export interface VoiceSettings {
   ttsEngine: TtsEngineId;
   /** A voice name (the OS's) or model (Deepgram: `aura-asteria-en`); `""` is the default. */
   voice: string;
+  /** The Kokoro voice (`af_heart`); `""` is the library's default. Kept apart from `voice`. */
+  kokoroVoice: string;
   /** 0.5–2, 1 is normal. */
   rate: number;
   /** 0–1. */
@@ -97,8 +106,9 @@ export interface VoiceSettings {
 export const DEFAULT_VOICE: VoiceSettings = {
   speakAnswers: false,
   voiceMode: false,
-  ttsEngine: "system",
+  ttsEngine: "kokoro",
   voice: "",
+  kokoroVoice: "",
   rate: 1,
   volume: 1,
   alertFinished: false,
@@ -155,9 +165,27 @@ export function sanitizeVoice(
   if (typeof r.voice === "string" && r.voice.length <= 128) {
     out.voice = r.voice;
   }
+  if (
+    typeof r.kokoroVoice === "string" && /^[a-z0-9_]{0,64}$/.test(r.kokoroVoice)
+  ) {
+    out.kokoroVoice = r.kokoroVoice;
+  }
   out.rate = clamped(r.rate, 0.5, 2) ?? out.rate;
   out.volume = clamped(r.volume, 0, 1) ?? out.volume;
   return out;
+}
+
+/**
+ * Voice settings as they were stored, brought forward: settings saved before the on-device voice
+ * existed (they have no `kokoroVoice`) with the engine that was the default then (`system`) get
+ * today's default engine, Kokoro, which speaks with the OS's voice until its model is downloaded,
+ * so nothing changes for them before that. A `system` saved since is a choice and is kept.
+ */
+export function migrateStoredVoice(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const r = raw as Partial<Record<keyof VoiceSettings, unknown>>;
+  if (r.kokoroVoice !== undefined || r.ttsEngine !== "system") return raw;
+  return { ...r, ttsEngine: DEFAULT_VOICE.ttsEngine };
 }
 
 /** Whether two settings are the same (the store skips a no-op patch). */

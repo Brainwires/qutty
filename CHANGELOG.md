@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- The companion has a natural voice of its own: Kokoro, a neural voice that runs
+  on this computer. Nothing is sent anywhere. Settings → Voice → Voice engine
+  lists it first, and it is the default: until its model is downloaded (337 MB,
+  once, from Hugging Face and GitHub, with each file's SHA-256 checked) this
+  computer's voice keeps speaking, as it does where the audio library has no
+  speech. Pick from 28 American and British English voices ("American English —
+  Heart"); the rate, the volume and Test voice work as before, and talking still
+  cuts the companion off at once. Speech starts about half a second after a
+  reply's first sentence. The model is loaded on the first thing said and
+  unloaded after five quiet minutes. English only for now. See
+  docs/voice-kokoro.md for the sources and licenses.
+
 ## 0.8.2 — 2026-11-28
 
 - Agent tiles read like other chat apps. The transcript's text is 15px with a

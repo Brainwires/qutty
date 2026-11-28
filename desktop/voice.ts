@@ -17,6 +17,11 @@
 //   sent anywhere else. While it listens, the microphone's level goes to the page as `level`
 //   events, 20 a second at most (lib/voice/level.ts), for the companion's pulse.
 // - Cloud speech: Deepgram Aura's WAV, played by the library (`speak` / `speakStop`).
+// - The on-device voice: Kokoro, synthesized and played by the library (`rla_tts_*`, where the
+//   library has them: an older one still does everything else). Its model and voices are fetched
+//   like the Whisper model, on first use, into `<app support>/models/`, each file's SHA-256
+//   checked (lib/voice/kokoro.ts). The model is loaded on the first speech and unloaded after a
+//   few idle minutes (it holds some hundreds of megabytes). Nothing is sent anywhere.
 // - The cloud keys: kept in the OS keychain through this extension's own secure store
 //   (`host.secureStore`, Denext's `<app identifier>/ext/voice` namespace, which no page can read;
 //   lib/secrets/api-keys.ts). The page sets or clears a key and asks which are set
@@ -60,9 +65,19 @@ import {
   ModelStore,
 } from "../lib/voice/model.ts";
 import {
+  KOKORO_FILES,
+  KOKORO_MODEL,
+  KOKORO_VOICES,
+  type KokoroStatus,
+  type KokoroVoice,
+  ModelSet,
+  parseKokoroVoices,
+} from "../lib/voice/kokoro.ts";
+import {
   type CaptureEngine,
   CLOUD_SERVICES,
   type CloudService,
+  type KokoroSpeakOptions,
   voiceKeys,
   type VoiceStatus,
 } from "../lib/voice/client.ts";
@@ -77,6 +92,8 @@ import { LEVEL_MS, levelGate, normalizeLevel } from "../lib/voice/level.ts";
 const TRANSCRIBE_TIMEOUT_MS = 120_000;
 /** How often the library's state is polled. */
 const POLL_MS = 40;
+/** Kokoro's model is unloaded after this long without speech (it holds hundreds of MB). */
+const KOKORO_IDLE_MS = 5 * 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Terminal escape sequences in curl's output. */
@@ -154,9 +171,15 @@ function curlFetcher(): (url: string, dest: string) => DownloadJob {
   };
 }
 
-/** The voice service: the library (once found), the model, the capture in flight. */
+/** The voice service: the library (once found), the models, the capture in flight. */
 class VoiceService {
   readonly model: ModelStore;
+  /** Kokoro's files (the model and the voices), as one download. */
+  readonly kokoro: ModelSet;
+  /** The loaded Kokoro model's handle, or the load in flight. */
+  #tts: Promise<number> | undefined;
+  #ttsIdle: ReturnType<typeof setTimeout> | undefined;
+  #kokoroVoices: KokoroVoice[] | undefined;
   #appSupportDir: string;
   #lib: AudioLib | undefined;
   #libPath = "";
@@ -172,6 +195,7 @@ class VoiceService {
     emit: (state: ModelState) => void,
     emitLevel: (level: number) => void,
     keys: (service: CloudService) => Promise<string | null>,
+    emitKokoro: (state: ModelState) => void = () => {},
   ) {
     this.#appSupportDir = appSupportDir;
     this.#keys = keys;
@@ -181,6 +205,17 @@ class VoiceService {
       files,
       fetch: curlFetcher(),
       onState: emit,
+    });
+    this.kokoro = new ModelSet({
+      appSupportDir,
+      models: KOKORO_FILES,
+      files,
+      fetch: curlFetcher(),
+      onState: (state) => {
+        // Other files (a re-download): what was read from the old ones is stale.
+        if (state.state !== "ready") this.#kokoroVoices = undefined;
+        emitKokoro(state);
+      },
     });
   }
 
@@ -336,11 +371,117 @@ class VoiceService {
     this.#lib?.cancel();
   }
 
+  /** Kokoro's files' path: `<app support>/models/<file>`. */
+  #kokoroPath(file: { file: string }): string {
+    const at = KOKORO_FILES.findIndex((f) => f.file === file.file);
+    return this.kokoro.paths[at];
+  }
+
+  /** Whether Kokoro can speak: the library's speech support, and its files. */
+  async kokoroStatus(): Promise<KokoroStatus> {
+    let available = false;
+    let reason: string | undefined;
+    try {
+      available = this.lib().ttsAvailable();
+      if (!available) reason = "this audio library was built without speech";
+    } catch {
+      reason = `the on-device audio library is not installed (${
+        this.#libError?.reason ?? "not found"
+      })`;
+    }
+    const state = await this.kokoro.check();
+    return {
+      available,
+      ...(reason ? { reason } : {}),
+      files: { ...state, size: formatSize(this.kokoro.totalBytes) },
+    };
+  }
+
+  /** Kokoro's files, checked: an `unavailable` error until they are downloaded. */
+  async #kokoroReady(): Promise<AudioLib> {
+    const lib = this.lib();
+    if (!lib.ttsAvailable()) {
+      throw new DesktopCapError(
+        "unsupported",
+        "this audio library was built without speech",
+      );
+    }
+    if ((await this.kokoro.check()).state !== "ready") {
+      throw new DesktopCapError(
+        "unavailable",
+        "the Kokoro voice model is not downloaded",
+      );
+    }
+    return lib;
+  }
+
+  /** The voices in the downloaded voices file (read once; no model is loaded for it). */
+  async kokoroVoices(): Promise<KokoroVoice[]> {
+    if (this.#kokoroVoices) return this.#kokoroVoices;
+    let lib: AudioLib;
+    try {
+      lib = await this.#kokoroReady();
+    } catch {
+      return [];
+    }
+    const voices = parseKokoroVoices(
+      lib.ttsListVoices(this.#kokoroPath(KOKORO_VOICES)),
+    );
+    this.#kokoroVoices = voices;
+    return voices;
+  }
+
+  /** The loaded Kokoro model's handle (loaded on first use, off the event loop). */
+  #kokoroHandle(lib: AudioLib): Promise<number> {
+    this.#tts ??= lib.ttsLoad(
+      this.#kokoroPath(KOKORO_MODEL),
+      this.#kokoroPath(KOKORO_VOICES),
+    ).catch((e) => {
+      this.#tts = undefined; // the next speech tries again
+      throw e;
+    });
+    return this.#tts;
+  }
+
+  /** Unload Kokoro's model once it has been silent for {@linkcode KOKORO_IDLE_MS}. */
+  #kokoroIdle(lib: AudioLib): void {
+    clearTimeout(this.#ttsIdle);
+    const turn = this.#speaking;
+    this.#ttsIdle = setTimeout(() => {
+      const loaded = this.#tts;
+      if (!loaded || turn !== this.#speaking) return;
+      this.#tts = undefined;
+      loaded.then((handle) => lib.ttsFree(handle), () => {});
+    }, KOKORO_IDLE_MS);
+    // Never what keeps the app alive.
+    Deno.unrefTimer(this.#ttsIdle);
+  }
+
+  /** Kokoro's speech, synthesized and played here; resolves once said (or stopped). */
+  async kokoroSpeak(text: string, opts: KokoroSpeakOptions): Promise<void> {
+    const turn = ++this.#speaking;
+    clearTimeout(this.#ttsIdle);
+    const lib = await this.#kokoroReady();
+    // Whatever was being said (a cloud voice's clip) stops for this.
+    lib.stopPlayback();
+    const handle = await this.#kokoroHandle(lib);
+    if (turn !== this.#speaking) return; // stopped while the model loaded
+    try {
+      lib.ttsSpeak(handle, text, opts);
+      while (turn === this.#speaking && lib.ttsSpeaking(handle)) {
+        await sleep(POLL_MS);
+      }
+    } finally {
+      this.#kokoroIdle(lib);
+    }
+  }
+
   /** Deepgram Aura's speech, played here; resolves once said (or stopped). */
   async speak(text: string, model?: string): Promise<void> {
     const key = await this.#key("deepgram");
     const lib = this.lib();
     const turn = ++this.#speaking;
+    this.#stopKokoro();
     const wavBytes = await new DeepgramClient(key).speak({
       text,
       model: model || "aura-asteria-en",
@@ -361,9 +502,16 @@ class VoiceService {
     }
   }
 
+  /** Silence Kokoro (a no-op while its model is not loaded). */
+  #stopKokoro(): void {
+    const lib = this.#lib;
+    if (lib) this.#tts?.then((handle) => lib.ttsCancel(handle), () => {});
+  }
+
   stopSpeaking(): void {
     this.#speaking++;
     this.#lib?.stopPlayback();
+    this.#stopKokoro();
   }
 }
 
@@ -414,12 +562,38 @@ async function selfTest(voice: VoiceService, wav: string): Promise<void> {
   log("played; done");
 }
 
+/**
+ * `QUTTY_KOKORO_SELFTEST`: the library's speech support, Kokoro's files (fetched if missing), its
+ * voices, and `text` said out loud once, with how long that took.
+ */
+async function kokoroSelfTest(
+  voice: VoiceService,
+  text: string,
+): Promise<void> {
+  const log = (m: string) => console.error(`kokoro self-test: ${m}`);
+  let status = await voice.kokoroStatus();
+  log(`status ${JSON.stringify(status)}`);
+  if (!status.available) return;
+  if (status.files.state !== "ready") {
+    log(`downloading ${KOKORO_FILES.map((f) => f.url).join(", ")}`);
+    log(`download ended: ${JSON.stringify(await voice.kokoro.download())}`);
+    status = await voice.kokoroStatus();
+    if (status.files.state !== "ready") return;
+  }
+  const voices = await voice.kokoroVoices();
+  log(`${voices.length} voices: ${voices.map((v) => v.id).join(" ")}`);
+  const started = Date.now();
+  await voice.kokoroSpeak(text, {});
+  log(`said in ${Date.now() - started} ms; done`);
+}
+
 let service: VoiceService | undefined;
 /** This extension's own secure store (`host.secureStore`), once set up. */
 let store: SecretStore | undefined;
 const keys = voiceKeys(() => store);
 let emitModel: (state: ModelState) => void = () => {};
 let emitLevel: (level: number) => void = () => {};
+let emitKokoro: (state: ModelState) => void = () => {};
 
 function requireService(): VoiceService {
   if (!service) throw new DesktopCapError("unavailable", "voice is not ready");
@@ -450,6 +624,40 @@ const speakInput = objectSchema<{ text: string; model?: string }>(
   },
 );
 
+/** An optional number in `min..max` (clamped), or an issue. */
+function optNumber(
+  v: Record<string, unknown>,
+  key: string,
+  issues: Issue[],
+  min: number,
+  max: number,
+): number | undefined {
+  const n = v[key];
+  if (n === undefined) return undefined;
+  if (typeof n !== "number" || !Number.isFinite(n)) {
+    issues.push({ message: `${key} must be a number`, path: [key] });
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, n));
+}
+
+const kokoroSpeakInput = objectSchema<{ text: string } & KokoroSpeakOptions>(
+  (v, issues) => {
+    const voice = optStr(v, "voice", issues, 64);
+    if (voice !== undefined && !/^[a-z0-9_]*$/.test(voice)) {
+      issues.push({ message: "voice is a Kokoro voice id", path: ["voice"] });
+    }
+    const speed = optNumber(v, "speed", issues, 0.5, 2);
+    const volume = optNumber(v, "volume", issues, 0, 1);
+    return {
+      text: str(v, "text", issues, 4000),
+      ...(voice ? { voice } : {}),
+      ...(speed !== undefined ? { speed } : {}),
+      ...(volume !== undefined ? { volume } : {}),
+    };
+  },
+);
+
 /** A cloud service named in a key method's input. */
 function serviceOf(v: Record<string, unknown>, issues: Issue[]): CloudService {
   const service = CLOUD_SERVICES.find((s) => s === v.service);
@@ -475,7 +683,7 @@ const keyClearInput = objectSchema<{ service: CloudService }>(
 
 export default defineDesktopExtension({
   name: "voice",
-  events: ["model", "level"],
+  events: ["model", "level", "kokoro"],
   setup: (host) => {
     store = host.secureStore;
     service = new VoiceService(
@@ -483,9 +691,11 @@ export default defineDesktopExtension({
       (s) => emitModel(s),
       (level) => emitLevel(level),
       (s) => keys.get(s),
+      (s) => emitKokoro(s),
     );
     emitModel = (state) => host.emit("model", state);
     emitLevel = (level) => host.emit("level", { level });
+    emitKokoro = (state) => host.emit("kokoro", state);
     // A check of the packaged app's voice path without the UI or the microphone (see TODO.md):
     // QUTTY_VOICE_SELFTEST=<a WAV file> logs the library, fetches the model if needed, transcribes
     // the file, and plays it once.
@@ -496,6 +706,18 @@ export default defineDesktopExtension({
         () =>
           selfTest(service!, wav).catch((e) =>
             console.error(`voice self-test: failed: ${e?.message ?? e}`)
+          ),
+        4000,
+      );
+    }
+    // The same for the on-device voice: QUTTY_KOKORO_SELFTEST=<a sentence> logs the library's
+    // speech support, fetches Kokoro's files if needed, and says the sentence once.
+    const say = Deno.env.get("QUTTY_KOKORO_SELFTEST");
+    if (say) {
+      setTimeout(
+        () =>
+          kokoroSelfTest(service!, say).catch((e) =>
+            console.error(`kokoro self-test: failed: ${e?.message ?? e}`)
           ),
         4000,
       );
@@ -549,6 +771,37 @@ export default defineDesktopExtension({
     speakStop: {
       input: emptyInput,
       handler: (): void => service?.stopSpeaking(),
+    },
+    /** Whether the on-device voice (Kokoro) can speak: the library's support, its files. */
+    kokoroStatus: {
+      input: emptyInput,
+      handler: (): Promise<KokoroStatus> => requireService().kokoroStatus(),
+    },
+    /** Fetch Kokoro's files (their progress: `kokoro` events); the state it ends in. */
+    kokoroDownload: {
+      input: emptyInput,
+      timeoutMs: false,
+      handler: (): Promise<ModelState> => requireService().kokoro.download(),
+    },
+    kokoroCancel: {
+      input: emptyInput,
+      handler: (): void => requireService().kokoro.cancel(),
+    },
+    /** The voices of the downloaded voices file. */
+    kokoroVoices: {
+      input: emptyInput,
+      handler: (): Promise<KokoroVoice[]> => requireService().kokoroVoices(),
+    },
+    /** Say `text` with Kokoro, here (`speakStop` stops it). */
+    kokoroSpeak: {
+      input: kokoroSpeakInput,
+      timeoutMs: false,
+      handler: async (args: unknown): Promise<void> => {
+        const { text, ...opts } = args as
+          & { text: string }
+          & KokoroSpeakOptions;
+        await requireService().kokoroSpeak(text, opts);
+      },
     },
     /** Which cloud services have a key in the keychain (never the keys). */
     keyStatus: {

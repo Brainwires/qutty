@@ -48,6 +48,7 @@ import {
 } from "../ollama/settings.ts";
 import {
   DEFAULT_VOICE,
+  migrateStoredVoice,
   sameVoice,
   sanitizeVoice,
   type VoiceSettings,
@@ -689,7 +690,9 @@ export function sanitizeSettings(
   if (r.defaultView !== undefined) {
     out.defaultView = sanitizeViewMode(r.defaultView);
   }
-  if (r.voice !== undefined) out.voice = sanitizeVoice(r.voice, out.voice);
+  if (r.voice !== undefined) {
+    out.voice = sanitizeVoice(migrateStoredVoice(r.voice), out.voice);
+  }
   if (r.agentPresets !== undefined) {
     out.agentPresets = sanitizePresets(r.agentPresets);
   }

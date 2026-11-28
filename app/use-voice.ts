@@ -39,6 +39,7 @@ import {
   cloudTts,
   demoTts,
   type KeyStore,
+  kokoroTts,
   sttEngine,
   systemTts,
 } from "../lib/voice/engines.ts";
@@ -128,6 +129,15 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
   }, [backend]);
   const keys = useMemo(() => voice ? backendKeys(voice) : undefined, [voice]);
 
+  // The on-device voice (desktop only): one engine, so a stop reaches the speech it started.
+  const kokoro = useMemo(
+    () =>
+      voice?.kind === "desktop"
+        ? kokoroTts(voice, () => optsRef.current.settings.kokoroVoice)
+        : undefined,
+    [voice],
+  );
+
   // Voice mode's speech, in order: a `replace` waits for the interrupt to settle first.
   const chainRef = useRef<Promise<void>>(Promise.resolve());
   const cutRef = useRef(0);
@@ -139,6 +149,8 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
         if (s.ttsEngine === "deepgram" && voice?.kind === "desktop" && keys) {
           return cloudTts(voice, keys);
         }
+        // The on-device voice; the OS's stands in until its model is downloaded.
+        if (s.ttsEngine === "kokoro" && kokoro) return kokoro;
         return systemTts();
       },
       options: () => {
@@ -151,7 +163,7 @@ export function useVoice(opts: UseVoiceOptions): VoiceApi {
       },
       onSpeaking: (on) => setSpeaking(on),
       onError: (e) => console.warn("voice: speech failed", e),
-    }), [voice, script, keys]);
+    }), [voice, script, keys, kokoro]);
 
   const controller = useMemo(() => {
     if (!voice || !backend || !keys) return undefined;

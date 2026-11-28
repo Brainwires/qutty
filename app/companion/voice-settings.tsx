@@ -1,7 +1,8 @@
 // Settings → Voice: the companion's voice layer (lib/voice/).
 //
-// - Speaking: read answers aloud, the engine (the OS's speech, or Deepgram Aura with your key),
-//   voice, rate, volume, a test button, and the spoken event alerts, one toggle each.
+// - Speaking: read answers aloud, the engine (Kokoro, a neural voice run on this computer, with
+//   its model's first-use download and its own voice list; the OS's speech; or Deepgram Aura with
+//   your key), voice, rate, volume, a test button, and the spoken event alerts, one toggle each.
 // - Listening: the speech-to-text engine (on-device Whisper by default; Deepgram or ElevenLabs
 //   with your key; the webview's Web Speech only where it exists), the native library's and the
 //   model's status with the first-use download (its size said before it starts), the hold-to-talk
@@ -16,6 +17,12 @@ import { useEffect, useState } from "denext";
 import type { VoiceApi } from "../use-voice.ts";
 import type { VoiceStatus } from "../../lib/voice/client.ts";
 import type { ModelState } from "../../lib/voice/model.ts";
+import {
+  groupKokoroVoices,
+  type KokoroStatus,
+  type KokoroVoice,
+  pickKokoroVoice,
+} from "../../lib/voice/kokoro.ts";
 import { webRecognition } from "../../lib/voice/engines.ts";
 import type { CloudService } from "../../lib/voice/client.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
@@ -46,6 +53,7 @@ export interface VoiceSettingsProps {
 }
 
 const TTS_LABEL: Record<TtsEngineId, string> = {
+  kokoro: "Kokoro (natural voice, on this computer)",
   system: "This computer's voice",
   deepgram: "Deepgram Aura (cloud, your key)",
 };
@@ -193,6 +201,141 @@ function LocalEngineStatus(props: { voice: VoiceApi }) {
   );
 }
 
+/** Kokoro's status (the library's speech support, its files), the download, the voices. */
+function useKokoro(voice: VoiceApi | null) {
+  const backend = voice?.voice;
+  const [status, setStatus] = useState<KokoroStatus | null>(null);
+  const [files, setFiles] = useState<ModelState | null>(null);
+  const [voices, setVoices] = useState<KokoroVoice[]>([]);
+  useEffect(() => {
+    if (!backend) return;
+    let live = true;
+    backend.kokoroStatus().then((s) => {
+      if (!live) return;
+      setStatus(s);
+      setFiles((f) => f?.state === "downloading" ? f : s.files);
+    }, (e) => console.warn("voice: kokoro status", e));
+    const off = backend.onKokoro((s) => live && setFiles(s));
+    return () => {
+      live = false;
+      off();
+    };
+  }, [backend]);
+  // The voices are read from the voices file, once it is there.
+  const ready = files?.state === "ready" && status?.available === true;
+  useEffect(() => {
+    if (!backend || !ready) return setVoices([]);
+    let live = true;
+    backend.kokoroVoices().then(
+      (v) => live && setVoices(v),
+      (e) => console.warn("voice: kokoro voices", e),
+    );
+    return () => {
+      live = false;
+    };
+  }, [backend, ready]);
+  const download = () => {
+    if (!backend) return;
+    setFiles({ state: "downloading", received: 0, total: 0 });
+    backend.downloadKokoro().then(
+      setFiles,
+      (e) => setFiles({ state: "error", error: String(e?.message ?? e) }),
+    );
+  };
+  const cancel = () =>
+    void backend?.cancelKokoroDownload().then(
+      () => setFiles({ state: "missing" }),
+    );
+  return { status, files, voices, download, cancel };
+}
+
+/**
+ * The on-device voice: whether the library can speak, the model's download (its size said before
+ * it starts), and the voice, grouped by accent.
+ */
+function KokoroSettings(
+  props: { voice: VoiceApi; picked: string; onPick(id: string): void },
+) {
+  const { status, files, voices, download, cancel } = useKokoro(props.voice);
+  if (!status) return <span class="field-hint">Checking…</span>;
+  if (!status.available) {
+    return (
+      <span class="field-hint" data-testid="voice-kokoro-status">
+        The on-device voice is not available here ({status.reason ??
+          "no speech in the audio library"}); this computer's voice speaks
+        instead.
+      </span>
+    );
+  }
+  const size = status.files.size;
+  const groups = groupKokoroVoices(voices);
+  return (
+    <div class="voice-local" data-testid="voice-kokoro-status">
+      <span
+        class="field-hint"
+        data-testid="voice-kokoro-files"
+        data-state={files?.state ?? ""}
+      >
+        Voice model (Kokoro): {files?.state === "ready"
+          ? "downloaded. Speech is made on this computer; nothing is sent anywhere."
+          : files?.state === "downloading"
+          ? `downloading ${
+            files.total ? Math.floor((files.received / files.total) * 100) : 0
+          }%`
+          : files?.state === "verifying"
+          ? "checking the download…"
+          : files?.state === "error"
+          ? `failed (${files.error})`
+          : `not downloaded (${size}, fetched once from Hugging Face and GitHub). This computer's voice speaks until then.`}
+      </span>
+      {files?.state === "downloading"
+        ? (
+          <progress
+            max={files.total || 1}
+            value={files.received}
+            data-testid="voice-kokoro-progress"
+          />
+        )
+        : null}
+      {(files?.state === "missing" || files?.state === "error") && (
+        <button
+          type="button"
+          class="btn-quiet"
+          data-testid="voice-kokoro-download"
+          onClick={download}
+        >
+          Download the voice model ({size})
+        </button>
+      )}
+      {files?.state === "downloading" && (
+        <button type="button" class="btn-quiet" onClick={cancel}>
+          Cancel download
+        </button>
+      )}
+      {groups.length > 0 && (
+        <label class="field">
+          <span class="field-label">Kokoro voice</span>
+          <select
+            class="field-select"
+            data-testid="setting-voice-kokoro-voice"
+            value={pickKokoroVoice(props.picked, voices) ?? ""}
+            onChange={(e) =>
+              props.onPick((e.target as HTMLSelectElement).value)}
+          >
+            {groups.map((g) => (
+              <optgroup label={g.language} key={g.language}>
+                {g.voices.map((v) => (
+                  <option value={v.id} key={v.id}>{v.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
 export function Check(props: {
   label: string;
   testid: string;
@@ -259,6 +402,13 @@ export function VoiceSettingsSection(props: VoiceSettingsProps) {
             </span>
           )}
         </label>
+        {settings.ttsEngine === "kokoro" && voice && (
+          <KokoroSettings
+            voice={voice}
+            picked={settings.kokoroVoice}
+            onPick={(kokoroVoice) => onChange({ kokoroVoice })}
+          />
+        )}
         {cloudTts && voice && (
           <KeyField voice={voice} service="deepgram" platform={platform} />
         )}
