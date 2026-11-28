@@ -762,9 +762,11 @@ Deno.test("contract: every part is in the docs, the markup and the stylesheet", 
   const docs = await read("docs/skins.md");
   const styles = await read("public/styles.css");
   let markup = "";
-  for await (const e of Deno.readDir(join(ROOT, "app"))) {
-    if (e.isFile && e.name.endsWith(".tsx")) {
-      markup += await read(`app/${e.name}`);
+  for (const dir of ["app", "app/companion"]) {
+    for await (const e of Deno.readDir(join(ROOT, dir))) {
+      if (e.isFile && e.name.endsWith(".tsx")) {
+        markup += await read(`${dir}/${e.name}`);
+      }
     }
   }
   const selectors = SKIN_PARTS.map((p) => p.selector);

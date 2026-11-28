@@ -106,6 +106,15 @@ export const SKIN_PARTS: readonly SkinPart[] = [
   cls("settings-dialog", "The Settings dialog."),
   cls("settings-tab", "A category in the Settings sidebar."),
   part("settings-group", "A titled group of settings."),
+  part(
+    "voice-picker",
+    "Settings → Voice: the OS voice row (the drop-down, its preview button, the hint).",
+  ),
+  part("voice-preview", "The ▶ button that previews the picked OS voice."),
+  part(
+    "voice-hint",
+    "The macOS hint saying where to download better voices.",
+  ),
   cls("field-select", "A drop-down."),
   cls("btn-primary", "A primary button."),
   cls("btn-quiet", "A secondary button."),

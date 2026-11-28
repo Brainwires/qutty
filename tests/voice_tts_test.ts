@@ -106,6 +106,21 @@ Deno.test("speech queue: barge-in stops the speech and drops the queue", async (
   assertEquals(tts.stops, 1);
 });
 
+Deno.test("speech queue: an item's own options win over the settings (a voice preview)", async () => {
+  const tts = new FakeTts();
+  const { queue } = queueWith(tts);
+  queue.say("preview", "alert", undefined, { voice: "com.apple.voice.x" });
+  queue.say("next");
+  assertEquals(tts.said[0].options, {
+    rate: 1.2,
+    volume: 0.5,
+    voice: "com.apple.voice.x",
+  });
+  tts.finish();
+  await tick();
+  assertEquals(tts.said[1].options, { rate: 1.2, volume: 0.5 });
+});
+
 Deno.test("speech queue: an engine error moves on; the oldest alert goes first when full", async () => {
   const tts = new FakeTts();
   const { queue, errors } = queueWith(tts, 2);

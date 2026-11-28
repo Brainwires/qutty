@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.8.4 — 2026-11-28
+
+- Settings → Voice: the list of this computer's voices is easier to use. It used
+  to be one long list of every voice the OS has, many of them for other
+  languages. Now it shows the voices for your language: your region first, then
+  the language's other regions, each with Premium voices first, then Enhanced,
+  then Standard. Each entry says what it is, like "Zoe — Premium · US English".
+  "Show all languages" adds the other languages, one heading each. The novelty
+  voices (Bells, Zarvox, Bad News…) and macOS's Eloquence voices (Eddy, Flo,
+  Grandma…, listed once per language) go in a "Character voices" group, hidden
+  until "Show character voices" is on. The voice you picked always stays in the
+  list. A ▶ button next to the list says a short line in the picked voice,
+  cutting off anything being said. On macOS, when no Premium or Enhanced voice
+  is installed for your language, a hint says where to get one (System Settings
+  → Accessibility → Spoken Content → System Voice → Manage Voices). A voice is
+  now saved by its id, so two voices with the same name (Eddy in English and in
+  German) are told apart; a voice saved by name before is moved over the next
+  time Settings → Voice opens and sounds the same.
+- Skins: the voice row, its preview button and the hint are new parts:
+  `[data-part="voice-picker"]`, `[data-part="voice-preview"]` and
+  `[data-part="voice-hint"]` (docs/skins.md).
+
 ## 0.8.3 — 2026-11-28
 
 - The bundled voice library (on-device push-to-talk) is built for every Mac or
